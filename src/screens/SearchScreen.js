@@ -11,15 +11,19 @@ function ExpertProfile({expert, onBack}){
   var isFollowing = follow[0];
   var setFollow = follow[1];
 
-  return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+  return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     React.createElement('button', {
       onClick:onBack,
       style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 10px',cursor:'pointer',fontSize:'12px',fontWeight:600}
     }, '< Back'),
-    React.createElement('div', {style:{height:'100px',background:expert.cover,position:'relative',flexShrink:0}}),
+    React.createElement('div', {style:{position:'relative',flexShrink:0}},
+      React.createElement('div', {style:{height:'140px',background:expert.cover}}),
+      React.createElement('div', {style:{position:'absolute',bottom:'-36px',left:'16px',width:'72px',height:'72px',borderRadius:'50%',background:expert.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#fff',border:'4px solid #09090E',zIndex:5}}, expert.initials)
+    ),
+    React.createElement('div', {style:{height:'44px'}}),
     React.createElement('div', {style:{padding:'0 16px'}},
-      React.createElement('div', {style:{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginTop:'-22px',marginBottom:'10px'}},
-        React.createElement('div', {style:{width:'52px',height:'52px',borderRadius:'50%',background:expert.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)'}}, expert.initials),
+      React.createElement('div', {style:{display:'flex',alignItems:'flex-end',justifyContent:'flex-end',marginBottom:'10px'}},
+        React.createElement('div', {style:{display:'none'}}, expert.initials),
         React.createElement('div', {style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button', {
             onClick:function(){setFollow(!isFollowing);},
