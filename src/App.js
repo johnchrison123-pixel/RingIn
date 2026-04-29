@@ -16,6 +16,7 @@ const supabase = createClient(
 export default function App() {
   const [session, setSession] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
+  const [selectedExpert, setSelectedExpert] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
@@ -70,8 +71,8 @@ export default function App() {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'home': return <HomeScreen session={session} />;
-      case 'search': return <SearchScreen />;
+      case 'home': return <HomeScreen session={session} onViewExpert={setSelectedExpert} />;
+      case 'search': return <SearchScreen initExpert={selectedExpert} onClearExpert={function(){setSelectedExpert(null);}} />;
       case 'workshops': return <WorkshopsScreen />;
       case 'messages': return <MessagesScreen />;
       case 'profile': return <ProfileScreen session={session} supabase={supabase} />;

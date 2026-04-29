@@ -62,8 +62,8 @@ function ExpertProfile({expert, onBack}){
   );
 }
 
-export default function SearchScreen(){
-  var sel = useState(null);
+export default function SearchScreen(props){
+  var sel = useState(props.initExpert || null);
   var selected = sel[0];
   var setSelected = sel[1];
   var ac = useState('all');
