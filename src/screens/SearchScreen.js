@@ -1,92 +1,127 @@
-import React, {useState} from 'react';
-import '../styles/HomeScreen.css';
+import React,{useState} from 'react';
 
 const EXPERTS = [
-  {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',loc:'Dubai, UAE'},
-  {id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',loc:'Remote'},
-  {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,online:true,category:'career',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',loc:'Abu Dhabi'},
-  {id:4,initials:'JO',name:'James Okafor',role:'Corporate Lawyer',rate:150,rating:4.9,calls:289,online:false,category:'legal',color:'linear-gradient(135deg,#B8860B,#F5A623)',loc:'Dubai, UAE'},
-  {id:5,initials:'AM',name:'Dr. Aisha Malik',role:'Clinical Psychologist',rate:100,rating:4.9,calls:521,online:true,category:'psychology',color:'linear-gradient(135deg,#6A4C93,#9B72CF)',loc:'Remote'},
-  {id:6,initials:'CR',name:'Carlos Rivera',role:'CFA Wealth Manager',rate:90,rating:4.7,calls:334,online:false,category:'finance',color:'linear-gradient(135deg,#1A6B3C,#27C96A)',loc:'Remote'},
-  {id:7,initials:'PS',name:'Priya Sharma',role:'Registered Dietitian',rate:70,rating:4.9,calls:298,online:true,category:'nutrition',color:'linear-gradient(135deg,#8B1A4A,#E84D9A)',loc:'Dubai, UAE'},
-  {id:8,initials:'DK',name:'David Kim',role:'IT Support & Security',rate:60,rating:4.7,calls:412,online:true,category:'tech',color:'linear-gradient(135deg,#1a3a5c,#2196F3)',loc:'Remote'},
+  {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease']},
+  {id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google and Meta alumni. Specializes in system design and technical interviews.',tags:['System Design','React','Node.js']},
+  {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience. Helped 500+ professionals land their dream jobs.',tags:['Career Strategy','LinkedIn','Interviews']},
 ];
 
-const CATS = [
-  {id:'all',icon:'✦',label:'All'},
-  {id:'medical',icon:'🩺',label:'Medical'},
-  {id:'tech',icon:'💻',label:'Tech'},
-  {id:'legal',icon:'⚖️',label:'Legal'},
-  {id:'career',icon:'🎯',label:'Career'},
-  {id:'psychology',icon:'🧠',label:'Mental'},
-  {id:'finance',icon:'💹',label:'Finance'},
-  {id:'nutrition',icon:'🥗',label:'Nutrition'},
-];
+function ExpertProfile({expert, onBack}){
+  var follow = useState(false);
+  var isFollowing = follow[0];
+  var setFollow = follow[1];
+
+  return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('button', {
+      onClick:onBack,
+      style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 10px',cursor:'pointer',fontSize:'12px',fontWeight:600}
+    }, '< Back'),
+    React.createElement('div', {style:{height:'100px',background:expert.cover,position:'relative',flexShrink:0}}),
+    React.createElement('div', {style:{padding:'0 16px'}},
+      React.createElement('div', {style:{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginTop:'-22px',marginBottom:'10px'}},
+        React.createElement('div', {style:{width:'52px',height:'52px',borderRadius:'50%',background:expert.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)'}}, expert.initials),
+        React.createElement('div', {style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
+          React.createElement('button', {
+            onClick:function(){setFollow(!isFollowing);},
+            style:{padding:'6px 12px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
+          }, isFollowing ? 'Following' : '+ Follow'),
+          React.createElement('button', {style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
+          React.createElement('button', {style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Call')
+        )
+      ),
+      React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}}, expert.name),
+      React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginBottom:'6px'}}, expert.role),
+      React.createElement('div', {style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}},
+        expert.online ? React.createElement('span', {style:{display:'inline-flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'var(--green)',background:'rgba(39,201,106,.1)',padding:'2px 7px',borderRadius:'20px'}},
+          React.createElement('span', {style:{width:'4px',height:'4px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),
+          'Online'
+        ) : null,
+        React.createElement('span', {style:{fontSize:'9px',color:'var(--t2)',background:'var(--bg4)',padding:'2px 7px',borderRadius:'20px'}}, expert.loc)
+      ),
+      React.createElement('div', {style:{fontSize:'11px',color:'var(--text)',lineHeight:1.6,marginBottom:'10px'}}, expert.bio),
+      React.createElement('div', {style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'12px'}},
+        expert.tags.map(function(t){return React.createElement('span', {key:t,style:{fontSize:'10px',padding:'3px 8px',borderRadius:'20px',background:'var(--acg)',color:'var(--ac)'}}, t);})
+      ),
+      React.createElement('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
+        [{v:expert.rating,l:'Rating'},{v:expert.calls,l:'Calls'},{v:expert.followers,l:'Followers'},{v:expert.rate+'/m',l:'Rate'}].map(function(s){
+          return React.createElement('div', {key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'8px',textAlign:'center'}},
+            React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, s.v),
+            React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)'}}, s.l)
+          );
+        })
+      ),
+      React.createElement('div', {style:{display:'flex',borderBottom:'1px solid var(--border)',marginBottom:'12px'}},
+        ['Posts','Reviews','About'].map(function(t){
+          return React.createElement('div', {key:t,style:{flex:1,padding:'8px',textAlign:'center',fontSize:'11px',fontWeight:500,color:'var(--t2)',cursor:'pointer',borderBottom:'2px solid transparent'}}, t);
+        })
+      ),
+      React.createElement('div', {style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'12px',marginBottom:'8px'}},
+        React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.5}},'No posts yet.')
+      )
+    )
+  );
+}
 
 export default function SearchScreen(){
-  const [ac, setAc] = useState('all');
-  const [query, setQuery] = useState('');
-  
-  const filtered = EXPERTS.filter(function(e){
-    const matchCat = ac === 'all' || e.category === ac;
-    const matchQ = e.name.toLowerCase().includes(query.toLowerCase()) || e.role.toLowerCase().includes(query.toLowerCase());
-    return matchCat && matchQ;
-  });
+  var sel = useState(null);
+  var selected = sel[0];
+  var setSelected = sel[1];
+  var ac = useState('all');
+  var activecat = ac[0];
+  var setAc = ac[1];
 
-  return(
-    <div className="hc">
-      <div className="topbar">
-        <div className="brand">Experts</div>
-        <div className="tbr">
-          <div className="wchip"><div className="wc">C</div><span>1,240</span></div>
-        </div>
-      </div>
-      <div className="sbwrap">
-        <div className="sbar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="2" width="13" height="13"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input placeholder="Search experts..." value={query} onChange={function(e){setQuery(e.target.value)}}/>
-        </div>
-      </div>
-      <div className="cats">
-        {CATS.map(function(c){return(
-          <div key={c.id} className={"cp"+(ac===c.id?" on":"")} onClick={function(){setAc(c.id)}}>
-            <div className="ci">{c.icon}</div>
-            <div className="cl">{c.label}</div>
-          </div>
-        )})}
-      </div>
-      <div className="sh">
-        <div className="st">{ac==='all'?'All Experts':CATS.find(function(c){return c.id===ac})?.label}</div>
-        <div className="sa">{filtered.length} available</div>
-      </div>
-      <div style={{padding:'0 18px',overflowY:'auto'}}>
-        {filtered.map(function(e){return(
-          <div key={e.id} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'11px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'11px',cursor:'pointer',transition:'border-color .2s'}}>
-            <div style={{width:'42px',height:'42px',borderRadius:'50%',background:e.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,position:'relative'}}>
-              {e.initials}
-              {e.online && <div style={{position:'absolute',bottom:0,right:0,width:'9px',height:'9px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg3)'}}/>}
-            </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:'flex',alignItems:'center',gap:'5px',marginBottom:'2px'}}>
-                <span style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{e.name}</span>
-                <span style={{fontSize:'9px',fontWeight:600,color:'#fff',background:'linear-gradient(135deg,#1877F2,#42B3FF)',padding:'1px 5px',borderRadius:'20px'}}>✓ Verified</span>
-              </div>
-              <div style={{fontSize:'10px',color:'var(--t2)',marginBottom:'3px'}}>{e.role}</div>
-              <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                {e.online ? <span style={{display:'inline-flex',alignItems:'center',gap:'2px',fontSize:'9px',color:'var(--green)',background:'rgba(39,201,106,.1)',padding:'1px 5px',borderRadius:'20px'}}><span style={{width:'4px',height:'4px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}/>Online</span> : <span style={{fontSize:'9px',color:'var(--t3)'}}>Offline</span>}
-                <span style={{fontSize:'9px',color:'var(--amber)',fontWeight:600}}>{e.rate} coins/min</span>
-                <span style={{fontSize:'9px',color:'var(--t2)'}}>★{e.rating}</span>
-                <span style={{fontSize:'9px',color:'var(--t2)',background:'var(--bg4)',padding:'1px 5px',borderRadius:'20px'}}>{e.loc}</span>
-              </div>
-            </div>
-            <div style={{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}}>
-              <button style={{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}}>Call</button>
-              <button style={{padding:'5px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'7px',color:'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}}>Follow</button>
-            </div>
-          </div>
-        )})}
-        <div style={{height:'12px'}}/>
-      </div>
-    </div>
+  if(selected){
+    return React.createElement(ExpertProfile, {expert:selected, onBack:function(){setSelected(null);}});
+  }
+
+  return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px'}},
+      React.createElement('div', {style:{fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, 'Experts'),
+      React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)'}},
+        React.createElement('div', {style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}}, 'C'),
+        React.createElement('span', null, '1,240')
+      )
+    ),
+    React.createElement('div', {style:{padding:'0 18px 8px'}},
+      React.createElement('div', {style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'7px 11px',display:'flex',alignItems:'center',gap:'7px'}},
+        React.createElement('input', {placeholder:'Search experts...',style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'}})
+      )
+    ),
+    React.createElement('div', {style:{padding:'0 18px 14px'}},
+      React.createElement('div', {style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'8px'}}, 'All Experts'),
+      EXPERTS.map(function(e){
+        return React.createElement('div', {
+          key:e.id,
+          onClick:function(){setSelected(e);},
+          style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'11px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'11px',cursor:'pointer'}
+        },
+          React.createElement('div', {style:{width:'46px',height:'46px',borderRadius:'50%',background:e.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',flexShrink:0,position:'relative'}},
+            e.initials,
+            e.online ? React.createElement('div', {style:{position:'absolute',bottom:0,right:0,width:'10px',height:'10px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg3)'}}) : null
+          ),
+          React.createElement('div', {style:{flex:1,minWidth:0}},
+            React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'5px',marginBottom:'2px'}},
+              React.createElement('span', {style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}}, e.name),
+              React.createElement('span', {style:{fontSize:'9px',fontWeight:600,color:'#fff',background:'linear-gradient(135deg,#1877F2,#42B3FF)',padding:'1px 5px',borderRadius:'20px'}}, 'Verified')
+            ),
+            React.createElement('div', {style:{fontSize:'10px',color:'var(--t2)',marginBottom:'3px'}}, e.role),
+            React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'6px'}},
+              React.createElement('span', {style:{fontSize:'9px',color:'var(--amber)',fontWeight:600}}, e.rate+' coins/min'),
+              React.createElement('span', {style:{fontSize:'9px',color:'var(--t2)'}}, '★'+e.rating)
+            )
+          ),
+          React.createElement('div', {style:{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}},
+            React.createElement('button', {
+              onClick:function(ev){ev.stopPropagation();},
+              style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
+            }, 'Call'),
+            React.createElement('button', {
+              onClick:function(ev){ev.stopPropagation();},
+              style:{padding:'5px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'7px',color:'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
+            }, 'Follow')
+          )
+        );
+      })
+    )
   );
 }
