@@ -1,0 +1,27 @@
+.wallet-container { padding: 20px 16px 100px; max-width: 480px; margin: 0 auto; }
+.wallet-header { margin-bottom: 20px; }
+.wallet-title { font-size: 26px; font-weight: 700; color: #1a1a2e; }
+.balance-card { background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 20px; padding: 28px 24px; color: white; text-align: center; margin-bottom: 28px; }
+.balance-label { font-size: 14px; opacity: 0.8; margin: 0 0 8px; }
+.balance-amount { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.balance-coin { font-size: 36px; }
+.balance-number { font-size: 52px; font-weight: 800; }
+.balance-sub { font-size: 13px; opacity: 0.7; margin: 8px 0 0; }
+.section-heading { font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 0 0 14px; }
+.packages-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 28px; }
+.package-card { background: white; border-radius: 16px; padding: 16px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 2px solid transparent; position: relative; }
+.package-card.popular { border-color: #667eea; }
+.popular-tag { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #667eea; color: white; font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 10px; white-space: nowrap; }
+.package-coins { font-size: 18px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
+.package-price { font-size: 22px; font-weight: 800; color: #667eea; }
+.package-label { font-size: 12px; color: #888; margin: 4px 0 12px; }
+.buy-btn { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 8px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; }
+.transactions-list { display: flex; flex-direction: column; gap: 2px; }
+.tx-item { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid #f5f5f5; }
+.tx-icon { font-size: 22px; width: 40px; height: 40px; background: #f5f5f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tx-details { flex: 1; }
+.tx-label { font-size: 14px; font-weight: 600; color: #1a1a2e; margin: 0 0 2px; }
+.tx-date { font-size: 12px; color: #888; margin: 0; }
+.tx-amount { font-weight: 700; font-size: 15px; }
+.tx-amount.positive { color: #22c55e; }
+.tx-amount.negative { color: #ef4444; }
