@@ -5,6 +5,8 @@ import HomeScreen from './screens/HomeScreen';
 import SearchScreen from './screens/SearchScreen';
 import WalletScreen from './screens/WalletScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import WorkshopsScreen from './screens/WorkshopsScreen';
+import MessagesScreen from './screens/MessagesScreen';
 
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -70,7 +72,8 @@ export default function App() {
     switch (activeTab) {
       case 'home': return <HomeScreen session={session} />;
       case 'search': return <SearchScreen />;
-      case 'wallet': return <WalletScreen session={session} />;
+      case 'workshops': return <WorkshopsScreen />;
+      case 'messages': return <MessagesScreen />;
       case 'profile': return <ProfileScreen session={session} supabase={supabase} />;
       default: return <HomeScreen session={session} />;
     }
@@ -81,16 +84,19 @@ export default function App() {
       <div className="screen-content">{renderScreen()}</div>
       <nav className="bottom-nav">
         {[
-          { id: 'home', icon: '🏠', label: 'Home' },
-          { id: 'search', icon: '🔍', label: 'Search' },
-          { id: 'wallet', icon: '💰', label: 'Wallet' },
-          { id: 'profile', icon: '👤', label: 'Profile' },
+          { id: "home", label: "Home", svg: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
+          { id: "search", label: "Experts", svg: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" },
+          { id: "workshops", label: "Workshops", svg: "M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" },
+          { id: "messages", label: "Messages", svg: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" },
+          { id: "profile", label: "Profile", svg: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z" },
         ].map(tab => (
           <button key={tab.id}
-            className={`nav-tab ${activeTab === tab.id ? 'active' : ''}`}
+            className={"nav-tab " + (activeTab === tab.id ? "active" : "")}
             onClick={() => setActiveTab(tab.id)}>
-            <span className="nav-icon">{tab.icon}</span>
-            <span className="nav-label">{tab.label}</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d={tab.svg}/>
+            </svg>
+            <span>{tab.label}</span>
           </button>
         ))}
       </nav>
