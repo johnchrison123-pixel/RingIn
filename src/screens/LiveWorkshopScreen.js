@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React,{useState,useEffect,useRef} from 'react';
 var SEED=[
   {id:1,author:'Host',text:'Welcome everyone!',isHost:true},

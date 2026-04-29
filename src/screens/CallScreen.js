@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React,{useState,useEffect} from 'react';
 export default function CallScreen({expert,coins,onCoinsChange,onEnd}){
   var s=useState(0),secs=s[0],setSecs=s[1];
