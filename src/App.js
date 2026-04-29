@@ -16,6 +16,7 @@ const supabase = createClient(
 export default function App() {
   const [session, setSession] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
+  const [prevTab, setPrevTab] = useState('home');
   const [selectedExpert, setSelectedExpert] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -71,10 +72,10 @@ export default function App() {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'home': return <HomeScreen session={session} onViewExpert={setSelectedExpert} />;
-      case 'search': return <SearchScreen initExpert={selectedExpert} onClearExpert={function(){setSelectedExpert(null);}} />;
+      case 'home': return <HomeScreen session={session} onViewExpert={function(exp){setSelectedExpert(exp);setActiveTab('search');}} />;
+      case 'search': return <SearchScreen key={selectedExpert ? selectedExpert.id : 'search'} initExpert={selectedExpert} onClearExpert={function(){setSelectedExpert(null);}} onBack={function(){setSelectedExpert(null);setActiveTab(prevTab);}} />;
       case 'workshops': return <WorkshopsScreen />;
-      case 'messages': return <MessagesScreen />;
+      case 'messages': return <MessagesScreen session={session} onViewExpert={function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}} />;
       case 'profile': return <ProfileScreen session={session} supabase={supabase} />;
       default: return <HomeScreen session={session} />;
     }

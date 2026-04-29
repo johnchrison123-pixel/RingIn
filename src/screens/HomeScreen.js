@@ -1,5 +1,7 @@
 import React,{useState} from 'react';
 import '../styles/HomeScreen.css';
+import CallScreen from './CallScreen';
+import LiveWorkshopScreen from './LiveWorkshopScreen';
 
 var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medical'},{id:'tech',icon:'Tech',label:'Tech'},{id:'legal',icon:'Law',label:'Legal'},{id:'trades',icon:'Fix',label:'Trades'},{id:'mental',icon:'Mind',label:'Mental'}];
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care']},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React']},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn']}];
@@ -8,9 +10,13 @@ var POSTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',co
 
 export default function HomeScreen(props){
   var acState = useState('all');
+  var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
+  var liveS=useState(null); var activeLive=liveS[0]; var setActiveLive=liveS[1];
   var ac = acState[0];
   var setAc = acState[1];
   var onViewExpert = props.onViewExpert;
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
+  if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
   var onlineExperts = fe.filter(function(e){return e.online===true;});
 
@@ -76,7 +82,7 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'enm'}, e.name),
           React.createElement('div', {className:'erl'}, e.role),
           React.createElement('div', {style:{fontSize:'9px',color:'var(--amber)',marginBottom:'4px'}}, e.rate+' coins/min'),
-          React.createElement('button', {className:'cbtn', onClick:function(ev){ev.stopPropagation();}}, 'Call Now')
+          React.createElement('button', {className:'cbtn', onClick:function(ev){ev.stopPropagation();setActiveCall(e);}}, 'Call Now')
         );
       })
     ),
@@ -99,7 +105,7 @@ export default function HomeScreen(props){
             w.free ? React.createElement('span', {className:'wb-free'}, 'FREE') : React.createElement('span', {style:{fontSize:'10px',color:'var(--ac)',background:'var(--acg)',padding:'2px 7px',borderRadius:'20px'}}, w.price+' coins')
           ),
           React.createElement('div', {className:'wb-actions'},
-            React.createElement('button', {className:'wb-join'}, 'Join Live')
+            React.createElement('button', {className:'wb-join', onClick:function(){setActiveLive(w);}}, 'Join Live')
           )
         )
       );

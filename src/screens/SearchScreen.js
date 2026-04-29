@@ -1,4 +1,4 @@
-import React,{useState} from 'react';
+import React,{useState,useEffect} from 'react';
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease']},
@@ -36,18 +36,18 @@ function ExpertProfile({expert, onBack}){
       React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}}, expert.name),
       React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginBottom:'6px'}}, expert.role),
       React.createElement('div', {style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}},
-        expert.online ? React.createElement('span', {style:{display:'inline-flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'var(--green)',background:'rgba(39,201,106,.1)',padding:'2px 7px',borderRadius:'20px'}},
+        (expert.online) ? React.createElement('span', {style:{display:'inline-flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'var(--green)',background:'rgba(39,201,106,.1)',padding:'2px 7px',borderRadius:'20px'}},
           React.createElement('span', {style:{width:'4px',height:'4px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),
           'Online'
         ) : null,
-        React.createElement('span', {style:{fontSize:'9px',color:'var(--t2)',background:'var(--bg4)',padding:'2px 7px',borderRadius:'20px'}}, expert.loc)
+        React.createElement('span', {style:{fontSize:'9px',color:'var(--t2)',background:'var(--bg4)',padding:'2px 7px',borderRadius:'20px'}}, (expert.loc||''))
       ),
-      React.createElement('div', {style:{fontSize:'11px',color:'var(--text)',lineHeight:1.6,marginBottom:'10px'}}, expert.bio),
+      React.createElement('div', {style:{fontSize:'11px',color:'var(--text)',lineHeight:1.6,marginBottom:'10px'}}, (expert.bio||'')),
       React.createElement('div', {style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'12px'}},
-        expert.tags.map(function(t){return React.createElement('span', {key:t,style:{fontSize:'10px',padding:'3px 8px',borderRadius:'20px',background:'var(--acg)',color:'var(--ac)'}}, t);})
+        (expert.tags||[]).map(function(t){return React.createElement('span', {key:t,style:{fontSize:'10px',padding:'3px 8px',borderRadius:'20px',background:'var(--acg)',color:'var(--ac)'}}, t);})
       ),
       React.createElement('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
-        [{v:expert.rating,l:'Rating'},{v:expert.calls,l:'Calls'},{v:expert.followers,l:'Followers'},{v:expert.rate+'/m',l:'Rate'}].map(function(s){
+        [{v:expert.rating,l:'Rating'},{v:expert.calls,l:'Calls'},{v:(expert.followers||'0'),l:'Followers'},{v:expert.rate+'/m',l:'Rate'}].map(function(s){
           return React.createElement('div', {key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'8px',textAlign:'center'}},
             React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, s.v),
             React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)'}}, s.l)
@@ -70,12 +70,19 @@ export default function SearchScreen(props){
   var sel = useState(props.initExpert || null);
   var selected = sel[0];
   var setSelected = sel[1];
+  useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
   var ac = useState('all');
   var activecat = ac[0];
   var setAc = ac[1];
 
   if(selected){
-    return React.createElement(ExpertProfile, {expert:selected, onBack:function(){setSelected(null);}});
+    return React.createElement(ExpertProfile, {
+    expert:selected,
+    onBack:function(){
+      setSelected(null);
+      if(props.onBack) props.onBack();
+    }
+  });
   }
 
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
