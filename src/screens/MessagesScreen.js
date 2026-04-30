@@ -65,9 +65,8 @@ export default function MessagesScreen(props){
   var activeS=useState(null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
-  var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
-  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
-  if(active) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},React.createElement(ChatBox,{convo:active,onCall:function(exp){setActiveCall(exp);},onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){setActiveCall(exp);}}));
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  if(active) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},React.createElement(ChatBox,{convo:active,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){setActiveCall(exp);}}));
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",background:"var(--bg)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px 7px"}}>
