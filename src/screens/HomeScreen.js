@@ -9,7 +9,7 @@ var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',vie
 
 export default function HomeScreen(props){
   var acState = useState('all');
-  var postsS=useState([{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2}];);
+  var postsS=useState([{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2}]);
   var posts=postsS[0]; var setPosts=postsS[1];
   var cpS=useState(null); var commentPost=cpS[0]; var setCommentPost=cpS[1];
   var ctS=useState(''); var commentText=ctS[0]; var setCommentText=ctS[1];
