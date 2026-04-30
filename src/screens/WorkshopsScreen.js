@@ -1,4 +1,5 @@
-import React from 'react';
+import React,{useState} from 'react';
+import LiveWorkshopScreen from './LiveWorkshopScreen';
 import '../styles/HomeScreen.css';
 
 const LIVE = [
@@ -11,6 +12,8 @@ const UPCOMING = [
 ];
 
 export default function WorkshopsScreen(){
+  var lS=useState(null); var live=lS[0]; var setLive=lS[1];
+  if(live) return React.createElement(LiveWorkshopScreen,{workshop:live,onLeave:function(){setLive(null);}});
   return(
     <div className="hc">
       <div className="topbar">
@@ -33,7 +36,7 @@ export default function WorkshopsScreen(){
                 <span className="wb-host">by {w.host}</span>
                 {w.free ? <span className="wb-free">FREE</span> : <span style={{fontSize:'10px',color:'var(--ac)',background:'var(--acg)',padding:'2px 7px',borderRadius:'20px'}}>{w.price} coins</span>}
               </div>
-              <div className="wb-actions"><button className="wb-join">Join Live</button></div>
+              <div className="wb-actions"><button className="wb-join" onClick={()=>setLive(w)}>Join Live</button></div>
             </div>
           </div>
         )})}
