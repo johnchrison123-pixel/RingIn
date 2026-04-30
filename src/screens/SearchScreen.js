@@ -7,7 +7,7 @@ const EXPERTS = [
   {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience. Helped 500+ professionals land their dream jobs.',tags:['Career Strategy','LinkedIn','Interviews']},
 ];
 
-function ExpertProfile({expert, onBack}){
+function ExpertProfile({expert, onBack, onCall}){
   var follow = useState(false);
   var isFollowing = follow[0];
   var setFollow = follow[1];
@@ -31,7 +31,7 @@ function ExpertProfile({expert, onBack}){
             style:{padding:'6px 12px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
           }, isFollowing ? 'Following' : '+ Follow'),
           React.createElement('button', {style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
-          React.createElement('button', {style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Call')
+          React.createElement('button', {onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Call')
         )
       ),
       React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}}, expert.name),
@@ -82,6 +82,7 @@ export default function SearchScreen(props){
   if(selected){
     return React.createElement(ExpertProfile, {
     expert:selected,
+    onCall:function(exp){setActiveCall(exp);},
     onBack:function(){
       setSelected(null);
       if(props.onBack) props.onBack();
