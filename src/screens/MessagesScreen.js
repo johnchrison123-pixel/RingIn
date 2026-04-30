@@ -48,7 +48,7 @@ function ChatBox({convo,onBack,onViewExpert}){
       ),
       React.createElement('button',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||{...convo,rate:2,color:convo.color};setActiveCall(exp);},style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
     ),
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'thin',scrollbarColor:'#4a4a6a transparent',}},
+    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'thin',scrollbarColor:'#4a4a6a transparent',justifyContent:'flex-end',}},
       msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi!'),
       msgs.map(function(m){
         var isMe=m.sender_id==='me'||m.sender_name==='You'||m.sender_id===uid;
@@ -59,7 +59,7 @@ function ChatBox({convo,onBack,onViewExpert}){
       React.createElement('div',{ref:bottomRef})
     ),
     React.createElement('div',{style:{padding:'10px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0}},
-      React.createElement('input',{value:txt,onChange:function(e){setTxt(e.target.value);},onKeyDown:function(e){if(e.key==='Enter')send();},placeholder:'Type a message...',style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'9px 14px',fontSize:'12px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}}),
+      React.createElement('input',{value:txt,onChange:function(e){setTxt(e.target.value);},onKeyDown:function(e){if(e.key==='Enter')send();},placeholder:'Type a message...',style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'9px 14px',fontSize:'16px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}}),
       React.createElement('button',{onClick:send,disabled:!txt.trim(),style:{width:'36px',height:'36px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'16px',cursor:'pointer',flexShrink:0,opacity:txt.trim()?1:0.4}},'>') 
     )
   );
