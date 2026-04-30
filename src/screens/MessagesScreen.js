@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef} from 'react';
+import CallScreen from './CallScreen';
 import {createClient} from '@supabase/supabase-js';
 var EXPERTS=[
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:2,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care']},
@@ -16,6 +17,9 @@ const CONVOS = [
 ];
 
 function ChatBox({convo,onBack,onViewExpert}){
+  var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
+  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   var mS=useState([]); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var uid='user_'+convo.id;
@@ -41,7 +45,7 @@ function ChatBox({convo,onBack,onViewExpert}){
         React.createElement('div',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||convo;if(onViewExpert)onViewExpert(exp);},style:{fontSize:'13px',fontWeight:600,color:'var(--text)',cursor:'pointer'}},convo.name),
         React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role)
       ),
-      React.createElement('button',{onClick:function(){alert('Calling '+convo.name+'...');},style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
+      React.createElement('button',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||{...convo,rate:2,color:convo.color};setActiveCall(exp);},style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
     ),
     React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'thin',scrollbarColor:'#4a4a6a transparent',}},
       msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi!'),
