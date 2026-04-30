@@ -23,6 +23,7 @@ function ChatBox({convo,onBack,onViewExpert}){
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var uid='user_'+convo.id;
   var bottomRef=useRef(null);
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   useEffect(function(){
     sb.from('messages').select('*').eq('conversation_id',convo.id).order('created_at').then(function(r){if(r.data)setMsgs(r.data);});
     var ch=sb.channel('ch-'+convo.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'conversation_id=eq.'+convo.id},function(p){setMsgs(function(prev){return prev.concat([p.new]);});}).subscribe();
