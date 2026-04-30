@@ -42,7 +42,7 @@ function ChatBox({convo,onBack,onViewExpert,onCall}){
         React.createElement('div',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||convo;if(onViewExpert)onViewExpert(exp);},style:{fontSize:'13px',fontWeight:600,color:'var(--text)',cursor:'pointer'}},convo.name),
         React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role)
       ),
-      React.createElement('button',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||{...convo,rate:2,color:convo.color};setActiveCall(exp);},style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
+      React.createElement('button',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||Object.assign({},convo,{rate:2});if(onCall)onCall(exp);},style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
     ),
     React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'thin',scrollbarColor:'#4a4a6a transparent',justifyContent:'flex-end',}},
       msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi!'),
