@@ -2,7 +2,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#09090E;--bg2:#111117;--bg3:#17171F;--bg4:#1E1E28;--border:#28283A;--border2:#343448;--text:#EEEEF8;--t2:#8F8FAA;--t3:#52526A;--ac:#7B6EFF;--acg:rgba(123,110,255,.14);--green:#27C96A;--amber:#F5A623;--red:#EF4747;--pink:#E84D9A;}
 body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
-.app-container{width:390px;margin:0 auto;height:100vh;background:var(--bg);position:fixed;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;border-left:1px solid var(--border);border-right:1px solid var(--border);overflow:hidden;}
+.app-container{width:100%;max-width:390px;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:fixed;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;border-left:1px solid var(--border);border-right:1px solid var(--border);overflow:hidden;}
 .screen-content{flex:1;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none;min-height:0;}
 .screen-content::-webkit-scrollbar{display:none;}
 .bottom-nav{display:flex;align-items:center;background:var(--bg2);border-top:1px solid var(--border);padding:5px 2px 12px;flex-shrink:0;}
