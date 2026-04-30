@@ -71,6 +71,9 @@ export default function SearchScreen(props){
   var sel = useState(props.initExpert || null);
   var selected = sel[0];
   var setSelected = sel[1];
+  var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
+  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
   var ac = useState('all');
   var activecat = ac[0];
@@ -124,11 +127,11 @@ export default function SearchScreen(props){
           ),
           React.createElement('div', {style:{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}},
             React.createElement('button', {
-              onClick:function(ev){ev.stopPropagation();},
+              onClick:function(ev){ev.stopPropagation();setActiveCall(e);},
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             }, 'Call'),
             React.createElement('button', {
-              onClick:function(ev){ev.stopPropagation();},
+              onClick:function(ev){ev.stopPropagation();setActiveCall(e);},
               style:{padding:'5px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'7px',color:'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             }, 'Follow')
           )
