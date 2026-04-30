@@ -30,7 +30,6 @@ function ChatBox({convo,onBack,onViewExpert}){
     return function(){sb.removeChannel(ch);};
   },[convo.id]);
   useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   function send(){
     if(!txt.trim()) return;
     var m={conversation_id:convo.id,sender_id:uid,sender_name:'You',text:txt.trim()};
