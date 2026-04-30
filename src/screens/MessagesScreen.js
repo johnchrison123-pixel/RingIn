@@ -16,14 +16,11 @@ const CONVOS = [
   {id:4,initials:'JO',name:'James Okafor',role:'Corporate Lawyer',color:'linear-gradient(135deg,#B8860B,#F5A623)',last:'The contract looks good.',time:'2 days ago',unread:0},
 ];
 
-function ChatBox({convo,onBack,onViewExpert}){
-  var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
-  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+function ChatBox({convo,onBack,onViewExpert,onCall}){
   var mS=useState([]); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var uid='user_'+convo.id;
   var bottomRef=useRef(null);
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   useEffect(function(){
     sb.from('messages').select('*').eq('conversation_id',convo.id).order('created_at').then(function(r){if(r.data)setMsgs(r.data);});
     var ch=sb.channel('ch-'+convo.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'conversation_id=eq.'+convo.id},function(p){setMsgs(function(prev){return prev.concat([p.new]);});}).subscribe();
@@ -66,7 +63,10 @@ function ChatBox({convo,onBack,onViewExpert}){
 
 export default function MessagesScreen(props){
   var activeS=useState(null); var active=activeS[0]; var setActive=activeS[1];
-  if(active) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},React.createElement(ChatBox,{convo:active,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert}));
+  var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
+  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  if(active) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},React.createElement(ChatBox,{convo:active,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){setActiveCall(exp);}}));
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",background:"var(--bg)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px 7px"}}>
