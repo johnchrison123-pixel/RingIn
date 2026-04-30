@@ -24,14 +24,13 @@ function ChatBox({convo,onBack,onViewExpert}){
   var uid='user_'+convo.id;
   var bottomRef=useRef(null);
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
-  }});
   useEffect(function(){
     sb.from('messages').select('*').eq('conversation_id',convo.id).order('created_at').then(function(r){if(r.data)setMsgs(r.data);});
     var ch=sb.channel('ch-'+convo.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'conversation_id=eq.'+convo.id},function(p){setMsgs(function(prev){return prev.concat([p.new]);});}).subscribe();
     return function(){sb.removeChannel(ch);};
   },[convo.id]);
   useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
-  ,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   function send(){
     if(!txt.trim()) return;
     var m={conversation_id:convo.id,sender_id:uid,sender_name:'You',text:txt.trim()};
