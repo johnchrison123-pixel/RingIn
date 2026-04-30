@@ -123,7 +123,7 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'comp-att-btn'}, 'Photo'),
           React.createElement('div', {className:'comp-att-btn'}, 'Video')
         ),
-        React.createElement('button', {className:'comp-post-btn'}, 'Post')
+        React.createElement('button', {className:'comp-post-btn', onClick:function(){alert('Post feature coming soon!');}}, 'Post')
       )
     ),
     React.createElement('div', {style:{padding:'0 18px'}},

@@ -30,7 +30,7 @@ function ExpertProfile({expert, onBack, onCall}){
             onClick:function(){setFollow(!isFollowing);},
             style:{padding:'6px 12px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
           }, isFollowing ? 'Following' : '+ Follow'),
-          React.createElement('button', {style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
+          React.createElement('button', {onClick:function(){alert('Message '+expert.name+' coming soon!');},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
           React.createElement('button', {onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Call')
         )
       ),
