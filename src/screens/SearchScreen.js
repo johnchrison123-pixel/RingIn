@@ -1,7 +1,5 @@
 /* eslint-disable */
 import React,{useState,useEffect} from 'react';
-import {createClient} from '@supabase/supabase-js';
-var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease']},
@@ -29,7 +27,7 @@ function ExpertProfile({expert, onBack, onCall}){
         React.createElement('div', {style:{display:'none'}}, expert.initials),
         React.createElement('div', {style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button', {
-            onClick:toggleFollow,
+            onClick:function(){setFollow(!isFollowing);},
             style:{padding:'6px 12px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
           }, isFollowing ? 'Following' : '+ Follow'),
           React.createElement('button', {style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
