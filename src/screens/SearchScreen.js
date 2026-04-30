@@ -78,6 +78,7 @@ export default function SearchScreen(props){
   var activecat = ac[0];
   var setAc = ac[1];
 
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(selected){
     return React.createElement(ExpertProfile, {
     expert:selected,
