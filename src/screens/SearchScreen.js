@@ -73,11 +73,10 @@ export default function SearchScreen(props){
   var setSelected = sel[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
-  useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
   var ac = useState('all');
   var activecat = ac[0];
   var setAc = ac[1];
-
+  useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(selected){
     return React.createElement(ExpertProfile, {
