@@ -19,6 +19,7 @@ const CONVOS = [
 function ChatBox({convo,onBack,onViewExpert}){
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   var mS=useState([]); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
