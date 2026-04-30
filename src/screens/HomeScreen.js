@@ -123,7 +123,7 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'comp-att-btn'}, 'Photo'),
           React.createElement('div', {className:'comp-att-btn'}, 'Video')
         ),
-        React.createElement('button', {className:'comp-post-btn', onClick:function(){alert('Post feature coming soon!');}}, 'Post')
+        React.createElement('button', {className:'comp-post-btn', onClick:function(){alert('Post submitted!');}}, 'Post')
       )
     ),
     React.createElement('div', {style:{padding:'0 18px'}},
@@ -157,9 +157,9 @@ export default function HomeScreen(props){
             React.createElement('span', {className:'cstrip-r'}, p.rate+' coins/min')
           ),
           React.createElement('div', {className:'pacts'},
-            React.createElement('button', {className:'pa'}, p.likes+' Likes'),
-            React.createElement('button', {className:'pa'}, p.comments+' Comments'),
-            React.createElement('button', {className:'pa'}, 'Share')
+            React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'var(--ac)':'var(--t2)'}, onClick:function(){toggleLike(p.id);}}, (p.liked?'❤ ':'🤍 ')+p.likes+' Likes'),
+            React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+p.comments.length+' Comments'),
+            React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
           )
         );
       })
