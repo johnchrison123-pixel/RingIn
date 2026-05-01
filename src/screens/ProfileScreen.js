@@ -14,6 +14,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var avatarS=useState(null); var avatarUrl=avatarS[0]; var setAvatarUrl=avatarS[1];
   var coverS=useState(null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
   var uploadingS=useState(false); var uploading=uploadingS[0]; var setUploading=uploadingS[1];
+  var avatarMenuS=useState(false); var showAvatarMenu=avatarMenuS[0]; var setShowAvatarMenu=avatarMenuS[1];
+  var avatarViewS=useState(false); var showAvatarView=avatarViewS[0]; var setShowAvatarView=avatarViewS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var postsS=useState([
@@ -154,6 +156,40 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   // MAIN PROFILE
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    // Avatar view modal
+    showAvatarView ? React.createElement('div',{
+      onClick:function(){setShowAvatarView(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.9)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}},
+      React.createElement('div',{style:{width:'280px',height:'280px',borderRadius:'50%',overflow:'hidden',border:'4px solid #fff'}},
+        avatarUrl
+          ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}})
+          : React.createElement('div',{style:{width:'100%',height:'100%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'72px',fontWeight:700,color:'#fff'}},initials)
+      )
+    ) : null,
+    // Avatar menu modal
+    showAvatarMenu ? React.createElement('div',{
+      onClick:function(){setShowAvatarMenu(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',zIndex:9998,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+      React.createElement('div',{
+        onClick:function(e){e.stopPropagation();},
+        style:{width:'100%',maxWidth:'480px',background:'var(--bg)',borderRadius:'20px 20px 0 0',padding:'16px',paddingBottom:'32px'}},
+        React.createElement('div',{style:{width:'36px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}),
+        React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',textAlign:'center',marginBottom:'16px'}},'Profile Photo'),
+        [
+          {icon:'👁️',label:'View Photo',fn:function(){setShowAvatarMenu(false);setShowAvatarView(true);}},
+          {icon:'📷',label:'Take Photo',fn:function(){setShowAvatarMenu(false);document.getElementById('avatarCameraInput').click();}},
+          {icon:'🖼️',label:'Upload from Gallery',fn:function(){setShowAvatarMenu(false);document.getElementById('avatarFileInput').click();}},
+        ].map(function(opt,i){
+          return React.createElement('div',{key:i,onClick:opt.fn,style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px',borderRadius:'12px',cursor:'pointer',marginBottom:'4px',background:'var(--bg3)'}},
+            React.createElement('span',{style:{fontSize:'22px'}},opt.icon),
+            React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:'var(--text)'}},opt.label)
+          );
+        }),
+        React.createElement('div',{onClick:function(){setShowAvatarMenu(false);},style:{display:'flex',alignItems:'center',justifyContent:'center',padding:'14px',borderRadius:'12px',cursor:'pointer',marginTop:'8px',background:'var(--bg3)'}},
+          React.createElement('span',{style:{fontSize:'14px',fontWeight:600,color:'#ef4747'}},'Cancel')
+        )
+      )
+    ) : null,
     // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl ? React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}) : null,
