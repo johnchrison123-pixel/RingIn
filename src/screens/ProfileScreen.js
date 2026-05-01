@@ -105,7 +105,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           var url = pub.data.publicUrl+'?t='+Date.now();
           setAvatarUrl(url);
           localStorage.setItem('avatar_'+userId,url);
-          supabase.from('profiles').upsert({id:userId,avatar_url:url,email:email,full_name:email.split('@')[0]},{onConflict:'id'}).then(function(){});
+          var userEmail = (session&&session.user)?session.user.email:email;
+          supabase.from('profiles').upsert({id:userId,avatar_url:url,email:userEmail,full_name:userEmail.split('@')[0]},{onConflict:'id'}).then(function(r){console.log('avatar saved to profiles',r);});
           setUploading(false);
         });
       },'image/jpeg',0.9);
