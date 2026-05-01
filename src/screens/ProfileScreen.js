@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React,{useState} from 'react';
+import React,{useState,useEffect} from 'react';
 
 export default function ProfileScreen({session, supabase, onOpenWallet}){
   var email = session && session.user ? session.user.email : '';
