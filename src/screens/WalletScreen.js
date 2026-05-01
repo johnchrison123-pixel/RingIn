@@ -16,7 +16,8 @@ var TRANSACTIONS=[
   {id:4,type:'purchase',label:'Purchased 100 coins',coins:100,date:'Apr 27'},
 ];
 
-export default function WalletScreen(){
+export default function WalletScreen(props){
+  var onBack = props.onBack;
   var balS=useState(1240); var balance=balS[0];
   var selS=useState(null); var selected=selS[0]; var setSelected=selS[1];
   var payS=useState('card'); var payMethod=payS[0]; var setPayMethod=payS[1];
@@ -84,7 +85,8 @@ export default function WalletScreen(){
   );
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    React.createElement('div',{style:{padding:'14px 18px 8px'}},
+    React.createElement('div',{style:{padding:'14px 18px 8px',display:'flex',alignItems:'center',gap:'10px'}},
+      onBack && React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'0 6px 0 0'}},'<'),
       React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'My Wallet')
     ),
     React.createElement('div',{style:{margin:'0 18px 16px',background:'linear-gradient(135deg,#1a1040,#2d1b6e)',border:'1px solid rgba(123,110,255,.3)',borderRadius:'16px',padding:'20px',textAlign:'center'}},
