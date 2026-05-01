@@ -109,13 +109,18 @@ export default function HomeScreen(props){
     React.createElement('div', {className:'esc', onTouchStart:function(ev){ev.stopPropagation();}, onMouseDown:function(ev){ev.preventDefault&&ev.preventDefault();}},
       onlineExperts.map(function(e){
         return React.createElement('div', {key:e.id, className:'ecsm', style:{cursor:'pointer'}, onClick:function(){goToExpert(e);}},
-          React.createElement('div', {className:'eav', style:{background:e.color,overflow:'hidden',padding:0}},
-            e.img ? React.createElement('img',{src:e.img,alt:e.name,style:{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}}) : e.initials,
-            React.createElement('div', {className:'or'})
+          React.createElement('div', {style:{position:'relative',width:'48px',height:'48px',marginBottom:'6px'}},
+            React.createElement('div', {style:{width:'48px',height:'48px',borderRadius:'50%',background:e.color,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff'}},
+              e.img ? React.createElement('img',{src:e.img,alt:e.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : e.initials
+            ),
+            React.createElement('div', {style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
           ),
-          React.createElement('div', {className:'enm'}, e.name),
+          React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'1px'}},
+            React.createElement('div', {className:'enm',style:{flex:1}}, e.name),
+            React.createElement('span',{style:{fontSize:'8px',color:'#27C96A',fontWeight:600}},'● Online')
+          ),
           React.createElement('div', {className:'erl'}, e.role),
-          React.createElement('div', {style:{fontSize:'9px',color:'var(--amber)',marginBottom:'4px'}}, e.rate+' coins/min'),
+          React.createElement('div', {style:{fontSize:'9px',color:'#F5A623',marginBottom:'5px'}}, '⭐ '+e.rating+' · '+e.rate+' c/min'),
           React.createElement('button', {className:'cbtn', onClick:function(ev){ev.stopPropagation();setActiveCall(e);}}, 'Call Now')
         );
       })
