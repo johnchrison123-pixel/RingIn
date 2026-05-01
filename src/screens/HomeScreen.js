@@ -1,4 +1,4 @@
-import React,{useState} from 'react';
+import React,{useState,useEffect} from 'react';
 import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
@@ -20,6 +20,42 @@ export default function HomeScreen(props){
   var setAc = acState[1];
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
+  var searchQS=useState(''); var searchQ=searchQS[0]; var setSearchQ=searchQS[1];
+  var searchResS=useState(null); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
+  var searchingS=useState(false); var searching=searchingS[0]; var setSearching=searchingS[1];
+  var supabase = props.supabase;
+
+  var ALL_EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,img:'https://i.pravatar.cc/150?img=47',type:'expert'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,img:'https://i.pravatar.cc/150?img=12',type:'expert'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,img:'https://i.pravatar.cc/150?img=23',type:'expert'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,img:'https://i.pravatar.cc/150?img=33',type:'expert'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,img:'https://i.pravatar.cc/150?img=44',type:'expert'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness Coach',rate:50,rating:4.7,img:'https://i.pravatar.cc/150?img=15',type:'expert'}];
+  var ALL_SKILLS=['React Development','System Design','Career Planning','Public Speaking','Python','Machine Learning','Digital Marketing','UI/UX Design','Financial Planning','Legal Consulting'];
+  var ALL_WORKSHOPS=[{title:'How to Crack Google Interview',host:'Ravi Menon'},{title:'Managing Anxiety in 2026',host:'Dr. Layla Khalid'}];
+
+  function doSearch(q){
+    if(!q||!q.trim()){setSearchRes(null);return;}
+    setSearching(true);
+    var ql = q.toLowerCase();
+    // Search experts
+    var experts = ALL_EXPERTS.filter(function(e){return e.name.toLowerCase().includes(ql)||e.role.toLowerCase().includes(ql);});
+    // Search skills
+    var skills = ALL_SKILLS.filter(function(s){return s.toLowerCase().includes(ql);});
+    // Search workshops
+    var workshops = ALL_WORKSHOPS.filter(function(w){return w.title.toLowerCase().includes(ql)||w.host.toLowerCase().includes(ql);});
+    // Search real users from Supabase
+    if(supabase){
+      supabase.from('profiles').select('*').ilike('email',q+'%').then(function(res){
+        var users = res.data||[];
+        setSearchRes({experts:experts,skills:skills,workshops:workshops,users:users});
+        setSearching(false);
+      });
+    } else {
+      setSearchRes({experts:experts,skills:skills,workshops:workshops,users:[]});
+      setSearching(false);
+    }
+  }
+
+  useEffect(function(){
+    var timer = setTimeout(function(){doSearch(searchQ);},300);
+    return function(){clearTimeout(timer);};
+  },[searchQ]);
   var notifS=useState(false); var showNotif=notifS[0]; var setShowNotif=notifS[1];
   var NOTIFS=[
     {id:1,icon:'📞',text:'Dr. Priya Nair accepted your call request',time:'2m ago',unread:true},
@@ -81,7 +117,12 @@ export default function HomeScreen(props){
     ) : null,
     React.createElement('div', {className:'sbwrap'},
       React.createElement('div', {className:'sbar'},
-        React.createElement('input', {placeholder:'Search experts, topics, skills...'})
+        React.createElement('input', {
+          placeholder:'Search experts, skills, workshops...',
+          value:searchQ,
+          onChange:function(e){setSearchQ(e.target.value);},
+          style:{width:'100%'}
+        })
       ),
       React.createElement('div', {className:'frow'},
         React.createElement('div', {className:'ftag on'}, 'All Locations'),
@@ -90,6 +131,68 @@ export default function HomeScreen(props){
         React.createElement('div', {className:'ftag'}, 'Online Only')
       )
     ),
+    searchQ && searchQ.trim() ? React.createElement('div',{style:{padding:'0 18px',marginBottom:'8px'}},
+      searching ? React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'var(--t2)',fontSize:'13px'}},'Searching...') :
+      searchRes ? React.createElement('div',null,
+        // Users results
+        searchRes.users && searchRes.users.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
+          searchRes.users.map(function(u,i){
+            return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}},
+              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
+                u.avatar_url ? React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.email||'?').substring(0,2).toUpperCase()
+              ),
+              React.createElement('div',{style:{flex:1}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},(u.full_name||u.email||'').split('@')[0]),
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},u.email)
+              ),
+              React.createElement('button',{style:{padding:'5px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',color:'var(--ac)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Follow')
+            );
+          })
+        ) : null,
+        // Experts results
+        searchRes.experts && searchRes.experts.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Experts'),
+          searchRes.experts.map(function(e,i){
+            return React.createElement('div',{key:i,onClick:function(){if(onViewExpert)onViewExpert(e);setSearchQ('');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
+              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0,background:e.color||'var(--ac)'}},
+                e.img ? React.createElement('img',{src:e.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : e.initials
+              ),
+              React.createElement('div',{style:{flex:1}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},e.name),
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},e.role)
+              ),
+              React.createElement('span',{style:{fontSize:'10px',color:'var(--amber)',fontWeight:600}},e.rate+' c/min')
+            );
+          })
+        ) : null,
+        // Skills results
+        searchRes.skills && searchRes.skills.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Skills'),
+          React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
+            searchRes.skills.map(function(s,i){
+              return React.createElement('div',{key:i,style:{padding:'6px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',fontSize:'12px',color:'var(--ac)',cursor:'pointer'}},s);
+            })
+          )
+        ) : null,
+        // Workshops results
+        searchRes.workshops && searchRes.workshops.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Workshops'),
+          searchRes.workshops.map(function(w,i){
+            return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}},
+              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'10px',background:'linear-gradient(135deg,#1a1a2e,#534AB7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}},'🎓'),
+              React.createElement('div',{style:{flex:1}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},w.title),
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'by '+w.host)
+              )
+            );
+          })
+        ) : null,
+        // No results
+        searchRes.experts.length===0 && searchRes.users.length===0 && searchRes.skills.length===0 && searchRes.workshops.length===0 ?
+          React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t2)',fontSize:'13px'}},'No results for "'+searchQ+'"') : null
+      ) : null
+    ) : null,
     React.createElement('div', {className:'sh'},
       React.createElement('div', {className:'st'}, 'Categories'),
       React.createElement('div', {className:'sa'}, 'See all')
