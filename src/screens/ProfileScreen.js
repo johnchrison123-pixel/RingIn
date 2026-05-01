@@ -67,20 +67,39 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   function saveAvatar(){
     if(!adjustImg||!userId) return;
-    setUploading(true);
-    setShowAdjust(false);
-    // Convert base64 to blob and upload
-    fetch(adjustImg).then(function(r){return r.blob();}).then(function(blob){
-      var fileName = userId+'.jpg';
-      supabase.storage.from('avatars').upload(fileName,blob,{upsert:true,contentType:'image/jpeg'}).then(function(res){
-        if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
-        var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
-        var url = pub.data.publicUrl+'?t='+Date.now();
-        setAvatarUrl(url);
-        localStorage.setItem('avatar_'+userId,url);
-        setUploading(false);
-      });
-    });
+    // Use canvas to capture the adjusted position
+    var canvas = document.createElement('canvas');
+    canvas.width = 280;
+    canvas.height = 280;
+    var ctx = canvas.getContext('2d');
+    // Draw circle clip
+    ctx.beginPath();
+    ctx.arc(140,140,140,0,Math.PI*2);
+    ctx.clip();
+    var img = new Image();
+    img.onload = function(){
+      // Calculate size to fit full image
+      var scale = Math.min(500/img.width, 500/img.height);
+      var w = img.width * scale;
+      var h = img.height * scale;
+      var x = 140 - w/2 + offset.x;
+      var y = 140 - h/2 + offset.y;
+      ctx.drawImage(img, x, y, w, h);
+      canvas.toBlob(function(blob){
+        setUploading(true);
+        setShowAdjust(false);
+        var fileName = userId+'.jpg';
+        supabase.storage.from('avatars').upload(fileName,blob,{upsert:true,contentType:'image/jpeg'}).then(function(res){
+          if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
+          var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
+          var url = pub.data.publicUrl+'?t='+Date.now();
+          setAvatarUrl(url);
+          localStorage.setItem('avatar_'+userId,url);
+          setUploading(false);
+        });
+      },'image/jpeg',0.9);
+    };
+    img.src = adjustImg;
   }
 
   function uploadCover(file){
