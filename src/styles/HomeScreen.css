@@ -16,10 +16,10 @@
 .frow::-webkit-scrollbar{display:none;}
 .ftag{display:flex;align-items:center;gap:3px;padding:4px 9px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;font-size:10px;font-weight:500;color:var(--t2);cursor:pointer;white-space:nowrap;transition:all .2s;flex-shrink:0;}
 .ftag.on,.ftag:hover{background:var(--acg);border-color:var(--ac);color:var(--ac);}
-.sh{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 8px;margin-bottom:6px;}
+.sh{display:flex;align-items:center;justify-content:space-between;padding:8px 18px 5px;margin-bottom:2px;}
 .st{font-size:13px;font-weight:600;color:var(--text);font-family:'Syne',sans-serif;}
 .sa{font-size:11px;color:var(--ac);cursor:pointer;}
-.cats{display:flex;gap:6px;padding:0 18px 2px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;}
+.cats{display:flex;gap:6px;padding:0 18px 2px;overflow-x:auto;scrollbar-width:none;margin-bottom:2px;}
 .cats::-webkit-scrollbar{display:none;}
 .cp{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 9px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all .2s;flex-shrink:0;min-width:56px;}
 .cp.on,.cp:hover{background:var(--acg);border-color:var(--ac);}
@@ -79,7 +79,7 @@
 .cstrip-r{font-size:10px;color:var(--t2);}
 
 .cats{display:flex;gap:6px;padding:0 18px 10px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;min-height:70px;}
-.esc{display:flex;gap:8px;padding:0 18px 16px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;min-height:180px;-webkit-overflow-scrolling:touch;user-select:none;touch-action:pan-x;overscroll-behavior-x:contain;}
+.esc{display:flex;gap:8px;padding:0 18px 6px;overflow-x:auto;scrollbar-width:none;margin-bottom:2px;min-height:180px;-webkit-overflow-scrolling:touch;user-select:none;touch-action:pan-x;overscroll-behavior-x:contain;}
 .cp{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 9px;background:#17171F;border:1px solid #28283A;border-radius:10px;cursor:pointer;flex-shrink:0;min-width:56px;min-height:58px;}
 .ecsm{background:#17171F;border:1px solid #28283A;border-radius:12px;padding:10px;flex-shrink:0;width:140px;min-height:165px;cursor:pointer;}
 .wb-card{background:#17171F;border:1px solid #28283A;border-radius:13px;margin:0 18px 9px;overflow:hidden;cursor:pointer;}
