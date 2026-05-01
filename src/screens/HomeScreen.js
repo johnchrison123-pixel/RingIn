@@ -115,9 +115,8 @@ export default function HomeScreen(props){
             ),
             React.createElement('div', {style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
           ),
-          React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'1px'}},
-            React.createElement('div', {className:'enm',style:{flex:1}}, e.name),
-            React.createElement('span',{style:{fontSize:'8px',color:'#27C96A',fontWeight:600}},'● Online')
+          React.createElement('div', {style:{marginBottom:'1px'}},
+            React.createElement('div', {className:'enm'}, e.name)
           ),
           React.createElement('div', {className:'erl'}, e.role),
           React.createElement('div', {style:{fontSize:'9px',color:'#F5A623',marginBottom:'5px'}}, '⭐ '+e.rating+' · '+e.rate+' c/min'),
