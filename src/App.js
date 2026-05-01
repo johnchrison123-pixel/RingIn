@@ -27,7 +27,16 @@ export default function App() {
 
   useEffect(function() {
     supabase.auth.getSession().then(function(res) { setSession(res.data.session); });
-    supabase.auth.onAuthStateChange(function(_event, session) { setSession(session); });
+    supabase.auth.onAuthStateChange(function(_event, session) {
+      setSession(session);
+      if(session && session.user){
+        supabase.from('profiles').upsert({
+          id: session.user.id,
+          email: session.user.email,
+          full_name: session.user.email.split('@')[0]
+        }).then(function(){});
+      }
+    });
   }, []);
 
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }

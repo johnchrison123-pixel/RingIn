@@ -138,7 +138,7 @@ export default function HomeScreen(props){
         searchRes.users && searchRes.users.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
           searchRes.users.map(function(u,i){
-            return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}},
+            return React.createElement('div',{key:i,onClick:function(){alert('Profile of '+((u.full_name||u.email||'').split('@')[0])+' coming soon!');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
                 u.avatar_url ? React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.email||'?').substring(0,2).toUpperCase()
               ),
@@ -146,7 +146,7 @@ export default function HomeScreen(props){
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},(u.full_name||u.email||'').split('@')[0]),
                 React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},u.email)
               ),
-              React.createElement('button',{style:{padding:'5px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',color:'var(--ac)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Follow')
+              React.createElement('button',{onClick:function(){alert('View profile of '+((u.full_name||u.email||'').split('@')[0])+' coming soon!');},style:{padding:'5px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',color:'var(--ac)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'View Profile')
             );
           })
         ) : null,
@@ -179,7 +179,7 @@ export default function HomeScreen(props){
         searchRes.workshops && searchRes.workshops.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Workshops'),
           searchRes.workshops.map(function(w,i){
-            return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}},
+            return React.createElement('div',{key:i,onClick:function(){alert('Profile of '+((u.full_name||u.email||'').split('@')[0])+' coming soon!');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'10px',background:'linear-gradient(135deg,#1a1a2e,#534AB7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}},'🎓'),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},w.title),
