@@ -37,7 +37,7 @@ function ChatBox({convo,onBack,onViewExpert,onCall}){
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
       React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'<'),
-      React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:convo.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff'}},convo.initials),
+      React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:convo.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',overflow:'hidden'}},convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):convo.initials),
       React.createElement('div',{style:{flex:1}},
         React.createElement('div',{onClick:function(){var exp=EXPERTS.find(function(e){return e.name===convo.name;})||convo;if(onViewExpert)onViewExpert(exp);},style:{fontSize:'13px',fontWeight:600,color:'var(--text)',cursor:'pointer'}},convo.name),
         React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role)
