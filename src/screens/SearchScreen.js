@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect} from 'react';
+import CallScreen from './CallScreen';
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease']},
@@ -131,7 +132,7 @@ export default function SearchScreen(props){
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             }, 'Call'),
             React.createElement('button', {
-              onClick:function(ev){ev.stopPropagation();setActiveCall(e);},
+              onClick:function(ev){ev.stopPropagation();alert('Follow '+e.name+'!');},
               style:{padding:'5px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'7px',color:'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             }, 'Follow')
           )
