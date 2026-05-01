@@ -9,7 +9,7 @@ var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',vie
 
 export default function HomeScreen(props){
   var acState = useState('all');
-  var postsS=useState([{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2}]);
+  var postsS=useState([{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]);
   var posts=postsS[0]; var setPosts=postsS[1];
   var cpS=useState(null); var commentPost=cpS[0]; var setCommentPost=cpS[1];
   var ctS=useState(''); var commentText=ctS[0]; var setCommentText=ctS[1];
@@ -170,9 +170,9 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'ph'},
             React.createElement('div', {
               className:'pav',
-              style:{background:p.color, cursor:'pointer'},
+              style:{background:p.color, cursor:'pointer', overflow:'hidden', padding:0},
               onClick:function(){goToExpertById(p.expertId);}
-            }, p.initials),
+            }, p.img ? React.createElement('img',{src:p.img,alt:p.name,style:{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}}) : p.initials),
             React.createElement('div', null,
               React.createElement('div', {
                 className:'pn',
@@ -183,7 +183,7 @@ export default function HomeScreen(props){
             ),
             React.createElement('div', {className:'pt'}, p.time)
           ),
-          React.createElement('div', {className:'piph'}, 'post'),
+          p.postImg ? React.createElement('img',{src:p.postImg,alt:'post',style:{width:'100%',height:'280px',objectFit:'cover',display:'block'}}) : null,
           React.createElement('div', {className:'pb'},
             React.createElement('div', {className:'ptxt'}, p.text),
             React.createElement('div', null,
@@ -195,7 +195,7 @@ export default function HomeScreen(props){
             React.createElement('span', {className:'cstrip-r'}, p.rate+' coins/min')
           ),
           React.createElement('div', {className:'pacts'},
-            React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'var(--ac)':'var(--t2)'}, onClick:function(){toggleLike(p.id);}}, (p.liked?'❤ ':'🤍 ')+p.likes+' Likes'),
+            React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'#E84D9A':'var(--t2)',fontSize:'13px',fontWeight:p.liked?700:400,gap:'5px'}, onClick:function(){toggleLike(p.id);}}, React.createElement('span',{style:{fontSize:'18px',lineHeight:1}},p.liked?'❤️':'🤍'), React.createElement('span',null,p.likes)),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+p.comments.length+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
           )
