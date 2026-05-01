@@ -76,7 +76,7 @@ export default function MessagesScreen(props){
       <div style={{padding:"0 16px",overflowY:"auto",flex:1}}>
         {CONVOS.map(c=>(
           <div key={c.id} style={{display:"flex",alignItems:"center",gap:"11px",padding:"11px 0",borderBottom:"1px solid var(--border)",cursor:"pointer"}} onClick={()=>setActive(c)}>
-            <div style={{width:"42px",height:"42px",borderRadius:"50%",background:c.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",fontWeight:700,color:"#fff",flexShrink:0}}>{c.initials}</div>
+            <div style={{width:"42px",height:"42px",borderRadius:"50%",background:c.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",fontWeight:700,color:"#fff",flexShrink:0,overflow:"hidden"}}>{c.img?<img src={c.img} alt={c.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:c.initials}</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px"}}>
                 <span style={{fontSize:"13px",fontWeight:600,color:"var(--text)"}}>{c.name}</span>
