@@ -10,10 +10,10 @@ var EXPERTS=[
 ];
 var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 const CONVOS = [
-  {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2},
-  {id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',last:'I will send you the resources.',time:'1h ago',unread:0},
-  {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',last:'Great progress! Keep it up.',time:'Yesterday',unread:1},
-  {id:4,initials:'JO',name:'James Okafor',role:'Corporate Lawyer',color:'linear-gradient(135deg,#B8860B,#F5A623)',last:'The contract looks good.',time:'2 days ago',unread:0},
+  {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47'},
+  {id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',last:'I will send you the resources.',time:'1h ago',unread:0,img:'https://i.pravatar.cc/150?img=12'},
+  {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',last:'Great progress! Keep it up.',time:'Yesterday',unread:1,img:'https://i.pravatar.cc/150?img=23'},
+  {id:4,initials:'JO',name:'James Okafor',role:'Corporate Lawyer',color:'linear-gradient(135deg,#B8860B,#F5A623)',last:'The contract looks good.',time:'2 days ago',unread:0,img:'https://i.pravatar.cc/150?img=33'},
 ];
 
 function ChatBox({convo,onBack,onViewExpert,onCall}){
