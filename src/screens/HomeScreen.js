@@ -19,6 +19,7 @@ export default function HomeScreen(props){
   var ac = acState[0];
   var setAc = acState[1];
   var onViewExpert = props.onViewExpert;
+  var onOpenWallet = props.onOpenWallet;
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
@@ -37,7 +38,7 @@ export default function HomeScreen(props){
     React.createElement('div', {className:'topbar'},
       React.createElement('div', {className:'brand'}, 'RingIn'),
       React.createElement('div', {className:'tbr'},
-        React.createElement('div', {className:'wchip'},
+        React.createElement('div', {className:'wchip', onClick:function(){if(onOpenWallet)onOpenWallet();}, style:{cursor:'pointer'}},
           React.createElement('div', {className:'wc'}, 'C'),
           React.createElement('span', null, '1,240')
         ),
