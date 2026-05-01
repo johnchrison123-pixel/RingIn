@@ -106,7 +106,7 @@ export default function HomeScreen(props){
       React.createElement('div', {className:'st'}, 'Online Now'),
       React.createElement('div', {className:'sa'}, 'See all')
     ),
-    React.createElement('div', {className:'esc', onMouseDown:function(ev){ev.preventDefault&&ev.preventDefault();}},
+    React.createElement('div', {className:'esc', onTouchStart:function(ev){ev.stopPropagation();}, onMouseDown:function(ev){ev.preventDefault&&ev.preventDefault();}},
       onlineExperts.map(function(e){
         return React.createElement('div', {key:e.id, className:'ecsm', style:{cursor:'pointer'}, onClick:function(){goToExpert(e);}},
           React.createElement('div', {className:'eav', style:{background:e.color,overflow:'hidden',padding:0}},

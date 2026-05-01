@@ -79,7 +79,7 @@
 .cstrip-r{font-size:10px;color:var(--t2);}
 
 .cats{display:flex;gap:6px;padding:0 18px 10px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;min-height:70px;}
-.esc{display:flex;gap:8px;padding:0 18px 10px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;min-height:120px;-webkit-overflow-scrolling:touch;user-select:none;}
+.esc{display:flex;gap:8px;padding:0 18px 10px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;min-height:120px;-webkit-overflow-scrolling:touch;user-select:none;touch-action:pan-x;overscroll-behavior-x:contain;}
 .cp{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 9px;background:#17171F;border:1px solid #28283A;border-radius:10px;cursor:pointer;flex-shrink:0;min-width:56px;min-height:58px;}
 .ecsm{background:#17171F;border:1px solid #28283A;border-radius:12px;padding:10px;flex-shrink:0;width:132px;min-height:130px;cursor:pointer;}
 .wb-card{background:#17171F;border:1px solid #28283A;border-radius:13px;margin:0 18px 9px;overflow:hidden;cursor:pointer;}
