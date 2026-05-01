@@ -50,7 +50,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     if(!userId) return;
     var saved = localStorage.getItem('avatar_'+userId);
     var savedCover = localStorage.getItem('cover_'+userId);
-    if(saved) setAvatarUrl(saved);
+    if(saved){
+      setAvatarUrl(saved);
+    } else {
+      // Load from Supabase if not in localStorage
+      supabase.from('profiles').select('avatar_url').eq('id',userId).single().then(function(res){
+        if(res.data&&res.data.avatar_url){
+          setAvatarUrl(res.data.avatar_url);
+          localStorage.setItem('avatar_'+userId,res.data.avatar_url);
+        }
+      });
+    }
     if(savedCover) setCoverUrl(savedCover);
   },[userId]);
 
