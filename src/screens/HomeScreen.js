@@ -20,6 +20,16 @@ export default function HomeScreen(props){
   var setAc = acState[1];
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
+  var notifS=useState(false); var showNotif=notifS[0]; var setShowNotif=notifS[1];
+  var NOTIFS=[
+    {id:1,icon:'📞',text:'Dr. Priya Nair accepted your call request',time:'2m ago',unread:true},
+    {id:2,icon:'🪙',text:'You received 50 bonus coins! Limited offer.',time:'15m ago',unread:true},
+    {id:3,icon:'❤️',text:'Ravi Menon liked your post',time:'1h ago',unread:true},
+    {id:4,icon:'💬',text:'Sara Al Zaabi commented on your post',time:'2h ago',unread:false},
+    {id:5,icon:'🎓',text:'New workshop: Crack Google Interview — starts in 1 hour',time:'3h ago',unread:false},
+    {id:6,icon:'⭐',text:'You have a new review from a recent call',time:'Yesterday',unread:false},
+  ];
+  var onOpenWallet = props.onOpenWallet;
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
@@ -42,7 +52,7 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'wc'}, 'C'),
           React.createElement('span', null, '1,240')
         ),
-        React.createElement('div', {className:'ibt'},
+        React.createElement('div', {className:'ibt', onClick:function(){setShowNotif(!showNotif);}, style:{cursor:'pointer',position:'relative'}},
           React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'var(--t2)',strokeWidth:2,width:15,height:15},
             React.createElement('path', {d:'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0'})
           ),
@@ -50,6 +60,25 @@ export default function HomeScreen(props){
         )
       )
     ),
+    showNotif ? React.createElement('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999}},
+      React.createElement('div', {onClick:function(){setShowNotif(false);}, style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)'}}),
+      React.createElement('div', {style:{position:'absolute',top:0,left:0,right:0,background:'var(--bg)',borderBottomLeftRadius:'16px',borderBottomRightRadius:'16px',boxShadow:'0 8px 32px rgba(0,0,0,0.4)',zIndex:1000,maxHeight:'80vh',overflowY:'auto'}},
+        React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px 10px'}},
+          React.createElement('div', {style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notifications'),
+          React.createElement('button', {onClick:function(){setShowNotif(false);}, style:{background:'none',border:'none',color:'var(--t2)',fontSize:'18px',cursor:'pointer'}},'✕')
+        ),
+        NOTIFS.map(function(n){
+          return React.createElement('div', {key:n.id, style:{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 18px',borderTop:'1px solid var(--border)',background:n.unread?'rgba(123,110,255,0.06)':'transparent'}},
+            React.createElement('div', {style:{fontSize:'20px',flexShrink:0}}, n.icon),
+            React.createElement('div', {style:{flex:1}},
+              React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.text),
+              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, n.time)
+            ),
+            n.unread ? React.createElement('div', {style:{width:'7px',height:'7px',borderRadius:'50%',background:'var(--ac)',flexShrink:0,marginTop:'4px'}}) : null
+          );
+        })
+      )
+    ) : null,
     React.createElement('div', {className:'sbwrap'},
       React.createElement('div', {className:'sbar'},
         React.createElement('input', {placeholder:'Search experts, topics, skills...'})
