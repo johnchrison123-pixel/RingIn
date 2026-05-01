@@ -201,7 +201,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           onTouchMove:function(e){if(!dragging)return;e.preventDefault();setOffset({x:e.touches[0].clientX-dragStart.x,y:e.touches[0].clientY-dragStart.y});},
           onTouchEnd:function(){setDragging(false);}
         },
-          React.createElement('img',{src:adjustImg,style:{width:'400px',height:'400px',objectFit:'cover',position:'absolute',top:'50%',left:'50%',transform:'translate(calc(-50% + '+offset.x+'px), calc(-50% + '+offset.y+'px))',transition:dragging?'none':'transform 0.1s',userSelect:'none',pointerEvents:'none'}})
+          React.createElement('img',{src:adjustImg,style:{maxWidth:'500px',maxHeight:'500px',width:'auto',height:'auto',position:'absolute',top:'50%',left:'50%',transform:'translate(calc(-50% + '+offset.x+'px), calc(-50% + '+offset.y+'px))',transition:dragging?'none':'transform 0.1s',userSelect:'none',pointerEvents:'none',display:'block'}})
         )
       ),
       React.createElement('div',{style:{padding:'16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px'}},'Drag to reposition your photo')
