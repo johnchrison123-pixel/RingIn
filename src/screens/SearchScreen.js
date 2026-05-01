@@ -1,6 +1,9 @@
 /* eslint-disable */
 import React,{useState,useEffect} from 'react';
 import CallScreen from './CallScreen';
+import {useFollow} from './useFollow';
+var sb = null;
+try{ var {createClient} = require('@supabase/supabase-js'); sb = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY); }catch(e){}
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
@@ -28,9 +31,9 @@ function ExpertProfile({expert, onBack, onCall}){
         React.createElement('div', {style:{display:'none'}}, expert.initials),
         React.createElement('div', {style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button', {
-            onClick:function(){setFollow(!isFollowing);},
-            style:{padding:'6px 12px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
-          }, isFollowing ? 'Following' : '+ Follow'),
+            onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
+            style:{padding:'6px 12px',background:following[String(expert.id)]?'var(--acg)':'var(--ac)',border:following[String(expert.id)]?'1px solid var(--ac)':'none',borderRadius:'8px',color:following[String(expert.id)]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
+          }, following[String(expert.id)] ? 'Following' : '+ Follow'),
           React.createElement('button', {onClick:function(){alert('Message '+expert.name+' coming soon!');},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
           React.createElement('button', {onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Call')
         )
@@ -70,6 +73,11 @@ function ExpertProfile({expert, onBack, onCall}){
 
 export default function SearchScreen(props){
   var onOpenWallet = props.onOpenWallet;
+  var session = props.session;
+  var currentUserId = session&&session.user ? session.user.id : null;
+  var followHook = useFollow(sb, currentUserId);
+  var following = followHook.following;
+  var toggleFollow = followHook.toggleFollow;
   var sel = useState(props.initExpert || null);
   var selected = sel[0];
   var setSelected = sel[1];
@@ -133,9 +141,9 @@ export default function SearchScreen(props){
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             }, 'Call'),
             React.createElement('button', {
-              onClick:function(ev){ev.stopPropagation();alert('Follow '+e.name+'!');},
-              style:{padding:'5px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'7px',color:'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
-            }, 'Follow')
+              onClick:function(ev){ev.stopPropagation();toggleFollow(String(e.id),e.name,e.img,e.role);},
+              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
+            }, following[String(e.id)] ? 'Following' : 'Follow')
           )
         );
       })
