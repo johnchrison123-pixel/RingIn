@@ -11,10 +11,8 @@ const EXPERTS = [
   {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience. Helped 500+ professionals land their dream jobs.',tags:['Career Strategy','LinkedIn','Interviews'],img:'https://i.pravatar.cc/150?img=23'},
 ];
 
-function ExpertProfile({expert, onBack, onCall}){
-  var follow = useState(false);
-  var isFollowing = follow[0];
-  var setFollow = follow[1];
+function ExpertProfile({expert, onBack, onCall, following, toggleFollow}){
+  var isFollowing = following ? !!following[String(expert.id)] : false;
 
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     React.createElement('button', {
@@ -91,6 +89,8 @@ export default function SearchScreen(props){
   if(selected){
     return React.createElement(ExpertProfile, {
     expert:selected,
+    following:following,
+    toggleFollow:toggleFollow,
     onCall:function(exp){setActiveCall(exp);},
     onBack:function(){
       setSelected(null);
