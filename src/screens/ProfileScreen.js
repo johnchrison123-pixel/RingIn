@@ -28,10 +28,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     {name:'Fatima M.',text:'Learned a lot from this call.',rating:4,time:'1 week ago',img:'https://i.pravatar.cc/150?img=44'},
   ];
 
-  var POSTS=[
-    {text:'Just had an amazing call with Dr. Priya! Highly recommend.',likes:12,time:'1h ago'},
-    {text:'Learning React step by step with RingIn experts.',likes:8,time:'Yesterday'},
-  ];
+  var postsS=useState([
+    {id:1,text:'Just had an incredible consultation with Dr. Priya Nair. She explained everything so clearly. Highly recommend her to anyone!',likes:['Ahmed K.','Fatima M.','Sara Z.'],liked:false,time:'1h ago',img:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80',comments:[]},
+    {id:2,text:'Learning system design with Ravi Menon on RingIn. Best investment I made this month. Already cracked 2 interviews!',likes:['Ravi M.','James T.','Layla K.'],liked:false,time:'Yesterday',img:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80',comments:[]},
+    {id:3,text:'Sara Al Zaabi helped me rebuild my LinkedIn profile from scratch. Got 3 recruiter messages in one week after that session!',likes:['Dr. Priya','Ahmed K.','Fatima M.'],liked:false,time:'2 days ago',img:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&q=80',comments:[]},
+  ]); var myPosts=postsS[0]; var setMyPosts=postsS[1];
+  var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
+  var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
+  var EMOJIS=['😊','😂','❤️','🔥','👏','🎉','💪','🙌','😍','🤔','👍','✨','🚀','💡','🎯'];
 
   // Settings panel
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
@@ -130,19 +134,82 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     // Tab content
     React.createElement('div',{style:{padding:'0 18px 80px'}},
       activeTab==='posts' ? React.createElement('div',null,
-        POSTS.map(function(p,i){
-          return React.createElement('div',{key:i,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'10px'}},
-            React.createElement('div',{style:{fontSize:'12px',color:'var(--text)',lineHeight:1.5,marginBottom:'8px'}},p.text),
-            React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},p.time),
-              React.createElement('span',{style:{fontSize:'11px',color:'var(--t2)'}},'❤️ '+p.likes)
+        // Composer
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px',marginBottom:'14px'}},
+          React.createElement('div',{style:{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'10px'}},
+            React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},initials),
+            React.createElement('textarea',{
+              value:postText,
+              onChange:function(e){setPostText(e.target.value);},
+              placeholder:"What's on your mind?",
+              style:{flex:1,background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 11px',fontSize:'13px',color:'var(--text)',outline:'none',resize:'none',minHeight:'70px',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}
+            })
+          ),
+          // Emoji picker
+          showEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px',background:'var(--bg4)',borderRadius:'10px',marginBottom:'8px'}},
+            EMOJIS.map(function(em){
+              return React.createElement('span',{key:em,onClick:function(){setPostText(function(t){return t+em;});setShowEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
+            })
+          ) : null,
+          // Action buttons row
+          React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+            React.createElement('div',{style:{display:'flex',gap:'6px'}},
+              React.createElement('button',{onClick:function(){alert('Image upload coming soon!');},style:{display:'flex',alignItems:'center',gap:'4px',padding:'6px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'11px',cursor:'pointer',fontWeight:500}},
+                React.createElement('span',null,'🖼️'),'Photo'
+              ),
+              React.createElement('button',{onClick:function(){alert('GIF picker coming soon!');},style:{display:'flex',alignItems:'center',gap:'4px',padding:'6px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'11px',cursor:'pointer',fontWeight:500}},
+                React.createElement('span',null,'🎞️'),'GIF'
+              ),
+              React.createElement('button',{onClick:function(){setShowEmoji(!showEmoji);},style:{display:'flex',alignItems:'center',gap:'4px',padding:'6px 10px',background:showEmoji?'var(--acg)':'var(--bg4)',border:'1px solid '+(showEmoji?'var(--ac)':'var(--border)'),borderRadius:'20px',color:showEmoji?'var(--ac)':'var(--t2)',fontSize:'11px',cursor:'pointer',fontWeight:500}},
+                React.createElement('span',null,'😊'),'Emoji'
+              )
+            ),
+            React.createElement('button',{
+              onClick:function(){
+                if(!postText.trim()){alert('Write something first!');return;}
+                var newPost={id:Date.now(),text:postText,likes:[],liked:false,time:'Just now',img:null,comments:[]};
+                setMyPosts(function(prev){return [newPost,...prev];});
+                setPostText('');
+              },
+              style:{padding:'7px 18px',background:'var(--ac)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer'}
+            },'Post')
+          )
+        ),
+        // Posts list
+        myPosts.map(function(p){
+          return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
+            // Post header
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px'}},
+              React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},initials),
+              React.createElement('div',{style:{flex:1}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},email.split('@')[0]),
+                React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},p.time)
+              )
+            ),
+            // Post text
+            React.createElement('div',{style:{padding:'0 12px 8px',fontSize:'13px',color:'var(--text)',lineHeight:1.6}},p.text),
+            // Post image
+            p.img ? React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}) : null,
+            // Likes count
+            p.likes.length>0 ? React.createElement('div',{style:{padding:'6px 12px',fontSize:'11px',color:'var(--t3)',borderTop:'1px solid var(--border)'}},
+              '❤️ '+p.likes.join(', ')+' liked this'
+            ) : null,
+            // Action buttons
+            React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
+              React.createElement('button',{
+                onClick:function(){setMyPosts(function(prev){return prev.map(function(pp){if(pp.id!==p.id)return pp;var newLikes=p.liked?p.likes.slice(0,-1):[...p.likes,'You'];return Object.assign({},pp,{liked:!pp.liked,likes:newLikes});});});},
+                style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}
+              },React.createElement('span',{style:{fontSize:'18px'}},p.liked?'❤️':'🤍'),p.likes.length,' Like'),
+              React.createElement('button',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
+                React.createElement('span',{style:{fontSize:'16px'}},'💬'),'Comment'
+              ),
+              React.createElement('button',{
+                onClick:function(){try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');},
+                style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
+              },React.createElement('span',{style:{fontSize:'16px'}},'↗'),'Share')
             )
           );
-        }),
-        React.createElement('div',{style:{background:'var(--bg3)',border:'1px dashed var(--border)',borderRadius:'12px',padding:'20px',textAlign:'center',cursor:'pointer'}},
-          React.createElement('div',{style:{fontSize:'24px',marginBottom:'6px'}},'✏️'),
-          React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)'}},'Write a post')
-        )
+        })
       ) : null,
       activeTab==='friends' ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'10px'}},'Experts You Follow'),
