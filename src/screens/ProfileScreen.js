@@ -99,12 +99,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   // Main profile page
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Cover photo
-    React.createElement('div',{style:{height:'130px',background:'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,cursor:'pointer'}},
-      React.createElement('div',{style:{position:'absolute',top:'10px',right:'10px',background:'rgba(0,0,0,0.4)',borderRadius:'20px',padding:'4px 10px',fontSize:'10px',color:'#fff',cursor:'pointer'}},'✏️ Edit Cover'),
+    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,cursor:'pointer',overflow:'hidden'}},
+      coverUrl ? React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}) : null,
+      React.createElement('label',{style:{position:'absolute',top:'10px',right:'10px',background:'rgba(0,0,0,0.5)',borderRadius:'20px',padding:'4px 10px',fontSize:'10px',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px'}},
+        uploading?'Uploading...':'✏️ Edit Cover',
+        React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0])uploadCover(e.target.files[0]);}})
+      ),
       // Avatar
-      React.createElement('div',{style:{position:'absolute',bottom:'-36px',left:'18px',width:'72px',height:'72px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',cursor:'pointer',zIndex:2}},
-        initials,
-        React.createElement('div',{style:{position:'absolute',bottom:'2px',right:'2px',background:'var(--ac)',borderRadius:'50%',width:'18px',height:'18px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',border:'2px solid var(--bg)'}},'✏️')
+      React.createElement('div',{style:{position:'absolute',bottom:'-36px',left:'18px',width:'72px',height:'72px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',cursor:'pointer',zIndex:2,overflow:'hidden'}},
+        avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials,
+        React.createElement('label',{style:{position:'absolute',bottom:0,left:0,right:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',height:'24px',cursor:'pointer',fontSize:'12px'}},
+          uploading?'..':'📷',
+          React.createElement('input',{type:'file',accept:'image/*',capture:'user',style:{display:'none'},onChange:function(e){if(e.target.files[0])uploadAvatar(e.target.files[0]);}})
+        )
       )
     ),
     // Name row
