@@ -34,7 +34,7 @@ export default function App() {
           id: session.user.id,
           email: session.user.email,
           full_name: session.user.email.split('@')[0]
-        }).then(function(){});
+        },{onConflict:'id'}).then(function(){});
       }
     });
   }, []);

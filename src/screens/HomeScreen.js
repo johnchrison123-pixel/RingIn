@@ -42,7 +42,7 @@ export default function HomeScreen(props){
     var workshops = ALL_WORKSHOPS.filter(function(w){return w.title.toLowerCase().includes(ql)||w.host.toLowerCase().includes(ql);});
     // Search real users from Supabase
     if(supabase){
-      supabase.from('profiles').select('*').ilike('email',q+'%').then(function(res){
+      supabase.from('profiles').select('*').or('email.ilike.%'+q+'%,full_name.ilike.%'+q+'%').then(function(res){
         var users = res.data||[];
         setSearchRes({experts:experts,skills:skills,workshops:workshops,users:users});
         setSearching(false);
