@@ -198,12 +198,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0])uploadCover(e.target.files[0]);}})
       ),
       // Avatar
-      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',zIndex:2,overflow:'hidden'}},
+      React.createElement('div',{onClick:function(){setShowAvatarMenu(true);},style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',zIndex:2,overflow:'hidden',cursor:'pointer'}},
         avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials,
-        React.createElement('label',{style:{position:'absolute',bottom:0,left:0,right:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',height:'22px',cursor:'pointer',fontSize:'12px'}},
-          uploading?'...':'📷',
-          React.createElement('input',{type:'file',accept:'image/*',capture:'user',style:{display:'none'},onChange:function(e){if(e.target.files[0])uploadAvatar(e.target.files[0]);}})
-        )
+                )
       )
     ),
     // Name row
