@@ -105,6 +105,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           var url = pub.data.publicUrl+'?t='+Date.now();
           setAvatarUrl(url);
           localStorage.setItem('avatar_'+userId,url);
+          supabase.from('profiles').upsert({id:userId,avatar_url:url,email:email,full_name:email.split('@')[0]},{onConflict:'id'}).then(function(){});
           setUploading(false);
         });
       },'image/jpeg',0.9);
