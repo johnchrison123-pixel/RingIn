@@ -175,15 +175,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         style:{width:'100%',maxWidth:'480px',background:'var(--bg)',borderRadius:'20px 20px 0 0',padding:'16px',paddingBottom:'32px'}},
         React.createElement('div',{style:{width:'36px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}),
         React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',textAlign:'center',marginBottom:'16px'}},'Profile Photo'),
-        [
-          {label:'View Photo',fn:function(){setShowAvatarMenu(false);setShowAvatarView(true);}},
-          {label:'Take Photo',fn:function(){setShowAvatarMenu(false);document.getElementById('avatarCameraInput').click();}},
-          {label:'Upload from Gallery',fn:function(){setShowAvatarMenu(false);document.getElementById('avatarFileInput').click();}},
-        ].map(function(opt,i){
-          return React.createElement('div',{key:i,onClick:opt.fn,style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px',borderRadius:'12px',cursor:'pointer',marginBottom:'4px',background:'var(--bg3)'}},
-            React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:'var(--text)'}},opt.label)
-          );
-        }),
+        React.createElement('div',{onClick:function(){setShowAvatarMenu(false);setShowAvatarView(true);},style:{padding:'14px',borderRadius:'12px',cursor:'pointer',marginBottom:'4px',background:'var(--bg3)',fontSize:'14px',fontWeight:500,color:'var(--text)'}},'View Photo'),
+        React.createElement('label',{style:{display:'block',padding:'14px',borderRadius:'12px',cursor:'pointer',marginBottom:'4px',background:'var(--bg3)',fontSize:'14px',fontWeight:500,color:'var(--text)'}},
+          'Take Photo',
+          React.createElement('input',{type:'file',accept:'image/*',capture:'user',style:{display:'none'},onChange:function(e){if(e.target.files[0]){setShowAvatarMenu(false);uploadAvatar(e.target.files[0]);}}})
+        ),
+        React.createElement('label',{style:{display:'block',padding:'14px',borderRadius:'12px',cursor:'pointer',marginBottom:'4px',background:'var(--bg3)',fontSize:'14px',fontWeight:500,color:'var(--text)'}},
+          'Upload from Gallery',
+          React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0]){setShowAvatarMenu(false);uploadAvatar(e.target.files[0]);}}})
+        ),
         React.createElement('div',{onClick:function(){setShowAvatarMenu(false);},style:{display:'flex',alignItems:'center',justifyContent:'center',padding:'14px',borderRadius:'12px',cursor:'pointer',marginTop:'8px',background:'var(--bg3)'}},
           React.createElement('span',{style:{fontSize:'14px',fontWeight:600,color:'#ef4747'}},'Cancel')
         )
