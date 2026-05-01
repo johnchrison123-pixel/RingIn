@@ -16,6 +16,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var uploadingS=useState(false); var uploading=uploadingS[0]; var setUploading=uploadingS[1];
   var avatarMenuS=useState(false); var showAvatarMenu=avatarMenuS[0]; var setShowAvatarMenu=avatarMenuS[1];
   var avatarViewS=useState(false); var showAvatarView=avatarViewS[0]; var setShowAvatarView=avatarViewS[1];
+  var adjustS=useState(false); var showAdjust=adjustS[0]; var setShowAdjust=adjustS[1];
+  var adjustImgS=useState(null); var adjustImg=adjustImgS[0]; var setAdjustImg=adjustImgS[1];
+  var offsetS=useState({x:0,y:0}); var offset=offsetS[0]; var setOffset=offsetS[1];
+  var draggingS=useState(false); var dragging=draggingS[0]; var setDragging=draggingS[1];
+  var dragStartS=useState({x:0,y:0}); var dragStart=dragStartS[0]; var setDragStart=dragStartS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var postsS=useState([
@@ -51,16 +56,30 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   function uploadAvatar(file){
     if(!file||!userId) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      setAdjustImg(e.target.result);
+      setOffset({x:0,y:0});
+      setShowAdjust(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function saveAvatar(){
+    if(!adjustImg||!userId) return;
     setUploading(true);
-    var ext = file.name.split('.').pop();
-    var fileName = userId+'.'+ext;
-    supabase.storage.from('avatars').upload(fileName,file,{upsert:true}).then(function(res){
-      if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
-      var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
-      var url = pub.data.publicUrl+'?t='+Date.now();
-      setAvatarUrl(url);
-      localStorage.setItem('avatar_'+userId,url);
-      setUploading(false);
+    setShowAdjust(false);
+    // Convert base64 to blob and upload
+    fetch(adjustImg).then(function(r){return r.blob();}).then(function(blob){
+      var fileName = userId+'.jpg';
+      supabase.storage.from('avatars').upload(fileName,blob,{upsert:true,contentType:'image/jpeg'}).then(function(res){
+        if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
+        var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
+        var url = pub.data.publicUrl+'?t='+Date.now();
+        setAvatarUrl(url);
+        localStorage.setItem('avatar_'+userId,url);
+        setUploading(false);
+      });
     });
   }
 
@@ -166,23 +185,46 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           : React.createElement('div',{style:{width:'100%',height:'100%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'72px',fontWeight:700,color:'#fff'}},initials)
       )
     ) : null,
+    // Adjust/crop screen
+    showAdjust ? React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:10000,display:'flex',flexDirection:'column'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px',color:'#fff'}},
+        React.createElement('button',{onClick:function(){setShowAdjust(false);},style:{background:'none',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer'}},'Cancel'),
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:600}},'Adjust Photo'),
+        React.createElement('button',{onClick:saveAvatar,style:{background:'var(--ac)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,padding:'6px 14px',borderRadius:'20px',cursor:'pointer'}},'Save')
+      ),
+      React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',position:'relative'}},
+        React.createElement('div',{style:{width:'280px',height:'280px',borderRadius:'50%',overflow:'hidden',border:'3px solid #fff',position:'relative',cursor:'grab'},
+          onMouseDown:function(e){setDragging(true);setDragStart({x:e.clientX-offset.x,y:e.clientY-offset.y});},
+          onMouseMove:function(e){if(!dragging)return;setOffset({x:e.clientX-dragStart.x,y:e.clientY-dragStart.y});},
+          onMouseUp:function(){setDragging(false);},
+          onTouchStart:function(e){setDragging(true);setDragStart({x:e.touches[0].clientX-offset.x,y:e.touches[0].clientY-offset.y});},
+          onTouchMove:function(e){if(!dragging)return;e.preventDefault();setOffset({x:e.touches[0].clientX-dragStart.x,y:e.touches[0].clientY-dragStart.y});},
+          onTouchEnd:function(){setDragging(false);}
+        },
+          React.createElement('img',{src:adjustImg,style:{width:'100%',height:'100%',objectFit:'cover',transform:'translate('+offset.x+'px,'+offset.y+'px)',transition:dragging?'none':'transform 0.1s',userSelect:'none',pointerEvents:'none'}})
+        )
+      ),
+      React.createElement('div',{style:{padding:'16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px'}},'Drag to reposition your photo')
+    ) : null,
+    // iOS frosted glass avatar menu
     showAvatarMenu ? React.createElement('div',{
       onClick:function(){setShowAvatarMenu(false);},
-      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9998}},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9998,backdropFilter:'blur(2px)'}},
       React.createElement('div',{
         onClick:function(e){e.stopPropagation();},
-        style:{position:'absolute',top:'160px',left:'18px',background:'rgba(20,20,30,0.95)',backdropFilter:'blur(10px)',borderRadius:'12px',padding:'6px',minWidth:'180px',boxShadow:'0 8px 32px rgba(0,0,0,0.5)',border:'1px solid var(--border)'}},
-        React.createElement('div',{onClick:function(){setShowAvatarMenu(false);setShowAvatarView(true);},style:{padding:'10px 14px',fontSize:'13px',fontWeight:500,color:'var(--text)',cursor:'pointer',borderRadius:'8px',marginBottom:'2px'}},'View Photo'),
-        React.createElement('label',{style:{display:'block',padding:'10px 14px',fontSize:'13px',fontWeight:500,color:'var(--text)',cursor:'pointer',borderRadius:'8px',marginBottom:'2px'}},
+        style:{position:'absolute',top:'155px',left:'14px',background:'rgba(30,30,40,0.85)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',borderRadius:'14px',minWidth:'200px',overflow:'hidden',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',border:'1px solid rgba(255,255,255,0.1)'}},
+        React.createElement('div',{onClick:function(){setShowAvatarMenu(false);setShowAvatarView(true);},
+          style:{padding:'13px 16px',fontSize:'14px',fontWeight:500,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)'}},'View Photo'),
+        React.createElement('label',{style:{display:'block',padding:'13px 16px',fontSize:'14px',fontWeight:500,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)'}},
           'Take Photo',
           React.createElement('input',{type:'file',accept:'image/*',capture:'user',style:{display:'none'},onChange:function(e){if(e.target.files[0]){setShowAvatarMenu(false);uploadAvatar(e.target.files[0]);}}})
         ),
-        React.createElement('label',{style:{display:'block',padding:'10px 14px',fontSize:'13px',fontWeight:500,color:'var(--text)',cursor:'pointer',borderRadius:'8px',marginBottom:'2px'}},
+        React.createElement('label',{style:{display:'block',padding:'13px 16px',fontSize:'14px',fontWeight:500,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)'}},
           'Upload from Gallery',
           React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0]){setShowAvatarMenu(false);uploadAvatar(e.target.files[0]);}}})
         ),
-        React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'4px 0'}}),
-        React.createElement('div',{onClick:function(){setShowAvatarMenu(false);},style:{padding:'10px 14px',fontSize:'13px',fontWeight:500,color:'#ef4747',cursor:'pointer',borderRadius:'8px'}},'Cancel')
+        React.createElement('div',{onClick:function(){setShowAvatarMenu(false);},
+          style:{padding:'13px 16px',fontSize:'14px',fontWeight:600,color:'#ff453a',cursor:'pointer'}},'Cancel')
       )
     ) : null,
     // Cover
