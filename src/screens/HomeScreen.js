@@ -23,6 +23,7 @@ export default function HomeScreen(props){
   var searchQS=useState(''); var searchQ=searchQS[0]; var setSearchQ=searchQS[1];
   var searchResS=useState(null); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var searchingS=useState(false); var searching=searchingS[0]; var setSearching=searchingS[1];
+  var selUserS=useState(null); var selectedUser=selUserS[0]; var setSelectedUser=selUserS[1];
   var supabase = props.supabase;
 
   var ALL_EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,img:'https://i.pravatar.cc/150?img=47',type:'expert'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,img:'https://i.pravatar.cc/150?img=12',type:'expert'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,img:'https://i.pravatar.cc/150?img=23',type:'expert'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,img:'https://i.pravatar.cc/150?img=33',type:'expert'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,img:'https://i.pravatar.cc/150?img=44',type:'expert'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness Coach',rate:50,rating:4.7,img:'https://i.pravatar.cc/150?img=15',type:'expert'}];
@@ -79,6 +80,31 @@ export default function HomeScreen(props){
     var exp = EXPERTS.find(function(e){return e.id===id;});
     if(exp && onViewExpert) onViewExpert(exp);
   }
+
+  if(selectedUser) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    // Cover
+    React.createElement('div',{style:{height:'130px',background:'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setSelectedUser(null);},style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 12px',cursor:'pointer',fontSize:'12px',fontWeight:600}},'< Back'),
+      React.createElement('div',{style:{position:'absolute',bottom:'-36px',left:'18px',width:'72px',height:'72px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:2}},
+        selectedUser.avatar_url ? React.createElement('img',{src:selectedUser.avatar_url,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : (selectedUser.full_name||selectedUser.email||'?').substring(0,2).toUpperCase()
+      )
+    ),
+    React.createElement('div',{style:{padding:'44px 18px 12px'}},
+      React.createElement('div',{style:{fontSize:'17px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},(selectedUser.full_name||selectedUser.email||'').split('@')[0]),
+      React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginBottom:'4px'}},'RingIn Member'),
+      React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginBottom:'16px'}},'Joined '+new Date(selectedUser.created_at||Date.now()).toLocaleDateString('en-US',{month:'long',year:'numeric'})),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
+        [{v:'0',l:'Calls'},{v:'0',l:'Posts'},{v:'0',l:'Reviews'}].map(function(s){
+          return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
+            React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:'var(--text)'}},s.v),
+            React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)
+          );
+        })
+      ),
+      React.createElement('button',{style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginBottom:'8px'}},'+ Follow'),
+      React.createElement('button',{style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Message')
+    )
+  );
 
   return React.createElement('div', {className:'hc'},
     React.createElement('div', {className:'topbar'},
@@ -138,15 +164,15 @@ export default function HomeScreen(props){
         searchRes.users && searchRes.users.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
           searchRes.users.map(function(u,i){
-            return React.createElement('div',{key:i,onClick:function(){alert('Profile of '+((u.full_name||u.email||'').split('@')[0])+' coming soon!');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
+            return React.createElement('div',{key:i,onClick:function(){setSelectedUser(u);setSearchQ('');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-                u.avatar_url ? React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.email||'?').substring(0,2).toUpperCase()
+                u.avatar_url ? React.createElement('img',{src:u.avatar_url,alt:u.full_name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.full_name||u.email||'?').substring(0,2).toUpperCase()
               ),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},(u.full_name||u.email||'').split('@')[0]),
-                React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},u.email)
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'RingIn Member')
               ),
-              React.createElement('button',{onClick:function(){alert('View profile of '+((u.full_name||u.email||'').split('@')[0])+' coming soon!');},style:{padding:'5px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',color:'var(--ac)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'View Profile')
+              React.createElement('button',{onClick:function(ev){ev.stopPropagation();setSelectedUser(u);setSearchQ('');},style:{padding:'5px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',color:'var(--ac)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'View Profile')
             );
           })
         ) : null,
@@ -179,7 +205,7 @@ export default function HomeScreen(props){
         searchRes.workshops && searchRes.workshops.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Workshops'),
           searchRes.workshops.map(function(w,i){
-            return React.createElement('div',{key:i,onClick:function(){alert('Profile of '+((u.full_name||u.email||'').split('@')[0])+' coming soon!');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
+            return React.createElement('div',{key:i,onClick:function(){setSelectedUser(u);setSearchQ('');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'10px',background:'linear-gradient(135deg,#1a1a2e,#534AB7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}},'🎓'),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},w.title),
