@@ -20,6 +20,8 @@ export default function App() {
   var prevTabS = useState('home'); var prevTab = prevTabS[0]; var setPrevTab = prevTabS[1];
   var expS = useState(null); var selectedExpert = expS[0]; var setSelectedExpert = expS[1];
   var initConvoS = useState(null); var initConvo = initConvoS[0]; var setInitConvo = initConvoS[1];
+  var swXS = useState(0); var swX = swXS[0]; var setSwX = swXS[1];
+  var swYS = useState(0); var swY = swYS[0]; var setSwY = swYS[1];
   var emailS = useState(''); var email = emailS[0]; var setEmail = emailS[1];
   var passS = useState(''); var password = passS[0]; var setPassword = passS[1];
   var loginS = useState(true); var isLogin = loginS[0]; var setIsLogin = loginS[1];
@@ -49,6 +51,16 @@ export default function App() {
   }, []);
 
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }
+
+  function handleSwipeStart(e){ setSwX(e.touches[0].clientX); setSwY(e.touches[0].clientY); }
+  function handleSwipeEnd(e){
+    var dx = e.changedTouches[0].clientX - swX;
+    var dy = Math.abs(e.changedTouches[0].clientY - swY);
+    if(swX < 40 && dx > 80 && dy < 60){
+      if(activeTab==='wallet') setActiveTab(prevTab);
+      else if(activeTab==='search' && selectedExpert) setSelectedExpert(null);
+    }
+  }
   function goToTab(tab) { setActiveTab(tab); }
 
   var handleAuth = async function(e) {
@@ -104,23 +116,6 @@ export default function App() {
     {id:'messages', label:'Messages', svg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
     {id:'profile', label:'Profile', svg:'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z'},
   ];
-
-  var swipeStartXS = useState(0); var swipeStartX = swipeStartXS[0]; var setSwipeStartX = swipeStartXS[1];
-  var swipeStartYS = useState(0); var swipeStartY = swipeStartYS[0]; var setSwipeStartY = swipeStartYS[1];
-
-  function handleSwipeStart(e){
-    setSwipeStartX(e.touches[0].clientX);
-    setSwipeStartY(e.touches[0].clientY);
-  }
-
-  function handleSwipeEnd(e){
-    var dx = e.changedTouches[0].clientX - swipeStartX;
-    var dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
-    if(swipeStartX < 40 && dx > 80 && dy < 60){
-      if(activeTab==='wallet') setActiveTab(prevTab);
-      else if(activeTab==='search' && selectedExpert){ setSelectedExpert(null); }
-    }
-  }
 
   return React.createElement('div', {
     className:'app-container',
