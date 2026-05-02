@@ -108,8 +108,14 @@ export default function HomeScreen(props){
           );
         })
       ),
-      React.createElement('button',{style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginBottom:'8px'}},'+ Follow'),
-      React.createElement('button',{style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Message')
+      React.createElement('button',{
+        onClick:function(){toggleFollow(String(selectedUser.id),selectedUser.full_name||selectedUser.email,selectedUser.avatar_url,'Member');},
+        style:{width:'100%',padding:'12px',background:following[String(selectedUser.id)]?'var(--acg)':'var(--ac)',border:following[String(selectedUser.id)]?'1px solid var(--ac)':'none',borderRadius:'12px',color:following[String(selectedUser.id)]?'var(--ac)':'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginBottom:'8px'}
+      }, following[String(selectedUser.id)] ? '✓ Following' : '+ Follow'),
+      React.createElement('button',{
+        onClick:function(){if(props.onGoToMessages)props.onGoToMessages(selectedUser);},
+        style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}
+      },'Message')
     )
   );
 
