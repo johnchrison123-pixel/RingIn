@@ -190,6 +190,17 @@ export default function HomeScreen(props){
     {id:6,icon:'⭐',text:'You have a new review from a recent call',time:'Yesterday',unread:false},
   ];
   var onOpenWallet = props.onOpenWallet;
+  function timeAgo(dateStr){
+    var now = new Date();
+    var date = new Date(dateStr);
+    var diff = Math.floor((now - date) / 1000);
+    if(diff < 60) return 'Just now';
+    if(diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if(diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    if(diff < 172800) return 'Yesterday';
+    return date.toLocaleDateString([],{month:'short',day:'numeric'});
+  }
+
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
