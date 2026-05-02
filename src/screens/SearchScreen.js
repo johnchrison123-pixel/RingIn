@@ -115,7 +115,7 @@ export default function SearchScreen(props){
           ),
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'5px',marginBottom:'2px'}},
-              React.createElement('span',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}}},e.name),
+              React.createElement('span',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},e.name),
               React.createElement('span',{style:{fontSize:'9px',fontWeight:600,color:'#fff',background:'linear-gradient(135deg,#1877F2,#42B3FF)',padding:'1px 5px',borderRadius:'20px'}},'Verified')
             ),
             React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',marginBottom:'3px'}},e.role),
