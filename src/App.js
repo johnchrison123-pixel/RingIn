@@ -130,6 +130,22 @@ export default function App() {
     onTouchMove:handleSwipeMove,
     onTouchEnd:handleSwipeEnd
   },
+    React.createElement('div', {
+      style:{position:'fixed',top:0,left:0,width:'20px',height:'100%',zIndex:9999},
+      onTouchStart:function(e){e.currentTarget._sx=e.touches[0].clientX;e.currentTarget._sy=e.touches[0].clientY;},
+      onTouchEnd:function(e){
+        var dx=e.changedTouches[0].clientX-(e.currentTarget._sx||0);
+        var dy=Math.abs(e.changedTouches[0].clientY-(e.currentTarget._sy||0));
+        if(dx>60&&dy<80){
+          if(activeTab==='wallet'){setActiveTab(prevTab);}
+          else if(activeTab==='search'&&selectedExpert){setSelectedExpert(null);}
+          else if(activeTab==='search'){setActiveTab('home');}
+          else if(activeTab==='messages'){setActiveTab('home');}
+          else if(activeTab==='workshops'){setActiveTab('home');}
+          else if(activeTab==='profile'){setActiveTab('home');}
+        }
+      }
+    }),
     React.createElement('div', {className:'screen-content'}, renderScreen()),
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab) {
