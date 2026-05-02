@@ -19,33 +19,28 @@ export default function HomeScreen(props){
   function toggleLike(pid){
     var session = props.session;
     var userId = session&&session.user ? session.user.id : null;
-    var userName = session&&session.user ? session.user.email.split('@')[0] : 'Someone';
-    var userAvatar = userId ? localStorage.getItem('avatar_'+userId) : null;
-    if(!userId){alert('Please log in to like');return;}
-    if(typeof pid !== 'string'){return;}
-    // Call RPC - let realtime handle UI update for everyone
-    sbHome.rpc('toggle_like',{post_id:pid,user_id:userId}).then(function(r){
-      if(r.error){
-        console.log('like error:',r.error);
-      } else {
-        // Send notification to post owner
-        var post = null;
-        setPosts(function(prev){
-          post = prev.find(function(p){return p.id===pid;});
-          return prev;
-        });
-        if(post&&post.userId&&post.userId!==userId){
-          sbHome.from('notifications').insert([{
-            user_id:post.userId,
-            from_user_id:userId,
-            from_user_name:userName,
-            from_user_avatar:userAvatar,
-            type:'like',
-            message:userName+' liked your post',
-            post_id:pid,
-            read:false
-          }]).then(function(){});
-        }
+    var userName = session&&session.user ? session.user.email.split("@")[0] : "Someone";
+    var userAvatar = userId ? localStorage.getItem("avatar_"+userId) : null;
+    if(!userId) return;
+    if(typeof pid !== "string") return;
+    var postOwner = null;
+    setPosts(function(prev){
+      postOwner = prev.find(function(p){return p.id===pid;});
+      return prev;
+    });
+    sbHome.rpc("toggle_like",{post_id:pid,user_id:userId}).then(function(r){
+      if(r.error){console.log("like error:",r.error);return;}
+      if(postOwner&&!postOwner.liked&&postOwner.userId&&postOwner.userId!==userId){
+        sbHome.from("notifications").insert([{
+          user_id:postOwner.userId,
+          from_user_id:userId,
+          from_user_name:userName,
+          from_user_avatar:userAvatar,
+          type:"like",
+          message:userName+" liked your post",
+          post_id:pid,
+          read:false
+        }]).then(function(nr){if(nr.error)console.log("notif error:",nr.error);});
       }
     });
   }
