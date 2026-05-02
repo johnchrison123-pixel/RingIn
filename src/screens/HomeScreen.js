@@ -380,7 +380,7 @@ export default function HomeScreen(props){
             ),
             React.createElement('div', {style:{flex:1}},
               React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.message||'New notification'),
-              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, new Date(n.created_at).toLocaleDateString())
+              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, new Date(n.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))
             ),
             !n.read ? React.createElement('div', {style:{width:'7px',height:'7px',borderRadius:'50%',background:'var(--ac)',flexShrink:0,marginTop:'4px'}}) : null
           );
