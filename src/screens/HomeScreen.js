@@ -89,21 +89,18 @@ export default function HomeScreen(props){
   function loadMorePosts(){
     if(loadingMore||!hasMore) return;
     setLoadingMore(true);
-    setPosts(function(prev){
-      var oldest = prev.filter(function(p){return typeof p.id==='string';});
-      var oldestPost = oldest[oldest.length-1];
-      var oldestDate = oldestPost?oldestPost.createdAt:new Date().toISOString();
-      sbHome.from('posts').select('*').order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(PAGE_SIZE).then(function(res){
-        if(res.data&&res.data.length>0){
-          var morePosts = res.data.map(mapPost);
-          setPosts(function(p){return p.concat(morePosts);});
-          setHasMore(res.data.length===PAGE_SIZE);
-        } else {
-          setHasMore(false);
-        }
-        setLoadingMore(false);
-      });
-      return prev;
+    var allPosts = posts.filter(function(p){return typeof p.id==='string';});
+    var oldestPost = allPosts[allPosts.length-1];
+    var oldestDate = oldestPost&&oldestPost.createdAt?oldestPost.createdAt:new Date().toISOString();
+    sbHome.from('posts').select('*').order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(PAGE_SIZE).then(function(res){
+      if(res.data&&res.data.length>0){
+        var morePosts = res.data.map(mapPost);
+        setPosts(function(prev){return prev.concat(morePosts);});
+        setHasMore(res.data.length===PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+      setLoadingMore(false);
     });
   }
 
