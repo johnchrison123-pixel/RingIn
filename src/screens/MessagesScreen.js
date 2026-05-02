@@ -148,7 +148,10 @@ export default function MessagesScreen(props){
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
-  var userConvosS=useState([]); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
+  var userConvosS=useState(function(){
+    try{var cc=localStorage.getItem('convos_'+myId);if(cc)return JSON.parse(cc);}catch(e){}
+    return [];
+  }); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
   var totalUnreadS=useState(function(){
     try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
@@ -201,6 +204,7 @@ export default function MessagesScreen(props){
           });
         });
         setUserConvos(enriched);
+        try{localStorage.setItem('convos_'+myId, JSON.stringify(enriched));}catch(e){}
         // Count total unread
         var total = enriched.reduce(function(sum,c){return sum+(c.unreadCount||0);},0);
         setTotalUnread(total);
