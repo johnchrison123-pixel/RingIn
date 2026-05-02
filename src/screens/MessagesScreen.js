@@ -150,7 +150,10 @@ export default function MessagesScreen(props){
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
   var userConvosS=useState([]); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
-  var totalUnreadS=useState(0); var totalUnread=totalUnreadS[0]; var setTotalUnread=totalUnreadS[1];
+  var totalUnreadS=useState(function(){
+    try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
+    return 0;
+  }); var totalUnread=totalUnreadS[0]; var setTotalUnread=totalUnreadS[1];
 
   // Load real user conversations
   useEffect(function(){
