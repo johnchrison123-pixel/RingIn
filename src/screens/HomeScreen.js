@@ -12,8 +12,10 @@ var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',vie
 
 export default function HomeScreen(props){
   var acState = useState('all');
-  var postsS=useState([{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]);
-  var posts=postsS[0]; var setPosts=postsS[1];
+  var postsS=useState(function(){
+    try{var c=localStorage.getItem('feed_posts');if(c)return JSON.parse(c);}catch(e){}
+    return [{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]);
+  }]); var posts=postsS[0]; var setPosts=postsS[1];
   var cpS=useState(null); var commentPost=cpS[0]; var setCommentPost=cpS[1];
   var ctS=useState(''); var commentText=ctS[0]; var setCommentText=ctS[1];
   function toggleLike(pid){
@@ -52,6 +54,9 @@ export default function HomeScreen(props){
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
+  var hasMoreS=useState(false); var hasMore=hasMoreS[0]; var setHasMore=hasMoreS[1];
+  var loadingMoreS=useState(false); var loadingMore=loadingMoreS[0]; var setLoadingMore=loadingMoreS[1];
+  var PAGE_SIZE=12;
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
   var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
@@ -80,6 +85,27 @@ export default function HomeScreen(props){
       }).subscribe();
     return function(){sbHome.removeChannel(ch);};
   },[props.session]);
+
+  function loadMorePosts(){
+    if(loadingMore||!hasMore) return;
+    setLoadingMore(true);
+    setPosts(function(prev){
+      var oldest = prev.filter(function(p){return typeof p.id==='string';});
+      var oldestPost = oldest[oldest.length-1];
+      var oldestDate = oldestPost?oldestPost.createdAt:new Date().toISOString();
+      sbHome.from('posts').select('*').order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(PAGE_SIZE).then(function(res){
+        if(res.data&&res.data.length>0){
+          var morePosts = res.data.map(mapPost);
+          setPosts(function(p){return p.concat(morePosts);});
+          setHasMore(res.data.length===PAGE_SIZE);
+        } else {
+          setHasMore(false);
+        }
+        setLoadingMore(false);
+      });
+      return prev;
+    });
+  }
 
   function mapPost(p){
     var session = props.session;
@@ -110,10 +136,12 @@ export default function HomeScreen(props){
 
   useEffect(function(){
     // Load initial posts
-    sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(20).then(function(res){
+    sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(PAGE_SIZE).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(mapPost);
         setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
+        setHasMore(res.data.length===PAGE_SIZE);
+        try{localStorage.setItem('feed_posts', JSON.stringify(dbPosts));}catch(e){}
       }
     });
     // Realtime subscription - new posts appear automatically
@@ -643,6 +671,12 @@ export default function HomeScreen(props){
         );
       })
     ),
+    hasMore ? React.createElement('div',{style:{textAlign:'center',padding:'16px 0'}},
+      React.createElement('button',{
+        onClick:loadMorePosts,
+        style:{padding:'10px 28px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}
+      }, loadingMore?'Loading...':'Load more posts')
+    ) : null,
     React.createElement('div', {style:{height:'12px'}})
   );
 }
