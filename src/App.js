@@ -131,12 +131,14 @@ export default function App() {
     onTouchEnd:handleSwipeEnd
   },
     React.createElement('div', {
-      style:{position:'fixed',top:0,left:0,width:'20px',height:'100%',zIndex:9999},
+      style:{position:'fixed',top:0,right:0,width:'30px',height:'100%',zIndex:9999},
       onTouchStart:function(e){e.currentTarget._sx=e.touches[0].clientX;e.currentTarget._sy=e.touches[0].clientY;},
       onTouchEnd:function(e){
-        var dx=e.changedTouches[0].clientX-(e.currentTarget._sx||0);
+        var startX=e.currentTarget._sx||0;
+        var dx=startX-e.changedTouches[0].clientX;
         var dy=Math.abs(e.changedTouches[0].clientY-(e.currentTarget._sy||0));
-        if(dx>60&&dy<80){
+        var screenW=window.innerWidth;
+        if(dx>screenW*0.7&&dy<100){
           if(activeTab==='wallet'){setActiveTab(prevTab);}
           else if(activeTab==='search'&&selectedExpert){setSelectedExpert(null);}
           else if(activeTab==='search'){setActiveTab('home');}
