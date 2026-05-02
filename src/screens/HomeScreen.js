@@ -192,8 +192,12 @@ export default function HomeScreen(props){
   ];
   var onOpenWallet = props.onOpenWallet;
   function timeAgo(dateStr){
+    if(!dateStr) return '';
     var now = new Date();
-    var date = new Date(dateStr);
+    // Parse as UTC if no timezone info
+    var str = dateStr.toString();
+    if(!str.includes('Z') && !str.includes('+')) str = str + 'Z';
+    var date = new Date(str);
     var diff = Math.floor((now - date) / 1000);
     if(diff < 60) return 'Just now';
     if(diff < 3600) return Math.floor(diff/60) + 'm ago';
