@@ -73,10 +73,6 @@ export default function SearchScreen(props){
   var onOpenWallet = props.onOpenWallet;
   var session = props.session;
   var currentUserId = session&&session.user ? session.user.id : null;
-  var followHook = useFollow(sb, currentUserId);
-  var following = followHook.following;
-  var toggleFollow = followHook.toggleFollow;
-  var followLoaded = followHook.loaded;
   var sel = useState(props.initExpert || null);
   var selected = sel[0];
   var setSelected = sel[1];
@@ -86,6 +82,10 @@ export default function SearchScreen(props){
   var activecat = ac[0];
   var setAc = ac[1];
   useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
+  var followHook = useFollow(sb, currentUserId);
+  var following = followHook.following;
+  var toggleFollow = followHook.toggleFollow;
+  var followLoaded = followHook.loaded;
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(selected){
     return React.createElement(ExpertProfile, {
