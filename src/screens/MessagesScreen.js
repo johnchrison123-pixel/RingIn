@@ -53,8 +53,6 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       text:txt.trim(),
       read:false
     };
-    var tempId = Date.now();
-    setMsgs(function(prev){return prev.concat([Object.assign({},m,{id:tempId})]);});
     setTxt('');
     sb.from('messages').insert([m]).then(function(r){
       if(r.error) console.error(r.error);
