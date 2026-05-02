@@ -64,13 +64,14 @@ export default function HomeScreen(props){
       time:new Date(p.created_at).toLocaleDateString(),
       text:p.text||'',
       tags:p.tags||[],
-      likes:p.likes?p.likes.length:0,
+      likes:typeof p.likes==='number'?p.likes:(p.likes?p.likes.length:0),
       liked:false,
       comments:p.comments_count||0,
       rate:0,
       expertId:null,
-      postImg:p.images&&p.images[0]?p.images[0]:null,
-      extraImgs:p.images?p.images.slice(1):[]
+      postImg:p.images&&p.images.length>0?p.images[0]:null,
+      extraImgs:p.images&&p.images.length>1?p.images.slice(1):[],
+      isUserPost:true
     };
   }
 
@@ -565,13 +566,13 @@ export default function HomeScreen(props){
               p.tags.map(function(t){return React.createElement('span', {key:t, className:'ptag'}, '#'+t);})
             )
           ),
-          React.createElement('div', {className:'cstrip'},
-            React.createElement('span', {className:'cstrip-l'}, 'Call '+p.name.split(' ')[1]),
+          p.rate&&p.rate>0&&p.expertId ? React.createElement('div', {className:'cstrip'},
+            React.createElement('span', {className:'cstrip-l'}, 'Call '+p.name),
             React.createElement('span', {className:'cstrip-r'}, p.rate+' coins/min')
-          ),
+          ) : null,
           React.createElement('div', {className:'pacts'},
             React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'#E84D9A':'var(--t2)',fontSize:'13px',fontWeight:p.liked?700:400,gap:'5px'}, onClick:function(){toggleLike(p.id);}}, React.createElement('span',{style:{fontSize:'18px',lineHeight:1}},p.liked?'❤️':'🤍'), React.createElement('span',null,p.likes)),
-            React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+p.comments.length+' Comments'),
+            React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
           )
         );
