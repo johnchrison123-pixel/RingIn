@@ -98,7 +98,13 @@ export default function HomeScreen(props){
     ),
     React.createElement('div',{style:{padding:'44px 18px 12px'}},
       React.createElement('div',{style:{fontSize:'17px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},(selectedUser.full_name||selectedUser.email||'').split('@')[0]),
-      React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginBottom:'4px'}},'RingIn Member'),
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}},
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'RingIn Member'),
+        selectedUser.is_online ? React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--green)'}},
+          React.createElement('div',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--green)'}}),
+          'Online'
+        ) : null
+      ),
       React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginBottom:'16px'}},'Joined '+new Date(selectedUser.created_at||Date.now()).toLocaleDateString('en-US',{month:'long',year:'numeric'})),
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
         [{v:'0',l:'Calls'},{v:'0',l:'Posts'},{v:'0',l:'Reviews'}].map(function(s){
@@ -113,7 +119,20 @@ export default function HomeScreen(props){
         style:{width:'100%',padding:'12px',background:following[String(selectedUser.id)]?'var(--acg)':'var(--ac)',border:following[String(selectedUser.id)]?'1px solid var(--ac)':'none',borderRadius:'12px',color:following[String(selectedUser.id)]?'var(--ac)':'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginBottom:'8px'}
       }, following[String(selectedUser.id)] ? '✓ Following' : '+ Follow'),
       React.createElement('button',{
-        onClick:function(){if(props.onGoToMessages)props.onGoToMessages(selectedUser);},
+        onClick:function(){
+          var myId = props.session&&props.session.user ? props.session.user.id : null;
+          if(!myId){alert('Please log in');return;}
+          var convId = [myId,selectedUser.id].sort().join('_');
+          var convo = {
+            id:convId,convId:convId,
+            name:(selectedUser.full_name||selectedUser.email||'').split('@')[0],
+            role:selectedUser.is_online?'Online':'RingIn Member',
+            color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+            img:selectedUser.avatar_url||null,
+            initials:(selectedUser.full_name||selectedUser.email||'?').substring(0,2).toUpperCase()
+          };
+          if(props.onGoToMessages) props.onGoToMessages(convo);
+        },
         style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}
       },'Message')
     )

@@ -75,7 +75,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall}){
 
 export default function MessagesScreen(props){
   var session = props.session;
-  var activeS=useState(null); var active=activeS[0]; var setActive=activeS[1];
+  var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];

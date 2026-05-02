@@ -19,6 +19,7 @@ export default function App() {
   var tabS = useState('home'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
   var prevTabS = useState('home'); var prevTab = prevTabS[0]; var setPrevTab = prevTabS[1];
   var expS = useState(null); var selectedExpert = expS[0]; var setSelectedExpert = expS[1];
+  var initConvoS = useState(null); var initConvo = initConvoS[0]; var setInitConvo = initConvoS[1];
   var emailS = useState(''); var email = emailS[0]; var setEmail = emailS[1];
   var passS = useState(''); var password = passS[0]; var setPassword = passS[1];
   var loginS = useState(true); var isLogin = loginS[0]; var setIsLogin = loginS[1];
@@ -33,8 +34,16 @@ export default function App() {
         supabase.from('profiles').upsert({
           id: session.user.id,
           email: session.user.email,
-          full_name: session.user.email.split('@')[0]
+          full_name: session.user.email.split('@')[0],
+          is_online: true,
+          last_seen: new Date().toISOString()
         },{onConflict:'id'}).then(function(){});
+        // Set offline when window closes
+        window.onbeforeunload = function(){
+          supabase.from('profiles').update({is_online:false,last_seen:new Date().toISOString()}).eq('id',session.user.id).then(function(){});
+        };
+      } else {
+        window.onbeforeunload = null;
       }
     });
   }, []);
@@ -79,10 +88,10 @@ export default function App() {
   }
 
   function renderScreen() {
-    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(){setActiveTab('messages');}});
+    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
-    if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
+    if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
     if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
