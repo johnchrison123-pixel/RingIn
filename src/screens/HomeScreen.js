@@ -12,7 +12,8 @@ var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',vie
 
 export default function HomeScreen(props){
   var acState = useState('all');
-  var postsS=useState([{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]);
+  var _cachedPosts=[];try{var _c=localStorage.getItem('feed_posts_cache');if(_c)_cachedPosts=JSON.parse(_c);}catch(e){}
+  var postsS=useState(_cachedPosts.length>0?_cachedPosts:[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]));
   var posts=postsS[0]; var setPosts=postsS[1];
   var cpS=useState(null); var commentPost=cpS[0]; var setCommentPost=cpS[1];
   var ctS=useState(''); var commentText=ctS[0]; var setCommentText=ctS[1];
@@ -52,6 +53,8 @@ export default function HomeScreen(props){
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
+  var hasMoreHS=useState(false); var hasMoreH=hasMoreHS[0]; var setHasMoreH=hasMoreHS[1];
+  var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
   var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
@@ -81,6 +84,23 @@ export default function HomeScreen(props){
     return function(){sbHome.removeChannel(ch);};
   },[props.session]);
 
+  function loadMoreFeed(){
+    if(loadMoreH||!hasMoreH) return;
+    setLoadMoreH(true);
+    var realPosts = posts.filter(function(p){return typeof p.id==='string';});
+    var oldest = realPosts[realPosts.length-1];
+    var oldestDate = oldest&&oldest.createdAt?oldest.createdAt:new Date().toISOString();
+    sbHome.from('posts').select('*').order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(12).then(function(res){
+      if(res.data&&res.data.length>0){
+        setPosts(function(prev){return prev.concat(res.data.map(mapPost));});
+        setHasMoreH(res.data.length===12);
+      } else {
+        setHasMoreH(false);
+      }
+      setLoadMoreH(false);
+    });
+  }
+
   function mapPost(p){
     var session = props.session;
     var userId = session&&session.user?session.user.id:null;
@@ -99,6 +119,7 @@ export default function HomeScreen(props){
       tags:p.tags||[],
       likes:likesArr.length,
       liked:userId?likesArr.includes(userId):false,
+      likedBy:likesArr.slice(0,3),
       comments:p.comments_count||0,
       rate:0,
       expertId:null,
@@ -110,10 +131,12 @@ export default function HomeScreen(props){
 
   useEffect(function(){
     // Load initial posts
-    sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(20).then(function(res){
+    sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(mapPost);
         setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
+        setHasMoreH(res.data.length===12);
+        try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
       }
     });
     // Realtime subscription - new posts appear automatically
@@ -636,13 +659,22 @@ export default function HomeScreen(props){
             React.createElement('span', {className:'cstrip-r'}, p.rate+' coins/min')
           ) : null,
           React.createElement('div', {className:'pacts'},
-            React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'#E84D9A':'var(--t2)',fontSize:'13px',fontWeight:p.liked?700:400,gap:'5px'}, onClick:function(){toggleLike(p.id);}}, React.createElement('span',{style:{fontSize:'18px',lineHeight:1}},p.liked?'❤️':'🤍'), React.createElement('span',null,p.likes)),
+            React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1}},
+            React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'#E84D9A':'var(--t2)',fontSize:'13px',fontWeight:p.liked?700:400,gap:'5px',padding:'8px 2px'}, onClick:function(){toggleLike(p.id);}}, React.createElement('span',{style:{fontSize:'18px',lineHeight:1}},p.liked?'❤️':'🤍'), React.createElement('span',null,p.likes,' Likes')),
+            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,2).join(', ')+(p.likes>2?' and '+(p.likes-2)+' others':'')):null
+          ),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
           )
         );
       })
     ),
+    hasMoreH ? React.createElement('div',{style:{textAlign:'center',padding:'16px 0'}},
+      React.createElement('button',{
+        onClick:loadMoreFeed,
+        style:{padding:'10px 28px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}
+      }, loadMoreH?'Loading...':'Load more posts')
+    ) : null,
     React.createElement('div', {style:{height:'12px'}})
   );
 }

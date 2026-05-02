@@ -28,6 +28,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var draggingS=useState(false); var dragging=draggingS[0]; var setDragging=draggingS[1];
   var dragStartS=useState({x:0,y:0}); var dragStart=dragStartS[0]; var setDragStart=dragStartS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
+  var hasMorePS=useState(false); var hasMoreP=hasMorePS[0]; var setHasMoreP=hasMorePS[1];
+  var loadMorePS=useState(false); var loadMoreP=loadMorePS[0]; var setLoadMoreP=loadMorePS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var postsS=useState([
     {id:1,text:'Just had an incredible consultation with Dr. Priya Nair. She explained everything so clearly. Highly recommend!',likes:['Ahmed K.','Fatima M.','Sara Z.'],liked:false,time:'1h ago',img:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},
@@ -55,7 +57,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   useEffect(function(){
     if(!userId) return;
     // Load user posts from Supabase
-    sbProfile.from('posts').select('*').eq('user_id',userId).order('created_at',{ascending:false}).then(function(res){
+    sbProfile.from('posts').select('*').eq('user_id',userId).order('created_at',{ascending:false}).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(function(p){
           return {
@@ -175,6 +177,27 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     // Save to Supabase in background
     sbProfile.rpc('toggle_like',{post_id:id,user_id:userId}).then(function(r){
       if(r.error) console.log('like error:',r.error);
+    });
+  }
+
+  function loadMoreProfile(){
+    if(loadMoreP||!hasMoreP||!userId) return;
+    setLoadMoreP(true);
+    var oldest = myPosts[myPosts.length-1];
+    var oldestDate = oldest&&oldest.createdAt?oldest.createdAt:new Date().toISOString();
+    sbProfile.from('posts').select('*').eq('user_id',userId).order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(12).then(function(res){
+      if(res.data&&res.data.length>0){
+        var likesArr2;
+        var morePosts = res.data.map(function(p){
+          likesArr2 = Array.isArray(p.likes)?p.likes:[];
+          return {id:p.id,text:p.text||'',likes:likesArr2,liked:likesArr2.includes(userId),likeNames:likesArr2.slice(0,3),time:new Date(p.created_at).toLocaleDateString(),createdAt:p.created_at,img:p.images&&p.images[0]?p.images[0]:null,comments:[]};
+        });
+        setMyPosts(function(prev){return prev.concat(morePosts);});
+        setHasMoreP(res.data.length===12);
+      } else {
+        setHasMoreP(false);
+      }
+      setLoadMoreP(false);
     });
   }
 
