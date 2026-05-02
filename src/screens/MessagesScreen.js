@@ -92,7 +92,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       ),
       convo.rate ? React.createElement('button',{onClick:function(){if(onCall)onCall(convo);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call') : null
     ),
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px'}},
+    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}},
       msgs.length===0 && React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi! 👋'),
       msgs.map(function(m){
         var isMe = m.sender_id===myId;

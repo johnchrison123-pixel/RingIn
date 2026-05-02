@@ -126,28 +126,27 @@ export default function App() {
 
   return React.createElement('div', {
     className:'app-container',
-    onTouchStart:handleSwipeStart,
-    onTouchMove:handleSwipeMove,
-    onTouchEnd:handleSwipeEnd
-  },
-    React.createElement('div', {
-      style:{position:'fixed',top:0,right:0,width:'30px',height:'100%',zIndex:9999},
-      onTouchStart:function(e){e.currentTarget._sx=e.touches[0].clientX;e.currentTarget._sy=e.touches[0].clientY;},
-      onTouchEnd:function(e){
-        var startX=e.currentTarget._sx||0;
-        var dx=startX-e.changedTouches[0].clientX;
-        var dy=Math.abs(e.changedTouches[0].clientY-(e.currentTarget._sy||0));
-        var screenW=window.innerWidth;
-        if(dx>screenW*0.7&&dy<100){
-          if(activeTab==='wallet'){setActiveTab(prevTab);}
-          else if(activeTab==='search'&&selectedExpert){setSelectedExpert(null);}
-          else if(activeTab==='search'){setActiveTab('home');}
-          else if(activeTab==='messages'){setActiveTab('home');}
-          else if(activeTab==='workshops'){setActiveTab('home');}
-          else if(activeTab==='profile'){setActiveTab('home');}
-        }
+    onTouchStart:function(e){
+      window._swX=e.touches[0].clientX;
+      window._swY=e.touches[0].clientY;
+    },
+    onTouchEnd:function(e){
+      var startX=window._swX||0;
+      var endX=e.changedTouches[0].clientX;
+      var dy=Math.abs(e.changedTouches[0].clientY-(window._swY||0));
+      var screenW=window.innerWidth;
+      var dx=startX-endX;
+      // Right to left swipe covering 70% of screen starting from right 30% area
+      if(startX>screenW*0.7 && dx>screenW*0.5 && dy<120){
+        if(activeTab==='wallet'){setActiveTab(prevTab);}
+        else if(activeTab==='search'&&selectedExpert){setSelectedExpert(null);}
+        else if(activeTab==='search'){setActiveTab('home');}
+        else if(activeTab==='messages'){setActiveTab('home');}
+        else if(activeTab==='workshops'){setActiveTab('home');}
+        else if(activeTab==='profile'){setActiveTab('home');}
       }
-    }),
+    }
+  },
     React.createElement('div', {className:'screen-content'}, renderScreen()),
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab) {
