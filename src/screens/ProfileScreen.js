@@ -1,5 +1,8 @@
 /* eslint-disable */
 import React,{useState,useEffect} from 'react';
+import {useFollow} from './useFollow';
+import {createClient} from '@supabase/supabase-js';
+var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 export default function ProfileScreen({session, supabase, onOpenWallet}){
   var email = session && session.user ? session.user.email : '';
@@ -14,6 +17,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var avatarS=useState(null); var avatarUrl=avatarS[0]; var setAvatarUrl=avatarS[1];
   var coverS=useState(null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
   var uploadingS=useState(false); var uploading=uploadingS[0]; var setUploading=uploadingS[1];
+  var followHook = useFollow(sbProfile, userId);
+  var following = followHook.following;
+  var toggleFollow = followHook.toggleFollow;
   var avatarMenuS=useState(false); var showAvatarMenu=avatarMenuS[0]; var setShowAvatarMenu=avatarMenuS[1];
   var avatarViewS=useState(false); var showAvatarView=avatarViewS[0]; var setShowAvatarView=avatarViewS[1];
   var adjustS=useState(false); var showAdjust=adjustS[0]; var setShowAdjust=adjustS[1];
@@ -361,7 +367,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},f.name),
               React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},f.role)
             ),
-            React.createElement('span',{style:{fontSize:'10px',color:'var(--ac)',background:'var(--acg)',padding:'3px 8px',borderRadius:'20px'}},'Following')
+            React.createElement('button',{onClick:function(){toggleFollow(String(f.id||f.name),f.name,f.img,f.role);},style:{fontSize:'10px',color:following[String(f.id||f.name)]?'var(--ac)':'#fff',background:following[String(f.id||f.name)]?'var(--acg)':'var(--ac)',border:following[String(f.id||f.name)]?'1px solid var(--ac)':'none',padding:'5px 10px',borderRadius:'20px',cursor:'pointer',fontWeight:600}},following[String(f.id||f.name)]?'Following':'+Follow')
           );
         })
       ) : null,

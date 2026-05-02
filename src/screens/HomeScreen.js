@@ -1,4 +1,7 @@
 import React,{useState,useEffect} from 'react';
+import {useFollow} from './useFollow';
+import {createClient} from '@supabase/supabase-js';
+var sbHome = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
@@ -20,6 +23,10 @@ export default function HomeScreen(props){
   var setAc = acState[1];
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
+  var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
+  var followHook = useFollow(sbHome, currentUserId);
+  var following = followHook.following;
+  var toggleFollow = followHook.toggleFollow;
   var searchQS=useState(''); var searchQ=searchQS[0]; var setSearchQ=searchQS[1];
   var searchResS=useState(null); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var searchingS=useState(false); var searching=searchingS[0]; var setSearching=searchingS[1];
@@ -172,7 +179,7 @@ export default function HomeScreen(props){
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},(u.full_name||u.email||'').split('@')[0]),
                 React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'RingIn Member')
               ),
-              React.createElement('button',{onClick:function(ev){ev.stopPropagation();setSearchQ('');if(props.session&&props.session.user&&u.id===props.session.user.id){if(props.onGoToProfile)props.onGoToProfile();}else{setSelectedUser(u);}},style:{padding:'5px 12px',background:'var(--acg)',border:'1px solid var(--ac)',borderRadius:'20px',color:'var(--ac)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'View Profile')
+              React.createElement('button',{onClick:function(ev){ev.stopPropagation();if(props.session&&props.session.user&&u.id===props.session.user.id){setSearchQ('');if(props.onGoToProfile)props.onGoToProfile();}else{toggleFollow(String(u.id),u.full_name||u.email,u.avatar_url,'Member');}},style:{padding:'5px 12px',background:following[String(u.id)]?'var(--acg)':'var(--ac)',border:following[String(u.id)]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[String(u.id)]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, props.session&&props.session.user&&u.id===props.session.user.id ? 'View Profile' : (following[String(u.id)]?'Following':'+Follow'))
             );
           })
         ) : null,
