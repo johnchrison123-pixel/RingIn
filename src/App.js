@@ -105,7 +105,28 @@ export default function App() {
     {id:'profile', label:'Profile', svg:'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z'},
   ];
 
-  return React.createElement('div', {className:'app-container'},
+  var swipeStartXS = useState(0); var swipeStartX = swipeStartXS[0]; var setSwipeStartX = swipeStartXS[1];
+  var swipeStartYS = useState(0); var swipeStartY = swipeStartYS[0]; var setSwipeStartY = swipeStartYS[1];
+
+  function handleSwipeStart(e){
+    setSwipeStartX(e.touches[0].clientX);
+    setSwipeStartY(e.touches[0].clientY);
+  }
+
+  function handleSwipeEnd(e){
+    var dx = e.changedTouches[0].clientX - swipeStartX;
+    var dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
+    if(swipeStartX < 40 && dx > 80 && dy < 60){
+      if(activeTab==='wallet') setActiveTab(prevTab);
+      else if(activeTab==='search' && selectedExpert){ setSelectedExpert(null); }
+    }
+  }
+
+  return React.createElement('div', {
+    className:'app-container',
+    onTouchStart:handleSwipeStart,
+    onTouchEnd:handleSwipeEnd
+  },
     React.createElement('div', {className:'screen-content'}, renderScreen()),
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab) {

@@ -63,7 +63,18 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     });
   }
 
-  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},
+  var swXS=useState(0); var swX=swXS[0]; var setSwX=swXS[1];
+  var swYS=useState(0); var swY=swYS[0]; var setSwY=swYS[1];
+
+  return React.createElement('div',{
+    style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
+    onTouchStart:function(e){setSwX(e.touches[0].clientX);setSwY(e.touches[0].clientY);},
+    onTouchEnd:function(e){
+      var dx=e.changedTouches[0].clientX-swX;
+      var dy=Math.abs(e.changedTouches[0].clientY-swY);
+      if(swX<60&&dx>80&&dy<60) onBack();
+    }
+  },
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
       React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'<'),
       React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
@@ -148,6 +159,9 @@ export default function MessagesScreen(props){
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
+  var refreshingS=useState(false); var refreshing=refreshingS[0]; var setRefreshing=refreshingS[1];
+  var pullStartS=useState(0); var pullStart=pullStartS[0]; var setPullStart=pullStartS[1];
+  var pullDistS=useState(0); var pullDist=pullDistS[0]; var setPullDist=pullDistS[1];
   var userConvosS=useState(function(){
     try{var cc=localStorage.getItem('convos_'+myId);if(cc)return JSON.parse(cc);}catch(e){}
     return [];
@@ -237,6 +251,38 @@ export default function MessagesScreen(props){
     });
   },[search]);
 
+  function refreshConvos(){
+    if(!myId||refreshing) return;
+    setRefreshing(true);
+    sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
+      if(!res.data){setRefreshing(false);return;}
+      res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
+      var convMap={};
+      res.data.forEach(function(m){
+        if(!convMap[m.conversation_id]){
+          convMap[m.conversation_id]={id:m.conversation_id,convId:m.conversation_id,lastMsg:m.text,lastTime:m.created_at,unreadCount:0,otherId:m.sender_id===myId?m.receiver_id:m.sender_id,otherName:m.sender_id===myId?'':m.sender_name};
+        }
+        if(!m.read&&m.sender_id!==myId) convMap[m.conversation_id].unreadCount++;
+      });
+      var convList=Object.values(convMap);
+      var otherIds=convList.map(function(c){return c.otherId;}).filter(Boolean);
+      if(otherIds.length===0){setRefreshing(false);return;}
+      sb.from('profiles').select('*').in('id',otherIds).then(function(pr){
+        var profileMap={};
+        if(pr.data) pr.data.forEach(function(p){profileMap[p.id]=p;});
+        var enriched=convList.map(function(c){
+          var prof=profileMap[c.otherId]||{};
+          return Object.assign({},c,{name:prof.full_name||prof.email||c.otherName||'User',img:prof.avatar_url||null,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:(prof.full_name||prof.email||'U').substring(0,2).toUpperCase(),receiverId:c.otherId});
+        });
+        setUserConvos(enriched);
+        try{localStorage.setItem('convos_'+myId,JSON.stringify(enriched));}catch(e){}
+        var total=enriched.reduce(function(sum,c){return sum+(c.unreadCount||0);},0);
+        setTotalUnread(total);
+        setRefreshing(false);
+      });
+    });
+  }
+
   function startConvo(user){
     var convId = [myId,user.id].sort().join('_');
     var convo = {
@@ -288,7 +334,18 @@ export default function MessagesScreen(props){
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){setActiveCall(exp);},onMessageSent:handleMessageSent});
 
-  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},
+  var swXS=useState(0); var swX=swXS[0]; var setSwX=swXS[1];
+  var swYS=useState(0); var swY=swYS[0]; var setSwY=swYS[1];
+
+  return React.createElement('div',{
+    style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
+    onTouchStart:function(e){setSwX(e.touches[0].clientX);setSwY(e.touches[0].clientY);},
+    onTouchEnd:function(e){
+      var dx=e.changedTouches[0].clientX-swX;
+      var dy=Math.abs(e.changedTouches[0].clientY-swY);
+      if(swX<60&&dx>80&&dy<60) onBack();
+    }
+  },
     // Header
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
@@ -297,6 +354,10 @@ export default function MessagesScreen(props){
       ),
       React.createElement('button',{onClick:function(){setShowNew(!showNew);},style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'22px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+')
     ),
+    pullDist>20||refreshing ? React.createElement('div',{style:{textAlign:'center',padding:'8px',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}},
+      refreshing ? React.createElement('div',{style:{width:'16px',height:'16px',borderRadius:'50%',border:'2px solid var(--ac)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite'}}) : '↓',
+      refreshing ? 'Refreshing...' : pullDist>50 ? 'Release to refresh' : 'Pull to refresh'
+    ) : null,
     // New message search
     showNew ? React.createElement('div',{style:{padding:'0 18px 10px',borderBottom:'1px solid var(--border)'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'8px 12px',display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},

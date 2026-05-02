@@ -22,3 +22,5 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 .auth-message{text-align:center;margin-top:14px;font-size:13px;color:var(--ac);}
 .auth-switch{text-align:center;margin-top:20px;color:var(--t2);font-size:14px;cursor:pointer;}
 .auth-switch:hover{color:var(--ac);}
+
+@keyframes spin { to { transform: rotate(360deg); } }
