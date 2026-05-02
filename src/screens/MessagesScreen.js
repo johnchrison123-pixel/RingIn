@@ -115,6 +115,9 @@ export default function MessagesScreen(props){
     if(!myId) return;
     // Get all messages where I am sender or receiver
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
+      if(!res.data||res.data.length===0) return;
+      // Filter out expert fake convos
+      res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
       if(!res.data) return;
       // Group by conversation_id
       var convMap = {};
@@ -127,7 +130,7 @@ export default function MessagesScreen(props){
             lastTime: m.created_at,
             unreadCount: 0,
             otherId: m.sender_id===myId ? m.receiver_id : m.sender_id,
-            otherName: m.sender_id===myId ? m.receiver_id : m.sender_name,
+            otherName: m.sender_id===myId ? '' : m.sender_name,
           };
         }
         if(!m.read && m.sender_id!==myId) convMap[m.conversation_id].unreadCount++;
