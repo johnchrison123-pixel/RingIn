@@ -540,7 +540,7 @@ export default function HomeScreen(props){
         )
       ) : null
     ),
-    React.createElement('div', {style:{padding:'0 18px'}},
+    React.createElement('div', {style:{padding:'0'}},
       posts.map(function(p){
         return React.createElement('div', {key:p.id, className:'fpost'},
           React.createElement('div', {className:'ph'},
@@ -557,7 +557,7 @@ export default function HomeScreen(props){
               }, p.name),
               React.createElement('div', {className:'pr'}, p.role)
             ),
-            React.createElement('div', {className:'pt'}, p.time)
+            React.createElement('div', {className:'pt'}, p.time||new Date().toLocaleDateString())
           ),
           p.postImg ? React.createElement('img',{src:p.postImg,alt:'post',style:{width:'100%',height:'280px',objectFit:'cover',display:'block'}}) : null,
           React.createElement('div', {className:'pb'},
