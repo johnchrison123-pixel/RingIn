@@ -159,14 +159,22 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   function toggleLike(id){
     if(!userId) return;
     if(typeof id !== 'string') return;
+    var myName = email.split('@')[0];
+    // Update UI instantly - no lag
+    setMyPosts(function(prev){return prev.map(function(p){
+      if(p.id!==id) return p;
+      var newLiked = !p.liked;
+      var newLikes = newLiked 
+        ? [...p.likes, userId]
+        : p.likes.filter(function(l){return l!==userId;});
+      var newLikeNames = newLiked
+        ? [...(p.likeNames||[]), myName]
+        : (p.likeNames||[]).filter(function(n){return n!==myName;});
+      return Object.assign({},p,{liked:newLiked,likes:newLikes,likeNames:newLikeNames});
+    });});
+    // Save to Supabase in background
     sbProfile.rpc('toggle_like',{post_id:id,user_id:userId}).then(function(r){
-      if(r.error){console.log('like error:',r.error);return;}
-      setMyPosts(function(prev){return prev.map(function(p){
-        if(p.id!==id) return p;
-        var newLiked = !p.liked;
-        var newLikes = newLiked ? [...p.likes, userId] : p.likes.filter(function(l){return l!==userId;});
-        return Object.assign({},p,{liked:newLiked,likes:newLikes});
-      });});
+      if(r.error) console.log('like error:',r.error);
     });
   }
 
@@ -393,8 +401,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               '❤️ '+p.likes.join(', ')
             ) : null,
             React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
-              React.createElement('button',{onClick:function(){toggleLike(p.id);},style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}},
-                React.createElement('span',{style:{fontSize:'18px'}},p.liked?'❤️':'🤍'),p.likes.length,' Like'
+              React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}},
+                React.createElement('button',{onClick:function(){toggleLike(p.id);},style:{display:'flex',alignItems:'center',gap:'5px',padding:'8px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}},
+                  React.createElement('span',{style:{fontSize:'18px'}},p.liked?'❤️':'🤍'),p.likes.length,' Like'
+                ),
+                p.likes.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px'}},
+                  p.likeNames&&p.likeNames.length>0?p.likeNames.slice(0,2).join(', ')+(p.likes.length>2?' and '+(p.likes.length-2)+' others':''):''
+                ):null
               ),
               React.createElement('button',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
                 React.createElement('span',{style:{fontSize:'16px'}},'💬'),' Comment'
