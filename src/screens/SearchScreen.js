@@ -30,8 +30,8 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
         React.createElement('div',{style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button',{
             onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
-            style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px'}
-          }, followLoaded ? (isFollowing ? 'Following' : '+ Follow') : '...'),
+            style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px',visibility:followLoaded?'visible':'hidden'}
+          }, isFollowing ? 'Following' : '+ Follow'),
           React.createElement('button',{onClick:function(){alert('Message coming soon!');},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
           React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
         )
@@ -131,8 +131,8 @@ export default function SearchScreen(props){
             },'Call'),
             React.createElement('button',{
               onClick:function(ev){ev.stopPropagation();toggleFollow(String(e.id),e.name,e.img,e.role);},
-              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer',opacity:followLoaded?1:0.5}
-            }, followLoaded ? (following[String(e.id)]?'Following':'Follow') : '...')
+              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer',visibility:followLoaded?'visible':'hidden'}
+            }, following[String(e.id)]?'Following':'Follow')
           )
         );
       })
