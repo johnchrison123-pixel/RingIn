@@ -30,8 +30,8 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow}){
         React.createElement('div', {style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button', {
             onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
-            style:{padding:'6px 12px',background:following[String(expert.id)]?'var(--acg)':'var(--ac)',border:following[String(expert.id)]?'1px solid var(--ac)':'none',borderRadius:'8px',color:following[String(expert.id)]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
-          }, following[String(expert.id)] ? 'Following' : '+ Follow'),
+            style:{padding:'6px 12px',background:following[String(expert.id)]?'var(--acg)':'var(--ac)',border:following[String(expert.id)]?'1px solid var(--ac)':'none',borderRadius:'8px',color:following[String(expert.id)]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'70px'}
+          }, followLoaded ? (following[String(expert.id)] ? 'Following' : '+ Follow') : '...'),
           React.createElement('button', {onClick:function(){alert('Message '+expert.name+' coming soon!');},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Message'),
           React.createElement('button', {onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, 'Call')
         )
@@ -76,6 +76,7 @@ export default function SearchScreen(props){
   var followHook = useFollow(sb, currentUserId);
   var following = followHook.following;
   var toggleFollow = followHook.toggleFollow;
+  var followLoaded = followHook.loaded;
   var sel = useState(props.initExpert || null);
   var selected = sel[0];
   var setSelected = sel[1];
@@ -142,7 +143,7 @@ export default function SearchScreen(props){
             }, 'Call'),
             React.createElement('button', {
               onClick:function(ev){ev.stopPropagation();toggleFollow(String(e.id),e.name,e.img,e.role);},
-              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
+              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer',opacity:followLoaded?1:0}
             }, following[String(e.id)] ? 'Following' : 'Follow')
           )
         );

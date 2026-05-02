@@ -5,6 +5,7 @@ var sb = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_
 
 export function useFollow(supabase, currentUserId){
   var followingS = useState({}); var following = followingS[0]; var setFollowing = followingS[1];
+  var loadedS = useState(false); var loaded = loadedS[0]; var setLoaded = loadedS[1];
 
   useEffect(function(){
     if(!currentUserId) return;
@@ -15,6 +16,7 @@ export function useFollow(supabase, currentUserId){
         setFollowing(map);
       }
       if(res.error) console.log('load follows error:',res.error);
+      setLoaded(true);
     });
   },[currentUserId]);
 
@@ -40,5 +42,5 @@ export function useFollow(supabase, currentUserId){
     }
   }
 
-  return {following, toggleFollow};
+  return {following, toggleFollow, loaded};
 }
