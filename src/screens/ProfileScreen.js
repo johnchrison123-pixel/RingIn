@@ -166,9 +166,33 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   function submitPost(){
     if(!postText.trim()){alert('Write something first!');return;}
-    var newPost={id:Date.now(),text:postText,likes:[],liked:false,time:'Just now',img:null};
-    setMyPosts(function(prev){return [newPost,...prev];});
-    setPostText('');
+    if(!userId){alert('Please log in to post');return;}
+    var postData = {
+      user_id: userId,
+      user_name: email.split('@')[0],
+      user_avatar: avatarUrl||null,
+      text: postText,
+      images: [],
+      tags: [],
+      likes: [],
+      comments_count: 0
+    };
+    sbProfile.from('posts').insert([postData]).select().then(function(res){
+      if(res.error){alert('Failed to post: '+res.error.message);return;}
+      if(res.data&&res.data[0]){
+        var newPost={
+          id:res.data[0].id,
+          text:postText,
+          likes:[],
+          liked:false,
+          time:'Just now',
+          img:null,
+          comments:[]
+        };
+        setMyPosts(function(prev){return [newPost].concat(prev);});
+        setPostText('');
+      }
+    });
   }
 
   // SETTINGS SCREEN
