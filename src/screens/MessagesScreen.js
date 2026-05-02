@@ -11,15 +11,17 @@ var EXPERT_CONVOS_BASE=[
 ];
 
 function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
+  var myId = session&&session.user ? session.user.id : 'guest';
+  var myName = session&&session.user ? session.user.email.split('@')[0] : 'You';
+  var convId = convo.convId || convo.id;
   var initMsgs = [];
   try{ var cm=localStorage.getItem('msgs_'+convId); if(cm) initMsgs=JSON.parse(cm); }catch(e){}
   var mS=useState(initMsgs); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var emojiS=useState(false); var showEmoji=emojiS[0]; var setShowEmoji=emojiS[1];
+  var swXS=useState(0); var swX=swXS[0]; var setSwX=swXS[1];
+  var swYS=useState(0); var swY=swYS[0]; var setSwY=swYS[1];
   var bottomRef=useRef(null);
-  var myId = session&&session.user ? session.user.id : 'guest';
-  var myName = session&&session.user ? session.user.email.split('@')[0] : 'You';
-  var convId = convo.convId || convo.id;
 
   useEffect(function(){
     // Load messages
@@ -62,9 +64,6 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       else if(onMessageSent) onMessageSent(convo, txt.trim());
     });
   }
-
-  var swXS=useState(0); var swX=swXS[0]; var setSwX=swXS[1];
-  var swYS=useState(0); var swY=swYS[0]; var setSwY=swYS[1];
 
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
@@ -333,9 +332,6 @@ export default function MessagesScreen(props){
 
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){setActiveCall(exp);},onMessageSent:handleMessageSent});
-
-  var swXS=useState(0); var swX=swXS[0]; var setSwX=swXS[1];
-  var swYS=useState(0); var swY=swYS[0]; var setSwY=swYS[1];
 
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
