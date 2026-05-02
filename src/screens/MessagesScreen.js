@@ -4,7 +4,7 @@ import CallScreen from './CallScreen';
 import {createClient} from '@supabase/supabase-js';
 var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 
-var EXPERT_CONVOS=[
+var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
   {id:'e2',initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',last:'I will send you the resources.',time:'1h ago',unread:0,img:'https://i.pravatar.cc/150?img=12',rate:80},
   {id:'e3',initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',last:'Great progress! Keep it up.',time:'Yesterday',unread:1,img:'https://i.pravatar.cc/150?img=23',rate:60},
@@ -13,6 +13,7 @@ var EXPERT_CONVOS=[
 function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var mS=useState([]); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
+  var emojiS=useState(false); var showEmoji=emojiS[0]; var setShowEmoji=emojiS[1];
   var bottomRef=useRef(null);
   var myId = session&&session.user ? session.user.id : 'guest';
   var myName = session&&session.user ? session.user.email.split('@')[0] : 'You';
@@ -90,9 +91,47 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       }),
       React.createElement('div',{ref:bottomRef})
     ),
-    React.createElement('div',{style:{padding:'10px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center'}},
-      React.createElement('input',{value:txt,onChange:function(e){setTxt(e.target.value);},onKeyDown:function(e){if(e.key==='Enter')send();},placeholder:'Type a message...',style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 16px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}}),
-      React.createElement('button',{onClick:send,disabled:!txt.trim(),style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',flexShrink:0,opacity:txt.trim()?1:0.4,display:'flex',alignItems:'center',justifyContent:'center'}},'↑')
+    showEmoji ? React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}},
+      ['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','😢','😮','🥳','😎','🙏','💯','😅','🤣'].map(function(em){
+        return React.createElement('span',{key:em,onClick:function(){setTxt(function(t){return t+em;});setShowEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
+      })
+    ) : null,
+    React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center',background:'var(--bg)'}},
+      React.createElement('label',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}},
+        '📷',
+        React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){
+          if(e.target.files[0]){
+            var reader = new FileReader();
+            reader.onload = function(ev){
+              setTxt(function(t){return t+'[Photo attached]';});
+            };
+            reader.readAsDataURL(e.target.files[0]);
+            alert('Photo sharing coming soon! We will add this feature next.');
+          }
+        }})
+      ),
+      React.createElement('label',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}},
+        '📎',
+        React.createElement('input',{type:'file',style:{display:'none'},onChange:function(e){
+          if(e.target.files[0]) alert('File sharing coming soon!');
+        }})
+      ),
+      React.createElement('button',{
+        onClick:function(){setShowEmoji(function(v){return !v;});},
+        style:{width:'34px',height:'34px',borderRadius:'50%',background:showEmoji?'var(--acg)':'var(--bg3)',border:showEmoji?'1px solid var(--ac)':'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px',color:showEmoji?'var(--ac)':'var(--text)'}
+      },'😊'),
+      React.createElement('input',{
+        value:txt,
+        onChange:function(e){setTxt(e.target.value);},
+        onKeyDown:function(e){if(e.key==='Enter')send();},
+        placeholder:'Type a message...',
+        style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
+      }),
+      React.createElement('button',{
+        onClick:send,
+        disabled:!txt.trim(),
+        style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',flexShrink:0,opacity:txt.trim()?1:0.4,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 0.2s'}
+      },'✓')
     )
   );
 }
@@ -100,6 +139,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 export default function MessagesScreen(props){
   var session = props.session;
   var myId = session&&session.user ? session.user.id : null;
+  var expertConvosS=useState(EXPERT_CONVOS_BASE); var expertConvos=expertConvosS[0]; var setExpertConvos=expertConvosS[1];
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
@@ -130,7 +170,7 @@ export default function MessagesScreen(props){
             lastTime: m.created_at,
             unreadCount: 0,
             otherId: m.sender_id===myId ? m.receiver_id : m.sender_id,
-            otherName: m.sender_id===myId ? '' : m.sender_name,
+            otherName: m.sender_id===myId ? '' : (m.sender_name||''),
           };
         }
         if(!m.read && m.sender_id!==myId) convMap[m.conversation_id].unreadCount++;
@@ -205,16 +245,34 @@ export default function MessagesScreen(props){
     setActive(convo);
   }
 
+  function formatTime(date){
+    var d = date ? new Date(date) : new Date();
+    var now = new Date();
+    var diff = Math.floor((now-d)/1000);
+    if(diff<60) return 'Just now';
+    if(diff<3600) return Math.floor(diff/60)+'m ago';
+    if(diff<86400) return Math.floor(diff/3600)+'h ago';
+    return d.toLocaleDateString([],{month:'short',day:'numeric'});
+  }
+
   function handleMessageSent(convo, text){
+    // Update user convos
     setUserConvos(function(prev){
       var exists = prev.find(function(c){return c.convId===convo.convId;});
       if(exists){
         return prev.map(function(c){
           if(c.convId!==convo.convId) return c;
-          return Object.assign({},c,{lastMsg:text});
+          return Object.assign({},c,{lastMsg:text,lastTime:new Date().toISOString()});
         });
       }
-      return [Object.assign({},convo,{lastMsg:text,unreadCount:0})].concat(prev);
+      return [Object.assign({},convo,{lastMsg:text,unreadCount:0,lastTime:new Date().toISOString()})].concat(prev);
+    });
+    // Update expert convos
+    setExpertConvos(function(prev){
+      return prev.map(function(c){
+        if(c.id!==convo.id) return c;
+        return Object.assign({},c,{last:'You: '+text,time:'Just now'});
+      });
     });
   }
 
@@ -269,7 +327,7 @@ export default function MessagesScreen(props){
             React.createElement('div',{style:{flex:1,minWidth:0}},
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px'}},
                 React.createElement('span',{style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)'}},c.name),
-                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?new Date(c.lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'')
+                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?formatTime(c.lastTime):'')
               ),
               React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.lastMsg||'Start a conversation')
             ),
@@ -279,7 +337,7 @@ export default function MessagesScreen(props){
       ) : null,
       // Expert conversations
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Experts'),
-      EXPERT_CONVOS.map(function(c){
+      expertConvos.map(function(c){
         return React.createElement('div',{key:c.id,onClick:function(){setActive(c);},style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
           React.createElement('div',{style:{position:'relative',flexShrink:0}},
             React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:c.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
@@ -292,8 +350,7 @@ export default function MessagesScreen(props){
               React.createElement('span',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},c.name),
               React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.time)
             ),
-            React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',marginBottom:'2px'}},c.role),
-            React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.last)
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:'2px'}},c.last||'Tap to start chatting')
           ),
           c.unread>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unread) : null
         );
