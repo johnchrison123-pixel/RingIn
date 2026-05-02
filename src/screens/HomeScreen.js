@@ -90,18 +90,22 @@ export default function HomeScreen(props){
   },[props.session]);
 
   function mapPost(p){
+    var session = props.session;
+    var userId = session&&session.user?session.user.id:null;
+    var likesArr = Array.isArray(p.likes)?p.likes:[];
     return {
       id:p.id,
+      userId:p.user_id,
       initials:(p.user_name||'?').substring(0,2).toUpperCase(),
       name:p.user_name||'User',
       role:'RingIn Member',
       color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
       img:p.user_avatar||null,
-      time:new Date(p.created_at).toLocaleDateString(),
+      time:new Date(p.created_at).toLocaleString(),
       text:p.text||'',
       tags:p.tags||[],
-      likes:typeof p.likes==='number'?p.likes:(p.likes?p.likes.length:0),
-      liked:false,
+      likes:likesArr.length,
+      liked:userId?likesArr.includes(userId):false,
       comments:p.comments_count||0,
       rate:0,
       expertId:null,
@@ -121,6 +125,20 @@ export default function HomeScreen(props){
     });
     // Realtime subscription - new posts appear automatically
     var ch = sbHome.channel('public-posts')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'posts'},function(p){
+        var session = props.session;
+        var userId = session&&session.user?session.user.id:null;
+        var likesArr = Array.isArray(p.new.likes)?p.new.likes:[];
+        setPosts(function(prev){
+          return prev.map(function(post){
+            if(post.id!==p.new.id) return post;
+            return Object.assign({},post,{
+              likes:likesArr.length,
+              liked:userId?likesArr.includes(userId):post.liked
+            });
+          });
+        });
+      })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(p){
         var newPost = mapPost(p.new);
         setPosts(function(prev){
