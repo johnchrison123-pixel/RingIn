@@ -54,6 +54,27 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   useEffect(function(){
     if(!userId) return;
+    // Load user posts from Supabase
+    sbProfile.from('posts').select('*').eq('user_id',userId).order('created_at',{ascending:false}).then(function(res){
+      if(res.data&&res.data.length>0){
+        var dbPosts = res.data.map(function(p){
+          return {
+            id:p.id,
+            text:p.text||'',
+            likes:p.likes||[],
+            liked:false,
+            time:new Date(p.created_at).toLocaleDateString(),
+            img:p.images&&p.images[0]?p.images[0]:null,
+            comments:[]
+          };
+        });
+        setMyPosts(dbPosts);
+      }
+    });
+  },[userId]);
+
+  useEffect(function(){
+    if(!userId) return;
     var saved = localStorage.getItem('avatar_'+userId);
     var savedCover = localStorage.getItem('cover_'+userId);
     if(saved){

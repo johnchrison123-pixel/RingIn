@@ -24,6 +24,9 @@ export default function HomeScreen(props){
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
+  var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
+  var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
+  var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
   var compImgsS=useState([]); var compImgs=compImgsS[0]; var setCompImgs=compImgsS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
@@ -31,6 +34,25 @@ export default function HomeScreen(props){
   var fileInputRef=useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
+  useEffect(function(){
+    if(!props.session||!props.session.user) return;
+    var uid = props.session.user.id;
+    // Load notifications
+    sbHome.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(20).then(function(res){
+      if(res.data){
+        setNotifs(res.data);
+        setUnreadNotif(res.data.filter(function(n){return !n.read;}).length);
+      }
+    });
+    // Realtime notifications
+    var ch = sbHome.channel('notifs-'+uid)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+uid},function(p){
+        setNotifs(function(prev){return [p.new].concat(prev);});
+        setUnreadNotif(function(n){return n+1;});
+      }).subscribe();
+    return function(){sbHome.removeChannel(ch);};
+  },[props.session]);
+
   useEffect(function(){
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(20).then(function(res){
       if(res.data&&res.data.length>0){
@@ -130,6 +152,31 @@ export default function HomeScreen(props){
       comments_count: 0
     };
     sbHome.from('posts').insert([postData]).select().then(function(res){
+      // Send notifications to followers
+      if(res.data&&res.data[0]){
+        sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
+          if(fres.data&&fres.data.length>0){
+            // Check notification settings
+            var notifPromises = fres.data.map(function(f){
+              return sbHome.from('notification_settings').select('notify_posts').eq('user_id',f.follower_id).eq('following_id',session.user.id).single().then(function(ns){
+                // If no setting exists or notify_posts is true, send notification
+                if(!ns.data||ns.data.notify_posts!==false){
+                  return sbHome.from('notifications').insert([{
+                    user_id:f.follower_id,
+                    from_user_id:session.user.id,
+                    from_user_name:postData.user_name,
+                    from_user_avatar:postData.user_avatar,
+                    type:'new_post',
+                    message:postData.user_name+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
+                    post_id:res.data[0].id,
+                    read:false
+                  }]);
+                }
+              });
+            });
+          }
+        });
+      }
       if(res.error){alert('Failed to post: '+res.error.message);setPosting(false);return;}
       if(res.data&&res.data[0]){
         var newPost = {
@@ -243,29 +290,39 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'wc'}, 'C'),
           React.createElement('span', null, '1,240')
         ),
-        React.createElement('div', {className:'ibt', onClick:function(){setShowNotif(!showNotif);}, style:{cursor:'pointer',position:'relative'}},
+        React.createElement('div', {className:'ibt', onClick:function(){
+          setShowNotifs(!showNotifs);
+          // Mark all as read
+          if(!showNotifs&&props.session&&props.session.user){
+            sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(){});
+            setUnreadNotif(0);
+          }
+        }, style:{cursor:'pointer',position:'relative'}},
           React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'var(--t2)',strokeWidth:2,width:15,height:15},
             React.createElement('path', {d:'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0'})
           ),
-          React.createElement('div', {className:'nd'})
+          unreadNotif>0 ? React.createElement('div', {className:'nd', style:{background:'#ef4444',minWidth:'14px',height:'14px',borderRadius:'7px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',top:'3px',right:'3px',padding:'0 2px'}}, unreadNotif>9?'9+':String(unreadNotif)) : React.createElement('div',{className:'nd'})
         )
       )
     ),
-    showNotif ? React.createElement('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999}},
-      React.createElement('div', {onClick:function(){setShowNotif(false);}, style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)'}}),
+    showNotifs ? React.createElement('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999}},
+      React.createElement('div', {onClick:function(){setShowNotifs(false);}, style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)'}}),
       React.createElement('div', {style:{position:'absolute',top:0,left:0,right:0,background:'var(--bg)',borderBottomLeftRadius:'16px',borderBottomRightRadius:'16px',boxShadow:'0 8px 32px rgba(0,0,0,0.4)',zIndex:1000,maxHeight:'80vh',overflowY:'auto'}},
         React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px 10px'}},
           React.createElement('div', {style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notifications'),
-          React.createElement('button', {onClick:function(){setShowNotif(false);}, style:{background:'none',border:'none',color:'var(--t2)',fontSize:'18px',cursor:'pointer'}},'✕')
+          React.createElement('button', {onClick:function(){setShowNotifs(false);}, style:{background:'none',border:'none',color:'var(--t2)',fontSize:'18px',cursor:'pointer'}},'✕')
         ),
-        NOTIFS.map(function(n){
-          return React.createElement('div', {key:n.id, style:{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 18px',borderTop:'1px solid var(--border)',background:n.unread?'rgba(123,110,255,0.06)':'transparent'}},
-            React.createElement('div', {style:{fontSize:'20px',flexShrink:0}}, n.icon),
-            React.createElement('div', {style:{flex:1}},
-              React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.text),
-              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, n.time)
+        notifs.length===0 ? React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t2)',fontSize:'13px'}},'No notifications yet') :
+        notifs.map(function(n){
+          return React.createElement('div', {key:n.id, style:{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 18px',borderTop:'1px solid var(--border)',background:!n.read?'rgba(123,110,255,0.06)':'transparent'}},
+            React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}},
+              n.from_user_avatar ? React.createElement('img',{src:n.from_user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (n.from_user_name||'?').substring(0,2).toUpperCase()
             ),
-            n.unread ? React.createElement('div', {style:{width:'7px',height:'7px',borderRadius:'50%',background:'var(--ac)',flexShrink:0,marginTop:'4px'}}) : null
+            React.createElement('div', {style:{flex:1}},
+              React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.message||'New notification'),
+              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, new Date(n.created_at).toLocaleDateString())
+            ),
+            !n.read ? React.createElement('div', {style:{width:'7px',height:'7px',borderRadius:'50%',background:'var(--ac)',flexShrink:0,marginTop:'4px'}}) : null
           );
         })
       )
