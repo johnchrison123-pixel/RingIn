@@ -53,6 +53,13 @@ export default function App() {
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }
 
   function handleSwipeStart(e){ setSwX(e.touches[0].clientX); setSwY(e.touches[0].clientY); }
+  function handleSwipeMove(e){
+    var dx = e.touches[0].clientX - swX;
+    var dy = Math.abs(e.touches[0].clientY - swY);
+    if(swX < 40 && dx > 0 && dy < 60){
+      e.preventDefault();
+    }
+  }
   function handleSwipeEnd(e){
     var dx = e.changedTouches[0].clientX - swX;
     var dy = Math.abs(e.changedTouches[0].clientY - swY);
@@ -120,6 +127,7 @@ export default function App() {
   return React.createElement('div', {
     className:'app-container',
     onTouchStart:handleSwipeStart,
+    onTouchMove:handleSwipeMove,
     onTouchEnd:handleSwipeEnd
   },
     React.createElement('div', {className:'screen-content'}, renderScreen()),

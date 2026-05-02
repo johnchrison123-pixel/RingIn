@@ -68,10 +68,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
     onTouchStart:function(e){setSwX(e.touches[0].clientX);setSwY(e.touches[0].clientY);},
+    onTouchMove:function(e){
+      var dx=e.touches[0].clientX-swX;
+      var dy=Math.abs(e.touches[0].clientY-swY);
+      if(swX<40&&dx>0&&dy<60) e.preventDefault();
+    },
     onTouchEnd:function(e){
       var dx=e.changedTouches[0].clientX-swX;
       var dy=Math.abs(e.changedTouches[0].clientY-swY);
-      if(swX<60&&dx>80&&dy<60) onBack();
+      if(swX<40&&dx>80&&dy<60) onBack();
     }
   },
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
@@ -336,10 +341,15 @@ export default function MessagesScreen(props){
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
     onTouchStart:function(e){setSwX(e.touches[0].clientX);setSwY(e.touches[0].clientY);},
+    onTouchMove:function(e){
+      var dx=e.touches[0].clientX-swX;
+      var dy=Math.abs(e.touches[0].clientY-swY);
+      if(swX<40&&dx>0&&dy<60) e.preventDefault();
+    },
     onTouchEnd:function(e){
       var dx=e.changedTouches[0].clientX-swX;
       var dy=Math.abs(e.changedTouches[0].clientY-swY);
-      if(swX<60&&dx>80&&dy<60) onBack();
+      if(swX<40&&dx>80&&dy<60) onBack();
     }
   },
     // Header
