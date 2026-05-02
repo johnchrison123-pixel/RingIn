@@ -1,4 +1,4 @@
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
 var sbHome = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
@@ -23,7 +23,41 @@ export default function HomeScreen(props){
   var setAc = acState[1];
   var onViewExpert = props.onViewExpert;
   var onOpenWallet = props.onOpenWallet;
+  var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
+  var compImgsS=useState([]); var compImgs=compImgsS[0]; var setCompImgs=compImgsS[1];
+  var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
+  var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
+  var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
+  var fileInputRef=useRef(null);
+  var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
+  useEffect(function(){
+    sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(20).then(function(res){
+      if(res.data&&res.data.length>0){
+        var dbPosts = res.data.map(function(p){
+          return {
+            id:p.id,
+            initials:(p.user_name||'?').substring(0,2).toUpperCase(),
+            name:p.user_name||'User',
+            role:'RingIn Member',
+            color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+            img:p.user_avatar||null,
+            time:new Date(p.created_at).toLocaleDateString(),
+            text:p.text||'',
+            tags:p.tags||[],
+            likes:p.likes?p.likes.length:0,
+            liked:false,
+            comments:p.comments_count||0,
+            rate:0,
+            expertId:null,
+            postImg:p.images&&p.images[0]?p.images[0]:null,
+            extraImgs:p.images?p.images.slice(1):[]
+          };
+        });
+        setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
+      }
+    });
+  },[]);
   var followHook = useFollow(sbHome, currentUserId);
   var following = followHook.following;
   var toggleFollow = followHook.toggleFollow;
@@ -78,6 +112,69 @@ export default function HomeScreen(props){
   if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
   var onlineExperts = fe.filter(function(e){return e.online===true;});
+
+  function submitPost(){
+    if(!compText.trim()&&compImgs.length===0){alert('Write something or add a photo!');return;}
+    var session = props.session;
+    if(!session||!session.user){alert('Please log in to post');return;}
+    setPosting(true);
+    var tags = compText.match(/#[a-zA-Z0-9]+/g)||[];
+    var postData = {
+      user_id: session.user.id,
+      user_name: session.user.email.split('@')[0],
+      user_avatar: localStorage.getItem('avatar_'+session.user.id)||null,
+      text: compText,
+      images: compImgs,
+      tags: tags.map(function(t){return t.replace('#','');}),
+      likes: [],
+      comments_count: 0
+    };
+    sbHome.from('posts').insert([postData]).select().then(function(res){
+      if(res.error){alert('Failed to post: '+res.error.message);setPosting(false);return;}
+      if(res.data&&res.data[0]){
+        var newPost = {
+          id:res.data[0].id,
+          initials:(postData.user_name||'?').substring(0,2).toUpperCase(),
+          name:postData.user_name,
+          role:'RingIn Member',
+          color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+          img:postData.user_avatar,
+          time:'Just now',
+          text:postData.text,
+          tags:postData.tags,
+          likes:0,
+          liked:false,
+          comments:0,
+          rate:0,
+          expertId:null,
+          postImg:compImgs[0]||null,
+          extraImgs:compImgs.slice(1)
+        };
+        setPosts(function(prev){return [newPost].concat(prev);});
+      }
+      setCompText('');
+      setCompImgs([]);
+      setShowComp(false);
+      setPosting(false);
+    });
+  }
+
+  function handleImageUpload(files){
+    if(!files||files.length===0) return;
+    var newImgs = [];
+    var remaining = files.length;
+    Array.from(files).forEach(function(file){
+      var reader = new FileReader();
+      reader.onload = function(e){
+        newImgs.push(e.target.result);
+        remaining--;
+        if(remaining===0){
+          setCompImgs(function(prev){return prev.concat(newImgs);});
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   function goToExpert(expert){
     if(onViewExpert) onViewExpert(expert);
@@ -312,18 +409,65 @@ export default function HomeScreen(props){
     React.createElement('div', {className:'sh'},
       React.createElement('div', {className:'st'}, 'Feed')
     ),
-    React.createElement('div', {className:'composer'},
+    React.createElement('div', {className:'composer', onClick:function(){if(!showComp)setShowComp(true);}},
       React.createElement('div', {className:'comp-top'},
-        React.createElement('div', {className:'comp-av'}, 'Y'),
-        React.createElement('textarea', {className:'comp-ta', placeholder:'Share something...'})
-      ),
-      React.createElement('div', {className:'comp-btns'},
-        React.createElement('div', {className:'comp-att'},
-          React.createElement('div', {className:'comp-att-btn'}, 'Photo'),
-          React.createElement('div', {className:'comp-att-btn'}, 'Video')
+        React.createElement('div', {
+          className:'comp-av',
+          style:{background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',padding:0,display:'flex',alignItems:'center',justifyContent:'center'}
+        },
+          props.session&&props.session.user&&localStorage.getItem('avatar_'+props.session.user.id) ?
+            React.createElement('img',{src:localStorage.getItem('avatar_'+props.session.user.id),style:{width:'100%',height:'100%',objectFit:'cover'}}) :
+            (props.session&&props.session.user ? props.session.user.email.substring(0,2).toUpperCase() : 'Y')
         ),
-        React.createElement('button', {className:'comp-post-btn', onClick:function(){alert('Post submitted!');}}, 'Post')
-      )
+        showComp ?
+          React.createElement('textarea', {
+            className:'comp-ta',
+            placeholder:"What's on your mind?",
+            value:compText,
+            autoFocus:true,
+            onChange:function(e){setCompText(e.target.value);},
+            onClick:function(e){e.stopPropagation();}
+          }) :
+          React.createElement('div', {
+            style:{flex:1,padding:'8px 12px',fontSize:'13px',color:'var(--t3)',cursor:'pointer'}
+          }, "What's on your mind?")
+      ),
+      showComp ? React.createElement('div',null,
+        compImgs.length>0 ? React.createElement('div',{style:{display:'flex',gap:'6px',padding:'0 0 8px',flexWrap:'wrap'}},
+          compImgs.map(function(img,i){
+            return React.createElement('div',{key:i,style:{position:'relative',width:'70px',height:'70px',borderRadius:'8px',overflow:'hidden'}},
+              React.createElement('img',{src:img,style:{width:'100%',height:'100%',objectFit:'cover'}}),
+              React.createElement('button',{
+                onClick:function(){setCompImgs(function(prev){return prev.filter(function(_,idx){return idx!==i;});});},
+                style:{position:'absolute',top:'2px',right:'2px',width:'18px',height:'18px',borderRadius:'50%',background:'rgba(0,0,0,0.7)',border:'none',color:'#fff',fontSize:'10px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')
+            );
+          })
+        ) : null,
+        compEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px 0',borderTop:'1px solid var(--border)'}},
+          EMOJIS.map(function(em){
+            return React.createElement('span',{key:em,onClick:function(){setCompText(function(t){return t+em;});setCompEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
+          })
+        ) : null,
+        React.createElement('div', {className:'comp-btns'},
+          React.createElement('div', {className:'comp-att'},
+            React.createElement('label',{className:'comp-att-btn',style:{cursor:'pointer'}},
+              '🖼️ Photo',
+              React.createElement('input',{type:'file',accept:'image/*',multiple:true,style:{display:'none'},onChange:function(e){handleImageUpload(e.target.files);}})
+            ),
+            React.createElement('label',{className:'comp-att-btn',style:{cursor:'pointer'}},
+              '📎 File',
+              React.createElement('input',{type:'file',style:{display:'none'},onChange:function(e){if(e.target.files[0])alert('File sharing coming soon!');}})
+            ),
+            React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setCompEmoji(function(v){return !v;});}},compEmoji?'😊 Hide':'😊 Emoji'),
+            React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setShowComp(false);setCompText('');setCompImgs([]);setCompEmoji(false);}},'✕ Cancel')
+          ),
+          React.createElement('button', {
+            className:'comp-post-btn',
+            disabled:posting,
+            onClick:submitPost
+          }, posting?'Posting...':'Post')
+        )
+      ) : null
     ),
     React.createElement('div', {style:{padding:'0 18px'}},
       posts.map(function(p){
