@@ -94,6 +94,7 @@ export default function HomeScreen(props){
       color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
       img:p.user_avatar||null,
       time:new Date(p.created_at).toLocaleString(),
+      createdAt:p.created_at,
       text:p.text||'',
       tags:p.tags||[],
       likes:likesArr.length,
@@ -381,7 +382,10 @@ export default function HomeScreen(props){
       React.createElement('div', {style:{position:'absolute',top:0,left:0,right:0,background:'var(--bg)',borderBottomLeftRadius:'16px',borderBottomRightRadius:'16px',boxShadow:'0 8px 32px rgba(0,0,0,0.4)',zIndex:1000,maxHeight:'80vh',overflowY:'auto'}},
         React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px 10px'}},
           React.createElement('div', {style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notifications'),
-          React.createElement('button', {onClick:function(){setShowNotifs(false);}, style:{background:'none',border:'none',color:'var(--t2)',fontSize:'18px',cursor:'pointer'}},'✕')
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+            notifs.length>0?React.createElement('button',{onClick:function(){var uid=props.session&&props.session.user?props.session.user.id:null;if(uid)sbHome.from('notifications').delete().eq('user_id',uid).then(function(){});setNotifs([]);setUnreadNotif(0);},style:{background:'none',border:'none',color:'var(--ac)',fontSize:'12px',fontWeight:600,cursor:'pointer'}},'Clear all'):null,
+            React.createElement('button',{onClick:function(){setShowNotifs(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'18px',cursor:'pointer'}},'✕')
+          )
         ),
         notifs.length===0 ? React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t2)',fontSize:'13px'}},'No notifications yet') :
         notifs.map(function(n){
@@ -614,7 +618,7 @@ export default function HomeScreen(props){
               }, p.name),
               React.createElement('div', {className:'pr'}, p.role)
             ),
-            React.createElement('div', {className:'pt'}, p.time||new Date().toLocaleDateString())
+            React.createElement('div', {className:'pt'}, p.time&&p.time!=='Just now'?timeAgo(p.createdAt||new Date()):p.time||'')
           ),
           p.postImg ? React.createElement('img',{src:p.postImg,alt:'post',style:{width:'100%',height:'280px',objectFit:'cover',display:'block'}}) : null,
           React.createElement('div', {className:'pb'},
