@@ -45,7 +45,7 @@
 .wb-live-dot{width:5px;height:5px;border-radius:50%;background:#fff;animation:blink 1s ease-in-out infinite;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 .wb-viewers{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;padding:2px 7px;border-radius:20px;}
-.wb-info{padding:12px 14px 16px;position:relative;z-index:1;background:rgba(20,20,35,0.95);}
+.wb-info{padding:12px 14px 16px;background:rgba(15,15,25,0.98);}
 .wb-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;}
 .wb-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
 .wb-host{font-size:10px;color:var(--t2);}
@@ -87,7 +87,7 @@
 
 .wb-card{background:#17171F;border:1px solid #28283A;border-radius:13px;margin:0 12px 10px;overflow:visible;cursor:pointer;min-height:160px;}
 .wb-cover{height:140px;position:relative;background:#1E1E28;border-radius:20px 20px 0 0;overflow:hidden;}
-.wb-info{padding:12px 14px 16px;position:relative;z-index:1;background:rgba(20,20,35,0.95);}
+.wb-info{padding:12px 14px 16px;background:rgba(15,15,25,0.98);}
 .wb-title{font-size:15px;font-weight:700;color:#EEEEF8;margin-bottom:5px;}
 .wb-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
 .wb-host{font-size:12px;color:#8F8FAA;}
