@@ -22,49 +22,32 @@ export default function HomeScreen(props){
     var userName = session&&session.user ? session.user.email.split('@')[0] : 'Someone';
     var userAvatar = userId ? localStorage.getItem('avatar_'+userId) : null;
     if(!userId){alert('Please log in to like');return;}
-    // Update UI instantly
-    setPosts(function(prev){
-      return prev.map(function(p){
-        if(p.id!==pid) return p;
-        var newLiked = !p.liked;
-        var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
-        return Object.assign({},p,{liked:newLiked,likes:newLikes});
-      });
-    });
-    // Save to Supabase using RPC
-    if(typeof pid === 'string'){
-      sbHome.rpc('toggle_like',{post_id:pid,user_id:userId}).then(function(r){
-        if(r.error){
-          console.log('like error:',r.error);
-          // Revert UI on error
-          setPosts(function(prev){
-            return prev.map(function(p){
-              if(p.id!==pid) return p;
-              return Object.assign({},p,{liked:!p.liked,likes:p.liked?p.likes+1:Math.max(0,p.likes-1)});
-            });
-          });
-        } else {
-          // Send notification
-          var post = null;
-          setPosts(function(prev){
-            post = prev.find(function(p){return p.id===pid;});
-            return prev;
-          });
-          if(post&&post.userId&&post.userId!==userId){
-            sbHome.from('notifications').insert([{
-              user_id:post.userId,
-              from_user_id:userId,
-              from_user_name:userName,
-              from_user_avatar:userAvatar,
-              type:'like',
-              message:userName+' liked your post',
-              post_id:pid,
-              read:false
-            }]).then(function(){});
-          }
+    if(typeof pid !== 'string'){return;}
+    // Call RPC - let realtime handle UI update for everyone
+    sbHome.rpc('toggle_like',{post_id:pid,user_id:userId}).then(function(r){
+      if(r.error){
+        console.log('like error:',r.error);
+      } else {
+        // Send notification to post owner
+        var post = null;
+        setPosts(function(prev){
+          post = prev.find(function(p){return p.id===pid;});
+          return prev;
+        });
+        if(post&&post.userId&&post.userId!==userId){
+          sbHome.from('notifications').insert([{
+            user_id:post.userId,
+            from_user_id:userId,
+            from_user_name:userName,
+            from_user_avatar:userAvatar,
+            type:'like',
+            message:userName+' liked your post',
+            post_id:pid,
+            read:false
+          }]).then(function(){});
         }
-      });
-    }
+      }
+    });
   }
   
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
