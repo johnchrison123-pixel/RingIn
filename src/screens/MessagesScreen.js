@@ -11,7 +11,9 @@ var EXPERT_CONVOS_BASE=[
 ];
 
 function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
-  var mS=useState([]); var msgs=mS[0]; var setMsgs=mS[1];
+  var initMsgs = [];
+  try{ var cm=localStorage.getItem('msgs_'+convId); if(cm) initMsgs=JSON.parse(cm); }catch(e){}
+  var mS=useState(initMsgs); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var emojiS=useState(false); var showEmoji=emojiS[0]; var setShowEmoji=emojiS[1];
   var bottomRef=useRef(null);
