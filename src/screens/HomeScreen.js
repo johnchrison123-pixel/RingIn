@@ -53,32 +53,45 @@ export default function HomeScreen(props){
     return function(){sbHome.removeChannel(ch);};
   },[props.session]);
 
+  function mapPost(p){
+    return {
+      id:p.id,
+      initials:(p.user_name||'?').substring(0,2).toUpperCase(),
+      name:p.user_name||'User',
+      role:'RingIn Member',
+      color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+      img:p.user_avatar||null,
+      time:new Date(p.created_at).toLocaleDateString(),
+      text:p.text||'',
+      tags:p.tags||[],
+      likes:p.likes?p.likes.length:0,
+      liked:false,
+      comments:p.comments_count||0,
+      rate:0,
+      expertId:null,
+      postImg:p.images&&p.images[0]?p.images[0]:null,
+      extraImgs:p.images?p.images.slice(1):[]
+    };
+  }
+
   useEffect(function(){
+    // Load initial posts
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(20).then(function(res){
       if(res.data&&res.data.length>0){
-        var dbPosts = res.data.map(function(p){
-          return {
-            id:p.id,
-            initials:(p.user_name||'?').substring(0,2).toUpperCase(),
-            name:p.user_name||'User',
-            role:'RingIn Member',
-            color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-            img:p.user_avatar||null,
-            time:new Date(p.created_at).toLocaleDateString(),
-            text:p.text||'',
-            tags:p.tags||[],
-            likes:p.likes?p.likes.length:0,
-            liked:false,
-            comments:p.comments_count||0,
-            rate:0,
-            expertId:null,
-            postImg:p.images&&p.images[0]?p.images[0]:null,
-            extraImgs:p.images?p.images.slice(1):[]
-          };
-        });
+        var dbPosts = res.data.map(mapPost);
         setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
       }
     });
+    // Realtime subscription - new posts appear automatically
+    var ch = sbHome.channel('public-posts')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(p){
+        var newPost = mapPost(p.new);
+        setPosts(function(prev){
+          if(prev.find(function(pp){return pp.id===newPost.id;})) return prev;
+          return [newPost].concat(prev);
+        });
+      }).subscribe();
+    return function(){sbHome.removeChannel(ch);};
   },[]);
   var followHook = useFollow(sbHome, currentUserId);
   var following = followHook.following;
