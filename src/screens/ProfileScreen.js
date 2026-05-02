@@ -157,11 +157,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   }
 
   function toggleLike(id){
-    setMyPosts(function(prev){return prev.map(function(p){
-      if(p.id!==id) return p;
-      var newLikes = p.liked ? p.likes.filter(function(l){return l!=='You';}) : [...p.likes,'You'];
-      return Object.assign({},p,{liked:!p.liked,likes:newLikes});
-    });});
+    if(!userId) return;
+    if(typeof id !== 'string') return;
+    sbProfile.rpc('toggle_like',{post_id:id,user_id:userId}).then(function(r){
+      if(r.error){console.log('like error:',r.error);return;}
+      setMyPosts(function(prev){return prev.map(function(p){
+        if(p.id!==id) return p;
+        var newLiked = !p.liked;
+        var newLikes = newLiked ? [...p.likes, userId] : p.likes.filter(function(l){return l!==userId;});
+        return Object.assign({},p,{liked:newLiked,likes:newLikes});
+      });});
+    });
   }
 
   function submitPost(){
