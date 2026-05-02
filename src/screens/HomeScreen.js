@@ -18,41 +18,55 @@ export default function HomeScreen(props){
   var ctS=useState(''); var commentText=ctS[0]; var setCommentText=ctS[1];
   function toggleLike(pid){
     var session = props.session;
-    var userId = session&&session.user?session.user.id:null;
-    var userName = session&&session.user?session.user.email.split('@')[0]:'Someone';
-    var userAvatar = userId?localStorage.getItem('avatar_'+userId):null;
+    var userId = session&&session.user ? session.user.id : null;
+    var userName = session&&session.user ? session.user.email.split('@')[0] : 'Someone';
+    var userAvatar = userId ? localStorage.getItem('avatar_'+userId) : null;
+    if(!userId){alert('Please log in to like');return;}
+    // Update UI instantly
     setPosts(function(prev){
       return prev.map(function(p){
         if(p.id!==pid) return p;
         var newLiked = !p.liked;
-        var newLikes = newLiked?p.likes+1:Math.max(0,p.likes-1);
-        // Save to Supabase if real post
-        if(userId&&typeof p.id==='string'){
-          var newLikesArr = newLiked?[userId]:[]; 
-          sbHome.from('posts').select('likes').eq('id',p.id).single().then(function(res){
-            var arr = res.data&&res.data.likes?res.data.likes:[];
-            if(newLiked&&!arr.includes(userId)) arr.push(userId);
-            else arr = arr.filter(function(id){return id!==userId;});
-            sbHome.from('posts').update({likes:arr}).eq('id',p.id).then(function(){});
+        var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
+        return Object.assign({},p,{liked:newLiked,likes:newLikes});
+      });
+    });
+    // Save to Supabase using RPC
+    if(typeof pid === 'string'){
+      sbHome.rpc('toggle_like',{post_id:pid,user_id:userId}).then(function(r){
+        if(r.error){
+          console.log('like error:',r.error);
+          // Revert UI on error
+          setPosts(function(prev){
+            return prev.map(function(p){
+              if(p.id!==pid) return p;
+              return Object.assign({},p,{liked:!p.liked,likes:p.liked?p.likes+1:Math.max(0,p.likes-1)});
+            });
           });
-          // Send notification to post owner
-          if(newLiked&&p.userId&&p.userId!==userId){
+        } else {
+          // Send notification
+          var post = null;
+          setPosts(function(prev){
+            post = prev.find(function(p){return p.id===pid;});
+            return prev;
+          });
+          if(post&&post.userId&&post.userId!==userId){
             sbHome.from('notifications').insert([{
-              user_id:p.userId,
+              user_id:post.userId,
               from_user_id:userId,
               from_user_name:userName,
               from_user_avatar:userAvatar,
               type:'like',
               message:userName+' liked your post',
-              post_id:p.id,
+              post_id:pid,
               read:false
             }]).then(function(){});
           }
         }
-        return Object.assign({},p,{liked:newLiked,likes:newLikes});
       });
-    });
+    }
   }
+  
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var liveS=useState(null); var activeLive=liveS[0]; var setActiveLive=liveS[1];
   var ac = acState[0];
