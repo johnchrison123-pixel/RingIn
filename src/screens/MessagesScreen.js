@@ -10,6 +10,20 @@ var EXPERT_CONVOS_BASE=[
   {id:'e3',initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',last:'Great progress! Keep it up.',time:'Yesterday',unread:1,img:'https://i.pravatar.cc/150?img=23',rate:60},
 ];
 
+function timeAgo(dateStr){
+  if(!dateStr) return '';
+  var now = new Date();
+  var str = dateStr.toString();
+  if(!str.includes('Z')&&!str.includes('+')) str = str+'Z';
+  var date = new Date(str);
+  var diff = Math.floor((now-date)/1000);
+  if(diff<60) return 'Just now';
+  if(diff<3600) return Math.floor(diff/60)+'m ago';
+  if(diff<86400) return Math.floor(diff/3600)+'h ago';
+  if(diff<172800) return 'Yesterday';
+  return date.toLocaleDateString([],{month:'short',day:'numeric'});
+}
+
 function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var myId = session&&session.user ? session.user.id : 'guest';
   var myName = session&&session.user ? session.user.email.split('@')[0] : 'You';
@@ -102,7 +116,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           ) : null,
           React.createElement('div',null,
             React.createElement('div',{style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4}},m.text),
-            isMe ? React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:'right',marginTop:'2px'}}, m.read?'✓✓ Seen':'✓ Sent') : null
+            isMe ? React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:'right',marginTop:'2px'}}, (m.created_at?timeAgo(m.created_at)+' · ':''),(m.read?'✓✓ Seen':'✓ Sent')) : null
           )
         );
       }),
@@ -403,7 +417,7 @@ export default function MessagesScreen(props){
             React.createElement('div',{style:{flex:1,minWidth:0}},
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px'}},
                 React.createElement('span',{style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)'}},c.name),
-                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?formatTime(c.lastTime):'')
+                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?timeAgo(c.lastTime):'')
               ),
               React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.lastMsg||'Start a conversation')
             ),
