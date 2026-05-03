@@ -180,6 +180,17 @@ export default function MessagesScreen(props){
 
   // Load real user conversations
   useEffect(function(){
+    // Auto reconnect when user comes back to tab
+    function handleVisibility(){
+      if(document.visibilityState==='visible'){
+        sb.removeAllChannels();
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return function(){document.removeEventListener('visibilitychange', handleVisibility);};
+  },[]);
+
+  useEffect(function(){
     if(!myId) return;
     // Get all messages where I am sender or receiver
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
