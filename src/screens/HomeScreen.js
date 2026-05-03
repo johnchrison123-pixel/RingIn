@@ -10,6 +10,42 @@ var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medi
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
+function LikersList({post,following,toggleFollow,supabase}){
+  var dataS=useState([]); var data=dataS[0]; var setData=dataS[1];
+  var loadingS=useState(true); var loading=loadingS[0]; var setLoading=loadingS[1];
+  
+  var React2=React;
+  React2.useEffect(function(){
+    if(!post||!post.likedByIds||post.likedByIds.length===0){setLoading(false);return;}
+    supabase.from('profiles').select('id,full_name,email,avatar_url').in('id',post.likedByIds).then(function(res){
+      setData(res.data||[]);
+      setLoading(false);
+    });
+  },[post&&post.id]);
+
+  if(loading) return React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'var(--t2)'}},'Loading...');
+  if(data.length===0) return React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'var(--t2)'}},'No data found');
+  
+  return React.createElement('div',null,
+    data.map(function(u){
+      var name = u.full_name||u.email.split('@')[0];
+      return React.createElement('div',{key:u.id,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
+        React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
+          u.avatar_url ? React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}) : name.substring(0,2).toUpperCase()
+        ),
+        React.createElement('div',{style:{flex:1}},
+          React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},name),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'RingIn Member')
+        ),
+        React.createElement('button',{
+          onClick:function(){toggleFollow(u.id,name,u.avatar_url,'RingIn Member');},
+          style:{padding:'5px 14px',background:following[u.id]?'var(--acg)':'var(--ac)',border:following[u.id]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[u.id]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
+        },following[u.id]?'Following':'+Follow')
+      );
+    })
+  );
+}
+
 export default function HomeScreen(props){
   var acState = useState('all');
   var _cachedPosts=[];try{var _c=localStorage.getItem('feed_posts_cache');if(_c)_cachedPosts=JSON.parse(_c);}catch(e){}
@@ -340,26 +376,7 @@ export default function HomeScreen(props){
     React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{width:'100%',maxWidth:'480px',background:'var(--bg)',borderRadius:'20px 20px 0 0',padding:'16px',maxHeight:'70vh',overflowY:'auto'}},
       React.createElement('div',{style:{width:'36px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}),
       React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'16px',textAlign:'center'}},'Liked by '+(showLikers.likes)+' people'),
-      (showLikers.likedByIds||[]).length===0
-        ? React.createElement('div',{style:{textAlign:'center',color:'var(--t2)',padding:'20px'}},'Loading...')
-        : (showLikers.likedByIds||[]).map(function(uid,i){
-            var name = showLikers.likedBy&&showLikers.likedBy[i] ? showLikers.likedBy[i] : uid.substring(0,8)+'...';
-            return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
-              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0}},
-                name.substring(0,2).toUpperCase()
-              ),
-              React.createElement('div',{style:{flex:1}},
-                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},name)
-              ),
-              React.createElement('button',{
-                onClick:function(){
-                  var fh = followHook;
-                  if(fh) fh.toggleFollow(uid, name, null, 'RingIn Member');
-                },
-                style:{padding:'5px 14px',background:following[uid]?'var(--acg)':'var(--ac)',border:following[uid]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[uid]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
-              }, following[uid]?'Following':'+Follow')
-            );
-          }),
+      React.createElement(LikersList,{post:showLikers,following:following,toggleFollow:toggleFollow,supabase:sbHome}),
       React.createElement('button',{onClick:function(){setShowLikers(null);},style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'none',borderRadius:'12px',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',marginTop:'12px'}},'Close')
     )
   );
@@ -698,7 +715,7 @@ export default function HomeScreen(props){
               ),
               React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
             ),
-            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,2).join(', ')+(p.likes>2?' and '+(p.likes-2)+' others':'')):null
+            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,1).join(', ')+(p.likes>1?' and '+(p.likes-1)+' others':'')):null
           ),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
