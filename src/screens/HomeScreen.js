@@ -541,11 +541,9 @@ export default function HomeScreen(props){
         );
       })
     ),
-    React.createElement('div', {className:'sh'},
-      React.createElement('div', {className:'st'}, 'Live Workshops'),
-      React.createElement('div', {className:'sa'}, 'See all')
-    ),
-    WORKSHOPS.map(function(w){
+
+    null,
+    false&&WORKSHOPS.map(function(w){
       return React.createElement('div', {key:w.id, className:'wb-card'},
         React.createElement('div', {className:'wb-cover', style:{background:w.color}},
           React.createElement('div', {className:'wb-live-badge'},
