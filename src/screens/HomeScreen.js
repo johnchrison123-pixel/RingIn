@@ -94,6 +94,7 @@ export default function HomeScreen(props){
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
   var hasMoreHS=useState(false); var hasMoreH=hasMoreHS[0]; var setHasMoreH=hasMoreHS[1];
   var showLikersS=useState(null); var showLikers=showLikersS[0]; var setShowLikers=showLikersS[1];
+  var scrollPosS=useState(0); var scrollPos=scrollPosS[0]; var setScrollPos=scrollPosS[1];
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
@@ -372,12 +373,12 @@ export default function HomeScreen(props){
     if(exp && onViewExpert) onViewExpert(exp);
   }
 
-  if(showLikers) return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'},onClick:function(){setShowLikers(null);}},
+  if(showLikers) return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'},onClick:function(){setShowLikers(null);setTimeout(function(){var sc=document.querySelector('.screen-content');if(sc)sc.scrollTop=scrollPos;},50);}},
     React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{width:'100%',maxWidth:'480px',background:'var(--bg)',borderRadius:'20px 20px 0 0',padding:'16px',maxHeight:'70vh',overflowY:'auto'}},
       React.createElement('div',{style:{width:'36px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}),
       React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'16px',textAlign:'center'}},'Liked by '+(showLikers.likes)+' people'),
       React.createElement(LikersList,{post:showLikers,following:following,toggleFollow:toggleFollow,supabase:sbHome}),
-      React.createElement('button',{onClick:function(){setShowLikers(null);},style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'none',borderRadius:'12px',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',marginTop:'12px'}},'Close')
+      React.createElement('button',{onClick:function(){setShowLikers(null);setTimeout(function(){var sc=document.querySelector('.screen-content');if(sc)sc.scrollTop=scrollPos;},50);},style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'none',borderRadius:'12px',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',marginTop:'12px'}},'Close')
     )
   );
 
@@ -713,7 +714,7 @@ export default function HomeScreen(props){
                 p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                 React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
               ),
-              React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
+              React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'},onClick:function(e){e.stopPropagation();if(p.likes>0){var sc=document.querySelector('.screen-content');setScrollPos(sc?sc.scrollTop:0);setShowLikers(p);}}},p.likes,' Likes')
             ),
             p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy&&p.likedBy.length>0 ? (p.likedBy[0]+(p.likes>1?' and '+(p.likes-1)+' others':'')) : ''):null
           ),
