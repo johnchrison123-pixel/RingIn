@@ -364,7 +364,7 @@ export default function HomeScreen(props){
     )
   );
 
-  if(selectedUser) return React.createElement('div',{{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+  if(selectedUser) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Cover
     React.createElement('div',{style:{height:'130px',background:'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0}},
       React.createElement('button',{onClick:function(){setSelectedUser(null);},style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 12px',cursor:'pointer',fontSize:'12px',fontWeight:600}},'< Back'),
