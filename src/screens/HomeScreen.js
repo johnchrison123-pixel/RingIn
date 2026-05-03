@@ -25,23 +25,26 @@ export default function HomeScreen(props){
     if(!userId) return;
     if(typeof pid !== "string") return;
     var postOwner = null;
+    // INSTANT UI update
     setPosts(function(prev){
-      postOwner = prev.find(function(p){return p.id===pid;});
-      return prev;
+      return prev.map(function(p){
+        if(p.id!==pid) return p;
+        postOwner = p;
+        var newLiked = !p.liked;
+        var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
+        var newLikedBy = newLiked ? [userName].concat(p.likedBy||[]) : (p.likedBy||[]).filter(function(n){return n!==userName;});
+        return Object.assign({},p,{liked:newLiked,likes:newLikes,likedBy:newLikedBy});
+      });
     });
+    // Save to Supabase in background
     sbHome.rpc("toggle_like",{post_id:pid,user_id:userId}).then(function(r){
-      if(r.error){console.log("like error:",r.error);return;}
+      if(r.error){console.log("like error:",r.error);
+        // Revert on error
+        setPosts(function(prev){return prev.map(function(p){if(p.id!==pid)return p;return Object.assign({},p,{liked:!p.liked,likes:p.liked?p.likes+1:Math.max(0,p.likes-1)});});});
+        return;
+      }
       if(postOwner&&!postOwner.liked&&postOwner.userId&&postOwner.userId!==userId){
-        sbHome.from("notifications").insert([{
-          user_id:postOwner.userId,
-          from_user_id:userId,
-          from_user_name:userName,
-          from_user_avatar:userAvatar,
-          type:"like",
-          message:userName+" liked your post",
-          post_id:pid,
-          read:false
-        }]).then(function(nr){if(nr.error)console.log("notif error:",nr.error);});
+        sbHome.from("notifications").insert([{user_id:postOwner.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
     });
   }
@@ -119,7 +122,8 @@ export default function HomeScreen(props){
       tags:p.tags||[],
       likes:likesArr.length,
       liked:userId?likesArr.includes(userId):false,
-      likedBy:likesArr.slice(0,3),
+      likedBy:[],
+      likedByIds:likesArr,
       comments:p.comments_count||0,
       rate:0,
       expertId:null,
