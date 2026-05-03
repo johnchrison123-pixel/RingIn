@@ -715,7 +715,7 @@ export default function HomeScreen(props){
               ),
               React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
             ),
-            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,1).join(', ')+(p.likes>1?' and '+(p.likes-1)+' others':'')):null
+            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy&&p.likedBy.length>0 ? (p.likedBy[0]+(p.likes>1?' and '+(p.likes-1)+' others':'')) : ''):null
           ),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
