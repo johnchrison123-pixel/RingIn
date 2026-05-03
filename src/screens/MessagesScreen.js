@@ -33,8 +33,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var mS=useState(initMsgs); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var emojiS=useState(false); var showEmoji=emojiS[0]; var setShowEmoji=emojiS[1];
-  var swXS=useState(0); var swX=swXS[0]; var setSwX=swXS[1];
-  var swYS=useState(0); var swY=swYS[0]; var setSwY=swYS[1];
+
   var bottomRef=useRef(null);
 
   useEffect(function(){
@@ -81,17 +80,6 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
-    onTouchStart:function(e){setSwX(e.touches[0].clientX);setSwY(e.touches[0].clientY);},
-    onTouchMove:function(e){
-      var dx=e.touches[0].clientX-swX;
-      var dy=Math.abs(e.touches[0].clientY-swY);
-      if(swX<40&&dx>0&&dy<60) e.preventDefault();
-    },
-    onTouchEnd:function(e){
-      var dx=e.changedTouches[0].clientX-swX;
-      var dy=Math.abs(e.changedTouches[0].clientY-swY);
-      if(swX<40&&dx>80&&dy<60) onBack();
-    }
   },
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
       React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'<'),
@@ -354,17 +342,6 @@ export default function MessagesScreen(props){
 
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
-    onTouchStart:function(e){setSwX(e.touches[0].clientX);setSwY(e.touches[0].clientY);},
-    onTouchMove:function(e){
-      var dx=e.touches[0].clientX-swX;
-      var dy=Math.abs(e.touches[0].clientY-swY);
-      if(swX<40&&dx>0&&dy<60) e.preventDefault();
-    },
-    onTouchEnd:function(e){
-      var dx=e.changedTouches[0].clientX-swX;
-      var dy=Math.abs(e.changedTouches[0].clientY-swY);
-      if(swX<40&&dx>80&&dy<60) onBack();
-    }
   },
     // Header
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px'}},
