@@ -37,20 +37,28 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
   var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
 
-  function openLikersPopupProf(e,p){
-    e.stopPropagation();
-    if(!p||!p.likes||p.likes.length===0) return;
-    if(showLikersProf===p.id){setShowLikersProf(null);return;}
-    setShowLikersProf(p.id);
-    var ids = p.likes.filter(function(l){return typeof l==='string'&&l.length>10;});
-    if(ids.length===0) return;
-    sbProfile.from('profiles').select('id,full_name,email,avatar_url').in('id',ids).then(function(res){
-      if(res.data){
+  function prefetchLikerNamesProf(postsArr, existingNames){
+    var allIds=[];
+    postsArr.forEach(function(p){
+      (p.likes||[]).forEach(function(id){
+        if(typeof id==='string'&&id.length>10&&!existingNames[id]&&allIds.indexOf(id)<0) allIds.push(id);
+      });
+    });
+    if(allIds.length===0) return;
+    sbProfile.from('profiles').select('id,full_name,email,avatar_url').in('id',allIds).then(function(res){
+      if(res.data&&res.data.length>0){
         var map={};
         res.data.forEach(function(u){map[u.id]={name:u.full_name||(u.email||'').split('@')[0],avatar:u.avatar_url};});
         setLikersNamesProf(function(prev){return Object.assign({},prev,map);});
       }
     });
+  }
+
+  function openLikersPopupProf(e,p){
+    e.stopPropagation();
+    if(!p||!p.likes||p.likes.length===0) return;
+    if(showLikersProf===p.id){setShowLikersProf(null);return;}
+    setShowLikersProf(p.id);
   }
 
   var EMOJIS=['😊','😂','❤️','🔥','👏','🎉','💪','🙌','😍','🤔','👍','✨','🚀','💡','🎯'];
@@ -87,6 +95,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           };
         });
         setMyPosts(dbPosts);
+        prefetchLikerNamesProf(dbPosts, {});
       }
     });
   },[userId]);

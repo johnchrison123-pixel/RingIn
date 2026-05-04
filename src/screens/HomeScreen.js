@@ -60,20 +60,28 @@ export default function HomeScreen(props){
   var showLikersS=useState(null); var showLikers=showLikersS[0]; var setShowLikers=showLikersS[1];
   var likersNamesS=useState({}); var likersNames=likersNamesS[0]; var setLikersNames=likersNamesS[1];
 
-  function openLikersPopup(e, p){
-    e.stopPropagation();
-    if(!p||p.likes<=0) return;
-    if(showLikers===p.id){setShowLikers(null);return;}
-    setShowLikers(p.id);
-    var ids = p.likedByIds||[];
-    if(ids.length===0) return;
-    sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',ids).then(function(res){
-      if(res.data){
+  function prefetchLikerNames(postsArr, existingNames){
+    var allIds = [];
+    postsArr.forEach(function(p){
+      (p.likedByIds||[]).forEach(function(id){
+        if(!existingNames[id]&&allIds.indexOf(id)<0) allIds.push(id);
+      });
+    });
+    if(allIds.length===0) return;
+    sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',allIds).then(function(res){
+      if(res.data&&res.data.length>0){
         var map={};
         res.data.forEach(function(u){map[u.id]={name:u.full_name||(u.email||'').split('@')[0],avatar:u.avatar_url};});
         setLikersNames(function(prev){return Object.assign({},prev,map);});
       }
     });
+  }
+
+  function openLikersPopup(e, p){
+    e.stopPropagation();
+    if(!p||p.likes<=0) return;
+    if(showLikers===p.id){setShowLikers(null);return;}
+    setShowLikers(p.id);
   }
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
@@ -113,8 +121,10 @@ export default function HomeScreen(props){
     var oldestDate = oldest&&oldest.createdAt?oldest.createdAt:new Date().toISOString();
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
-        setPosts(function(prev){return prev.concat(res.data.map(mapPost));});
+        var morePosts=res.data.map(mapPost);
+        setPosts(function(prev){return prev.concat(morePosts);});
         setHasMoreH(res.data.length===12);
+        prefetchLikerNames(morePosts, likersNames);
       } else {
         setHasMoreH(false);
       }
@@ -159,6 +169,7 @@ export default function HomeScreen(props){
         setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
         setHasMoreH(res.data.length===12);
         try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
+        prefetchLikerNames(dbPosts, {});
       }
     });
     // Realtime subscription - new posts appear automatically
