@@ -58,6 +58,7 @@ export default function HomeScreen(props){
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
   var hasMoreHS=useState(false); var hasMoreH=hasMoreHS[0]; var setHasMoreH=hasMoreHS[1];
   var showLikersS=useState(null); var showLikers=showLikersS[0]; var setShowLikers=showLikersS[1];
+  var likersDataS=useState([]); var likersData=likersDataS[0]; var setLikersData=likersDataS[1];
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
@@ -139,9 +140,23 @@ export default function HomeScreen(props){
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(mapPost);
-        setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
-        setHasMoreH(res.data.length===12);
-        try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
+        var allIds=[];
+        dbPosts.forEach(function(p){(p.likedByIds||[]).forEach(function(id){if(allIds.indexOf(id)===-1)allIds.push(id);});});
+        function saveAndSet(posts){
+          setPosts(function(prev){return posts.concat(prev.filter(function(p){return typeof p.id==='number';}));});
+          setHasMoreH(res.data.length===12);
+          try{localStorage.setItem('feed_posts_cache',JSON.stringify(posts));}catch(e){}
+        }
+        if(allIds.length>0){
+          sbHome.from('profiles').select('id,full_name,email').in('id',allIds).then(function(pr){
+            var nm={};
+            if(pr.data)pr.data.forEach(function(u){nm[u.id]=u.full_name||u.email.split('@')[0];});
+            var enriched=dbPosts.map(function(p){return Object.assign({},p,{likedBy:(p.likedByIds||[]).slice(0,3).map(function(id){return nm[id]||null;}).filter(Boolean)});});
+            saveAndSet(enriched);
+          });
+        } else {
+          saveAndSet(dbPosts);
+        }
       }
     });
     // Realtime subscription - new posts appear automatically
