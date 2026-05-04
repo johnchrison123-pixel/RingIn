@@ -151,7 +151,7 @@ export default function HomeScreen(props){
           sbHome.from('profiles').select('id,full_name,email').in('id',allIds).then(function(pr){
             var nm={};
             if(pr.data)pr.data.forEach(function(u){nm[u.id]=u.full_name||u.email.split('@')[0];});
-            var enriched=dbPosts.map(function(p){return Object.assign({},p,{likedBy:(p.likedByIds||[]).slice(0,3).map(function(id){return nm[id]||null;}).filter(Boolean)});});
+            var enriched=dbPosts.map(function(p){return Object.assign({},p,{likedBy:(p.likedByIds||[]).slice(0,2).map(function(id){return nm[id]||null;}).filter(Boolean)});});
             saveAndSet(enriched);
           });
         } else {
