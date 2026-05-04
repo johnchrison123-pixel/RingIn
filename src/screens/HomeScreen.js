@@ -58,6 +58,23 @@ export default function HomeScreen(props){
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
   var hasMoreHS=useState(false); var hasMoreH=hasMoreHS[0]; var setHasMoreH=hasMoreHS[1];
   var showLikersS=useState(null); var showLikers=showLikersS[0]; var setShowLikers=showLikersS[1];
+  var likersNamesS=useState({}); var likersNames=likersNamesS[0]; var setLikersNames=likersNamesS[1];
+
+  function openLikersPopup(e, p){
+    e.stopPropagation();
+    if(!p||p.likes<=0) return;
+    if(showLikers===p.id){setShowLikers(null);return;}
+    setShowLikers(p.id);
+    var ids = p.likedByIds||[];
+    if(ids.length===0) return;
+    sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',ids).then(function(res){
+      if(res.data){
+        var map={};
+        res.data.forEach(function(u){map[u.id]={name:u.full_name||(u.email||'').split('@')[0],avatar:u.avatar_url};});
+        setLikersNames(function(prev){return Object.assign({},prev,map);});
+      }
+    });
+  }
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
@@ -336,33 +353,6 @@ export default function HomeScreen(props){
     if(exp && onViewExpert) onViewExpert(exp);
   }
 
-  if(showLikers) return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'},onClick:function(){setShowLikers(null);}},
-    React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{width:'100%',maxWidth:'480px',background:'var(--bg)',borderRadius:'20px 20px 0 0',padding:'16px',maxHeight:'70vh',overflowY:'auto'}},
-      React.createElement('div',{style:{width:'36px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}),
-      React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'16px',textAlign:'center'}},'Liked by '+(showLikers.likes)+' people'),
-      (showLikers.likedByIds||[]).length===0
-        ? React.createElement('div',{style:{textAlign:'center',color:'var(--t2)',padding:'20px'}},'Loading...')
-        : (showLikers.likedByIds||[]).map(function(uid,i){
-            var name = showLikers.likedBy&&showLikers.likedBy[i] ? showLikers.likedBy[i] : uid.substring(0,8)+'...';
-            return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
-              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0}},
-                name.substring(0,2).toUpperCase()
-              ),
-              React.createElement('div',{style:{flex:1}},
-                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},name)
-              ),
-              React.createElement('button',{
-                onClick:function(){
-                  var fh = followHook;
-                  if(fh) fh.toggleFollow(uid, name, null, 'RingIn Member');
-                },
-                style:{padding:'5px 14px',background:following[uid]?'var(--acg)':'var(--ac)',border:following[uid]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[uid]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
-              }, following[uid]?'Following':'+Follow')
-            );
-          }),
-      React.createElement('button',{onClick:function(){setShowLikers(null);},style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'none',borderRadius:'12px',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',marginTop:'12px'}},'Close')
-    )
-  );
 
   if(selectedUser) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Cover
@@ -415,6 +405,7 @@ export default function HomeScreen(props){
   );
 
   return React.createElement('div', {className:'hc'},
+    showLikers ? React.createElement('div',{onClick:function(){setShowLikers(null);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:998}}) : null,
     React.createElement('div', {className:'topbar'},
       React.createElement('div', {className:'brand'}, 'RingIn'),
       React.createElement('div', {className:'tbr'},
@@ -690,15 +681,48 @@ export default function HomeScreen(props){
             React.createElement('span', {className:'cstrip-r'}, p.rate+' coins/min')
           ) : null,
           React.createElement('div', {className:'pacts'},
-            React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1}},
+            React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1,position:'relative'}},
             React.createElement('button',{className:'pa'+(p.liked?' liked':''),onClick:function(){toggleLike(p.id);},style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',padding:'8px 2px',fontSize:'13px',fontWeight:p.liked?700:400}},
               React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22'},
                 p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                 React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
               ),
-              React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
+              React.createElement('span',{onClick:function(e){openLikersPopup(e,p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
             ),
-            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,2).join(', ')+(p.likes>2?' and '+(p.likes-2)+' others':'')):null
+            showLikers===p.id ? React.createElement('div',{
+              onClick:function(e){e.stopPropagation();},
+              style:{position:'absolute',bottom:'110%',left:'50%',transform:'translateX(-50%)',zIndex:999,background:'rgba(20,16,40,0.97)',backdropFilter:'blur(18px)',WebkitBackdropFilter:'blur(18px)',border:'1px solid rgba(123,110,255,0.25)',borderRadius:'14px',padding:'10px 12px',minWidth:'200px',maxWidth:'280px',boxShadow:'0 8px 32px rgba(0,0,0,0.5)'}
+            },
+              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+                React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},
+                  (function(){
+                    var ids=p.likedByIds||[];
+                    var names=ids.map(function(id){return likersNames[id]?likersNames[id].name:null;}).filter(Boolean);
+                    if(ids.length===0) return '0 likes';
+                    if(names.length===0) return ids.length+' '+(ids.length===1?'like':'likes');
+                    if(ids.length===1) return names[0]+' liked';
+                    if(ids.length===2) return (names[0]||'Someone')+' and '+(names[1]||'someone')+' liked';
+                    return (names[0]||'Someone')+' and '+(ids.length-1)+' others liked';
+                  })()
+                ),
+                React.createElement('button',{onClick:function(){setShowLikers(null);},style:{background:'none',border:'none',color:'var(--t2)',cursor:'pointer',fontSize:'16px',lineHeight:1,padding:'0 0 0 8px'}},'×')
+              ),
+              (p.likedByIds||[]).slice(0,5).map(function(uid){
+                var info=likersNames[uid]||{};
+                var name=info.name||uid.substring(0,8)+'...';
+                var av=info.avatar||null;
+                return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'8px',padding:'5px 0',borderTop:'1px solid rgba(255,255,255,0.06)'}},
+                  React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                    av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
+                  ),
+                  React.createElement('span',{style:{flex:1,fontSize:'12px',color:'var(--text)',fontWeight:500}},name),
+                  uid!==currentUserId?React.createElement('button',{
+                    onClick:function(){toggleFollow(uid,name,av,'RingIn Member');},
+                    style:{padding:'3px 10px',background:following[uid]?'transparent':'var(--ac)',border:following[uid]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[uid]?'var(--ac)':'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer',flexShrink:0}
+                  },following[uid]?'Following':'+Follow'):null
+                );
+              })
+            ) : null
           ),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')

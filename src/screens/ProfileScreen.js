@@ -34,6 +34,24 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     {id:2,text:'Learning system design with Ravi Menon on RingIn. Best investment I made this month. Already cracked 2 interviews!',likes:['Ravi M.','James T.','Layla K.'],liked:false,time:'Yesterday',img:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'},
     {id:3,text:'Sara Al Zaabi helped me rebuild my LinkedIn profile from scratch. Got 3 recruiter messages in one week!',likes:['Dr. Priya','Ahmed K.','Fatima M.'],liked:false,time:'2 days ago',img:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&q=80'},
   ]); var myPosts=postsS[0]; var setMyPosts=postsS[1];
+  var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
+  var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
+
+  function openLikersPopupProf(e,p){
+    e.stopPropagation();
+    if(!p||!p.likes||p.likes.length===0) return;
+    if(showLikersProf===p.id){setShowLikersProf(null);return;}
+    setShowLikersProf(p.id);
+    var ids = p.likes.filter(function(l){return typeof l==='string'&&l.length>10;});
+    if(ids.length===0) return;
+    sbProfile.from('profiles').select('id,full_name,email,avatar_url').in('id',ids).then(function(res){
+      if(res.data){
+        var map={};
+        res.data.forEach(function(u){map[u.id]={name:u.full_name||(u.email||'').split('@')[0],avatar:u.avatar_url};});
+        setLikersNamesProf(function(prev){return Object.assign({},prev,map);});
+      }
+    });
+  }
 
   var EMOJIS=['😊','😂','❤️','🔥','👏','🎉','💪','🙌','😍','🤔','👍','✨','🚀','💡','🎯'];
   var FRIENDS=[
@@ -271,6 +289,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   // MAIN PROFILE
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    showLikersProf ? React.createElement('div',{onClick:function(){setShowLikersProf(null);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:998}}) : null,
     // Avatar view modal
     showAvatarView ? React.createElement('div',{
       onClick:function(){setShowAvatarView(false);},
@@ -397,17 +416,56 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             ),
             React.createElement('div',{style:{padding:'0 12px 8px',fontSize:'13px',color:'var(--text)',lineHeight:1.6}},p.text),
             p.img ? React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}) : null,
-            p.likes.length>0 ? React.createElement('div',{style:{padding:'6px 12px',fontSize:'11px',color:'var(--t3)',borderTop:'1px solid var(--border)'}},
-              '❤️ '+p.likes.join(', ')
-            ) : null,
             React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
-              React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}},
+              React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',position:'relative'}},
                 React.createElement('button',{onClick:function(){toggleLike(p.id);},style:{display:'flex',alignItems:'center',gap:'5px',padding:'8px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}},
-                  React.createElement('span',{style:{fontSize:'18px'}},p.liked?'❤️':'🤍'),p.likes.length,' Like'
+                  React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18'},
+                    p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'plg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
+                    React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#plg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
+                  ),
+                  React.createElement('span',{onClick:function(e){openLikersPopupProf(e,p);},style:{cursor:p.likes.length>0?'pointer':'default'}},p.likes.length,' Like')
                 ),
-                p.likes.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px'}},
-                  p.likeNames&&p.likeNames.length>0?p.likeNames.slice(0,2).join(', ')+(p.likes.length>2?' and '+(p.likes.length-2)+' others':''):''
-                ):null
+                showLikersProf===p.id ? React.createElement('div',{
+                  onClick:function(e){e.stopPropagation();},
+                  style:{position:'absolute',bottom:'110%',left:'50%',transform:'translateX(-50%)',zIndex:999,background:'rgba(20,16,40,0.97)',backdropFilter:'blur(18px)',WebkitBackdropFilter:'blur(18px)',border:'1px solid rgba(123,110,255,0.25)',borderRadius:'14px',padding:'10px 12px',minWidth:'200px',maxWidth:'280px',boxShadow:'0 8px 32px rgba(0,0,0,0.5)'}
+                },
+                  React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+                    React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},
+                      (function(){
+                        var ids=p.likes.filter(function(l){return typeof l==='string'&&l.length>10;});
+                        var names=ids.map(function(id){return likersNamesProf[id]?likersNamesProf[id].name:null;}).filter(Boolean);
+                        var staticNames=p.likeNames||[];
+                        var allNames=names.length>0?names:staticNames;
+                        if(p.likes.length===0) return '0 likes';
+                        if(ids.length===0&&staticNames.length>0){
+                          if(staticNames.length===1) return staticNames[0]+' liked';
+                          if(staticNames.length===2) return staticNames[0]+' and '+staticNames[1]+' liked';
+                          return staticNames[0]+' and '+(staticNames.length-1)+' others liked';
+                        }
+                        if(allNames.length===0) return p.likes.length+' '+(p.likes.length===1?'like':'likes');
+                        if(p.likes.length===1) return allNames[0]+' liked';
+                        if(p.likes.length===2) return allNames[0]+' and '+(allNames[1]||'someone')+' liked';
+                        return allNames[0]+' and '+(p.likes.length-1)+' others liked';
+                      })()
+                    ),
+                    React.createElement('button',{onClick:function(){setShowLikersProf(null);},style:{background:'none',border:'none',color:'var(--t2)',cursor:'pointer',fontSize:'16px',lineHeight:1,padding:'0 0 0 8px'}},'×')
+                  ),
+                  p.likes.filter(function(l){return typeof l==='string'&&l.length>10;}).slice(0,5).map(function(uid){
+                    var info=likersNamesProf[uid]||{};
+                    var name=info.name||uid.substring(0,8)+'...';
+                    var av=info.avatar||null;
+                    return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'8px',padding:'5px 0',borderTop:'1px solid rgba(255,255,255,0.06)'}},
+                      React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                        av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
+                      ),
+                      React.createElement('span',{style:{flex:1,fontSize:'12px',color:'var(--text)',fontWeight:500}},name),
+                      uid!==userId?React.createElement('button',{
+                        onClick:function(){toggleFollow(uid,name,av,'RingIn Member');},
+                        style:{padding:'3px 10px',background:following[uid]?'transparent':'var(--ac)',border:following[uid]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[uid]?'var(--ac)':'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer',flexShrink:0}
+                      },following[uid]?'Following':'+Follow'):null
+                    );
+                  })
+                ) : null
               ),
               React.createElement('button',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
                 React.createElement('span',{style:{fontSize:'16px'}},'💬'),' Comment'
