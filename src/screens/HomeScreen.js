@@ -58,7 +58,6 @@ export default function HomeScreen(props){
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
   var hasMoreHS=useState(false); var hasMoreH=hasMoreHS[0]; var setHasMoreH=hasMoreHS[1];
   var showLikersS=useState(null); var showLikers=showLikersS[0]; var setShowLikers=showLikersS[1];
-  var likersDataS=useState([]); var likersData=likersDataS[0]; var setLikersData=likersDataS[1];
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
@@ -140,23 +139,9 @@ export default function HomeScreen(props){
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(mapPost);
-        var allIds=[];
-        dbPosts.forEach(function(p){(p.likedByIds||[]).forEach(function(id){if(allIds.indexOf(id)===-1)allIds.push(id);});});
-        function saveAndSet(posts){
-          setPosts(function(prev){return posts.concat(prev.filter(function(p){return typeof p.id==='number';}));});
-          setHasMoreH(res.data.length===12);
-          try{localStorage.setItem('feed_posts_cache',JSON.stringify(posts));}catch(e){}
-        }
-        if(allIds.length>0){
-          sbHome.from('profiles').select('id,full_name,email').in('id',allIds).then(function(pr){
-            var nm={};
-            if(pr.data)pr.data.forEach(function(u){nm[u.id]=u.full_name||u.email.split('@')[0];});
-            var enriched=dbPosts.map(function(p){return Object.assign({},p,{likedBy:(p.likedByIds||[]).slice(0,3).map(function(id){return nm[id]||null;}).filter(Boolean)});});
-            saveAndSet(enriched);
-          });
-        } else {
-          saveAndSet(dbPosts);
-        }
+        setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
+        setHasMoreH(res.data.length===12);
+        try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
       }
     });
     // Realtime subscription - new posts appear automatically
@@ -711,9 +696,9 @@ export default function HomeScreen(props){
                 p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'}))):null,
                 React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:'#fff',strokeWidth:'2'})
               ),
-              React.createElement('span',{style:{color:p.liked?'#B44FE8':'var(--t2)'}},p.likes,' Likes')
+              React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
             ),
-            p.likes>0?React.createElement('div',{onClick:function(e){e.stopPropagation();if(showLikers===p.id){setShowLikers(null);return;}setShowLikers(p.id);setLikersData([]);if(p.likedByIds&&p.likedByIds.length>0){sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',p.likedByIds).then(function(res){setLikersData(res.data||[]);});}},style:{fontSize:'10px',color:'var(--t3)',cursor:'pointer',padding:'0 4px',textAlign:'center',marginTop:'-4px',position:'relative'}},(function(){var lb=p.likedBy||[];var total=p.likes;if(total===1)return (lb[0]||'Someone')+' liked';if(total===2)return (lb[0]||'Someone')+' and '+(lb[1]||'someone')+' liked';return (lb[0]||'Someone')+' and '+(total-1)+' others liked';})(),showLikers===p.id?React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'absolute',bottom:'120%',left:'0',zIndex:9999,background:'rgba(20,20,35,0.97)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'14px',padding:'10px',minWidth:'210px',boxShadow:'0 8px 32px rgba(0,0,0,0.5)'}},React.createElement('div',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}},'Liked by '+p.likes),likersData.length===0?React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',padding:'4px'}},'Loading...'):likersData.map(function(u){var uname=u.full_name||u.email.split('@')[0];return React.createElement('div',{key:u.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'5px 4px'}},React.createElement('div',{style:{width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}},u.avatar_url?React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}):uname.substring(0,2).toUpperCase()),React.createElement('div',{style:{flex:1,fontSize:'12px',color:'var(--text)'}},uname),React.createElement('button',{onClick:function(){toggleFollow(u.id,uname,u.avatar_url,'Member');},style:{padding:'3px 10px',background:following[u.id]?'var(--acg)':'var(--ac)',border:following[u.id]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[u.id]?'var(--ac)':'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}},following[u.id]?'Following':'+Follow'));}))):null):null
+            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,2).join(', ')+(p.likes>2?' and '+(p.likes-2)+' others':'')):null
           ),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
