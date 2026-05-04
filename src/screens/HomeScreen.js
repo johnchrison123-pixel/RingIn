@@ -703,33 +703,24 @@ export default function HomeScreen(props){
             React.createElement('span', {className:'cstrip-r'}, p.rate+' coins/min')
           ) : null,
           React.createElement('div', {className:'pacts'},
-            React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1}},
+            React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1,position:'relative'}},
             React.createElement('button',{className:'pa'+(p.liked?' liked':''),onClick:function(){toggleLike(p.id);},style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',padding:'8px 2px',fontSize:'13px',fontWeight:p.liked?700:400}},
               React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22'},
                 p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                 React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
               ),
-              React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default',position:'relative'},onClick:function(e){
-                  e.stopPropagation();
-                  if(p.likes>0){
-                    if(showLikers===p.id){setShowLikers(null);return;}
-                    setShowLikers(p.id);
-                    setLikersData([]);
-                    if(p.likedByIds&&p.likedByIds.length>0){
-                      sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',p.likedByIds).then(function(res){
-                        setLikersData(res.data||[]);
-                      });
-                    }
-                  }
-                }},p.likes,' Likes')
+              React.createElement('span',null,p.likes,' Likes')
             ),
-            p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy&&p.likedBy.length>0?(p.likedBy[0]+(p.likes>1?' and '+(p.likes-1)+' others':'')):'' ):null,
+            p.likes>0 ? React.createElement('div',{
+              onClick:function(e){e.stopPropagation();setShowLikers(showLikers===p.id?null:p.id);if(showLikers!==p.id&&p.likedByIds&&p.likedByIds.length>0){sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',p.likedByIds).then(function(res){setLikersData(res.data||[]);});}},
+              style:{fontSize:'10px',color:'var(--t3)',cursor:'pointer',padding:'0 4px',textAlign:'center'}
+            }, p.likedBy&&p.likedBy.length>0?(p.likedBy[0]+(p.likes>1?' and '+(p.likes-1)+' others':'')):p.likes+' likes') : null,
             showLikers===p.id ? React.createElement('div',{
               onClick:function(e){e.stopPropagation();},
-              style:{position:'absolute',bottom:'100%',left:'0',zIndex:999,background:'rgba(20,20,35,0.95)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'14px',padding:'10px',minWidth:'200px',maxWidth:'260px',boxShadow:'0 8px 32px rgba(0,0,0,0.4)'}
+              style:{position:'absolute',bottom:'100%',left:'0',zIndex:9999,background:'rgba(20,20,35,0.97)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'14px',padding:'10px',minWidth:'210px',boxShadow:'0 8px 32px rgba(0,0,0,0.5)'}
             },
               React.createElement('div',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px',padding:'0 4px'}},p.likes+' Likes'),
-              likersData.length===0 ? React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',padding:'4px'}},'Loading...') :
+              likersData.length===0?React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',padding:'4px'}},'Loading...'):
               likersData.map(function(u){
                 var name=u.full_name||u.email.split('@')[0];
                 return React.createElement('div',{key:u.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'5px 4px',borderRadius:'8px'}},
@@ -737,15 +728,12 @@ export default function HomeScreen(props){
                     u.avatar_url?React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
                   ),
                   React.createElement('div',{style:{flex:1,fontSize:'12px',fontWeight:500,color:'var(--text)'}},name),
-                  React.createElement('button',{
-                    onClick:function(){toggleFollow(u.id,name,u.avatar_url,'Member');},
-                    style:{padding:'3px 10px',background:following[u.id]?'var(--acg)':'var(--ac)',border:following[u.id]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[u.id]?'var(--ac)':'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
-                  },following[u.id]?'Following':'+Follow')
+                  React.createElement('button',{onClick:function(){toggleFollow(u.id,name,u.avatar_url,'Member');},style:{padding:'3px 10px',background:following[u.id]?'var(--acg)':'var(--ac)',border:following[u.id]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[u.id]?'var(--ac)':'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}},following[u.id]?'Following':'+Follow')
                 );
               })
-            ) : null
+            ):null
           ),
-            React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
+          React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
             React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
           )
         );
