@@ -298,7 +298,74 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   // MAIN PROFILE
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    showLikersProf ? React.createElement('div',{onClick:function(){setShowLikersProf(null);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:998}}) : null,
+    showLikersProf ? React.createElement('div',{
+      onClick:function(){setShowLikersProf(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9000,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}
+    },
+      React.createElement('div',{
+        onClick:function(e){e.stopPropagation();},
+        style:{background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'100%',maxWidth:'360px',maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.6)'}
+      },
+        React.createElement('div',{style:{padding:'18px 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
+          React.createElement('div',null,
+            React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'#fff',marginBottom:'2px'}},
+              (function(){
+                var p=myPosts.find(function(x){return x.id===showLikersProf;});
+                if(!p) return 'Liked by';
+                var ids=p.likes.filter(function(l){return typeof l==='string'&&l.length>10;});
+                var names=ids.map(function(id){return likersNamesProf[id]?likersNamesProf[id].name:null;}).filter(Boolean);
+                var staticNames=p.likeNames||[];
+                var allNames=names.length>0?names:staticNames;
+                if(p.likes.length===0) return 'Liked by';
+                if(allNames.length===0) return p.likes.length+' '+(p.likes.length===1?'like':'likes');
+                if(p.likes.length===1) return allNames[0]+' liked this';
+                if(p.likes.length===2) return (allNames[0]||'Someone')+' and '+(allNames[1]||'someone')+' liked';
+                return (allNames[0]||'Someone')+' and '+(p.likes.length-1)+' others liked';
+              })()
+            ),
+            React.createElement('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.45)'}},
+              (function(){var p=myPosts.find(function(x){return x.id===showLikersProf;});return p?p.likes.length+' likes total':'';})()
+            )
+          ),
+          React.createElement('button',{onClick:function(){setShowLikersProf(null);},style:{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:'30px',height:'30px',color:'#fff',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},'×')
+        ),
+        React.createElement('div',{style:{overflowY:'auto',padding:'8px 0'}},
+          (function(){
+            var p=myPosts.find(function(x){return x.id===showLikersProf;});
+            if(!p) return null;
+            var ids=p.likes.filter(function(l){return typeof l==='string'&&l.length>10;});
+            var staticNames=p.likeNames||[];
+            if(p.likes.length===0) return React.createElement('div',{style:{padding:'24px',textAlign:'center',color:'rgba(255,255,255,0.4)',fontSize:'14px'}},'No likes yet');
+            if(ids.length===0&&staticNames.length>0){
+              return staticNames.map(function(name,i){
+                return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
+                  React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},name.substring(0,2).toUpperCase()),
+                  React.createElement('div',{style:{flex:1}},React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'#fff'}},name),React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'RingIn Member'))
+                );
+              });
+            }
+            return ids.map(function(uid){
+              var info=likersNamesProf[uid]||{};
+              var name=info.name||'Loading...';
+              var av=info.avatar||null;
+              return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
+                React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},
+                  av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
+                ),
+                React.createElement('div',{style:{flex:1,minWidth:0}},
+                  React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},name),
+                  React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'RingIn Member')
+                ),
+                uid!==userId?React.createElement('button',{
+                  onClick:function(){toggleFollow(uid,name,av,'RingIn Member');},
+                  style:{padding:'6px 14px',background:following[uid]?'transparent':'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:following[uid]?'1px solid rgba(123,110,255,0.5)':'none',borderRadius:'20px',color:following[uid]?'#7B6EFF':'#fff',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}
+                },following[uid]?'Following':'+Follow'):null
+              );
+            });
+          })()
+        )
+      )
+    ) : null,
     // Avatar view modal
     showAvatarView ? React.createElement('div',{
       onClick:function(){setShowAvatarView(false);},
@@ -426,55 +493,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{padding:'0 12px 8px',fontSize:'13px',color:'var(--text)',lineHeight:1.6}},p.text),
             p.img ? React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}) : null,
             React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
-              React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',position:'relative'}},
-                React.createElement('button',{onClick:function(){toggleLike(p.id);},style:{display:'flex',alignItems:'center',gap:'5px',padding:'8px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}},
+              React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
+                React.createElement('button',{onClick:function(){toggleLike(p.id);},style:{display:'flex',alignItems:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}},
                   React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18'},
                     p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'plg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                     React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#plg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
                   ),
                   React.createElement('span',{onClick:function(e){openLikersPopupProf(e,p);},style:{cursor:p.likes.length>0?'pointer':'default'}},p.likes.length,' Like')
-                ),
-                showLikersProf===p.id ? React.createElement('div',{
-                  onClick:function(e){e.stopPropagation();},
-                  style:{position:'absolute',bottom:'110%',left:'50%',transform:'translateX(-50%)',zIndex:999,background:'rgba(20,16,40,0.97)',backdropFilter:'blur(18px)',WebkitBackdropFilter:'blur(18px)',border:'1px solid rgba(123,110,255,0.25)',borderRadius:'14px',padding:'10px 12px',minWidth:'200px',maxWidth:'280px',boxShadow:'0 8px 32px rgba(0,0,0,0.5)'}
-                },
-                  React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
-                    React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},
-                      (function(){
-                        var ids=p.likes.filter(function(l){return typeof l==='string'&&l.length>10;});
-                        var names=ids.map(function(id){return likersNamesProf[id]?likersNamesProf[id].name:null;}).filter(Boolean);
-                        var staticNames=p.likeNames||[];
-                        var allNames=names.length>0?names:staticNames;
-                        if(p.likes.length===0) return '0 likes';
-                        if(ids.length===0&&staticNames.length>0){
-                          if(staticNames.length===1) return staticNames[0]+' liked';
-                          if(staticNames.length===2) return staticNames[0]+' and '+staticNames[1]+' liked';
-                          return staticNames[0]+' and '+(staticNames.length-1)+' others liked';
-                        }
-                        if(allNames.length===0) return p.likes.length+' '+(p.likes.length===1?'like':'likes');
-                        if(p.likes.length===1) return allNames[0]+' liked';
-                        if(p.likes.length===2) return allNames[0]+' and '+(allNames[1]||'someone')+' liked';
-                        return allNames[0]+' and '+(p.likes.length-1)+' others liked';
-                      })()
-                    ),
-                    React.createElement('button',{onClick:function(){setShowLikersProf(null);},style:{background:'none',border:'none',color:'var(--t2)',cursor:'pointer',fontSize:'16px',lineHeight:1,padding:'0 0 0 8px'}},'×')
-                  ),
-                  p.likes.filter(function(l){return typeof l==='string'&&l.length>10;}).slice(0,5).map(function(uid){
-                    var info=likersNamesProf[uid]||{};
-                    var name=info.name||uid.substring(0,8)+'...';
-                    var av=info.avatar||null;
-                    return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'8px',padding:'5px 0',borderTop:'1px solid rgba(255,255,255,0.06)'}},
-                      React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                        av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
-                      ),
-                      React.createElement('span',{style:{flex:1,fontSize:'12px',color:'var(--text)',fontWeight:500}},name),
-                      uid!==userId?React.createElement('button',{
-                        onClick:function(){toggleFollow(uid,name,av,'RingIn Member');},
-                        style:{padding:'3px 10px',background:following[uid]?'transparent':'var(--ac)',border:following[uid]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[uid]?'var(--ac)':'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer',flexShrink:0}
-                      },following[uid]?'Following':'+Follow'):null
-                    );
-                  })
-                ) : null
+                )
               ),
               React.createElement('button',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
                 React.createElement('span',{style:{fontSize:'16px'}},'💬'),' Comment'
