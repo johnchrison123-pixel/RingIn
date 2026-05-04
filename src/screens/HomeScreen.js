@@ -25,23 +25,26 @@ export default function HomeScreen(props){
     if(!userId) return;
     if(typeof pid !== "string") return;
     var postOwner = null;
+    // INSTANT UI update
     setPosts(function(prev){
-      postOwner = prev.find(function(p){return p.id===pid;});
-      return prev;
+      return prev.map(function(p){
+        if(p.id!==pid) return p;
+        postOwner = p;
+        var newLiked = !p.liked;
+        var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
+        var newLikedBy = newLiked ? [userName].concat(p.likedBy||[]) : (p.likedBy||[]).filter(function(n){return n!==userName;});
+        return Object.assign({},p,{liked:newLiked,likes:newLikes,likedBy:newLikedBy});
+      });
     });
+    // Save to Supabase in background
     sbHome.rpc("toggle_like",{post_id:pid,user_id:userId}).then(function(r){
-      if(r.error){console.log("like error:",r.error);return;}
+      if(r.error){console.log("like error:",r.error);
+        // Revert on error
+        setPosts(function(prev){return prev.map(function(p){if(p.id!==pid)return p;return Object.assign({},p,{liked:!p.liked,likes:p.liked?p.likes+1:Math.max(0,p.likes-1)});});});
+        return;
+      }
       if(postOwner&&!postOwner.liked&&postOwner.userId&&postOwner.userId!==userId){
-        sbHome.from("notifications").insert([{
-          user_id:postOwner.userId,
-          from_user_id:userId,
-          from_user_name:userName,
-          from_user_avatar:userAvatar,
-          type:"like",
-          message:userName+" liked your post",
-          post_id:pid,
-          read:false
-        }]).then(function(nr){if(nr.error)console.log("notif error:",nr.error);});
+        sbHome.from("notifications").insert([{user_id:postOwner.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
     });
   }
@@ -54,6 +57,7 @@ export default function HomeScreen(props){
   var onOpenWallet = props.onOpenWallet;
   var compTextS=useState(''); var compText=compTextS[0]; var setCompText=compTextS[1];
   var hasMoreHS=useState(false); var hasMoreH=hasMoreHS[0]; var setHasMoreH=hasMoreHS[1];
+  var showLikersS=useState(null); var showLikers=showLikersS[0]; var setShowLikers=showLikersS[1];
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
@@ -119,7 +123,8 @@ export default function HomeScreen(props){
       tags:p.tags||[],
       likes:likesArr.length,
       liked:userId?likesArr.includes(userId):false,
-      likedBy:likesArr.slice(0,3),
+      likedBy:[],
+      likedByIds:likesArr,
       comments:p.comments_count||0,
       rate:0,
       expertId:null,
@@ -330,6 +335,34 @@ export default function HomeScreen(props){
     var exp = EXPERTS.find(function(e){return e.id===id;});
     if(exp && onViewExpert) onViewExpert(exp);
   }
+
+  if(showLikers) return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'},onClick:function(){setShowLikers(null);}},
+    React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{width:'100%',maxWidth:'480px',background:'var(--bg)',borderRadius:'20px 20px 0 0',padding:'16px',maxHeight:'70vh',overflowY:'auto'}},
+      React.createElement('div',{style:{width:'36px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}),
+      React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'16px',textAlign:'center'}},'Liked by '+(showLikers.likes)+' people'),
+      (showLikers.likedByIds||[]).length===0
+        ? React.createElement('div',{style:{textAlign:'center',color:'var(--t2)',padding:'20px'}},'Loading...')
+        : (showLikers.likedByIds||[]).map(function(uid,i){
+            var name = showLikers.likedBy&&showLikers.likedBy[i] ? showLikers.likedBy[i] : uid.substring(0,8)+'...';
+            return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
+              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0}},
+                name.substring(0,2).toUpperCase()
+              ),
+              React.createElement('div',{style:{flex:1}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},name)
+              ),
+              React.createElement('button',{
+                onClick:function(){
+                  var fh = followHook;
+                  if(fh) fh.toggleFollow(uid, name, null, 'RingIn Member');
+                },
+                style:{padding:'5px 14px',background:following[uid]?'var(--acg)':'var(--ac)',border:following[uid]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[uid]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
+              }, following[uid]?'Following':'+Follow')
+            );
+          }),
+      React.createElement('button',{onClick:function(){setShowLikers(null);},style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'none',borderRadius:'12px',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',marginTop:'12px'}},'Close')
+    )
+  );
 
   if(selectedUser) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Cover
@@ -658,7 +691,13 @@ export default function HomeScreen(props){
           ) : null,
           React.createElement('div', {className:'pacts'},
             React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1}},
-            React.createElement('button', {className:'pa'+(p.liked?' liked':''), style:{color:p.liked?'#E84D9A':'var(--t2)',fontSize:'13px',fontWeight:p.liked?700:400,gap:'5px',padding:'8px 2px'}, onClick:function(){toggleLike(p.id);}}, React.createElement('span',{style:{fontSize:'18px',lineHeight:1}},p.liked?'❤️':'🤍'), React.createElement('span',null,p.likes,' Likes')),
+            React.createElement('button',{className:'pa'+(p.liked?' liked':''),onClick:function(){toggleLike(p.id);},style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',padding:'8px 2px',fontSize:'13px',fontWeight:p.liked?700:400}},
+              React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22'},
+                p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
+                React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
+              ),
+              React.createElement('span',{onClick:function(e){e.stopPropagation();if(p.likes>0)setShowLikers(p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
+            ),
             p.likes>0&&p.likedBy&&p.likedBy.length>0?React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',padding:'0 4px',marginTop:'-4px'}},p.likedBy.slice(0,2).join(', ')+(p.likes>2?' and '+(p.likes-2)+' others':'')):null
           ),
             React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
