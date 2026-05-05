@@ -32,8 +32,10 @@ export function UserProfileView(props){
   var postsS=useState(_cachedUPosts.map(function(p){return p.isRaw===false?p:mapUPost(p);}));
   var userPosts=postsS[0]; var setUserPosts=postsS[1];
   var commentPostS=useState(null); var commentPost=commentPostS[0]; var setCommentPost=commentPostS[1];
-  var profileInfoS=useState(_cachedUInfo.name?_cachedUInfo:{name:(user.full_name||(user.email||'').split('@')[0]),tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
+  var profileInfoS=useState(_cachedUInfo.name?_cachedUInfo:{name:(user.full_name||(user.email||'').split('@')[0]),tag:'',about:'',website_name:'',website_url:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
   var coverS=useState(user.cover_url||localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
+  var showLikersUS=useState(null); var showLikersU=showLikersUS[0]; var setShowLikersU=showLikersUS[1];
+  var likersNamesUS=useState({}); var likersNamesU=likersNamesUS[0]; var setLikersNamesU=likersNamesUS[1];
 
   function toggleLikeU(pid){
     if(!currentUserId) return;
@@ -59,8 +61,8 @@ export function UserProfileView(props){
         var d=res.data;
         var name=d.full_name||(d.email||'').split('@')[0];
         var bio=d.bio||'';
-        var parsed={name:name,tag:'',about:'',website:''};
-        try{var j=JSON.parse(bio);if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';}}catch(e){parsed.about=bio;}
+        var parsed={name:name,tag:'',about:'',website_name:'',website_url:''};
+        try{var j=JSON.parse(bio);if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website_name=j.website_name||j.website||'';parsed.website_url=j.website_url||'';}}catch(e){parsed.about=bio;}
         setProfileInfo(parsed);
         try{localStorage.setItem('profile_info_'+user.id,JSON.stringify(parsed));}catch(e){}
         if(d.cover_url) setCoverUrl(d.cover_url);
@@ -71,16 +73,75 @@ export function UserProfileView(props){
       if(res.data){
         var mapped=res.data.map(mapUPost);
         setUserPosts(mapped);
+        prefetchLikersU(mapped,{});
         try{localStorage.setItem('user_posts_'+user.id,JSON.stringify(mapped));}catch(e){}
       }
     });
   },[user.id]);
 
+  function prefetchLikersU(postsArr,existing){
+    var allIds=[];
+    postsArr.forEach(function(p){(p.likedByIds||[]).forEach(function(id){if(typeof id==='string'&&id.length>10&&!existing[id]&&allIds.indexOf(id)<0)allIds.push(id);});});
+    if(!allIds.length) return;
+    sbHome.from('profiles').select('id,full_name,email,avatar_url').in('id',allIds).then(function(res){
+      if(res.data&&res.data.length){
+        var map={};
+        res.data.forEach(function(u){map[u.id]={name:u.full_name||(u.email||'').split('@')[0],avatar:u.avatar_url};});
+        setLikersNamesU(function(prev){return Object.assign({},prev,map);});
+      }
+    });
+  }
+
   var displayName = profileInfo.name || (user.full_name||(user.email||'?').split('@')[0]);
   var avatarUrl = user.avatar_url || localStorage.getItem('avatar_'+user.id) || null;
   var initials = displayName.substring(0,2).toUpperCase();
 
-  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
+    // Likes popup modal
+    showLikersU ? React.createElement('div',{
+      onClick:function(){setShowLikersU(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9000,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'100%',maxWidth:'360px',maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.6)'}},
+        React.createElement('div',{style:{padding:'18px 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'#fff'}},(function(){
+            var p=userPosts.find(function(x){return x.id===showLikersU;});
+            if(!p) return 'Liked by';
+            var ids=(p.likedByIds||[]).filter(function(l){return typeof l==='string'&&l.length>10;});
+            var names=ids.map(function(id){return likersNamesU[id]?likersNamesU[id].name:null;}).filter(Boolean);
+            var cnt=ids.length;
+            if(cnt===0) return 'Liked by';
+            if(cnt===1) return (names[0]||'Someone')+' liked this';
+            if(cnt===2) return (names[0]||'Someone')+' and '+(names[1]||'someone')+' liked';
+            return (names[0]||'Someone')+' and '+(cnt-1)+' others liked';
+          })()),
+          React.createElement('button',{onClick:function(){setShowLikersU(null);},style:{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:'30px',height:'30px',color:'#fff',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')
+        ),
+        React.createElement('div',{style:{overflowY:'auto',padding:'8px 0'}},(function(){
+          var p=userPosts.find(function(x){return x.id===showLikersU;});
+          if(!p) return null;
+          var ids=(p.likedByIds||[]).filter(function(l){return typeof l==='string'&&l.length>10;});
+          if(!ids.length) return React.createElement('div',{style:{padding:'24px',textAlign:'center',color:'rgba(255,255,255,0.4)',fontSize:'14px'}},'No likes yet');
+          return ids.map(function(uid){
+            var info=likersNamesU[uid]||{};
+            var nm=info.name||'...'; var av=info.avatar||null;
+            return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
+              React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},
+                av?React.createElement('img',{src:av,alt:nm,style:{width:'100%',height:'100%',objectFit:'cover'}}):nm.substring(0,2).toUpperCase()
+              ),
+              React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},nm),
+                React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'RingIn Member')
+              ),
+              uid!==currentUserId?React.createElement('button',{
+                onClick:function(){props.toggleFollow(uid,nm,av,'RingIn Member');},
+                style:{padding:'6px 14px',background:props.following[uid]?'transparent':'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:props.following[uid]?'1px solid rgba(123,110,255,0.5)':'none',borderRadius:'20px',color:props.following[uid]?'#7B6EFF':'#fff',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0}
+              },props.following[uid]?'Following':'+Follow'):null
+            );
+          });
+        })())
+      )
+    ) : null,
     // Cover — overflow:visible so avatar hanging below is not clipped
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
@@ -94,8 +155,8 @@ export function UserProfileView(props){
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
         React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},displayName),
         profileInfo.tag?React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag):null,
-        profileInfo.about?React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px'}},profileInfo.about):null,
-        profileInfo.website?React.createElement('a',{href:profileInfo.website.startsWith('http')?profileInfo.website:'https://'+profileInfo.website,target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+profileInfo.website):null,
+        profileInfo.about?React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},profileInfo.about):null,
+        (profileInfo.website_name||profileInfo.website_url)?React.createElement('a',{href:profileInfo.website_url||(profileInfo.website_name&&profileInfo.website_name.startsWith('http')?profileInfo.website_name:'https://'+profileInfo.website_name),target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+(profileInfo.website_name||profileInfo.website_url)):null,
         user.is_online?React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'#27C96A'}},React.createElement('div',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'#27C96A'}}),'Online'):null
       ),
       React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'8px',flexShrink:0}},
@@ -149,16 +210,16 @@ export function UserProfileView(props){
           pImg?React.createElement('img',{src:pImg,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}):null,
           // Actions — same as HomeScreen
           React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
-            React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}},
+            React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
               React.createElement('button',{
                 onClick:function(){toggleLikeU(p.id);},
-                style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',padding:'10px 2px',fontSize:'13px',color:p.liked?'#B44FE8':'var(--t2)',fontWeight:p.liked?700:400}
+                style:{display:'flex',alignItems:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:p.liked?'#E84D9A':'var(--t2)',fontWeight:p.liked?700:400}
               },
-                React.createElement('svg',{viewBox:'0 0 24 24',width:'20',height:'20'},
+                React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18'},
                   p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'ulg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                   React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#ulg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
                 ),
-                p.likes+' Likes'
+                React.createElement('span',{onClick:function(e){e.stopPropagation();if((p.likedByIds||[]).length>0){setShowLikersU(p.id);}},style:{cursor:(p.likedByIds||[]).length>0?'pointer':'default'}},(Array.isArray(p.likedByIds)?p.likedByIds.length:p.likes)+' Like')
               )
             ),
             React.createElement('button',{

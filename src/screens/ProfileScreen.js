@@ -503,7 +503,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         following:following,
         toggleFollow:toggleFollow,
         onBack:function(){setSelectedLiker(null);},
-        onGoToMessages:null
+        onGoToMessages:props.onGoToMessages||null
       })
     ) : null,
     // Avatar view modal

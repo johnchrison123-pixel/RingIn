@@ -111,7 +111,7 @@ export default function App() {
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
     if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
-    if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet});
+    if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
   }
