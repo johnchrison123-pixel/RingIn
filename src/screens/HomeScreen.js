@@ -378,7 +378,12 @@ export default function HomeScreen(props){
 
   function goToUserProfile(userId, cachedInfo){
     if(!userId) return;
-    // If we already have full info cached in likersNames, use it
+    // If it's the logged-in user, go to their own Profile tab
+    if(userId === currentUserId){
+      if(props.onGoToProfile) props.onGoToProfile();
+      return;
+    }
+    // Otherwise show the other user's profile card
     var info = cachedInfo || likersNames[userId] || {};
     setSelectedUser({
       id: userId,
@@ -387,7 +392,6 @@ export default function HomeScreen(props){
       avatar_url: info.avatar || null,
       is_online: false
     });
-    // Also fetch fresh from Supabase to fill in any missing fields
     sbHome.from('profiles').select('*').eq('id', userId).single().then(function(res){
       if(res.data) setSelectedUser(res.data);
     });
