@@ -46,11 +46,11 @@ function UserProfileView(props){
   var initials = displayName.substring(0,2).toUpperCase();
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    // Cover
-    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'hidden'}},
-      coverUrl?React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}):null,
+    // Cover — overflow:visible so avatar hanging below is not clipped
+    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
+      coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
       React.createElement('button',{onClick:props.onBack,style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.45)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 14px',cursor:'pointer',fontSize:'12px',fontWeight:600,zIndex:3}},'< Back'),
-      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:2}},
+      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:4}},
         avatarUrl?React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
       )
     ),
@@ -80,32 +80,48 @@ function UserProfileView(props){
       )
     ),
     // Posts heading
-    React.createElement('div',{style:{padding:'0 18px 10px',borderTop:'1px solid var(--border)',marginTop:'8px'}},
+    React.createElement('div',{style:{padding:'4px 18px 10px',borderTop:'1px solid var(--border)',marginTop:'8px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'12px'}},userPosts.length+' Post'+(userPosts.length!==1?'s':''))
     ),
-    // Posts list
+    // Posts list — same card structure as ProfileScreen
     userPosts.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
       React.createElement('div',{style:{fontSize:'30px',marginBottom:'8px'}},'📝'),
       React.createElement('div',{style:{fontSize:'13px'}},'No posts yet')
-    ):React.createElement('div',{style:{padding:'0 0 80px'}},
+    ):React.createElement('div',{style:{padding:'0 18px 80px'}},
       userPosts.map(function(p){
-        return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderBottom:'none',borderLeft:'none',borderRight:'none',marginBottom:'0',borderRadius:'0',overflow:'hidden',borderTop:'1px solid var(--border)'}},
-          p.images&&p.images[0]?React.createElement('img',{src:p.images[0],alt:'post',style:{width:'100%',maxHeight:'260px',objectFit:'cover',display:'block'}}):null,
-          React.createElement('div',{style:{padding:'12px 16px'}},
-            React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.6,marginBottom:'8px'}},p.text),
-            (p.tags||[]).length>0?React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'8px'}},
-              (p.tags||[]).map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'#7B6EFF',background:'rgba(123,110,255,0.1)',padding:'2px 8px',borderRadius:'20px'}},'#'+t);})
-            ):null,
-            React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})),
-              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
-                React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',display:'flex',alignItems:'center',gap:'4px'}},
-                  React.createElement('span',{style:{color:'#E84D9A'}},'♥'),(Array.isArray(p.likes)?p.likes.length:0),' likes'
-                ),
-                React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)'}},
-                  '💬 '+(p.comments_count||0)
-                )
-              )
+        var pAvatar=avatarUrl;
+        var pTime=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+        var pLikes=Array.isArray(p.likes)?p.likes.length:0;
+        var pImg=p.images&&p.images[0]?p.images[0]:null;
+        return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
+          // Post header — avatar + name + time
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px'}},
+            React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
+              pAvatar?React.createElement('img',{src:pAvatar,alt:displayName,style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+            ),
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},displayName),
+              React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},pTime)
+            )
+          ),
+          // Post text
+          React.createElement('div',{style:{padding:'0 12px 8px',fontSize:'13px',color:'var(--text)',lineHeight:1.6}},p.text),
+          // Tags
+          (p.tags||[]).length>0?React.createElement('div',{style:{padding:'0 12px 8px',display:'flex',flexWrap:'wrap',gap:'4px'}},
+            (p.tags||[]).map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'#7B6EFF'}},('#'+t));})
+          ):null,
+          // Post image
+          pImg?React.createElement('img',{src:pImg,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}):null,
+          // Actions
+          React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
+            React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'10px',fontSize:'13px',color:'var(--t2)'}},
+              React.createElement('span',{style:{marginRight:'4px',color:'#E84D9A'}},'♥'),pLikes,' Likes'
+            ),
+            React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'10px',fontSize:'13px',color:'var(--t2)'}},
+              React.createElement('span',{style:{marginRight:'4px'}},'💬'),(p.comments_count||0),' Comments'
+            ),
+            React.createElement('button',{onClick:function(){try{navigator.clipboard.writeText(p.text);}catch(e){}},style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
+              React.createElement('span',null,'↗'),' Share'
             )
           )
         );
