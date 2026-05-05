@@ -34,13 +34,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var editTagS=useState(''); var editTag=editTagS[0]; var setEditTag=editTagS[1];
   var editAboutS=useState(''); var editAbout=editAboutS[0]; var setEditAbout=editAboutS[1];
   var editWebsiteS=useState(''); var editWebsite=editWebsiteS[0]; var setEditWebsite=editWebsiteS[1];
-  var profileInfoS=useState({name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
+  var _cachedPInfo={}; try{var _cp=localStorage.getItem('profile_info_'+(session&&session.user?session.user.id:''));if(_cp)_cachedPInfo=JSON.parse(_cp);}catch(e){}
+  var profileInfoS=useState(_cachedPInfo.name?_cachedPInfo:{name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
   var savingEditS=useState(false); var savingEdit=savingEditS[0]; var setSavingEdit=savingEditS[1];
-  var postsS=useState([
-    {id:1,text:'Just had an incredible consultation with Dr. Priya Nair. She explained everything so clearly. Highly recommend!',likes:['Ahmed K.','Fatima M.','Sara Z.'],liked:false,time:'1h ago',img:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},
-    {id:2,text:'Learning system design with Ravi Menon on RingIn. Best investment I made this month. Already cracked 2 interviews!',likes:['Ravi M.','James T.','Layla K.'],liked:false,time:'Yesterday',img:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'},
-    {id:3,text:'Sara Al Zaabi helped me rebuild my LinkedIn profile from scratch. Got 3 recruiter messages in one week!',likes:['Dr. Priya','Ahmed K.','Fatima M.'],liked:false,time:'2 days ago',img:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&q=80'},
-  ]); var myPosts=postsS[0]; var setMyPosts=postsS[1];
+  var _cachedMyPosts=[];try{var _cmp=localStorage.getItem('my_posts_cache_'+(session&&session.user?session.user.id:''));if(_cmp)_cachedMyPosts=JSON.parse(_cmp);}catch(e){}
+  var postsS=useState(_cachedMyPosts); var myPosts=postsS[0]; var setMyPosts=postsS[1];
   var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
   var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
 
@@ -94,6 +92,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         var parsed = {name:name,tag:'',about:'',website:''};
         try{ var j=JSON.parse(bio); if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';} }catch(e){ parsed.about=bio; }
         setProfileInfo(parsed);
+        try{localStorage.setItem('profile_info_'+userId,JSON.stringify(parsed));}catch(e){}
       }
     });
   },[userId]);
@@ -112,7 +111,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     var newBio = JSON.stringify({about:editAbout,tag:editTag,website:editWebsite});
     sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
       setSavingEdit(false);
-      setProfileInfo({name:editName,tag:editTag,about:editAbout,website:editWebsite});
+      var updated={name:editName,tag:editTag,about:editAbout,website:editWebsite};
+      setProfileInfo(updated);
+      try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
       setShowEditProfile(false);
     });
   }
@@ -135,6 +136,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         });
         setMyPosts(dbPosts);
         prefetchLikerNamesProf(dbPosts, {});
+        try{localStorage.setItem('my_posts_cache_'+userId,JSON.stringify(dbPosts));}catch(e){}
       }
     });
   },[userId]);

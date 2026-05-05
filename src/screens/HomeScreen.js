@@ -12,14 +12,14 @@ var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',vie
 
 function UserProfileView(props){
   var user=props.user; var sbHome=props.sbHome;
-  var postsS=useState([]); var userPosts=postsS[0]; var setUserPosts=postsS[1];
-  var loadingS=useState(true); var loading=loadingS[0]; var setLoading=loadingS[1];
-  var profileInfoS=useState({name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
-  var coverS=useState(null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
+  var _cachedUPosts=[];try{var _cup=localStorage.getItem('user_posts_'+user.id);if(_cup)_cachedUPosts=JSON.parse(_cup);}catch(e){}
+  var _cachedUInfo={};try{var _cui=localStorage.getItem('profile_info_'+user.id);if(_cui)_cachedUInfo=JSON.parse(_cui);}catch(e){}
+  var postsS=useState(_cachedUPosts); var userPosts=postsS[0]; var setUserPosts=postsS[1];
+  var profileInfoS=useState(_cachedUInfo.name?_cachedUInfo:{name:(user.full_name||(user.email||'').split('@')[0]),tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
+  var coverS=useState(localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
 
   useEffect(function(){
     if(!user||!user.id) return;
-    // Load full profile info
     sbHome.from('profiles').select('*').eq('id',user.id).single().then(function(res){
       if(res.data){
         var d=res.data;
@@ -28,15 +28,16 @@ function UserProfileView(props){
         var parsed={name:name,tag:'',about:'',website:''};
         try{var j=JSON.parse(bio);if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';}}catch(e){parsed.about=bio;}
         setProfileInfo(parsed);
-        // load cover from localStorage or profiles
+        try{localStorage.setItem('profile_info_'+user.id,JSON.stringify(parsed));}catch(e){}
         var savedCover=localStorage.getItem('cover_'+user.id);
         if(savedCover) setCoverUrl(savedCover);
       }
     });
-    // Load their posts
     sbHome.from('posts').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).then(function(res){
-      setLoading(false);
-      if(res.data) setUserPosts(res.data);
+      if(res.data){
+        setUserPosts(res.data);
+        try{localStorage.setItem('user_posts_'+user.id,JSON.stringify(res.data));}catch(e){}
+      }
     });
   },[user.id]);
 
@@ -83,10 +84,7 @@ function UserProfileView(props){
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'12px'}},userPosts.length+' Post'+(userPosts.length!==1?'s':''))
     ),
     // Posts list
-    loading?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
-      React.createElement('div',{style:{fontSize:'20px',marginBottom:'8px'}},'⏳'),
-      React.createElement('div',{style:{fontSize:'13px'}},'Loading posts...')
-    ):userPosts.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
+    userPosts.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
       React.createElement('div',{style:{fontSize:'30px',marginBottom:'8px'}},'📝'),
       React.createElement('div',{style:{fontSize:'13px'}},'No posts yet')
     ):React.createElement('div',{style:{padding:'0 0 80px'}},
