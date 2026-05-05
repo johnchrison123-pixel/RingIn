@@ -32,6 +32,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var coverOffsetS=useState({x:0,y:0}); var coverOffset=coverOffsetS[0]; var setCoverOffset=coverOffsetS[1];
   var coverDraggingS=useState(false); var coverDragging=coverDraggingS[0]; var setCoverDragging=coverDraggingS[1];
   var coverDragStartS=useState({x:0,y:0}); var coverDragStart=coverDragStartS[0]; var setCoverDragStart=coverDragStartS[1];
+  var coverImgNatS=useState({w:1,h:1}); var coverImgNat=coverImgNatS[0]; var setCoverImgNat=coverImgNatS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var showEditProfileS=useState(false); var showEditProfile=showEditProfileS[0]; var setShowEditProfile=showEditProfileS[1];
@@ -234,9 +235,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     if(!file||!userId) return;
     var reader = new FileReader();
     reader.onload = function(e){
-      setCoverAdjustImg(e.target.result);
-      setCoverOffset({x:0,y:0});
-      setShowCoverAdjust(true);
+      var tmp = new Image();
+      tmp.onload = function(){
+        setCoverImgNat({w:tmp.naturalWidth, h:tmp.naturalHeight});
+        setCoverAdjustImg(e.target.result);
+        setCoverOffset({x:0,y:0});
+        setShowCoverAdjust(true);
+      };
+      tmp.src = e.target.result;
     };
     reader.readAsDataURL(file);
   }
@@ -245,20 +251,30 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     if(!coverAdjustImg||!userId) return;
     var CANVAS_W = 800;
     var CANVAS_H = 260;
+    var PREV_H = 130;
+    var prevW = (window.innerWidth||375);
     var canvas = document.createElement('canvas');
     canvas.width = CANVAS_W;
     canvas.height = CANVAS_H;
     var ctx = canvas.getContext('2d');
     var img = new Image();
     img.onload = function(){
-      // Scale image to fit fully inside canvas (no crop of image content), then apply offset
-      var scale = Math.min(CANVAS_W / img.width, CANVAS_H / img.height);
-      var w = img.width * scale;
-      var h = img.height * scale;
-      var baseX = (CANVAS_W - w) / 2;
-      var baseY = (CANVAS_H - h) / 2;
-      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-      ctx.drawImage(img, baseX + coverOffset.x, baseY + coverOffset.y, w, h);
+      var natW = img.naturalWidth||img.width;
+      var natH = img.naturalHeight||img.height;
+      // Scale used in preview (contain: fit full image inside preview box)
+      var previewScale = Math.min(prevW / natW, PREV_H / natH);
+      // Scale used on canvas
+      var canvasScale = Math.min(CANVAS_W / natW, CANVAS_H / natH);
+      var imgCW = natW * canvasScale;
+      var imgCH = natH * canvasScale;
+      var baseX = (CANVAS_W - imgCW) / 2;
+      var baseY = (CANVAS_H - imgCH) / 2;
+      // Scale the screen-pixel offset to canvas-pixel offset
+      var ratio = previewScale > 0 ? canvasScale / previewScale : 1;
+      // Fill dark background so JPEG has no transparent/blank areas
+      ctx.fillStyle = '#1a1040';
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.drawImage(img, baseX + coverOffset.x * ratio, baseY + coverOffset.y * ratio, imgCW, imgCH);
       canvas.toBlob(function(blob){
         setUploading(true);
         setShowCoverAdjust(false);
@@ -269,6 +285,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           var url = pub.data.publicUrl+'?t='+Date.now();
           setCoverUrl(url);
           try{localStorage.setItem('cover_'+userId, url);}catch(e){}
+          // Save to profiles so other users can see it instantly
+          supabase.from('profiles').update({cover_url:url}).eq('id',userId).then(function(){});
           setUploading(false);
         });
       }, 'image/jpeg', 0.92);
@@ -496,27 +514,39 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{padding:'16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px'}},'Drag to reposition your photo')
     ) : null,
     // Cover adjust/reposition screen
-    showCoverAdjust ? React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:10001,display:'flex',flexDirection:'column'}},
-      React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px',color:'#fff'}},
-        React.createElement('button',{onClick:function(){setShowCoverAdjust(false);},style:{background:'none',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer'}},'Cancel'),
-        React.createElement('div',{style:{fontSize:'15px',fontWeight:600}},'Adjust Cover Photo'),
-        React.createElement('button',{onClick:saveCover,style:{background:'var(--ac)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,padding:'6px 14px',borderRadius:'20px',cursor:'pointer'}},'Save')
-      ),
-      React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',padding:'16px'}},
-        React.createElement('div',{
-          style:{width:'100%',maxWidth:'500px',height:'162px',border:'2px solid rgba(255,255,255,0.5)',borderRadius:'10px',overflow:'hidden',position:'relative',cursor:'grab',background:'#111'},
-          onMouseDown:function(e){setCoverDragging(true);setCoverDragStart({x:e.clientX-coverOffset.x,y:e.clientY-coverOffset.y});},
-          onMouseMove:function(e){if(!coverDragging)return;setCoverOffset({x:e.clientX-coverDragStart.x,y:e.clientY-coverDragStart.y});},
-          onMouseUp:function(){setCoverDragging(false);},
-          onTouchStart:function(e){setCoverDragging(true);setCoverDragStart({x:e.touches[0].clientX-coverOffset.x,y:e.touches[0].clientY-coverOffset.y});},
-          onTouchMove:function(e){if(!coverDragging)return;e.preventDefault();setCoverOffset({x:e.touches[0].clientX-coverDragStart.x,y:e.touches[0].clientY-coverDragStart.y});},
-          onTouchEnd:function(){setCoverDragging(false);}
-        },
-          coverAdjustImg ? React.createElement('img',{src:coverAdjustImg,style:{position:'absolute',top:'50%',left:'50%',transform:'translate(calc(-50% + '+coverOffset.x+'px), calc(-50% + '+coverOffset.y+'px))',maxWidth:'none',maxHeight:'none',width:'auto',height:'auto',transition:coverDragging?'none':'transform 0.1s',userSelect:'none',pointerEvents:'none',display:'block'}}) : null
+    showCoverAdjust ? (function(){
+      var prevW = window.innerWidth||375;
+      var prevH = 130;
+      var natW = coverImgNat.w||1; var natH = coverImgNat.h||1;
+      var prevScale = Math.min(prevW / natW, prevH / natH);
+      var imgDW = Math.round(natW * prevScale);
+      var imgDH = Math.round(natH * prevScale);
+      return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:10001,display:'flex',flexDirection:'column'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px',color:'#fff',flexShrink:0}},
+          React.createElement('button',{onClick:function(){setShowCoverAdjust(false);},style:{background:'none',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer'}},'Cancel'),
+          React.createElement('div',{style:{fontSize:'15px',fontWeight:600}},'Adjust Cover Photo'),
+          React.createElement('button',{onClick:saveCover,style:{background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,padding:'6px 14px',borderRadius:'20px',cursor:'pointer'}},'Save')
+        ),
+        React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'12px',padding:'0'}},
+          React.createElement('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.4)',textAlign:'center',padding:'0 20px'}},'Drag to reposition'),
+          React.createElement('div',{
+            style:{width:'100%',height:prevH+'px',overflow:'hidden',position:'relative',cursor:'grab',background:'#1a1040',borderTop:'2px solid rgba(255,255,255,0.2)',borderBottom:'2px solid rgba(255,255,255,0.2)'},
+            onMouseDown:function(e){setCoverDragging(true);setCoverDragStart({x:e.clientX-coverOffset.x,y:e.clientY-coverOffset.y});},
+            onMouseMove:function(e){if(!coverDragging)return;setCoverOffset({x:e.clientX-coverDragStart.x,y:e.clientY-coverDragStart.y});},
+            onMouseUp:function(){setCoverDragging(false);},
+            onTouchStart:function(e){setCoverDragging(true);setCoverDragStart({x:e.touches[0].clientX-coverOffset.x,y:e.touches[0].clientY-coverOffset.y});},
+            onTouchMove:function(e){if(!coverDragging)return;e.preventDefault();setCoverOffset({x:e.touches[0].clientX-coverDragStart.x,y:e.touches[0].clientY-coverDragStart.y});},
+            onTouchEnd:function(){setCoverDragging(false);}
+          },
+            coverAdjustImg ? React.createElement('img',{
+              src:coverAdjustImg,
+              style:{position:'absolute',top:'50%',left:'50%',width:imgDW+'px',height:imgDH+'px',transform:'translate(calc(-50% + '+coverOffset.x+'px), calc(-50% + '+coverOffset.y+'px))',transition:coverDragging?'none':'transform 0.08s',userSelect:'none',pointerEvents:'none',display:'block'}
+            }) : null
+          ),
+          React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.3)',textAlign:'center',padding:'0 20px'}},'This is exactly how your cover will look on your profile')
         )
-      ),
-      React.createElement('div',{style:{padding:'16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px'}},'Drag to reposition your cover photo')
-    ) : null,
+      );
+    })() : null,
     // iOS frosted glass avatar menu
     showAvatarMenu ? React.createElement('div',{
       onClick:function(){setShowAvatarMenu(false);},

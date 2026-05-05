@@ -33,7 +33,7 @@ function UserProfileView(props){
   var userPosts=postsS[0]; var setUserPosts=postsS[1];
   var commentPostS=useState(null); var commentPost=commentPostS[0]; var setCommentPost=commentPostS[1];
   var profileInfoS=useState(_cachedUInfo.name?_cachedUInfo:{name:(user.full_name||(user.email||'').split('@')[0]),tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
-  var coverS=useState(localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
+  var coverS=useState(user.cover_url||localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
 
   function toggleLikeU(pid){
     if(!currentUserId) return;
@@ -63,8 +63,8 @@ function UserProfileView(props){
         try{var j=JSON.parse(bio);if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';}}catch(e){parsed.about=bio;}
         setProfileInfo(parsed);
         try{localStorage.setItem('profile_info_'+user.id,JSON.stringify(parsed));}catch(e){}
-        var savedCover=localStorage.getItem('cover_'+user.id);
-        if(savedCover) setCoverUrl(savedCover);
+        if(d.cover_url) setCoverUrl(d.cover_url);
+        else { var savedCover=localStorage.getItem('cover_'+user.id); if(savedCover) setCoverUrl(savedCover); }
       }
     });
     sbHome.from('posts').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).then(function(res){
