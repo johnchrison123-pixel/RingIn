@@ -33,7 +33,8 @@ export default function HomeScreen(props){
         var newLiked = !p.liked;
         var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
         var newLikedBy = newLiked ? [userName].concat(p.likedBy||[]) : (p.likedBy||[]).filter(function(n){return n!==userName;});
-        return Object.assign({},p,{liked:newLiked,likes:newLikes,likedBy:newLikedBy});
+        var newLikedByIds = newLiked ? [userId].concat(p.likedByIds||[]) : (p.likedByIds||[]).filter(function(id){return id!==userId;});
+        return Object.assign({},p,{liked:newLiked,likes:newLikes,likedBy:newLikedBy,likedByIds:newLikedByIds});
       });
     });
     // Save to Supabase in background
@@ -94,6 +95,17 @@ export default function HomeScreen(props){
   var fileInputRef=useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
+  var currentUserName = props.session&&props.session.user ? props.session.user.email.split('@')[0] : null;
+  var currentUserAvatar = currentUserId ? localStorage.getItem('avatar_'+currentUserId) : null;
+  useEffect(function(){
+    if(!currentUserId||!currentUserName) return;
+    setLikersNames(function(prev){
+      if(prev[currentUserId]) return prev;
+      var m=Object.assign({},prev);
+      m[currentUserId]={name:currentUserName,avatar:currentUserAvatar};
+      return m;
+    });
+  },[currentUserId]);
   useEffect(function(){
     if(!props.session||!props.session.user) return;
     var uid = props.session.user.id;
