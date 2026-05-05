@@ -376,6 +376,23 @@ export default function HomeScreen(props){
     if(exp && onViewExpert) onViewExpert(exp);
   }
 
+  function goToUserProfile(userId, cachedInfo){
+    if(!userId) return;
+    // If we already have full info cached in likersNames, use it
+    var info = cachedInfo || likersNames[userId] || {};
+    setSelectedUser({
+      id: userId,
+      full_name: info.name || null,
+      email: (info.name || userId.substring(0,8)) + '@ringin.app',
+      avatar_url: info.avatar || null,
+      is_online: false
+    });
+    // Also fetch fresh from Supabase to fill in any missing fields
+    sbHome.from('profiles').select('*').eq('id', userId).single().then(function(res){
+      if(res.data) setSelectedUser(res.data);
+    });
+  }
+
 
   if(selectedUser) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Cover
@@ -467,10 +484,16 @@ export default function HomeScreen(props){
               var name=info.name||'Loading...';
               var av=info.avatar||null;
               return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
-                React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},
+                React.createElement('div',{
+                  onClick:function(){setShowLikers(null);goToUserProfile(uid,{name:name,avatar:av});},
+                  style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:'pointer'}
+                },
                   av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
                 ),
-                React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{
+                  onClick:function(){setShowLikers(null);goToUserProfile(uid,{name:name,avatar:av});},
+                  style:{flex:1,minWidth:0,cursor:'pointer'}
+                },
                   React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},name),
                   React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'RingIn Member')
                 ),
@@ -735,13 +758,13 @@ export default function HomeScreen(props){
             React.createElement('div', {
               className:'pav',
               style:{background:p.color, cursor:'pointer', overflow:'hidden', padding:0},
-              onClick:function(){goToExpertById(p.expertId);}
+              onClick:function(){p.expertId ? goToExpertById(p.expertId) : goToUserProfile(p.userId, {name:p.name, avatar:p.img});}
             }, p.img ? React.createElement('img',{src:p.img,alt:p.name,style:{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}}) : p.initials),
             React.createElement('div', null,
               React.createElement('div', {
                 className:'pn',
                 style:{cursor:'pointer'},
-                onClick:function(){goToExpertById(p.expertId);}
+                onClick:function(){p.expertId ? goToExpertById(p.expertId) : goToUserProfile(p.userId, {name:p.name, avatar:p.img});}
               }, p.name),
               React.createElement('div', {className:'pr'}, p.role)
             ),
