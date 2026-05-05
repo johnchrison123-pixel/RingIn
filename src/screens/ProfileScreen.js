@@ -4,6 +4,20 @@ import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
+function timeAgoProf(dateStr){
+  if(!dateStr) return '';
+  var now=new Date();
+  var str=dateStr.toString();
+  if(!str.includes('Z')&&!str.includes('+')) str=str+'Z';
+  var date=new Date(str);
+  var diff=Math.floor((now-date)/1000);
+  if(diff<60) return 'Just now';
+  if(diff<3600) return Math.floor(diff/60)+'m ago';
+  if(diff<86400) return Math.floor(diff/3600)+'h ago';
+  if(diff<172800) return 'Yesterday';
+  return date.toLocaleDateString([],{month:'short',day:'numeric'});
+}
+
 export default function ProfileScreen({session, supabase, onOpenWallet}){
   var email = session && session.user ? session.user.email : '';
   var initials = email ? email.substring(0,2).toUpperCase() : 'ME';
@@ -126,6 +140,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
           return Object.assign({},prev,{[postId]:cur});
         });
+        // Persist count to DB
+        sbProfile.from('comments').select('id',{count:'exact',head:true}).eq('post_id',postId).then(function(r){
+          if(r.count!==null) sbProfile.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){});
+        });
       }
     });
   }
@@ -206,7 +224,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             likes:likesArr,
             liked:likesArr.includes(userId),
             likedByIds:likesArr,
-            time:new Date(p.created_at).toLocaleDateString(),
+            time:timeAgoProf(p.created_at),
             createdAt:p.created_at,
             img:p.images&&p.images[0]?p.images[0]:null,
             tags:p.tags||[],
@@ -849,7 +867,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                     React.createElement('div',{style:{flex:1}},
                       React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
                         React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                        React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},new Date(c.created_at).toLocaleDateString())
+                        React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoProf(c.created_at):'')
                       ),
                       React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
                     )

@@ -10,6 +10,20 @@ var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medi
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
+function timeAgoUtil(dateStr){
+  if(!dateStr) return '';
+  var now=new Date();
+  var str=dateStr.toString();
+  if(!str.includes('Z')&&!str.includes('+')) str=str+'Z';
+  var date=new Date(str);
+  var diff=Math.floor((now-date)/1000);
+  if(diff<60) return 'Just now';
+  if(diff<3600) return Math.floor(diff/60)+'m ago';
+  if(diff<86400) return Math.floor(diff/3600)+'h ago';
+  if(diff<172800) return 'Yesterday';
+  return date.toLocaleDateString([],{month:'short',day:'numeric'});
+}
+
 export function UserProfileView(props){
   var user=props.user; var sbHome=props.sbHome;
   var currentUserId=props.currentUserId;
@@ -90,6 +104,10 @@ export function UserProfileView(props){
           var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
           try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
           return Object.assign({},prev,{[postId]:cur});
+        });
+        // Persist count to DB
+        sbHome.from('comments').select('id',{count:'exact',head:true}).eq('post_id',postId).then(function(r){
+          if(r.count!==null) sbHome.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){});
         });
       }
     });
@@ -281,7 +299,7 @@ export function UserProfileView(props){
     ):React.createElement('div',{style:{padding:'0 18px 80px'}},
       userPosts.map(function(p){
         var pAvatar=avatarUrl;
-        var pTime=p.createdAt?new Date(p.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+        var pTime=p.createdAt?timeAgoUtil(p.createdAt):'';
         var commentsArr=commentsCacheU[p.id]||[];
         return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
           // Post header
@@ -349,7 +367,7 @@ export function UserProfileView(props){
                   React.createElement('div',{style:{flex:1}},
                     React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
                       React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},new Date(c.created_at).toLocaleDateString())
+                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
                     ),
                     React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
                   )
@@ -441,6 +459,10 @@ export default function HomeScreen(props){
           var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
           try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
           return Object.assign({},prev,{[postId]:cur});
+        });
+        // Persist count to DB
+        sbHome.from('comments').select('id',{count:'exact',head:true}).eq('post_id',postId).then(function(r){
+          if(r.count!==null) sbHome.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){});
         });
       }
     });
@@ -1169,9 +1191,8 @@ export default function HomeScreen(props){
                 style:{cursor:'pointer'},
                 onClick:function(){p.expertId ? goToExpertById(p.expertId) : goToUserProfile(p.userId, {name:p.name, avatar:p.img});}
               }, p.name),
-              React.createElement('div', {className:'pr'}, p.role)
+              React.createElement('div', {className:'pt'}, p.createdAt?timeAgo(p.createdAt):(p.time||''))
             ),
-            React.createElement('div', {className:'pt'}, p.time&&p.time!=='Just now'?timeAgo(p.createdAt||new Date()):p.time||''),
             React.createElement('button',{
               onClick:function(e){e.stopPropagation();setPostMenu(postMenu===p.id?null:p.id);},
               style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'4px 8px',position:'absolute',right:'0',top:'4px'}
@@ -1221,7 +1242,7 @@ export default function HomeScreen(props){
                   React.createElement('div',{style:{flex:1}},
                     React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
                       React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},new Date(c.created_at).toLocaleDateString())
+                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
                     ),
                     React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
                   )
