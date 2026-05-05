@@ -771,9 +771,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         // 3-dot menu popup for ProfileScreen
         postMenuProf ? React.createElement('div',{
           onClick:function(){setPostMenuProf(null);},
-          style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.5)'}
+          style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.2)'}
         },
-          React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'280px',boxShadow:'0 20px 60px rgba(0,0,0,0.6)',overflow:'hidden'}},
+          React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(28,24,40,0.45)',backdropFilter:'blur(48px)',WebkitBackdropFilter:'blur(48px)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'20px',width:'280px',boxShadow:'0 8px 40px rgba(0,0,0,0.35)',overflow:'hidden'}},
             (function(){
               var p=myPosts.find(function(x){return x.id===postMenuProf;});
               if(!p) return null;
@@ -784,9 +784,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                 {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenuProf(null);}}
               ];
               return items.map(function(item,i){
-                return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.08)':'none',cursor:'pointer'}},
-                  React.createElement('span',{style:{fontSize:'18px'}},item.icon),
-                  React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'#fff'}},item.label)
+                return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',padding:'14px 20px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.07)':'none',cursor:'pointer'}},
+                  React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'rgba(255,255,255,0.9)'}},item.label)
                 );
               });
             })()
@@ -828,7 +827,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                   if(newOpen) loadCommentsProf(newOpen);
                 },
                 style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
-              },'💬 '+(p.comments||0)),
+              },'💬 '+(commentsCacheProf[p.id]?commentsCacheProf[p.id].length:p.comments||0)),
               React.createElement('button',{
                 onClick:function(){
                   var url='https://ring-in.vercel.app/post/'+p.id;

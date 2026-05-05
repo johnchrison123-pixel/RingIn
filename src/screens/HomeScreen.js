@@ -210,9 +210,9 @@ export function UserProfileView(props){
     // Post 3-dot menu for UserProfileView
     postMenuU ? React.createElement('div',{
       onClick:function(){setPostMenuU(null);},
-      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.5)'}
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.2)'}
     },
-      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'280px',boxShadow:'0 20px 60px rgba(0,0,0,0.6)',overflow:'hidden'}},
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(28,24,40,0.45)',backdropFilter:'blur(48px)',WebkitBackdropFilter:'blur(48px)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'20px',width:'280px',boxShadow:'0 8px 40px rgba(0,0,0,0.35)',overflow:'hidden'}},
         (function(){
           var p=userPosts.find(function(x){return x.id===postMenuU;});
           if(!p) return null;
@@ -230,9 +230,8 @@ export function UserProfileView(props){
             {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenuU(null);}}
           ];
           return items.map(function(item,i){
-            return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.08)':'none',cursor:'pointer'}},
-              React.createElement('span',{style:{fontSize:'18px'}},item.icon),
-              React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'#fff'}},item.label)
+            return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',padding:'14px 20px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.07)':'none',cursor:'pointer'}},
+              React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'rgba(255,255,255,0.9)'}},item.label)
             );
           });
         })()
@@ -328,7 +327,7 @@ export function UserProfileView(props){
                 if(newOpen) loadCommentsU(newOpen);
               },
               style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
-            },'💬 '+(p.comments||0)),
+            },'💬 '+(commentsCacheU[p.id]?commentsCacheU[p.id].length:p.comments||0)),
             React.createElement('button',{
               onClick:function(){
                 var url='https://ring-in.vercel.app/post/'+p.id;
@@ -889,9 +888,9 @@ export default function HomeScreen(props){
     // Post 3-dot menu popup
     postMenu ? React.createElement('div',{
       onClick:function(){setPostMenu(null);},
-      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.5)'}
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.2)'}
     },
-      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'280px',boxShadow:'0 20px 60px rgba(0,0,0,0.6)',overflow:'hidden'}},
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(28,24,40,0.45)',backdropFilter:'blur(48px)',WebkitBackdropFilter:'blur(48px)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'20px',width:'280px',boxShadow:'0 8px 40px rgba(0,0,0,0.35)',overflow:'hidden'}},
         (function(){
           var p=posts.find(function(x){return x.id===postMenu;});
           if(!p) return null;
@@ -909,9 +908,8 @@ export default function HomeScreen(props){
             {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenu(null);}}
           ];
           return items.map(function(item,i){
-            return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.08)':'none',cursor:'pointer'}},
-              React.createElement('span',{style:{fontSize:'18px'}},item.icon),
-              React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'#fff'}},item.label)
+            return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',padding:'14px 20px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.07)':'none',cursor:'pointer'}},
+              React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'rgba(255,255,255,0.9)'}},item.label)
             );
           });
         })()
@@ -1204,7 +1202,7 @@ export default function HomeScreen(props){
               var newOpen=openComments===p.id?null:p.id;
               setOpenComments(newOpen);
               if(newOpen) loadComments(newOpen);
-            }}, '💬 '+(p.comments||0)),
+            }}, '💬 '+(commentsCache[p.id]?commentsCache[p.id].length:p.comments||0)),
             React.createElement('button', {className:'pa', onClick:function(){
               var url='https://ring-in.vercel.app/post/'+p.id;
               if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url});}
