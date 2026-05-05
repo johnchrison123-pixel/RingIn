@@ -27,6 +27,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var offsetS=useState({x:0,y:0}); var offset=offsetS[0]; var setOffset=offsetS[1];
   var draggingS=useState(false); var dragging=draggingS[0]; var setDragging=draggingS[1];
   var dragStartS=useState({x:0,y:0}); var dragStart=dragStartS[0]; var setDragStart=dragStartS[1];
+  var showCoverAdjustS=useState(false); var showCoverAdjust=showCoverAdjustS[0]; var setShowCoverAdjust=showCoverAdjustS[1];
+  var coverAdjustImgS=useState(null); var coverAdjustImg=coverAdjustImgS[0]; var setCoverAdjustImg=coverAdjustImgS[1];
+  var coverOffsetS=useState({x:0,y:0}); var coverOffset=coverOffsetS[0]; var setCoverOffset=coverOffsetS[1];
+  var coverDraggingS=useState(false); var coverDragging=coverDraggingS[0]; var setCoverDragging=coverDraggingS[1];
+  var coverDragStartS=useState({x:0,y:0}); var coverDragStart=coverDragStartS[0]; var setCoverDragStart=coverDragStartS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var showEditProfileS=useState(false); var showEditProfile=showEditProfileS[0]; var setShowEditProfile=showEditProfileS[1];
@@ -227,17 +232,48 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   function uploadCover(file){
     if(!file||!userId) return;
-    setUploading(true);
-    var ext = file.name.split('.').pop();
-    var fileName = userId+'_cover.'+ext;
-    supabase.storage.from('covers').upload(fileName,file,{upsert:true}).then(function(res){
-      if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
-      var pub = supabase.storage.from('covers').getPublicUrl(fileName);
-      var url = pub.data.publicUrl+'?t='+Date.now();
-      setCoverUrl(url);
-      localStorage.setItem('cover_'+userId,url);
-      setUploading(false);
-    });
+    var reader = new FileReader();
+    reader.onload = function(e){
+      setCoverAdjustImg(e.target.result);
+      setCoverOffset({x:0,y:0});
+      setShowCoverAdjust(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function saveCover(){
+    if(!coverAdjustImg||!userId) return;
+    var CANVAS_W = 800;
+    var CANVAS_H = 260;
+    var canvas = document.createElement('canvas');
+    canvas.width = CANVAS_W;
+    canvas.height = CANVAS_H;
+    var ctx = canvas.getContext('2d');
+    var img = new Image();
+    img.onload = function(){
+      // Scale image to fit fully inside canvas (no crop of image content), then apply offset
+      var scale = Math.min(CANVAS_W / img.width, CANVAS_H / img.height);
+      var w = img.width * scale;
+      var h = img.height * scale;
+      var baseX = (CANVAS_W - w) / 2;
+      var baseY = (CANVAS_H - h) / 2;
+      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.drawImage(img, baseX + coverOffset.x, baseY + coverOffset.y, w, h);
+      canvas.toBlob(function(blob){
+        setUploading(true);
+        setShowCoverAdjust(false);
+        var fileName = userId+'_cover.jpg';
+        supabase.storage.from('covers').upload(fileName, blob, {upsert:true, contentType:'image/jpeg'}).then(function(res){
+          if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
+          var pub = supabase.storage.from('covers').getPublicUrl(fileName);
+          var url = pub.data.publicUrl+'?t='+Date.now();
+          setCoverUrl(url);
+          try{localStorage.setItem('cover_'+userId, url);}catch(e){}
+          setUploading(false);
+        });
+      }, 'image/jpeg', 0.92);
+    };
+    img.src = coverAdjustImg;
   }
 
   function toggleLike(id){
@@ -458,6 +494,28 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         )
       ),
       React.createElement('div',{style:{padding:'16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px'}},'Drag to reposition your photo')
+    ) : null,
+    // Cover adjust/reposition screen
+    showCoverAdjust ? React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:10001,display:'flex',flexDirection:'column'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px',color:'#fff'}},
+        React.createElement('button',{onClick:function(){setShowCoverAdjust(false);},style:{background:'none',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer'}},'Cancel'),
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:600}},'Adjust Cover Photo'),
+        React.createElement('button',{onClick:saveCover,style:{background:'var(--ac)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,padding:'6px 14px',borderRadius:'20px',cursor:'pointer'}},'Save')
+      ),
+      React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',padding:'16px'}},
+        React.createElement('div',{
+          style:{width:'100%',maxWidth:'500px',height:'162px',border:'2px solid rgba(255,255,255,0.5)',borderRadius:'10px',overflow:'hidden',position:'relative',cursor:'grab',background:'#111'},
+          onMouseDown:function(e){setCoverDragging(true);setCoverDragStart({x:e.clientX-coverOffset.x,y:e.clientY-coverOffset.y});},
+          onMouseMove:function(e){if(!coverDragging)return;setCoverOffset({x:e.clientX-coverDragStart.x,y:e.clientY-coverDragStart.y});},
+          onMouseUp:function(){setCoverDragging(false);},
+          onTouchStart:function(e){setCoverDragging(true);setCoverDragStart({x:e.touches[0].clientX-coverOffset.x,y:e.touches[0].clientY-coverOffset.y});},
+          onTouchMove:function(e){if(!coverDragging)return;e.preventDefault();setCoverOffset({x:e.touches[0].clientX-coverDragStart.x,y:e.touches[0].clientY-coverDragStart.y});},
+          onTouchEnd:function(){setCoverDragging(false);}
+        },
+          coverAdjustImg ? React.createElement('img',{src:coverAdjustImg,style:{position:'absolute',top:'50%',left:'50%',transform:'translate(calc(-50% + '+coverOffset.x+'px), calc(-50% + '+coverOffset.y+'px))',maxWidth:'none',maxHeight:'none',width:'auto',height:'auto',transition:coverDragging?'none':'transform 0.1s',userSelect:'none',pointerEvents:'none',display:'block'}}) : null
+        )
+      ),
+      React.createElement('div',{style:{padding:'16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px'}},'Drag to reposition your cover photo')
     ) : null,
     // iOS frosted glass avatar menu
     showAvatarMenu ? React.createElement('div',{
