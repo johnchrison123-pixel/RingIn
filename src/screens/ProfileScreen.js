@@ -358,6 +358,18 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     });
   }
 
+  // OTHER USER PROFILE (from likers popup)
+  if(selectedLiker) return React.createElement(UserProfileView,{
+    user:selectedLiker,
+    sbHome:sbProfile,
+    currentUserId:userId,
+    session:session,
+    following:following,
+    toggleFollow:toggleFollow,
+    onBack:function(){setSelectedLiker(null);},
+    onGoToMessages:props.onGoToMessages||null
+  });
+
   // SETTINGS SCREEN
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
@@ -492,19 +504,6 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           })()
         )
       )
-    ) : null,
-    // Other user profile view (from likers popup)
-    selectedLiker ? React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'var(--bg)',overflowY:'auto'}},
-      React.createElement(UserProfileView,{
-        user:selectedLiker,
-        sbHome:sbProfile,
-        currentUserId:userId,
-        session:session,
-        following:following,
-        toggleFollow:toggleFollow,
-        onBack:function(){setSelectedLiker(null);},
-        onGoToMessages:props.onGoToMessages||null
-      })
     ) : null,
     // Avatar view modal
     showAvatarView ? React.createElement('div',{
