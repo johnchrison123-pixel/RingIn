@@ -12,11 +12,45 @@ var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',vie
 
 function UserProfileView(props){
   var user=props.user; var sbHome=props.sbHome;
+  var currentUserId=props.currentUserId;
+  var session=props.session;
   var _cachedUPosts=[];try{var _cup=localStorage.getItem('user_posts_'+user.id);if(_cup)_cachedUPosts=JSON.parse(_cup);}catch(e){}
   var _cachedUInfo={};try{var _cui=localStorage.getItem('profile_info_'+user.id);if(_cui)_cachedUInfo=JSON.parse(_cui);}catch(e){}
-  var postsS=useState(_cachedUPosts); var userPosts=postsS[0]; var setUserPosts=postsS[1];
+
+  function mapUPost(p){
+    var likesArr=Array.isArray(p.likes)?p.likes:[];
+    return {
+      id:p.id, userId:p.user_id, text:p.text||'', tags:p.tags||[],
+      likes:likesArr.length, liked:currentUserId?likesArr.includes(currentUserId):false,
+      likedByIds:likesArr, comments:p.comments_count||0,
+      img:p.images&&p.images[0]?p.images[0]:null,
+      createdAt:p.created_at,
+      isRaw:false
+    };
+  }
+
+  var postsS=useState(_cachedUPosts.map(function(p){return p.isRaw===false?p:mapUPost(p);}));
+  var userPosts=postsS[0]; var setUserPosts=postsS[1];
+  var commentPostS=useState(null); var commentPost=commentPostS[0]; var setCommentPost=commentPostS[1];
   var profileInfoS=useState(_cachedUInfo.name?_cachedUInfo:{name:(user.full_name||(user.email||'').split('@')[0]),tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
   var coverS=useState(localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
+
+  function toggleLikeU(pid){
+    if(!currentUserId) return;
+    setUserPosts(function(prev){
+      return prev.map(function(p){
+        if(p.id!==pid) return p;
+        var newLiked=!p.liked;
+        var newLikedByIds=newLiked?[currentUserId].concat(p.likedByIds||[]):(p.likedByIds||[]).filter(function(id){return id!==currentUserId;});
+        return Object.assign({},p,{liked:newLiked,likes:newLiked?p.likes+1:Math.max(0,p.likes-1),likedByIds:newLikedByIds});
+      });
+    });
+    sbHome.rpc('toggle_like',{post_id:pid,user_id:currentUserId}).then(function(r){
+      if(r.error){
+        setUserPosts(function(prev){return prev.map(function(p){if(p.id!==pid)return p;var rev=!p.liked;return Object.assign({},p,{liked:rev,likes:rev?p.likes+1:Math.max(0,p.likes-1)});});});
+      }
+    });
+  }
 
   useEffect(function(){
     if(!user||!user.id) return;
@@ -35,8 +69,9 @@ function UserProfileView(props){
     });
     sbHome.from('posts').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).then(function(res){
       if(res.data){
-        setUserPosts(res.data);
-        try{localStorage.setItem('user_posts_'+user.id,JSON.stringify(res.data));}catch(e){}
+        var mapped=res.data.map(mapUPost);
+        setUserPosts(mapped);
+        try{localStorage.setItem('user_posts_'+user.id,JSON.stringify(mapped));}catch(e){}
       }
     });
   },[user.id]);
@@ -112,18 +147,31 @@ function UserProfileView(props){
           ):null,
           // Post image
           pImg?React.createElement('img',{src:pImg,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}):null,
-          // Actions
+          // Actions — same as HomeScreen
           React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
-            React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'10px',fontSize:'13px',color:'var(--t2)'}},
-              React.createElement('span',{style:{marginRight:'4px',color:'#E84D9A'}},'♥'),pLikes,' Likes'
+            React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}},
+              React.createElement('button',{
+                onClick:function(){toggleLikeU(p.id);},
+                style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',padding:'10px 2px',fontSize:'13px',color:p.liked?'#B44FE8':'var(--t2)',fontWeight:p.liked?700:400}
+              },
+                React.createElement('svg',{viewBox:'0 0 24 24',width:'20',height:'20'},
+                  p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'ulg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
+                  React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#ulg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
+                ),
+                p.likes+' Likes'
+              )
             ),
-            React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'10px',fontSize:'13px',color:'var(--t2)'}},
-              React.createElement('span',{style:{marginRight:'4px'}},'💬'),(p.comments_count||0),' Comments'
-            ),
-            React.createElement('button',{onClick:function(){try{navigator.clipboard.writeText(p.text);}catch(e){}},style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
-              React.createElement('span',null,'↗'),' Share'
-            )
-          )
+            React.createElement('button',{
+              onClick:function(){setCommentPost(commentPost===p.id?null:p.id);},
+              style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
+            },'💬 '+(p.comments||0)+' Comments'),
+            React.createElement('button',{
+              onClick:function(){if(navigator.share){navigator.share({title:displayName,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}},
+              style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
+            },'↗ Share')
+          ),
+          commentPost===p.id?React.createElement('div',{style:{padding:'10px 12px',borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
+            React.createElement('input',{placeholder:'Write a comment...',style:{width:'100%',background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',fontFamily:'DM Sans,sans-serif'},onKeyDown:function(e){if(e.key==='Enter'&&e.target.value.trim()){alert('Comment: '+e.target.value);e.target.value='';}}})):null
         );
       })
     )
@@ -521,6 +569,7 @@ export default function HomeScreen(props){
   if(selectedUser) return React.createElement(UserProfileView,{
     user:selectedUser,
     currentUserId:currentUserId,
+    session:props.session,
     following:following,
     toggleFollow:toggleFollow,
     onBack:function(){setSelectedUser(null);},
