@@ -33,6 +33,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var coverDraggingS=useState(false); var coverDragging=coverDraggingS[0]; var setCoverDragging=coverDraggingS[1];
   var coverDragStartS=useState({x:0,y:0}); var coverDragStart=coverDragStartS[0]; var setCoverDragStart=coverDragStartS[1];
   var coverImgNatS=useState({w:1,h:1}); var coverImgNat=coverImgNatS[0]; var setCoverImgNat=coverImgNatS[1];
+  var coverUserScaleS=useState(1); var coverUserScale=coverUserScaleS[0]; var setCoverUserScale=coverUserScaleS[1];
+  var coverPinchDistS=useState(0); var coverPinchDist=coverPinchDistS[0]; var setCoverPinchDist=coverPinchDistS[1];
+  var coverPinchScaleStartS=useState(1); var coverPinchScaleStart=coverPinchScaleStartS[0]; var setCoverPinchScaleStart=coverPinchScaleStartS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var showEditProfileS=useState(false); var showEditProfile=showEditProfileS[0]; var setShowEditProfile=showEditProfileS[1];
@@ -240,6 +243,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         setCoverImgNat({w:tmp.naturalWidth, h:tmp.naturalHeight});
         setCoverAdjustImg(e.target.result);
         setCoverOffset({x:0,y:0});
+        setCoverUserScale(1);
         setShowCoverAdjust(true);
       };
       tmp.src = e.target.result;
@@ -251,7 +255,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     if(!coverAdjustImg||!userId) return;
     var CANVAS_W = 800;
     var CANVAS_H = 260;
-    var PREV_H = 130;
+    var PREV_H = 160;
     var prevW = (window.innerWidth||375);
     var canvas = document.createElement('canvas');
     canvas.width = CANVAS_W;
@@ -261,20 +265,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     img.onload = function(){
       var natW = img.naturalWidth||img.width;
       var natH = img.naturalHeight||img.height;
-      // Scale used in preview (contain: fit full image inside preview box)
-      var previewScale = Math.min(prevW / natW, PREV_H / natH);
-      // Scale used on canvas
-      var canvasScale = Math.min(CANVAS_W / natW, CANVAS_H / natH);
-      var imgCW = natW * canvasScale;
-      var imgCH = natH * canvasScale;
+      // Base scale: cover-fill (same as preview)
+      var previewBaseScale = Math.max(prevW / natW, PREV_H / natH);
+      var canvasBaseScale = Math.max(CANVAS_W / natW, CANVAS_H / natH);
+      // Apply user zoom on top of base
+      var previewTotalScale = previewBaseScale * coverUserScale;
+      var canvasTotalScale = canvasBaseScale * coverUserScale;
+      var imgCW = natW * canvasTotalScale;
+      var imgCH = natH * canvasTotalScale;
       var baseX = (CANVAS_W - imgCW) / 2;
       var baseY = (CANVAS_H - imgCH) / 2;
       // Scale the screen-pixel offset to canvas-pixel offset
-      var ratio = previewScale > 0 ? canvasScale / previewScale : 1;
-      // Fill dark background so JPEG has no transparent/blank areas
+      var offsetRatio = canvasTotalScale / previewTotalScale;
       ctx.fillStyle = '#1a1040';
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-      ctx.drawImage(img, baseX + coverOffset.x * ratio, baseY + coverOffset.y * ratio, imgCW, imgCH);
+      ctx.drawImage(img, baseX + coverOffset.x * offsetRatio, baseY + coverOffset.y * offsetRatio, imgCW, imgCH);
       canvas.toBlob(function(blob){
         setUploading(true);
         setShowCoverAdjust(false);
@@ -285,7 +290,6 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           var url = pub.data.publicUrl+'?t='+Date.now();
           setCoverUrl(url);
           try{localStorage.setItem('cover_'+userId, url);}catch(e){}
-          // Save to profiles so other users can see it instantly
           supabase.from('profiles').update({cover_url:url}).eq('id',userId).then(function(){});
           setUploading(false);
         });
@@ -515,35 +519,65 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ) : null,
     // Cover adjust/reposition screen
     showCoverAdjust ? (function(){
+      var PREV_H = 160;
       var prevW = window.innerWidth||375;
-      var prevH = 130;
       var natW = coverImgNat.w||1; var natH = coverImgNat.h||1;
-      var prevScale = Math.min(prevW / natW, prevH / natH);
-      var imgDW = Math.round(natW * prevScale);
-      var imgDH = Math.round(natH * prevScale);
-      return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:10001,display:'flex',flexDirection:'column'}},
-        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px',color:'#fff',flexShrink:0}},
-          React.createElement('button',{onClick:function(){setShowCoverAdjust(false);},style:{background:'none',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer'}},'Cancel'),
-          React.createElement('div',{style:{fontSize:'15px',fontWeight:600}},'Adjust Cover Photo'),
-          React.createElement('button',{onClick:saveCover,style:{background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,padding:'6px 14px',borderRadius:'20px',cursor:'pointer'}},'Save')
+      // Base scale = cover-fill: image fills the strip completely (like object-fit:cover)
+      var baseScale = Math.max(prevW / natW, PREV_H / natH);
+      var totalScale = baseScale * coverUserScale;
+      var imgDW = Math.round(natW * totalScale);
+      var imgDH = Math.round(natH * totalScale);
+      return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#111',zIndex:10001,display:'flex',flexDirection:'column'}},
+        // Header
+        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'18px 20px',color:'#fff',flexShrink:0,borderBottom:'1px solid rgba(255,255,255,0.08)'}},
+          React.createElement('button',{onClick:function(){setShowCoverAdjust(false);},style:{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:'15px',cursor:'pointer',padding:'4px 0'}},'Cancel'),
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'#fff'}},'Adjust Cover'),
+          React.createElement('button',{onClick:saveCover,style:{background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,padding:'8px 20px',borderRadius:'20px',cursor:'pointer'}},'Save')
         ),
-        React.createElement('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'12px',padding:'0'}},
-          React.createElement('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.4)',textAlign:'center',padding:'0 20px'}},'Drag to reposition'),
-          React.createElement('div',{
-            style:{width:'100%',height:prevH+'px',overflow:'hidden',position:'relative',cursor:'grab',background:'#1a1040',borderTop:'2px solid rgba(255,255,255,0.2)',borderBottom:'2px solid rgba(255,255,255,0.2)'},
-            onMouseDown:function(e){setCoverDragging(true);setCoverDragStart({x:e.clientX-coverOffset.x,y:e.clientY-coverOffset.y});},
-            onMouseMove:function(e){if(!coverDragging)return;setCoverOffset({x:e.clientX-coverDragStart.x,y:e.clientY-coverDragStart.y});},
-            onMouseUp:function(){setCoverDragging(false);},
-            onTouchStart:function(e){setCoverDragging(true);setCoverDragStart({x:e.touches[0].clientX-coverOffset.x,y:e.touches[0].clientY-coverOffset.y});},
-            onTouchMove:function(e){if(!coverDragging)return;e.preventDefault();setCoverOffset({x:e.touches[0].clientX-coverDragStart.x,y:e.touches[0].clientY-coverDragStart.y});},
-            onTouchEnd:function(){setCoverDragging(false);}
+        // Instruction
+        React.createElement('div',{style:{textAlign:'center',padding:'20px 20px 16px',color:'rgba(255,255,255,0.45)',fontSize:'13px'}},'Drag to move  •  Pinch to zoom'),
+        // Cover preview strip — full width, exact cover height
+        React.createElement('div',{
+          style:{width:'100%',height:PREV_H+'px',overflow:'hidden',position:'relative',cursor:'grab',flexShrink:0,background:'#1a1040'},
+          onMouseDown:function(e){setCoverDragging(true);setCoverDragStart({x:e.clientX-coverOffset.x,y:e.clientY-coverOffset.y});},
+          onMouseMove:function(e){if(!coverDragging)return;setCoverOffset({x:e.clientX-coverDragStart.x,y:e.clientY-coverDragStart.y});},
+          onMouseUp:function(){setCoverDragging(false);},
+          onWheel:function(e){e.preventDefault();var delta=e.deltaY>0?0.92:1.08;setCoverUserScale(function(s){return Math.max(0.5,Math.min(6,s*delta));});},
+          onTouchStart:function(e){
+            if(e.touches.length===2){
+              var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+              setCoverPinchDist(d); setCoverPinchScaleStart(coverUserScale);
+            } else {
+              setCoverDragging(true);
+              setCoverDragStart({x:e.touches[0].clientX-coverOffset.x,y:e.touches[0].clientY-coverOffset.y});
+            }
           },
-            coverAdjustImg ? React.createElement('img',{
-              src:coverAdjustImg,
-              style:{position:'absolute',top:'50%',left:'50%',width:imgDW+'px',height:imgDH+'px',transform:'translate(calc(-50% + '+coverOffset.x+'px), calc(-50% + '+coverOffset.y+'px))',transition:coverDragging?'none':'transform 0.08s',userSelect:'none',pointerEvents:'none',display:'block'}
-            }) : null
-          ),
-          React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.3)',textAlign:'center',padding:'0 20px'}},'This is exactly how your cover will look on your profile')
+          onTouchMove:function(e){
+            e.preventDefault();
+            if(e.touches.length===2){
+              var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+              if(coverPinchDist>0) setCoverUserScale(Math.max(0.5,Math.min(6,coverPinchScaleStart*(d/coverPinchDist))));
+            } else if(coverDragging){
+              setCoverOffset({x:e.touches[0].clientX-coverDragStart.x,y:e.touches[0].clientY-coverDragStart.y});
+            }
+          },
+          onTouchEnd:function(e){
+            if(e.touches.length<2){setCoverPinchDist(0);}
+            if(e.touches.length===0){setCoverDragging(false);}
+          }
+        },
+          coverAdjustImg ? React.createElement('img',{
+            src:coverAdjustImg,
+            style:{position:'absolute',top:'50%',left:'50%',width:imgDW+'px',height:imgDH+'px',transform:'translate(calc(-50% + '+coverOffset.x+'px), calc(-50% + '+coverOffset.y+'px))',transition:'none',userSelect:'none',pointerEvents:'none',display:'block'}
+          }) : null
+        ),
+        // Profile preview label
+        React.createElement('div',{style:{textAlign:'center',padding:'16px 20px',color:'rgba(255,255,255,0.3)',fontSize:'12px'}},'↑  This is exactly how your cover looks on your profile  ↑'),
+        // Zoom buttons for easier control
+        React.createElement('div',{style:{display:'flex',justifyContent:'center',gap:'16px',padding:'8px 20px'}},
+          React.createElement('button',{onClick:function(){setCoverUserScale(function(s){return Math.max(0.5,s*0.85);});},style:{background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'50%',width:'44px',height:'44px',color:'#fff',fontSize:'22px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'−'),
+          React.createElement('button',{onClick:function(){setCoverUserScale(1);setCoverOffset({x:0,y:0});},style:{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:'20px',padding:'0 16px',height:'44px',color:'rgba(255,255,255,0.6)',fontSize:'12px',cursor:'pointer'}},'Reset'),
+          React.createElement('button',{onClick:function(){setCoverUserScale(function(s){return Math.min(6,s*1.15);});},style:{background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'50%',width:'44px',height:'44px',color:'#fff',fontSize:'22px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+')
         )
       );
     })() : null,
