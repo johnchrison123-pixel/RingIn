@@ -2,6 +2,7 @@
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
+import {UserProfileView} from './HomeScreen';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 export default function ProfileScreen({session, supabase, onOpenWallet}){
@@ -51,6 +52,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var postsS=useState(_cachedMyPosts); var myPosts=postsS[0]; var setMyPosts=postsS[1];
   var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
   var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
+  var selectedLikerS=useState(null); var selectedLiker=selectedLikerS[0]; var setSelectedLiker=selectedLikerS[1];
 
   function prefetchLikerNamesProf(postsArr, existingNames){
     var allIds=[];
@@ -468,16 +470,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               var info=likersNamesProf[uid]||{};
               var name=info.name||'Loading...';
               var av=info.avatar||null;
+              function goToLiker(){
+                if(uid===userId) return;
+                setShowLikersProf(null);
+                setSelectedLiker({id:uid,full_name:name,avatar_url:av,email:''});
+              }
               return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
-                React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},
+                React.createElement('div',{onClick:goToLiker,style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:uid!==userId?'pointer':'default'}},
                   av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
                 ),
-                React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{onClick:goToLiker,style:{flex:1,minWidth:0,cursor:uid!==userId?'pointer':'default'}},
                   React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},name),
                   React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'RingIn Member')
                 ),
                 uid!==userId?React.createElement('button',{
-                  onClick:function(){toggleFollow(uid,name,av,'RingIn Member');},
+                  onClick:function(e){e.stopPropagation();toggleFollow(uid,name,av,'RingIn Member');},
                   style:{padding:'6px 14px',background:following[uid]?'transparent':'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:following[uid]?'1px solid rgba(123,110,255,0.5)':'none',borderRadius:'20px',color:following[uid]?'#7B6EFF':'#fff',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}
                 },following[uid]?'Following':'+Follow'):null
               );
@@ -485,6 +492,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           })()
         )
       )
+    ) : null,
+    // Other user profile view (from likers popup)
+    selectedLiker ? React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'var(--bg)',overflowY:'auto'}},
+      React.createElement(UserProfileView,{
+        user:selectedLiker,
+        sbHome:sbProfile,
+        currentUserId:userId,
+        session:session,
+        following:following,
+        toggleFollow:toggleFollow,
+        onBack:function(){setSelectedLiker(null);},
+        onGoToMessages:null
+      })
     ) : null,
     // Avatar view modal
     showAvatarView ? React.createElement('div',{
