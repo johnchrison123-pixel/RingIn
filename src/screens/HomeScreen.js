@@ -31,11 +31,69 @@ export function UserProfileView(props){
 
   var postsS=useState(_cachedUPosts.map(function(p){return p.isRaw===false?p:mapUPost(p);}));
   var userPosts=postsS[0]; var setUserPosts=postsS[1];
-  var commentPostS=useState(null); var commentPost=commentPostS[0]; var setCommentPost=commentPostS[1];
   var profileInfoS=useState(_cachedUInfo.name?_cachedUInfo:{name:(user.full_name||(user.email||'').split('@')[0]),tag:'',about:'',website_name:'',website_url:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
   var coverS=useState(user.cover_url||localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
   var showLikersUS=useState(null); var showLikersU=showLikersUS[0]; var setShowLikersU=showLikersUS[1];
   var likersNamesUS=useState({}); var likersNamesU=likersNamesUS[0]; var setLikersNamesU=likersNamesUS[1];
+
+  // Comments state
+  var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
+  var commentsCacheUS=useState({}); var commentsCacheU=commentsCacheUS[0]; var setCommentsCacheU=commentsCacheUS[1];
+  var commentInputUS=useState(''); var commentInputU=commentInputUS[0]; var setCommentInputU=commentInputUS[1];
+  var commentLoadingUS=useState(false); var commentLoadingU=commentLoadingUS[0]; var setCommentLoadingU=commentLoadingUS[1];
+
+  // Post menu state
+  var postMenuUS=useState(null); var postMenuU=postMenuUS[0]; var setPostMenuU=postMenuUS[1];
+
+  function loadCommentsU(postId){
+    var cached=null;
+    try{var c=localStorage.getItem('comments_'+postId);if(c)cached=JSON.parse(c);}catch(e){}
+    if(cached) setCommentsCacheU(function(prev){return Object.assign({},prev,{[postId]:cached});});
+    sbHome.from('comments').select('*').eq('post_id',postId).order('created_at',{ascending:true}).then(function(res){
+      if(res.data){
+        setCommentsCacheU(function(prev){return Object.assign({},prev,{[postId]:res.data});});
+        try{localStorage.setItem('comments_'+postId,JSON.stringify(res.data));}catch(e){}
+      }
+    });
+  }
+
+  function submitCommentU(postId,text){
+    if(!text.trim()||!currentUserId) return;
+    var userName=session&&session.user?session.user.email.split('@')[0]:'User';
+    var userAvatar=currentUserId?localStorage.getItem('avatar_'+currentUserId):null;
+    var newComment={
+      id:Date.now()+'_local',
+      post_id:postId,
+      user_id:currentUserId,
+      user_name:userName,
+      user_avatar:userAvatar,
+      text:text.trim(),
+      created_at:new Date().toISOString(),
+      likes:[]
+    };
+    setCommentsCacheU(function(prev){
+      var cur=(prev[postId]||[]).concat([newComment]);
+      try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
+      return Object.assign({},prev,{[postId]:cur});
+    });
+    setCommentInputU('');
+    setUserPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:(p.comments||0)+1}):p;});});
+    sbHome.from('comments').insert({
+      post_id:postId,
+      user_id:currentUserId,
+      user_name:userName,
+      user_avatar:userAvatar||null,
+      text:text.trim()
+    }).select().then(function(res){
+      if(res.data&&res.data[0]){
+        setCommentsCacheU(function(prev){
+          var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
+          try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
+          return Object.assign({},prev,{[postId]:cur});
+        });
+      }
+    });
+  }
 
   function toggleLikeU(pid){
     if(!currentUserId) return;
@@ -125,15 +183,22 @@ export function UserProfileView(props){
           return ids.map(function(uid){
             var info=likersNamesU[uid]||{};
             var nm=info.name||'...'; var av=info.avatar||null;
+            var canNav=uid!==currentUserId;
             return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
-              React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},
+              React.createElement('div',{
+                onClick:function(){if(canNav&&props.onViewUser){setShowLikersU(null);props.onViewUser({id:uid,full_name:nm,avatar_url:av,email:''});}},
+                style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:canNav?'pointer':'default'}
+              },
                 av?React.createElement('img',{src:av,alt:nm,style:{width:'100%',height:'100%',objectFit:'cover'}}):nm.substring(0,2).toUpperCase()
               ),
-              React.createElement('div',{style:{flex:1,minWidth:0}},
+              React.createElement('div',{
+                onClick:function(){if(canNav&&props.onViewUser){setShowLikersU(null);props.onViewUser({id:uid,full_name:nm,avatar_url:av,email:''});}},
+                style:{flex:1,minWidth:0,cursor:canNav?'pointer':'default'}
+              },
                 React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},nm),
                 React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'RingIn Member')
               ),
-              uid!==currentUserId?React.createElement('button',{
+              canNav?React.createElement('button',{
                 onClick:function(){props.toggleFollow(uid,nm,av,'RingIn Member');},
                 style:{padding:'6px 14px',background:props.following[uid]?'transparent':'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:props.following[uid]?'1px solid rgba(123,110,255,0.5)':'none',borderRadius:'20px',color:props.following[uid]?'#7B6EFF':'#fff',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0}
               },props.following[uid]?'Following':'+Follow'):null
@@ -142,7 +207,38 @@ export function UserProfileView(props){
         })())
       )
     ) : null,
-    // Cover — overflow:visible so avatar hanging below is not clipped
+    // Post 3-dot menu for UserProfileView
+    postMenuU ? React.createElement('div',{
+      onClick:function(){setPostMenuU(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.5)'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'280px',boxShadow:'0 20px 60px rgba(0,0,0,0.6)',overflow:'hidden'}},
+        (function(){
+          var p=userPosts.find(function(x){return x.id===postMenuU;});
+          if(!p) return null;
+          var isOwn=p.userId===currentUserId;
+          var items=isOwn?[
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){sbHome.from('posts').delete().eq('id',p.id).then(function(){});setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuU(null);}},
+            {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenuU(null);}},
+            {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenuU(null);}}
+          ]:[
+            {icon:'🔖',label:'Save Post',fn:function(){try{var s=JSON.parse(localStorage.getItem('saved_posts')||'[]');s.push(p.id);localStorage.setItem('saved_posts',JSON.stringify(s));}catch(e){}alert('Post saved!');setPostMenuU(null);}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuU(null);}},
+            {icon:'➕',label:(props.following&&props.following[p.userId]?'✓ Unfollow ':'Follow ')+displayName,fn:function(){props.toggleFollow(p.userId,displayName,avatarUrl,'RingIn Member');setPostMenuU(null);}},
+            {icon:'😶',label:'Not interested',fn:function(){setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenuU(null);}},
+            {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenuU(null);}}
+          ];
+          return items.map(function(item,i){
+            return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.08)':'none',cursor:'pointer'}},
+              React.createElement('span',{style:{fontSize:'18px'}},item.icon),
+              React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'#fff'}},item.label)
+            );
+          });
+        })()
+      )
+    ) : null,
+    // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
       React.createElement('button',{onClick:props.onBack,style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.45)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 14px',cursor:'pointer',fontSize:'12px',fontWeight:600,zIndex:3}},'< Back'),
@@ -179,26 +275,29 @@ export function UserProfileView(props){
     React.createElement('div',{style:{padding:'4px 18px 10px',borderTop:'1px solid var(--border)',marginTop:'8px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'12px'}},userPosts.length+' Post'+(userPosts.length!==1?'s':''))
     ),
-    // Posts list — same card structure as ProfileScreen
+    // Posts list
     userPosts.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
       React.createElement('div',{style:{fontSize:'30px',marginBottom:'8px'}},'📝'),
       React.createElement('div',{style:{fontSize:'13px'}},'No posts yet')
     ):React.createElement('div',{style:{padding:'0 18px 80px'}},
       userPosts.map(function(p){
         var pAvatar=avatarUrl;
-        var pTime=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
-        var pLikes=Array.isArray(p.likes)?p.likes.length:0;
-        var pImg=p.images&&p.images[0]?p.images[0]:null;
+        var pTime=p.createdAt?new Date(p.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+        var commentsArr=commentsCacheU[p.id]||[];
         return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
-          // Post header — avatar + name + time
-          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px'}},
+          // Post header
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px',position:'relative'}},
             React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
               pAvatar?React.createElement('img',{src:pAvatar,alt:displayName,style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
             ),
             React.createElement('div',{style:{flex:1}},
               React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},displayName),
               React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},pTime)
-            )
+            ),
+            React.createElement('button',{
+              onClick:function(e){e.stopPropagation();setPostMenuU(postMenuU===p.id?null:p.id);},
+              style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'4px 8px',position:'absolute',right:'4px',top:'6px'}
+            },'⋯')
           ),
           // Post text
           React.createElement('div',{style:{padding:'0 12px 8px',fontSize:'13px',color:'var(--text)',lineHeight:1.6}},p.text),
@@ -207,8 +306,8 @@ export function UserProfileView(props){
             (p.tags||[]).map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'#7B6EFF'}},('#'+t));})
           ):null,
           // Post image
-          pImg?React.createElement('img',{src:pImg,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}):null,
-          // Actions — same as HomeScreen
+          p.img?React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}):null,
+          // Actions
           React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
             React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
               React.createElement('button',{
@@ -223,16 +322,58 @@ export function UserProfileView(props){
               )
             ),
             React.createElement('button',{
-              onClick:function(){setCommentPost(commentPost===p.id?null:p.id);},
+              onClick:function(){
+                var newOpen=openCommentsU===p.id?null:p.id;
+                setOpenCommentsU(newOpen);
+                if(newOpen) loadCommentsU(newOpen);
+              },
               style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
-            },'💬 '+(p.comments||0)+' Comments'),
+            },'💬 '+(p.comments||0)),
             React.createElement('button',{
-              onClick:function(){if(navigator.share){navigator.share({title:displayName,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}},
+              onClick:function(){
+                var url='https://ring-in.vercel.app/post/'+p.id;
+                if(navigator.share){navigator.share({title:'Check this out on RingIn',text:p.text.substring(0,100),url:url});}
+                else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+              },
               style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
             },'↗ Share')
           ),
-          commentPost===p.id?React.createElement('div',{style:{padding:'10px 12px',borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
-            React.createElement('input',{placeholder:'Write a comment...',style:{width:'100%',background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',fontFamily:'DM Sans,sans-serif'},onKeyDown:function(e){if(e.key==='Enter'&&e.target.value.trim()){alert('Comment: '+e.target.value);e.target.value='';}}})):null
+          // Comment section
+          openCommentsU===p.id?React.createElement('div',{style:{borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
+            React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
+              commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
+              commentsArr.map(function(c){
+                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+                  React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                    c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                  ),
+                  React.createElement('div',{style:{flex:1}},
+                    React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
+                      React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},new Date(c.created_at).toLocaleDateString())
+                    ),
+                    React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
+                  )
+                );
+              })
+            ),
+            React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
+              React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user?session.user.email.substring(0,2).toUpperCase():'?')
+              ),
+              React.createElement('input',{
+                value:commentInputU,
+                onChange:function(e){setCommentInputU(e.target.value);},
+                onKeyDown:function(e){if(e.key==='Enter'&&commentInputU.trim()){submitCommentU(p.id,commentInputU);}},
+                placeholder:'Write a comment...',
+                style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
+              }),
+              React.createElement('button',{
+                onClick:function(){if(commentInputU.trim())submitCommentU(p.id,commentInputU);},
+                style:{padding:'6px 14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
+              },'Send')
+            )
+          ):null
         );
       })
     )
@@ -244,8 +385,68 @@ export default function HomeScreen(props){
   var _cachedPosts=[];try{var _c=localStorage.getItem('feed_posts_cache');if(_c)_cachedPosts=JSON.parse(_c);}catch(e){}
   var postsS=useState(_cachedPosts.length>0?_cachedPosts:[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]);
   var posts=postsS[0]; var setPosts=postsS[1];
-  var cpS=useState(null); var commentPost=cpS[0]; var setCommentPost=cpS[1];
-  var ctS=useState(''); var commentText=ctS[0]; var setCommentText=ctS[1];
+
+  // Comments state
+  var openCommentsS=useState(null); var openComments=openCommentsS[0]; var setOpenComments=openCommentsS[1];
+  var commentsCacheS=useState({}); var commentsCache=commentsCacheS[0]; var setCommentsCache=commentsCacheS[1];
+  var commentInputS=useState(''); var commentInput=commentInputS[0]; var setCommentInput=commentInputS[1];
+  var commentLoadingS=useState(false); var commentLoading=commentLoadingS[0]; var setCommentLoading=commentLoadingS[1];
+
+  // Post menu state
+  var postMenuS=useState(null); var postMenu=postMenuS[0]; var setPostMenu=postMenuS[1];
+
+  var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
+  var currentUserName = props.session&&props.session.user ? props.session.user.email.split('@')[0] : null;
+  var currentUserAvatar = currentUserId ? localStorage.getItem('avatar_'+currentUserId) : null;
+
+  function loadComments(postId){
+    var cached=null;
+    try{var c=localStorage.getItem('comments_'+postId);if(c)cached=JSON.parse(c);}catch(e){}
+    if(cached) setCommentsCache(function(prev){return Object.assign({},prev,{[postId]:cached});});
+    sbHome.from('comments').select('*').eq('post_id',postId).order('created_at',{ascending:true}).then(function(res){
+      if(res.data){
+        setCommentsCache(function(prev){return Object.assign({},prev,{[postId]:res.data});});
+        try{localStorage.setItem('comments_'+postId,JSON.stringify(res.data));}catch(e){}
+      }
+    });
+  }
+
+  function submitComment(postId,text){
+    if(!text.trim()||!currentUserId) return;
+    var newComment={
+      id:Date.now()+'_local',
+      post_id:postId,
+      user_id:currentUserId,
+      user_name:currentUserName,
+      user_avatar:currentUserAvatar,
+      text:text.trim(),
+      created_at:new Date().toISOString(),
+      likes:[]
+    };
+    setCommentsCache(function(prev){
+      var cur=(prev[postId]||[]).concat([newComment]);
+      try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
+      return Object.assign({},prev,{[postId]:cur});
+    });
+    setCommentInput('');
+    setPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:(p.comments||0)+1}):p;});});
+    sbHome.from('comments').insert({
+      post_id:postId,
+      user_id:currentUserId,
+      user_name:currentUserName,
+      user_avatar:currentUserAvatar||null,
+      text:text.trim()
+    }).select().then(function(res){
+      if(res.data&&res.data[0]){
+        setCommentsCache(function(prev){
+          var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
+          try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
+          return Object.assign({},prev,{[postId]:cur});
+        });
+      }
+    });
+  }
+
   function toggleLike(pid){
     var session = props.session;
     var userId = session&&session.user ? session.user.id : null;
@@ -254,7 +455,6 @@ export default function HomeScreen(props){
     if(!userId) return;
     if(typeof pid !== "string") return;
     var postOwner = null;
-    // INSTANT UI update
     setPosts(function(prev){
       return prev.map(function(p){
         if(p.id!==pid) return p;
@@ -266,10 +466,8 @@ export default function HomeScreen(props){
         return Object.assign({},p,{liked:newLiked,likes:newLikes,likedBy:newLikedBy,likedByIds:newLikedByIds});
       });
     });
-    // Save to Supabase in background
     sbHome.rpc("toggle_like",{post_id:pid,user_id:userId}).then(function(r){
       if(r.error){console.log("like error:",r.error);
-        // Revert on error
         setPosts(function(prev){return prev.map(function(p){if(p.id!==pid)return p;return Object.assign({},p,{liked:!p.liked,likes:p.liked?p.likes+1:Math.max(0,p.likes-1)});});});
         return;
       }
@@ -278,7 +476,7 @@ export default function HomeScreen(props){
       }
     });
   }
-  
+
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var liveS=useState(null); var activeLive=liveS[0]; var setActiveLive=liveS[1];
   var ac = acState[0];
@@ -323,9 +521,6 @@ export default function HomeScreen(props){
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
   var fileInputRef=useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
-  var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
-  var currentUserName = props.session&&props.session.user ? props.session.user.email.split('@')[0] : null;
-  var currentUserAvatar = currentUserId ? localStorage.getItem('avatar_'+currentUserId) : null;
   useEffect(function(){
     if(!currentUserId||!currentUserName) return;
     setLikersNames(function(prev){
@@ -338,14 +533,12 @@ export default function HomeScreen(props){
   useEffect(function(){
     if(!props.session||!props.session.user) return;
     var uid = props.session.user.id;
-    // Load notifications
     sbHome.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(20).then(function(res){
       if(res.data){
         setNotifs(res.data);
         setUnreadNotif(res.data.filter(function(n){return !n.read;}).length);
       }
     });
-    // Realtime notifications
     var ch = sbHome.channel('notifs-'+uid)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+uid},function(p){
         setNotifs(function(prev){return [p.new].concat(prev);});
@@ -403,7 +596,6 @@ export default function HomeScreen(props){
   }
 
   useEffect(function(){
-    // Load initial posts
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(mapPost);
@@ -413,7 +605,6 @@ export default function HomeScreen(props){
         prefetchLikerNames(dbPosts, {});
       }
     });
-    // Realtime subscription - new posts appear automatically
     var ch = sbHome.channel('public-posts')
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'posts'},function(p){
         var session = props.session;
@@ -455,13 +646,9 @@ export default function HomeScreen(props){
     if(!q||!q.trim()){setSearchRes(null);return;}
     setSearching(true);
     var ql = q.toLowerCase();
-    // Search experts
     var experts = ALL_EXPERTS.filter(function(e){return e.name.toLowerCase().includes(ql)||e.role.toLowerCase().includes(ql);});
-    // Search skills
     var skills = ALL_SKILLS.filter(function(s){return s.toLowerCase().includes(ql);});
-    // Search workshops
     var workshops = ALL_WORKSHOPS.filter(function(w){return w.title.toLowerCase().includes(ql)||w.host.toLowerCase().includes(ql);});
-    // Search real users from Supabase
     if(supabase){
       supabase.from('profiles').select('*').or('email.ilike.%'+q+'%,full_name.ilike.%'+q+'%').then(function(res){
         var users = res.data||[];
@@ -487,11 +674,10 @@ export default function HomeScreen(props){
     {id:5,icon:'🎓',text:'New workshop: Crack Google Interview — starts in 1 hour',time:'3h ago',unread:false},
     {id:6,icon:'⭐',text:'You have a new review from a recent call',time:'Yesterday',unread:false},
   ];
-  var onOpenWallet = props.onOpenWallet;
+  var onOpenWallet2 = props.onOpenWallet;
   function timeAgo(dateStr){
     if(!dateStr) return '';
     var now = new Date();
-    // Parse as UTC if no timezone info
     var str = dateStr.toString();
     if(!str.includes('Z') && !str.includes('+')) str = str + 'Z';
     var date = new Date(str);
@@ -525,14 +711,11 @@ export default function HomeScreen(props){
       comments_count: 0
     };
     sbHome.from('posts').insert([postData]).select().then(function(res){
-      // Send notifications to followers
       if(res.data&&res.data[0]){
         sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
           if(fres.data&&fres.data.length>0){
-            // Check notification settings
             var notifPromises = fres.data.map(function(f){
               return sbHome.from('notification_settings').select('notify_posts').eq('user_id',f.follower_id).eq('following_id',session.user.id).single().then(function(ns){
-                // If no setting exists or notify_posts is true, send notification
                 if(!ns.data||ns.data.notify_posts!==false){
                   return sbHome.from('notifications').insert([{
                     user_id:f.follower_id,
@@ -554,6 +737,7 @@ export default function HomeScreen(props){
       if(res.data&&res.data[0]){
         var newPost = {
           id:res.data[0].id,
+          userId:session.user.id,
           initials:(postData.user_name||'?').substring(0,2).toUpperCase(),
           name:postData.user_name,
           role:'RingIn Member',
@@ -564,11 +748,13 @@ export default function HomeScreen(props){
           tags:postData.tags,
           likes:0,
           liked:false,
+          likedByIds:[],
           comments:0,
           rate:0,
           expertId:null,
           postImg:compImgs[0]||null,
-          extraImgs:compImgs.slice(1)
+          extraImgs:compImgs.slice(1),
+          isUserPost:true
         };
         setPosts(function(prev){return [newPost].concat(prev);});
       }
@@ -607,12 +793,10 @@ export default function HomeScreen(props){
 
   function goToUserProfile(userId, cachedInfo){
     if(!userId) return;
-    // If it's the logged-in user, go to their own Profile tab
     if(userId === currentUserId){
       if(props.onGoToProfile) props.onGoToProfile();
       return;
     }
-    // Otherwise show the other user's profile card
     var info = cachedInfo || likersNames[userId] || {};
     setSelectedUser({
       id: userId,
@@ -626,7 +810,6 @@ export default function HomeScreen(props){
     });
   }
 
-
   if(selectedUser) return React.createElement(UserProfileView,{
     user:selectedUser,
     currentUserId:currentUserId,
@@ -634,11 +817,13 @@ export default function HomeScreen(props){
     following:following,
     toggleFollow:toggleFollow,
     onBack:function(){setSelectedUser(null);},
+    onViewUser:function(u){setSelectedUser(u);},
     onGoToMessages:props.onGoToMessages,
     sbHome:sbHome
   });
 
   return React.createElement('div', {className:'hc'},
+    // Likes popup
     showLikers ? React.createElement('div',{
       onClick:function(){setShowLikers(null);},
       style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9000,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}
@@ -701,6 +886,37 @@ export default function HomeScreen(props){
         )
       )
     ) : null,
+    // Post 3-dot menu popup
+    postMenu ? React.createElement('div',{
+      onClick:function(){setPostMenu(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.5)'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'280px',boxShadow:'0 20px 60px rgba(0,0,0,0.6)',overflow:'hidden'}},
+        (function(){
+          var p=posts.find(function(x){return x.id===postMenu;});
+          if(!p) return null;
+          var isOwn=p.userId===currentUserId;
+          var items=isOwn?[
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){sbHome.from('posts').delete().eq('id',p.id).then(function(){});setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenu(null);}},
+            {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenu(null);}},
+            {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenu(null);}}
+          ]:[
+            {icon:'🔖',label:'Save Post',fn:function(){try{var s=JSON.parse(localStorage.getItem('saved_posts')||'[]');s.push(p.id);localStorage.setItem('saved_posts',JSON.stringify(s));}catch(e){}alert('Post saved!');setPostMenu(null);}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenu(null);}},
+            {icon:'➕',label:(following[p.userId]?'✓ Unfollow ':'Follow ')+p.name,fn:function(){toggleFollow(p.userId,p.name,p.img,'RingIn Member');setPostMenu(null);}},
+            {icon:'😶',label:'Not interested',fn:function(){setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenu(null);}},
+            {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenu(null);}}
+          ];
+          return items.map(function(item,i){
+            return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.08)':'none',cursor:'pointer'}},
+              React.createElement('span',{style:{fontSize:'18px'}},item.icon),
+              React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'#fff'}},item.label)
+            );
+          });
+        })()
+      )
+    ) : null,
     React.createElement('div', {className:'topbar'},
       React.createElement('div', {className:'brand'}, 'RingIn'),
       React.createElement('div', {className:'tbr'},
@@ -710,7 +926,6 @@ export default function HomeScreen(props){
         ),
         React.createElement('div', {className:'ibt', onClick:function(){
           setShowNotifs(!showNotifs);
-          // Mark all as read
           if(!showNotifs&&props.session&&props.session.user){
             sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(){});
             setUnreadNotif(0);
@@ -767,7 +982,6 @@ export default function HomeScreen(props){
     searchQ && searchQ.trim() ? React.createElement('div',{style:{padding:'0 18px',marginBottom:'8px'}},
       searching ? React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'var(--t2)',fontSize:'13px'}},'Searching...') :
       searchRes ? React.createElement('div',null,
-        // Users results
         searchRes.users && searchRes.users.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
           searchRes.users.map(function(u,i){
@@ -783,7 +997,6 @@ export default function HomeScreen(props){
             );
           })
         ) : null,
-        // Experts results
         searchRes.experts && searchRes.experts.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Experts'),
           searchRes.experts.map(function(e,i){
@@ -799,7 +1012,6 @@ export default function HomeScreen(props){
             );
           })
         ) : null,
-        // Skills results
         searchRes.skills && searchRes.skills.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Skills'),
           React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
@@ -808,11 +1020,10 @@ export default function HomeScreen(props){
             })
           )
         ) : null,
-        // Workshops results
         searchRes.workshops && searchRes.workshops.length>0 ? React.createElement('div',{style:{marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',marginBottom:'8px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Workshops'),
           searchRes.workshops.map(function(w,i){
-            return React.createElement('div',{key:i,onClick:function(){setSearchQ('');if(props.session&&props.session.user&&u.id===props.session.user.id){if(props.onGoToProfile)props.onGoToProfile();}else{setSelectedUser(u);}},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
+            return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'10px',background:'linear-gradient(135deg,#1a1a2e,#534AB7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}},'🎓'),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},w.title),
@@ -821,7 +1032,6 @@ export default function HomeScreen(props){
             );
           })
         ) : null,
-        // No results
         searchRes.experts.length===0 && searchRes.users.length===0 && searchRes.skills.length===0 && searchRes.workshops.length===0 ?
           React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t2)',fontSize:'13px'}},'No results for "'+searchQ+'"') : null
       ) : null
@@ -947,8 +1157,9 @@ export default function HomeScreen(props){
     ),
     React.createElement('div', {style:{padding:'0'}},
       posts.map(function(p){
+        var commentsArr=commentsCache[p.id]||[];
         return React.createElement('div', {key:p.id, className:'fpost'},
-          React.createElement('div', {className:'ph'},
+          React.createElement('div', {className:'ph', style:{position:'relative'}},
             React.createElement('div', {
               className:'pav',
               style:{background:p.color, cursor:'pointer', overflow:'hidden', padding:0},
@@ -962,7 +1173,11 @@ export default function HomeScreen(props){
               }, p.name),
               React.createElement('div', {className:'pr'}, p.role)
             ),
-            React.createElement('div', {className:'pt'}, p.time&&p.time!=='Just now'?timeAgo(p.createdAt||new Date()):p.time||'')
+            React.createElement('div', {className:'pt'}, p.time&&p.time!=='Just now'?timeAgo(p.createdAt||new Date()):p.time||''),
+            React.createElement('button',{
+              onClick:function(e){e.stopPropagation();setPostMenu(postMenu===p.id?null:p.id);},
+              style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'4px 8px',position:'absolute',right:'0',top:'4px'}
+            },'⋯')
           ),
           p.postImg ? React.createElement('img',{src:p.postImg,alt:'post',style:{width:'100%',height:'280px',objectFit:'cover',display:'block'}}) : null,
           React.createElement('div', {className:'pb'},
@@ -985,9 +1200,53 @@ export default function HomeScreen(props){
               React.createElement('span',{onClick:function(e){openLikersPopup(e,p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
             )
           ),
-            React.createElement('button', {className:'pa', onClick:function(){setCommentPost(commentPost===p.id?null:p.id);}}, '💬 '+(p.comments&&p.comments.length?p.comments.length:p.comments||0)+' Comments'),
-            React.createElement('button', {className:'pa', onClick:function(){if(navigator.share){navigator.share({title:p.name,text:p.text});}else{try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');}}}, '↗ Share')
-          )
+            React.createElement('button', {className:'pa', onClick:function(){
+              var newOpen=openComments===p.id?null:p.id;
+              setOpenComments(newOpen);
+              if(newOpen) loadComments(newOpen);
+            }}, '💬 '+(p.comments||0)),
+            React.createElement('button', {className:'pa', onClick:function(){
+              var url='https://ring-in.vercel.app/post/'+p.id;
+              if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url});}
+              else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+            }}, '↗ Share')
+          ),
+          // Comment section
+          openComments===p.id?React.createElement('div',{style:{borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
+            React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
+              commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
+              commentsArr.map(function(c){
+                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+                  React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                    c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                  ),
+                  React.createElement('div',{style:{flex:1}},
+                    React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
+                      React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},new Date(c.created_at).toLocaleDateString())
+                    ),
+                    React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
+                  )
+                );
+              })
+            ),
+            React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
+              React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
+              ),
+              React.createElement('input',{
+                value:commentInput,
+                onChange:function(e){setCommentInput(e.target.value);},
+                onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(p.id,commentInput);}},
+                placeholder:'Write a comment...',
+                style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
+              }),
+              React.createElement('button',{
+                onClick:function(){if(commentInput.trim())submitComment(p.id,commentInput);},
+                style:{padding:'6px 14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
+              },'Send')
+            )
+          ):null
         );
       })
     ),

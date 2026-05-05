@@ -51,6 +51,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var postsS=useState(_cachedMyPosts); var myPosts=postsS[0]; var setMyPosts=postsS[1];
   var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
   var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
+  var openCommentsProfS=useState(null); var openCommentsProf=openCommentsProfS[0]; var setOpenCommentsProf=openCommentsProfS[1];
+  var commentsCacheProfS=useState({}); var commentsCacheProf=commentsCacheProfS[0]; var setCommentsCacheProf=commentsCacheProfS[1];
+  var commentInputProfS=useState(''); var commentInputProf=commentInputProfS[0]; var setCommentInputProf=commentInputProfS[1];
+  var postMenuProfS=useState(null); var postMenuProf=postMenuProfS[0]; var setPostMenuProf=postMenuProfS[1];
 
   function prefetchLikerNamesProf(postsArr, existingNames){
     var allIds=[];
@@ -74,6 +78,56 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     if(!p||!p.likes||p.likes.length===0) return;
     if(showLikersProf===p.id){setShowLikersProf(null);return;}
     setShowLikersProf(p.id);
+  }
+
+  function loadCommentsProf(postId){
+    var cached=null;
+    try{var c=localStorage.getItem('comments_'+postId);if(c)cached=JSON.parse(c);}catch(e){}
+    if(cached) setCommentsCacheProf(function(prev){return Object.assign({},prev,{[postId]:cached});});
+    sbProfile.from('comments').select('*').eq('post_id',postId).order('created_at',{ascending:true}).then(function(res){
+      if(res.data){
+        setCommentsCacheProf(function(prev){return Object.assign({},prev,{[postId]:res.data});});
+        try{localStorage.setItem('comments_'+postId,JSON.stringify(res.data));}catch(e){}
+      }
+    });
+  }
+
+  function submitCommentProf(postId,text){
+    if(!text.trim()||!userId) return;
+    var userName=email.split('@')[0];
+    var userAvatar=avatarUrl||null;
+    var newComment={
+      id:Date.now()+'_local',
+      post_id:postId,
+      user_id:userId,
+      user_name:userName,
+      user_avatar:userAvatar,
+      text:text.trim(),
+      created_at:new Date().toISOString(),
+      likes:[]
+    };
+    setCommentsCacheProf(function(prev){
+      var cur=(prev[postId]||[]).concat([newComment]);
+      try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
+      return Object.assign({},prev,{[postId]:cur});
+    });
+    setCommentInputProf('');
+    setMyPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:(p.comments||0)+1}):p;});});
+    sbProfile.from('comments').insert({
+      post_id:postId,
+      user_id:userId,
+      user_name:userName,
+      user_avatar:userAvatar,
+      text:text.trim()
+    }).select().then(function(res){
+      if(res.data&&res.data[0]){
+        setCommentsCacheProf(function(prev){
+          var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
+          try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
+          return Object.assign({},prev,{[postId]:cur});
+        });
+      }
+    });
   }
 
   var EMOJIS=['😊','😂','❤️','🔥','👏','🎉','💪','🙌','😍','🤔','👍','✨','🚀','💡','🎯'];
@@ -714,17 +768,46 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('button',{onClick:submitPost,style:{padding:'7px 18px',background:'var(--ac)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer'}},'Post')
           )
         ),
+        // 3-dot menu popup for ProfileScreen
+        postMenuProf ? React.createElement('div',{
+          onClick:function(){setPostMenuProf(null);},
+          style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9500,background:'rgba(0,0,0,0.5)'}
+        },
+          React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'rgba(22,16,44,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'280px',boxShadow:'0 20px 60px rgba(0,0,0,0.6)',overflow:'hidden'}},
+            (function(){
+              var p=myPosts.find(function(x){return x.id===postMenuProf;});
+              if(!p) return null;
+              var items=[
+                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){sbProfile.from('posts').delete().eq('id',p.id).then(function(){});setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
+                {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuProf(null);}},
+                {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenuProf(null);}},
+                {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenuProf(null);}}
+              ];
+              return items.map(function(item,i){
+                return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.08)':'none',cursor:'pointer'}},
+                  React.createElement('span',{style:{fontSize:'18px'}},item.icon),
+                  React.createElement('span',{style:{fontSize:'14px',fontWeight:500,color:item.red?'#ff453a':'#fff'}},item.label)
+                );
+              });
+            })()
+          )
+        ) : null,
         // Posts list
         myPosts.map(function(p){
+          var commentsArr=commentsCacheProf[p.id]||[];
           return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
-            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px',position:'relative'}},
               React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
                 avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
               ),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},email.split('@')[0]),
                 React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},p.time)
-              )
+              ),
+              React.createElement('button',{
+                onClick:function(e){e.stopPropagation();setPostMenuProf(postMenuProf===p.id?null:p.id);},
+                style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'4px 8px',position:'absolute',right:'4px',top:'6px'}
+              },'⋯')
             ),
             React.createElement('div',{style:{padding:'0 12px 8px',fontSize:'13px',color:'var(--text)',lineHeight:1.6}},p.text),
             p.img ? React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}) : null,
@@ -738,13 +821,59 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                   React.createElement('span',{onClick:function(e){openLikersPopupProf(e,p);},style:{cursor:p.likes.length>0?'pointer':'default'}},p.likes.length,' Like')
                 )
               ),
-              React.createElement('button',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
-                React.createElement('span',{style:{fontSize:'16px'}},'💬'),' Comment'
+              React.createElement('button',{
+                onClick:function(){
+                  var newOpen=openCommentsProf===p.id?null:p.id;
+                  setOpenCommentsProf(newOpen);
+                  if(newOpen) loadCommentsProf(newOpen);
+                },
+                style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
+              },'💬 '+(p.comments||0)),
+              React.createElement('button',{
+                onClick:function(){
+                  var url='https://ring-in.vercel.app/post/'+p.id;
+                  if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url});}
+                  else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+                },
+                style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
+              },'↗ Share')
+            ),
+            // Comment section
+            openCommentsProf===p.id?React.createElement('div',{style:{borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
+              React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
+                commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
+                commentsArr.map(function(c){
+                  return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+                    React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                      c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                    ),
+                    React.createElement('div',{style:{flex:1}},
+                      React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
+                        React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                        React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},new Date(c.created_at).toLocaleDateString())
+                      ),
+                      React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
+                    )
+                  );
+                })
               ),
-              React.createElement('button',{onClick:function(){try{navigator.clipboard.writeText(p.text);}catch(e){}alert('Copied!');},style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
-                React.createElement('span',{style:{fontSize:'16px'}},'↗'),' Share'
+              React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
+                React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                  avatarUrl?React.createElement('img',{src:avatarUrl,style:{width:'100%',height:'100%',objectFit:'cover'}}):initials.substring(0,2)
+                ),
+                React.createElement('input',{
+                  value:commentInputProf,
+                  onChange:function(e){setCommentInputProf(e.target.value);},
+                  onKeyDown:function(e){if(e.key==='Enter'&&commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}},
+                  placeholder:'Write a comment...',
+                  style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
+                }),
+                React.createElement('button',{
+                  onClick:function(){if(commentInputProf.trim())submitCommentProf(p.id,commentInputProf);},
+                  style:{padding:'6px 14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
+                },'Send')
               )
-            )
+            ):null
           );
         })
       ) : null,

@@ -21,7 +21,9 @@ export default function App() {
   var prevTabS = useState('home'); var prevTab = prevTabS[0]; var setPrevTab = prevTabS[1];
   var expS = useState(null); var selectedExpert = expS[0]; var setSelectedExpert = expS[1];
   var initConvoS = useState(null); var initConvo = initConvoS[0]; var setInitConvo = initConvoS[1];
-  var viewUserS = useState(null); var viewUser = viewUserS[0]; var setViewUser = viewUserS[1];
+  var viewUserStackS = useState([]); var viewUserStack = viewUserStackS[0]; var setViewUserStack = viewUserStackS[1];
+  function pushViewUser(u){ setViewUserStack(function(prev){return prev.concat([u]);}); }
+  function popViewUser(){ setViewUserStack(function(prev){return prev.slice(0,-1);}); }
   var swXS = useState(0); var swX = swXS[0]; var setSwX = swXS[1];
   var swYS = useState(0); var swY = swYS[0]; var setSwY = swYS[1];
   var emailS = useState(''); var email = emailS[0]; var setEmail = emailS[1];
@@ -113,21 +115,22 @@ export default function App() {
   }
 
   function renderScreen() {
-    if (viewUser) return React.createElement(UserProfileView, {
-      user:viewUser,
+    if (viewUserStack.length > 0) return React.createElement(UserProfileView, {
+      user:viewUserStack[viewUserStack.length-1],
       sbHome:supabase,
       currentUserId:appUserId,
       session:session,
       following:appFollowing,
       toggleFollow:appToggleFollow,
-      onBack:function(){setViewUser(null);},
-      onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUser(null);}
+      onBack:popViewUser,
+      onViewUser:pushViewUser,
+      onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUserStack([]);}
     });
     if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
     if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
-    if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUser(u);}});
+    if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUserStack([u]);}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
   }
