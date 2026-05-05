@@ -37,7 +37,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var _cachedPInfo={}; try{var _cp=localStorage.getItem('profile_info_'+(session&&session.user?session.user.id:''));if(_cp)_cachedPInfo=JSON.parse(_cp);}catch(e){}
   var profileInfoS=useState(_cachedPInfo.name?_cachedPInfo:{name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
   var savingEditS=useState(false); var savingEdit=savingEditS[0]; var setSavingEdit=savingEditS[1];
-  var _cachedMyPosts=[];try{var _cmp=localStorage.getItem('my_posts_cache_'+(session&&session.user?session.user.id:''));if(_cmp)_cachedMyPosts=JSON.parse(_cmp);}catch(e){}
+  var _cachedMyPosts=[];try{var _cmp=localStorage.getItem('my_posts_cache_'+(session&&session.user?session.user.id:''));if(_cmp){var _raw=JSON.parse(_cmp);var _uid2=session&&session.user?session.user.id:null;_cachedMyPosts=_raw.map(function(p){var la=Array.isArray(p.likes)?p.likes:(Array.isArray(p.likedByIds)?p.likedByIds:[]);return Object.assign({},p,{liked:_uid2?la.includes(_uid2):false,likes:la,likedByIds:la});});}}catch(e){}
   var postsS=useState(_cachedMyPosts); var myPosts=postsS[0]; var setMyPosts=postsS[1];
   var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
   var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
@@ -124,14 +124,18 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     sbProfile.from('posts').select('*').eq('user_id',userId).order('created_at',{ascending:false}).then(function(res){
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(function(p){
+          var likesArr = Array.isArray(p.likes)?p.likes:[];
           return {
             id:p.id,
             text:p.text||'',
-            likes:p.likes||[],
-            liked:false,
+            likes:likesArr,
+            liked:likesArr.includes(userId),
+            likedByIds:likesArr,
             time:new Date(p.created_at).toLocaleDateString(),
+            createdAt:p.created_at,
             img:p.images&&p.images[0]?p.images[0]:null,
-            comments:[]
+            tags:p.tags||[],
+            comments:p.comments_count||0
           };
         });
         setMyPosts(dbPosts);
@@ -227,22 +231,27 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   function toggleLike(id){
     if(!userId) return;
     if(typeof id !== 'string') return;
-    var myName = email.split('@')[0];
-    // Update UI instantly - no lag
+    // Instant UI update
     setMyPosts(function(prev){return prev.map(function(p){
       if(p.id!==id) return p;
       var newLiked = !p.liked;
-      var newLikes = newLiked 
-        ? [...p.likes, userId]
-        : p.likes.filter(function(l){return l!==userId;});
-      var newLikeNames = newLiked
-        ? [...(p.likeNames||[]), myName]
-        : (p.likeNames||[]).filter(function(n){return n!==myName;});
-      return Object.assign({},p,{liked:newLiked,likes:newLikes,likeNames:newLikeNames});
+      var curIds = Array.isArray(p.likedByIds)?p.likedByIds:(Array.isArray(p.likes)?p.likes:[]);
+      var newIds = newLiked ? [userId].concat(curIds.filter(function(x){return x!==userId;})) : curIds.filter(function(x){return x!==userId;});
+      return Object.assign({},p,{liked:newLiked,likes:newIds,likedByIds:newIds});
     });});
     // Save to Supabase in background
     sbProfile.rpc('toggle_like',{post_id:id,user_id:userId}).then(function(r){
-      if(r.error) console.log('like error:',r.error);
+      if(r.error){
+        console.log('like error:',r.error);
+        // Revert on error
+        setMyPosts(function(prev){return prev.map(function(p){
+          if(p.id!==id) return p;
+          var rev=!p.liked;
+          var curIds=Array.isArray(p.likedByIds)?p.likedByIds:[];
+          var revIds=rev?[userId].concat(curIds.filter(function(x){return x!==userId;})):curIds.filter(function(x){return x!==userId;});
+          return Object.assign({},p,{liked:rev,likes:revIds,likedByIds:revIds});
+        });});
+      }
     });
   }
 
