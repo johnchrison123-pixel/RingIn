@@ -10,6 +10,112 @@ var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medi
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
+function UserProfileView(props){
+  var user=props.user; var sbHome=props.sbHome;
+  var postsS=useState([]); var userPosts=postsS[0]; var setUserPosts=postsS[1];
+  var loadingS=useState(true); var loading=loadingS[0]; var setLoading=loadingS[1];
+  var profileInfoS=useState({name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
+  var coverS=useState(null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
+
+  useEffect(function(){
+    if(!user||!user.id) return;
+    // Load full profile info
+    sbHome.from('profiles').select('*').eq('id',user.id).single().then(function(res){
+      if(res.data){
+        var d=res.data;
+        var name=d.full_name||(d.email||'').split('@')[0];
+        var bio=d.bio||'';
+        var parsed={name:name,tag:'',about:'',website:''};
+        try{var j=JSON.parse(bio);if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';}}catch(e){parsed.about=bio;}
+        setProfileInfo(parsed);
+        // load cover from localStorage or profiles
+        var savedCover=localStorage.getItem('cover_'+user.id);
+        if(savedCover) setCoverUrl(savedCover);
+      }
+    });
+    // Load their posts
+    sbHome.from('posts').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).then(function(res){
+      setLoading(false);
+      if(res.data) setUserPosts(res.data);
+    });
+  },[user.id]);
+
+  var displayName = profileInfo.name || (user.full_name||(user.email||'?').split('@')[0]);
+  var avatarUrl = user.avatar_url || localStorage.getItem('avatar_'+user.id) || null;
+  var initials = displayName.substring(0,2).toUpperCase();
+
+  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    // Cover
+    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'hidden'}},
+      coverUrl?React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}):null,
+      React.createElement('button',{onClick:props.onBack,style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.45)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 14px',cursor:'pointer',fontSize:'12px',fontWeight:600,zIndex:3}},'< Back'),
+      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:2}},
+        avatarUrl?React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+      )
+    ),
+    // Name + info
+    React.createElement('div',{style:{padding:'50px 18px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
+      React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
+        React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},displayName),
+        profileInfo.tag?React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag):null,
+        profileInfo.about?React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px'}},profileInfo.about):null,
+        profileInfo.website?React.createElement('a',{href:profileInfo.website.startsWith('http')?profileInfo.website:'https://'+profileInfo.website,target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+profileInfo.website):null,
+        user.is_online?React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'#27C96A'}},React.createElement('div',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'#27C96A'}}),'Online'):null
+      ),
+      React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'8px',flexShrink:0}},
+        React.createElement('button',{
+          onClick:function(){props.toggleFollow(String(user.id),displayName,avatarUrl,'RingIn Member');},
+          style:{padding:'8px 16px',background:props.following[String(user.id)]?'transparent':'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:props.following[String(user.id)]?'1px solid rgba(123,110,255,0.5)':'none',borderRadius:'20px',color:props.following[String(user.id)]?'#7B6EFF':'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}
+        },props.following[String(user.id)]?'✓ Following':'+ Follow'),
+        React.createElement('button',{
+          onClick:function(){
+            if(!props.currentUserId){return;}
+            var convId=[props.currentUserId,user.id].sort().join('_');
+            var convo={id:convId,convId:convId,name:displayName,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:avatarUrl,initials:initials};
+            if(props.onGoToMessages) props.onGoToMessages(convo);
+          },
+          style:{padding:'8px 16px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer'}
+        },'Message')
+      )
+    ),
+    // Posts heading
+    React.createElement('div',{style:{padding:'0 18px 10px',borderTop:'1px solid var(--border)',marginTop:'8px'}},
+      React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'12px'}},userPosts.length+' Post'+(userPosts.length!==1?'s':''))
+    ),
+    // Posts list
+    loading?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
+      React.createElement('div',{style:{fontSize:'20px',marginBottom:'8px'}},'⏳'),
+      React.createElement('div',{style:{fontSize:'13px'}},'Loading posts...')
+    ):userPosts.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
+      React.createElement('div',{style:{fontSize:'30px',marginBottom:'8px'}},'📝'),
+      React.createElement('div',{style:{fontSize:'13px'}},'No posts yet')
+    ):React.createElement('div',{style:{padding:'0 0 80px'}},
+      userPosts.map(function(p){
+        return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderBottom:'none',borderLeft:'none',borderRight:'none',marginBottom:'0',borderRadius:'0',overflow:'hidden',borderTop:'1px solid var(--border)'}},
+          p.images&&p.images[0]?React.createElement('img',{src:p.images[0],alt:'post',style:{width:'100%',maxHeight:'260px',objectFit:'cover',display:'block'}}):null,
+          React.createElement('div',{style:{padding:'12px 16px'}},
+            React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.6,marginBottom:'8px'}},p.text),
+            (p.tags||[]).length>0?React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'8px'}},
+              (p.tags||[]).map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'#7B6EFF',background:'rgba(123,110,255,0.1)',padding:'2px 8px',borderRadius:'20px'}},'#'+t);})
+            ):null,
+            React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+              React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})),
+              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+                React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',display:'flex',alignItems:'center',gap:'4px'}},
+                  React.createElement('span',{style:{color:'#E84D9A'}},'♥'),(Array.isArray(p.likes)?p.likes.length:0),' likes'
+                ),
+                React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)'}},
+                  '💬 '+(p.comments_count||0)
+                )
+              )
+            )
+          )
+        );
+      })
+    )
+  );
+}
+
 export default function HomeScreen(props){
   var acState = useState('all');
   var _cachedPosts=[];try{var _c=localStorage.getItem('feed_posts_cache');if(_c)_cachedPosts=JSON.parse(_c);}catch(e){}
@@ -398,55 +504,15 @@ export default function HomeScreen(props){
   }
 
 
-  if(selectedUser) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    // Cover
-    React.createElement('div',{style:{height:'130px',background:'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setSelectedUser(null);},style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 12px',cursor:'pointer',fontSize:'12px',fontWeight:600}},'< Back'),
-      React.createElement('div',{style:{position:'absolute',bottom:'-36px',left:'18px',width:'72px',height:'72px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:2}},
-        selectedUser.avatar_url ? React.createElement('img',{src:selectedUser.avatar_url,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : (selectedUser.full_name||selectedUser.email||'?').substring(0,2).toUpperCase()
-      )
-    ),
-    React.createElement('div',{style:{padding:'44px 18px 12px'}},
-      React.createElement('div',{style:{fontSize:'17px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},(selectedUser.full_name||selectedUser.email||'').split('@')[0]),
-      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}},
-        React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'RingIn Member'),
-        selectedUser.is_online ? React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--green)'}},
-          React.createElement('div',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--green)'}}),
-          'Online'
-        ) : null
-      ),
-      React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginBottom:'16px'}},'Joined '+new Date(selectedUser.created_at||Date.now()).toLocaleDateString('en-US',{month:'long',year:'numeric'})),
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
-        [{v:'0',l:'Calls'},{v:'0',l:'Posts'},{v:'0',l:'Reviews'}].map(function(s){
-          return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
-            React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:'var(--text)'}},s.v),
-            React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)
-          );
-        })
-      ),
-      React.createElement('button',{
-        onClick:function(){toggleFollow(String(selectedUser.id),selectedUser.full_name||selectedUser.email,selectedUser.avatar_url,'Member');},
-        style:{width:'100%',padding:'12px',background:following[String(selectedUser.id)]?'var(--acg)':'var(--ac)',border:following[String(selectedUser.id)]?'1px solid var(--ac)':'none',borderRadius:'12px',color:following[String(selectedUser.id)]?'var(--ac)':'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginBottom:'8px'}
-      }, following[String(selectedUser.id)] ? '✓ Following' : '+ Follow'),
-      React.createElement('button',{
-        onClick:function(){
-          var myId = props.session&&props.session.user ? props.session.user.id : null;
-          if(!myId){alert('Please log in');return;}
-          var convId = [myId,selectedUser.id].sort().join('_');
-          var convo = {
-            id:convId,convId:convId,
-            name:(selectedUser.full_name||selectedUser.email||'').split('@')[0],
-            role:selectedUser.is_online?'Online':'RingIn Member',
-            color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-            img:selectedUser.avatar_url||null,
-            initials:(selectedUser.full_name||selectedUser.email||'?').substring(0,2).toUpperCase()
-          };
-          if(props.onGoToMessages) props.onGoToMessages(convo);
-        },
-        style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}
-      },'Message')
-    )
-  );
+  if(selectedUser) return React.createElement(UserProfileView,{
+    user:selectedUser,
+    currentUserId:currentUserId,
+    following:following,
+    toggleFollow:toggleFollow,
+    onBack:function(){setSelectedUser(null);},
+    onGoToMessages:props.onGoToMessages,
+    sbHome:sbHome
+  });
 
   return React.createElement('div', {className:'hc'},
     showLikers ? React.createElement('div',{

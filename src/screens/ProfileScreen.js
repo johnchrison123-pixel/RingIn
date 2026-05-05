@@ -29,6 +29,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var dragStartS=useState({x:0,y:0}); var dragStart=dragStartS[0]; var setDragStart=dragStartS[1];
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
+  var showEditProfileS=useState(false); var showEditProfile=showEditProfileS[0]; var setShowEditProfile=showEditProfileS[1];
+  var editNameS=useState(''); var editName=editNameS[0]; var setEditName=editNameS[1];
+  var editTagS=useState(''); var editTag=editTagS[0]; var setEditTag=editTagS[1];
+  var editAboutS=useState(''); var editAbout=editAboutS[0]; var setEditAbout=editAboutS[1];
+  var editWebsiteS=useState(''); var editWebsite=editWebsiteS[0]; var setEditWebsite=editWebsiteS[1];
+  var profileInfoS=useState({name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
+  var savingEditS=useState(false); var savingEdit=savingEditS[0]; var setSavingEdit=savingEditS[1];
   var postsS=useState([
     {id:1,text:'Just had an incredible consultation with Dr. Priya Nair. She explained everything so clearly. Highly recommend!',likes:['Ahmed K.','Fatima M.','Sara Z.'],liked:false,time:'1h ago',img:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},
     {id:2,text:'Learning system design with Ravi Menon on RingIn. Best investment I made this month. Already cracked 2 interviews!',likes:['Ravi M.','James T.','Layla K.'],liked:false,time:'Yesterday',img:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'},
@@ -77,6 +84,38 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     {name:'Ahmed K.',text:'Great session, very helpful!',rating:5,time:'2 days ago',img:'https://i.pravatar.cc/150?img=33'},
     {name:'Fatima M.',text:'Learned a lot from this call.',rating:4,time:'1 week ago',img:'https://i.pravatar.cc/150?img=44'},
   ];
+
+  useEffect(function(){
+    if(!userId) return;
+    sbProfile.from('profiles').select('full_name,bio').eq('id',userId).single().then(function(res){
+      if(res.data){
+        var name = res.data.full_name || email.split('@')[0];
+        var bio = res.data.bio || '';
+        var parsed = {name:name,tag:'',about:'',website:''};
+        try{ var j=JSON.parse(bio); if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';} }catch(e){ parsed.about=bio; }
+        setProfileInfo(parsed);
+      }
+    });
+  },[userId]);
+
+  function openEditProfile(){
+    setEditName(profileInfo.name||email.split('@')[0]);
+    setEditTag(profileInfo.tag||'');
+    setEditAbout(profileInfo.about||'');
+    setEditWebsite(profileInfo.website||'');
+    setShowEditProfile(true);
+  }
+
+  function saveEditProfile(){
+    if(!userId) return;
+    setSavingEdit(true);
+    var newBio = JSON.stringify({about:editAbout,tag:editTag,website:editWebsite});
+    sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
+      setSavingEdit(false);
+      setProfileInfo({name:editName,tag:editTag,about:editAbout,website:editWebsite});
+      setShowEditProfile(false);
+    });
+  }
 
   useEffect(function(){
     if(!userId) return;
@@ -418,6 +457,47 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           style:{padding:'13px 16px',fontSize:'14px',fontWeight:600,color:'#ff453a',cursor:'pointer'}},'Cancel')
       )
     ) : null,
+    // Edit Profile Modal
+    showEditProfile ? React.createElement('div',{
+      onClick:function(){setShowEditProfile(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:10000,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}
+    },
+      React.createElement('div',{
+        onClick:function(e){e.stopPropagation();},
+        style:{background:'rgba(22,16,44,0.97)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'100%',maxWidth:'380px',maxHeight:'88vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}
+      },
+        React.createElement('div',{style:{padding:'18px 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          React.createElement('span',{style:{fontSize:'17px',fontWeight:700,color:'#fff'}},'Edit Profile'),
+          React.createElement('button',{onClick:function(){setShowEditProfile(false);},style:{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:'30px',height:'30px',color:'#fff',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')
+        ),
+        React.createElement('div',{style:{padding:'18px'}},
+          // Display Name
+          React.createElement('div',{style:{marginBottom:'16px'}},
+            React.createElement('div',{style:{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Display Name'),
+            React.createElement('input',{value:editName,onChange:function(e){setEditName(e.target.value);},placeholder:'Your name',style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#fff',outline:'none',boxSizing:'border-box'}})
+          ),
+          // Tag
+          React.createElement('div',{style:{marginBottom:'16px'}},
+            React.createElement('div',{style:{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Tag / Handle'),
+            React.createElement('input',{value:editTag,onChange:function(e){setEditTag(e.target.value.startsWith('#')?e.target.value:'#'+e.target.value);},placeholder:'#yourtag',style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#7B6EFF',outline:'none',boxSizing:'border-box'}})
+          ),
+          // About Me
+          React.createElement('div',{style:{marginBottom:'16px'}},
+            React.createElement('div',{style:{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'About Me'),
+            React.createElement('textarea',{value:editAbout,onChange:function(e){setEditAbout(e.target.value);},placeholder:'Tell people about yourself...',rows:3,style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#fff',outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}})
+          ),
+          // Website / Social Links
+          React.createElement('div',{style:{marginBottom:'24px'}},
+            React.createElement('div',{style:{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Website / Social Link'),
+            React.createElement('input',{value:editWebsite,onChange:function(e){setEditWebsite(e.target.value);},placeholder:'https://yoursite.com or @instagram',style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#fff',outline:'none',boxSizing:'border-box'}})
+          ),
+          React.createElement('button',{
+            onClick:saveEditProfile,
+            style:{width:'100%',padding:'13px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer'}
+          },savingEdit?'Saving...':'Save Profile')
+        )
+      )
+    ) : null,
     // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl ? React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}) : null,
@@ -432,12 +512,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ),
     // Name row
     React.createElement('div',{style:{padding:'50px 18px 8px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
-      React.createElement('div',null,
-        React.createElement('div',{style:{fontSize:'17px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},email.split('@')[0]),
-        React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginBottom:'4px'}},email),
+      React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
+        React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},profileInfo.name||email.split('@')[0]),
+        profileInfo.tag ? React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag) : null,
+        profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px'}},profileInfo.about) : null,
+        profileInfo.website ? React.createElement('a',{href:profileInfo.website.startsWith('http')?profileInfo.website:'https://'+profileInfo.website,target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+profileInfo.website) : null,
         React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},'Member since April 2026')
       ),
-      React.createElement('button',{onClick:function(){setShowSettings(true);},style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'50%',width:'36px',height:'36px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px'}},'⚙️')
+      React.createElement('div',{style:{display:'flex',gap:'8px',flexShrink:0}},
+        React.createElement('button',{onClick:openEditProfile,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',display:'flex',alignItems:'center',gap:'4px',cursor:'pointer',fontSize:'12px',color:'var(--text)',fontWeight:600}},'✏️ Edit'),
+        React.createElement('button',{onClick:function(){setShowSettings(true);},style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'50%',width:'36px',height:'36px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px'}},'⚙️')
+      )
     ),
     // Stats
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',padding:'0 18px 12px'}},
