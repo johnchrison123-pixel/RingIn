@@ -33,9 +33,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var editNameS=useState(''); var editName=editNameS[0]; var setEditName=editNameS[1];
   var editTagS=useState(''); var editTag=editTagS[0]; var setEditTag=editTagS[1];
   var editAboutS=useState(''); var editAbout=editAboutS[0]; var setEditAbout=editAboutS[1];
-  var editWebsiteS=useState(''); var editWebsite=editWebsiteS[0]; var setEditWebsite=editWebsiteS[1];
+  var editWebsiteNameS=useState(''); var editWebsiteName=editWebsiteNameS[0]; var setEditWebsiteName=editWebsiteNameS[1];
+  var editWebsiteUrlS=useState(''); var editWebsiteUrl=editWebsiteUrlS[0]; var setEditWebsiteUrl=editWebsiteUrlS[1];
   var _cachedPInfo={}; try{var _cp=localStorage.getItem('profile_info_'+(session&&session.user?session.user.id:''));if(_cp)_cachedPInfo=JSON.parse(_cp);}catch(e){}
-  var profileInfoS=useState(_cachedPInfo.name?_cachedPInfo:{name:'',tag:'',about:'',website:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
+  var profileInfoS=useState(_cachedPInfo.name?_cachedPInfo:{name:'',tag:'',about:'',website_name:'',website_url:''}); var profileInfo=profileInfoS[0]; var setProfileInfo=profileInfoS[1];
   var savingEditS=useState(false); var savingEdit=savingEditS[0]; var setSavingEdit=savingEditS[1];
   var _cachedMyPosts=[];try{var _cmp=localStorage.getItem('my_posts_cache_'+(session&&session.user?session.user.id:''));if(_cmp){var _raw=JSON.parse(_cmp);var _uid2=session&&session.user?session.user.id:null;_cachedMyPosts=_raw.map(function(p){var la=Array.isArray(p.likes)?p.likes:(Array.isArray(p.likedByIds)?p.likedByIds:[]);return Object.assign({},p,{liked:_uid2?la.includes(_uid2):false,likes:la,likedByIds:la});});}}catch(e){}
   var postsS=useState(_cachedMyPosts); var myPosts=postsS[0]; var setMyPosts=postsS[1];
@@ -89,8 +90,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       if(res.data){
         var name = res.data.full_name || email.split('@')[0];
         var bio = res.data.bio || '';
-        var parsed = {name:name,tag:'',about:'',website:''};
-        try{ var j=JSON.parse(bio); if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website=j.website||'';} }catch(e){ parsed.about=bio; }
+        var parsed = {name:name,tag:'',about:'',website_name:'',website_url:''};
+        try{ var j=JSON.parse(bio); if(j&&typeof j==='object'){parsed.about=j.about||'';parsed.tag=j.tag||'';parsed.website_name=j.website_name||j.website||'';parsed.website_url=j.website_url||'';} }catch(e){ parsed.about=bio; }
         setProfileInfo(parsed);
         try{localStorage.setItem('profile_info_'+userId,JSON.stringify(parsed));}catch(e){}
       }
@@ -101,21 +102,32 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     setEditName(profileInfo.name||email.split('@')[0]);
     setEditTag(profileInfo.tag||'');
     setEditAbout(profileInfo.about||'');
-    setEditWebsite(profileInfo.website||'');
+    setEditWebsiteName(profileInfo.website_name||'');
+    setEditWebsiteUrl(profileInfo.website_url||'');
     setShowEditProfile(true);
   }
 
   function saveEditProfile(){
     if(!userId) return;
     setSavingEdit(true);
-    var newBio = JSON.stringify({about:editAbout,tag:editTag,website:editWebsite});
+    var newBio = JSON.stringify({about:editAbout,tag:editTag,website_name:editWebsiteName,website_url:editWebsiteUrl});
     sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
       setSavingEdit(false);
-      var updated={name:editName,tag:editTag,about:editAbout,website:editWebsite};
+      var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
       setProfileInfo(updated);
       try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
       setShowEditProfile(false);
     });
+  }
+
+  function renderAbout(text){
+    if(!text) return null;
+    var parts = text.split(/(#\w+|https?:\/\/\S+)/g);
+    return React.createElement('span',null,parts.map(function(part,i){
+      if(/^#\w+$/.test(part)) return React.createElement('span',{key:i,style:{color:'#7B6EFF',fontWeight:600}},part);
+      if(/^https?:\/\//.test(part)) return React.createElement('a',{key:i,href:part,target:'_blank',rel:'noreferrer',style:{color:'#7B6EFF',textDecoration:'underline'}},part);
+      return React.createElement('span',{key:i},part);
+    }));
   }
 
   useEffect(function(){
@@ -471,11 +483,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     // Edit Profile Modal
     showEditProfile ? React.createElement('div',{
       onClick:function(){setShowEditProfile(false);},
-      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:10000,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:10000,background:'rgba(0,0,0,0.35)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}
     },
       React.createElement('div',{
         onClick:function(e){e.stopPropagation();},
-        style:{background:'rgba(22,16,44,0.97)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',width:'100%',maxWidth:'380px',maxHeight:'88vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}
+        style:{background:'rgba(18,12,36,0.65)',backdropFilter:'blur(30px)',WebkitBackdropFilter:'blur(30px)',border:'1px solid rgba(123,110,255,0.25)',borderRadius:'20px',width:'100%',maxWidth:'380px',maxHeight:'88vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}
       },
         React.createElement('div',{style:{padding:'18px 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
           React.createElement('span',{style:{fontSize:'17px',fontWeight:700,color:'#fff'}},'Edit Profile'),
@@ -500,7 +512,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           // Website / Social Links
           React.createElement('div',{style:{marginBottom:'24px'}},
             React.createElement('div',{style:{fontSize:'11px',fontWeight:600,color:'rgba(255,255,255,0.5)',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Website / Social Link'),
-            React.createElement('input',{value:editWebsite,onChange:function(e){setEditWebsite(e.target.value);},placeholder:'https://yoursite.com or @instagram',style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#fff',outline:'none',boxSizing:'border-box'}})
+            React.createElement('input',{value:editWebsiteName,onChange:function(e){setEditWebsiteName(e.target.value);},placeholder:'Display name (e.g. www.google.com)',style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#fff',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}),
+            React.createElement('input',{value:editWebsiteUrl,onChange:function(e){setEditWebsiteUrl(e.target.value);},placeholder:'URL (e.g. https://google.com)',style:{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'10px',padding:'11px 13px',fontSize:'14px',color:'#fff',outline:'none',boxSizing:'border-box'}})
           ),
           React.createElement('button',{
             onClick:saveEditProfile,
@@ -526,8 +539,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
         React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},profileInfo.name||email.split('@')[0]),
         profileInfo.tag ? React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag) : null,
-        profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px'}},profileInfo.about) : null,
-        profileInfo.website ? React.createElement('a',{href:profileInfo.website.startsWith('http')?profileInfo.website:'https://'+profileInfo.website,target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+profileInfo.website) : null,
+        profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},renderAbout(profileInfo.about)) : null,
+        (profileInfo.website_name||profileInfo.website_url) ? React.createElement('a',{href:profileInfo.website_url||(profileInfo.website_name&&profileInfo.website_name.startsWith('http')?profileInfo.website_name:'https://'+profileInfo.website_name),target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+(profileInfo.website_name||profileInfo.website_url)) : null,
         React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},'Member since April 2026')
       ),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexShrink:0}},
