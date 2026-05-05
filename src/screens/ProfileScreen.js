@@ -2,7 +2,6 @@
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
-import {UserProfileView} from './HomeScreen';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 export default function ProfileScreen({session, supabase, onOpenWallet}){
@@ -52,7 +51,6 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var postsS=useState(_cachedMyPosts); var myPosts=postsS[0]; var setMyPosts=postsS[1];
   var showLikersProfS=useState(null); var showLikersProf=showLikersProfS[0]; var setShowLikersProf=showLikersProfS[1];
   var likersNamesProfS=useState({}); var likersNamesProf=likersNamesProfS[0]; var setLikersNamesProf=likersNamesProfS[1];
-  var selectedLikerS=useState(null); var selectedLiker=selectedLikerS[0]; var setSelectedLiker=selectedLikerS[1];
 
   function prefetchLikerNamesProf(postsArr, existingNames){
     var allIds=[];
@@ -358,18 +356,6 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     });
   }
 
-  // OTHER USER PROFILE (from likers popup)
-  if(selectedLiker) return React.createElement(UserProfileView,{
-    user:selectedLiker,
-    sbHome:sbProfile,
-    currentUserId:userId,
-    session:session,
-    following:following,
-    toggleFollow:toggleFollow,
-    onBack:function(){setSelectedLiker(null);},
-    onGoToMessages:props.onGoToMessages||null
-  });
-
   // SETTINGS SCREEN
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
@@ -485,7 +471,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               function goToLiker(){
                 if(uid===userId) return;
                 setShowLikersProf(null);
-                setSelectedLiker({id:uid,full_name:name,avatar_url:av,email:''});
+                if(props.onViewUser) props.onViewUser({id:uid,full_name:name,avatar_url:av,email:''});
               }
               return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
                 React.createElement('div',{onClick:goToLiker,style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:uid!==userId?'pointer':'default'}},

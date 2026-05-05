@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import './App.css';
-import HomeScreen from './screens/HomeScreen';
+import HomeScreen, {UserProfileView} from './screens/HomeScreen';
+import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
 import WalletScreen from './screens/WalletScreen';
 import ProfileScreen from './screens/ProfileScreen';
@@ -20,6 +21,7 @@ export default function App() {
   var prevTabS = useState('home'); var prevTab = prevTabS[0]; var setPrevTab = prevTabS[1];
   var expS = useState(null); var selectedExpert = expS[0]; var setSelectedExpert = expS[1];
   var initConvoS = useState(null); var initConvo = initConvoS[0]; var setInitConvo = initConvoS[1];
+  var viewUserS = useState(null); var viewUser = viewUserS[0]; var setViewUser = viewUserS[1];
   var swXS = useState(0); var swX = swXS[0]; var setSwX = swXS[1];
   var swYS = useState(0); var swY = swYS[0]; var setSwY = swYS[1];
   var emailS = useState(''); var email = emailS[0]; var setEmail = emailS[1];
@@ -27,6 +29,10 @@ export default function App() {
   var loginS = useState(true); var isLogin = loginS[0]; var setIsLogin = loginS[1];
   var loadS = useState(false); var loading = loadS[0]; var setLoading = loadS[1];
   var msgS = useState(''); var message = msgS[0]; var setMessage = msgS[1];
+  var appUserId = session&&session.user?session.user.id:null;
+  var appFollowHook = useFollow(supabase, appUserId);
+  var appFollowing = appFollowHook.following;
+  var appToggleFollow = appFollowHook.toggleFollow;
 
   useEffect(function() {
     supabase.auth.getSession().then(function(res) { setSession(res.data.session); });
@@ -107,11 +113,21 @@ export default function App() {
   }
 
   function renderScreen() {
+    if (viewUser) return React.createElement(UserProfileView, {
+      user:viewUser,
+      sbHome:supabase,
+      currentUserId:appUserId,
+      session:session,
+      following:appFollowing,
+      toggleFollow:appToggleFollow,
+      onBack:function(){setViewUser(null);},
+      onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUser(null);}
+    });
     if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
     if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
-    if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
+    if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUser(u);}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
   }
