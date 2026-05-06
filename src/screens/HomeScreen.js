@@ -49,6 +49,7 @@ export function UserProfileView(props){
   var coverS=useState(user.cover_url||localStorage.getItem('cover_'+user.id)||null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
   var showLikersUS=useState(null); var showLikersU=showLikersUS[0]; var setShowLikersU=showLikersUS[1];
   var likersNamesUS=useState({}); var likersNamesU=likersNamesUS[0]; var setLikersNamesU=likersNamesUS[1];
+  var showAvatarBigUS=useState(false); var showAvatarBigU=showAvatarBigUS[0]; var setShowAvatarBigU=showAvatarBigUS[1];
 
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
@@ -151,6 +152,10 @@ export function UserProfileView(props){
         setUserPosts(mapped);
         prefetchLikersU(mapped,{});
         try{localStorage.setItem('user_posts_'+user.id,JSON.stringify(mapped));}catch(e){}
+        // Preload comment counts from localStorage cache
+        var cmap={};
+        mapped.forEach(function(p){try{var c=localStorage.getItem('comments_'+p.id);if(c)cmap[p.id]=JSON.parse(c);}catch(e){} });
+        if(Object.keys(cmap).length) setCommentsCacheU(cmap);
       }
     });
   },[user.id]);
@@ -255,11 +260,20 @@ export function UserProfileView(props){
         })()
       )
     ) : null,
+    // Avatar full-screen viewer
+    showAvatarBigU&&avatarUrl ? React.createElement('div',{
+      onClick:function(){setShowAvatarBigU(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:99999,background:'rgba(0,0,0,0.92)',display:'flex',alignItems:'center',justifyContent:'center'}
+    },
+      React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'84vw',height:'84vw',maxWidth:'380px',maxHeight:'380px',borderRadius:'50%',objectFit:'cover',boxShadow:'0 0 60px rgba(123,110,255,0.4)'}})
+    ) : null,
     // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
       React.createElement('button',{onClick:props.onBack,style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.45)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 14px',cursor:'pointer',fontSize:'12px',fontWeight:600,zIndex:3}},'< Back'),
-      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:4}},
+      React.createElement('div',{
+        onClick:function(){if(avatarUrl)setShowAvatarBigU(true);},
+        style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:4,cursor:avatarUrl?'pointer':'default'}},
         avatarUrl?React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
       )
     ),
@@ -624,6 +638,10 @@ export default function HomeScreen(props){
         setHasMoreH(res.data.length===12);
         try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
         prefetchLikerNames(dbPosts, {});
+        // Preload comment counts from localStorage cache
+        var cmap={};
+        dbPosts.forEach(function(p){try{var c=localStorage.getItem('comments_'+p.id);if(c)cmap[p.id]=JSON.parse(c);}catch(e){} });
+        if(Object.keys(cmap).length) setCommentsCache(cmap);
       }
     });
     var ch = sbHome.channel('public-posts')

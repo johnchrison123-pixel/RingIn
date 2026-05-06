@@ -234,6 +234,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         setMyPosts(dbPosts);
         prefetchLikerNamesProf(dbPosts, {});
         try{localStorage.setItem('my_posts_cache_'+userId,JSON.stringify(dbPosts));}catch(e){}
+        // Preload comment counts from localStorage cache
+        var cmap={};
+        dbPosts.forEach(function(p){try{var c=localStorage.getItem('comments_'+p.id);if(c)cmap[p.id]=JSON.parse(c);}catch(e){} });
+        if(Object.keys(cmap).length) setCommentsCacheProf(cmap);
       }
     });
   },[userId]);
