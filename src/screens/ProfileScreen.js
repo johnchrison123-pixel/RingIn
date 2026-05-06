@@ -684,12 +684,35 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Location'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
         React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Country'),
-        React.createElement('button',{
-          onClick:function(){setShowCountryPicker(true);setAcctCountrySearch('');},
-          style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:acctCountry?'var(--text)':'var(--t3)',fontSize:'14px',cursor:'pointer',textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}
-        },
-          React.createElement('span',null,acctCountry?acctCountry:'Select Country'),
-          React.createElement('span',{style:{color:'var(--t3)',fontSize:'12px'}},'▼')
+        React.createElement('div',{style:{position:'relative'}},
+          React.createElement('input',{
+            type:'text',
+            value:acctCountrySearch!=null&&showCountryPicker?acctCountrySearch:acctCountry,
+            placeholder:'Type to search country...',
+            onChange:function(e){setAcctCountrySearch(e.target.value);setShowCountryPicker(true);},
+            onFocus:function(){setAcctCountrySearch('');setShowCountryPicker(true);},
+            onBlur:function(){setTimeout(function(){setShowCountryPicker(false);},150);},
+            style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid '+(showCountryPicker?'var(--ac)':'var(--border)'),borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}
+          }),
+          showCountryPicker ? React.createElement('div',{
+            style:{position:'absolute',top:'calc(100% + 4px)',left:0,right:0,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',zIndex:999,maxHeight:'220px',overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.4)'}
+          },
+            (function(){
+              var filtered=COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase());});
+              if(!filtered.length) return React.createElement('div',{style:{padding:'14px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No countries found');
+              return filtered.map(function(c){
+                var sel=acctCountry===c[1];
+                return React.createElement('div',{
+                  key:c[0],
+                  onMouseDown:function(){setAcctCountry(c[1]);localStorage.setItem('acct_country',c[1]);setShowCountryPicker(false);setAcctCountrySearch('');},
+                  style:{padding:'11px 14px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.12)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}
+                },
+                  React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
+                  sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'14px',fontWeight:700}},'✓'):null
+                );
+              });
+            })()
+          ) : null
         )
       ),
       // Timezone section
@@ -723,27 +746,6 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       },acctSaved?'All Saved ✓':'Save All'),
     ),
     // Country Picker Modal
-    showCountryPicker ? React.createElement('div',{
-      onClick:function(){setShowCountryPicker(false);},
-      style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'}
-    },
-      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,0.4)'}},
-        React.createElement('div',{style:{padding:'16px 16px 10px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
-          React.createElement('input',{autoFocus:true,type:'text',value:acctCountrySearch,onChange:function(e){setAcctCountrySearch(e.target.value);},placeholder:'Search country...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
-          React.createElement('button',{onClick:function(){setShowCountryPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
-        ),
-        React.createElement('div',{key:'clist-'+acctCountrySearch,style:{overflowY:'auto',flex:1}},
-          COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase());}).map(function(c){
-            var sel=acctCountry===c[1];
-            return React.createElement('div',{key:c[0],onClick:function(){setAcctCountry(c[1]);localStorage.setItem('acct_country',c[1]);setShowCountryPicker(false);setAcctCountrySearch('');},
-              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
-              sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
-            );
-          })
-        )
-      )
-    ) : null,
     // Phone Code Picker Modal
     showPhoneCodePicker ? React.createElement('div',{
       onClick:function(){setShowPhoneCodePicker(false);},
