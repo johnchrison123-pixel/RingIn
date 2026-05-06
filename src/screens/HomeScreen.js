@@ -21,7 +21,7 @@ function timeAgoUtil(dateStr){
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
   if(diff<172800) return 'Yesterday';
-  return date.toLocaleDateString([],{month:'short',day:'numeric'});
+  return date.toLocaleDateString([],{month:'short',day:'numeric',timeZone:localStorage.getItem('user_timezone')||'UTC'});
 }
 
 export function UserProfileView(props){

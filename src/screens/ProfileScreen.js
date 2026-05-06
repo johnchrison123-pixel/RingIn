@@ -4,6 +4,106 @@ import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
+var COUNTRIES=[
+  ['AF','Afghanistan','+93'],['AL','Albania','+355'],['DZ','Algeria','+213'],['AD','Andorra','+376'],['AO','Angola','+244'],
+  ['AG','Antigua and Barbuda','+1-268'],['AR','Argentina','+54'],['AM','Armenia','+374'],['AU','Australia','+61'],['AT','Austria','+43'],
+  ['AZ','Azerbaijan','+994'],['BS','Bahamas','+1-242'],['BH','Bahrain','+973'],['BD','Bangladesh','+880'],['BB','Barbados','+1-246'],
+  ['BY','Belarus','+375'],['BE','Belgium','+32'],['BZ','Belize','+501'],['BJ','Benin','+229'],['BT','Bhutan','+975'],
+  ['BO','Bolivia','+591'],['BA','Bosnia and Herzegovina','+387'],['BW','Botswana','+267'],['BR','Brazil','+55'],['BN','Brunei','+673'],
+  ['BG','Bulgaria','+359'],['BF','Burkina Faso','+226'],['BI','Burundi','+257'],['CV','Cabo Verde','+238'],['KH','Cambodia','+855'],
+  ['CM','Cameroon','+237'],['CA','Canada','+1'],['CF','Central African Republic','+236'],['TD','Chad','+235'],['CL','Chile','+56'],
+  ['CN','China','+86'],['CO','Colombia','+57'],['KM','Comoros','+269'],['CD','Congo DR','+243'],['CG','Congo Republic','+242'],
+  ['CR','Costa Rica','+506'],['HR','Croatia','+385'],['CU','Cuba','+53'],['CY','Cyprus','+357'],['CZ','Czech Republic','+420'],
+  ['DK','Denmark','+45'],['DJ','Djibouti','+253'],['DM','Dominica','+1-767'],['DO','Dominican Republic','+1-809'],['EC','Ecuador','+593'],
+  ['EG','Egypt','+20'],['SV','El Salvador','+503'],['GQ','Equatorial Guinea','+240'],['ER','Eritrea','+291'],['EE','Estonia','+372'],
+  ['SZ','Eswatini','+268'],['ET','Ethiopia','+251'],['FJ','Fiji','+679'],['FI','Finland','+358'],['FR','France','+33'],
+  ['GA','Gabon','+241'],['GM','Gambia','+220'],['GE','Georgia','+995'],['DE','Germany','+49'],['GH','Ghana','+233'],
+  ['GR','Greece','+30'],['GD','Grenada','+1-473'],['GT','Guatemala','+502'],['GN','Guinea','+224'],['GW','Guinea-Bissau','+245'],
+  ['GY','Guyana','+592'],['HT','Haiti','+509'],['HN','Honduras','+504'],['HU','Hungary','+36'],['IS','Iceland','+354'],
+  ['IN','India','+91'],['ID','Indonesia','+62'],['IR','Iran','+98'],['IQ','Iraq','+964'],['IE','Ireland','+353'],
+  ['IL','Israel','+972'],['IT','Italy','+39'],['JM','Jamaica','+1-876'],['JP','Japan','+81'],['JO','Jordan','+962'],
+  ['KZ','Kazakhstan','+7'],['KE','Kenya','+254'],['KI','Kiribati','+686'],['KW','Kuwait','+965'],['KG','Kyrgyzstan','+996'],
+  ['LA','Laos','+856'],['LV','Latvia','+371'],['LB','Lebanon','+961'],['LS','Lesotho','+266'],['LR','Liberia','+231'],
+  ['LY','Libya','+218'],['LI','Liechtenstein','+423'],['LT','Lithuania','+370'],['LU','Luxembourg','+352'],['MG','Madagascar','+261'],
+  ['MW','Malawi','+265'],['MY','Malaysia','+60'],['MV','Maldives','+960'],['ML','Mali','+223'],['MT','Malta','+356'],
+  ['MH','Marshall Islands','+692'],['MR','Mauritania','+222'],['MU','Mauritius','+230'],['MX','Mexico','+52'],['FM','Micronesia','+691'],
+  ['MD','Moldova','+373'],['MC','Monaco','+377'],['MN','Mongolia','+976'],['ME','Montenegro','+382'],['MA','Morocco','+212'],
+  ['MZ','Mozambique','+258'],['MM','Myanmar','+95'],['NA','Namibia','+264'],['NR','Nauru','+674'],['NP','Nepal','+977'],
+  ['NL','Netherlands','+31'],['NZ','New Zealand','+64'],['NI','Nicaragua','+505'],['NE','Niger','+227'],['NG','Nigeria','+234'],
+  ['KP','North Korea','+850'],['MK','North Macedonia','+389'],['NO','Norway','+47'],['OM','Oman','+968'],['PK','Pakistan','+92'],
+  ['PW','Palau','+680'],['PS','Palestine','+970'],['PA','Panama','+507'],['PG','Papua New Guinea','+675'],['PY','Paraguay','+595'],
+  ['PE','Peru','+51'],['PH','Philippines','+63'],['PL','Poland','+48'],['PT','Portugal','+351'],['QA','Qatar','+974'],
+  ['RO','Romania','+40'],['RU','Russia','+7'],['RW','Rwanda','+250'],['KN','Saint Kitts and Nevis','+1-869'],['LC','Saint Lucia','+1-758'],
+  ['VC','Saint Vincent and the Grenadines','+1-784'],['WS','Samoa','+685'],['SM','San Marino','+378'],['ST','Sao Tome and Principe','+239'],
+  ['SA','Saudi Arabia','+966'],['SN','Senegal','+221'],['RS','Serbia','+381'],['SC','Seychelles','+248'],['SL','Sierra Leone','+232'],
+  ['SG','Singapore','+65'],['SK','Slovakia','+421'],['SI','Slovenia','+386'],['SB','Solomon Islands','+677'],['SO','Somalia','+252'],
+  ['ZA','South Africa','+27'],['KR','South Korea','+82'],['SS','South Sudan','+211'],['ES','Spain','+34'],['LK','Sri Lanka','+94'],
+  ['SD','Sudan','+249'],['SR','Suriname','+597'],['SE','Sweden','+46'],['CH','Switzerland','+41'],['SY','Syria','+963'],
+  ['TW','Taiwan','+886'],['TJ','Tajikistan','+992'],['TZ','Tanzania','+255'],['TH','Thailand','+66'],['TL','Timor-Leste','+670'],
+  ['TG','Togo','+228'],['TO','Tonga','+676'],['TT','Trinidad and Tobago','+1-868'],['TN','Tunisia','+216'],['TR','Turkey','+90'],
+  ['TM','Turkmenistan','+993'],['TV','Tuvalu','+688'],['UG','Uganda','+256'],['UA','Ukraine','+380'],['AE','United Arab Emirates','+971'],
+  ['GB','United Kingdom','+44'],['US','United States','+1'],['UY','Uruguay','+598'],['UZ','Uzbekistan','+998'],['VU','Vanuatu','+678'],
+  ['VA','Vatican City','+379'],['VE','Venezuela','+58'],['VN','Vietnam','+84'],['YE','Yemen','+967'],['ZM','Zambia','+260'],
+  ['ZW','Zimbabwe','+263']
+];
+
+var TIMEZONES=[
+  ['UTC','UTC (±0)','0'],
+  ['America/New_York','Eastern Time (ET, -5)','-5'],
+  ['America/Chicago','Central Time (CT, -6)','-6'],
+  ['America/Denver','Mountain Time (MT, -7)','-7'],
+  ['America/Los_Angeles','Pacific Time (PT, -8)','-8'],
+  ['America/Anchorage','Alaska Time (-9)','-9'],
+  ['Pacific/Honolulu','Hawaii Time (-10)','-10'],
+  ['America/Sao_Paulo','Brasilia Time (-3)','-3'],
+  ['America/Argentina/Buenos_Aires','Argentina (-3)','-3'],
+  ['America/Halifax','Atlantic Time (-4)','-4'],
+  ['America/Toronto','Toronto / Eastern (-5)','-5'],
+  ['America/Vancouver','Vancouver / Pacific (-8)','-8'],
+  ['America/Mexico_City','Mexico City (-6)','-6'],
+  ['America/Bogota','Bogota, Lima (-5)','-5'],
+  ['America/Santiago','Santiago (-4)','-4'],
+  ['Atlantic/Reykjavik','Reykjavik (±0)','0'],
+  ['Europe/London','London (GMT, ±0)','0'],
+  ['Europe/Paris','Paris (CET, +1)','+1'],
+  ['Europe/Berlin','Berlin (+1)','+1'],
+  ['Europe/Rome','Rome (+1)','+1'],
+  ['Europe/Madrid','Madrid (+1)','+1'],
+  ['Europe/Amsterdam','Amsterdam (+1)','+1'],
+  ['Europe/Stockholm','Stockholm (+1)','+1'],
+  ['Europe/Helsinki','Helsinki (+2)','+2'],
+  ['Europe/Athens','Athens (+2)','+2'],
+  ['Europe/Istanbul','Istanbul (+3)','+3'],
+  ['Europe/Moscow','Moscow (+3)','+3'],
+  ['Europe/Warsaw','Warsaw (+1)','+1'],
+  ['Europe/Zurich','Zurich (+1)','+1'],
+  ['Africa/Cairo','Cairo (+2)','+2'],
+  ['Africa/Johannesburg','Johannesburg (+2)','+2'],
+  ['Africa/Lagos','Lagos (+1)','+1'],
+  ['Africa/Nairobi','Nairobi (+3)','+3'],
+  ['Africa/Casablanca','Casablanca (±0)','0'],
+  ['Asia/Dubai','Dubai (GST, +4)','+4'],
+  ['Asia/Riyadh','Riyadh (+3)','+3'],
+  ['Asia/Tehran','Tehran (+3:30)','+3:30'],
+  ['Asia/Karachi','Karachi (PKT, +5)','+5'],
+  ['Asia/Kolkata','India (IST, +5:30)','+5:30'],
+  ['Asia/Dhaka','Dhaka (+6)','+6'],
+  ['Asia/Colombo','Colombo (+5:30)','+5:30'],
+  ['Asia/Yangon','Yangon (+6:30)','+6:30'],
+  ['Asia/Bangkok','Bangkok (ICT, +7)','+7'],
+  ['Asia/Singapore','Singapore (SGT, +8)','+8'],
+  ['Asia/Shanghai','China Standard Time (+8)','+8'],
+  ['Asia/Hong_Kong','Hong Kong (+8)','+8'],
+  ['Asia/Tokyo','Tokyo (JST, +9)','+9'],
+  ['Asia/Seoul','Seoul (KST, +9)','+9'],
+  ['Australia/Perth','Perth (AWST, +8)','+8'],
+  ['Australia/Adelaide','Adelaide (ACST, +9:30)','+9:30'],
+  ['Australia/Sydney','Sydney (AEST, +10)','+10'],
+  ['Pacific/Auckland','Auckland (NZST, +12)','+12'],
+  ['Pacific/Fiji','Fiji (+12)','+12'],
+  ['Pacific/Guam','Guam (ChST, +10)','+10'],
+];
+
 function timeAgoProf(dateStr){
   if(!dateStr) return '';
   var now=new Date();
@@ -15,7 +115,7 @@ function timeAgoProf(dateStr){
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
   if(diff<172800) return 'Yesterday';
-  return date.toLocaleDateString([],{month:'short',day:'numeric'});
+  return date.toLocaleDateString([],{month:'short',day:'numeric',timeZone:localStorage.getItem('user_timezone')||'UTC'});
 }
 
 export default function ProfileScreen({session, supabase, onOpenWallet}){
@@ -26,6 +126,38 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var settingsS=useState(false); var showSettings=settingsS[0]; var setShowSettings=settingsS[1];
   var showPrivacyS=useState(false); var showPrivacy=showPrivacyS[0]; var setShowPrivacy=showPrivacyS[1];
   var showSupportS=useState(false); var showSupport=showSupportS[0]; var setShowSupport=showSupportS[1];
+  var showAcctS=useState(false); var showAcct=showAcctS[0]; var setShowAcct=showAcctS[1];
+  var showNotifS=useState(false); var showNotif=showNotifS[0]; var setShowNotif=showNotifS[1];
+  // Account settings fields
+  var acctNameS=useState(localStorage.getItem('acct_name')||''); var acctName=acctNameS[0]; var setAcctName=acctNameS[1];
+  var acctTagS=useState(localStorage.getItem('acct_tag')||''); var acctTag=acctTagS[0]; var setAcctTag=acctTagS[1];
+  var acctCountryS=useState(localStorage.getItem('acct_country')||''); var acctCountry=acctCountryS[0]; var setAcctCountry=acctCountryS[1];
+  var acctPhoneCodeS=useState(localStorage.getItem('acct_phone_code')||'+1'); var acctPhoneCode=acctPhoneCodeS[0]; var setAcctPhoneCode=acctPhoneCodeS[1];
+  var acctPhoneS=useState(localStorage.getItem('acct_phone')||''); var acctPhone=acctPhoneS[0]; var setAcctPhone=acctPhoneS[1];
+  var acctTzS=useState(localStorage.getItem('user_timezone')||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'); var acctTz=acctTzS[0]; var setAcctTz=acctTzS[1];
+  var acctSavedS=useState(false); var acctSaved=acctSavedS[0]; var setAcctSaved=acctSavedS[1];
+  var acctCountrySearchS=useState(''); var acctCountrySearch=acctCountrySearchS[0]; var setAcctCountrySearch=acctCountrySearchS[1];
+  var showCountryPickerS=useState(false); var showCountryPicker=showCountryPickerS[0]; var setShowCountryPicker=showCountryPickerS[1];
+  var showPhoneCodePickerS=useState(false); var showPhoneCodePicker=showPhoneCodePickerS[0]; var setShowPhoneCodePicker=showPhoneCodePickerS[1];
+  var showTzPickerS=useState(false); var showTzPicker=showTzPickerS[0]; var setShowTzPicker=showTzPickerS[1];
+  var tzSearchS=useState(''); var tzSearch=tzSearchS[0]; var setTzSearch=tzSearchS[1];
+  // Password change
+  var pwModeS=useState('reset'); var pwMode=pwModeS[0]; var setPwMode=pwModeS[1];
+  var pwCurrentS=useState(''); var pwCurrent=pwCurrentS[0]; var setPwCurrent=pwCurrentS[1];
+  var pwNewS=useState(''); var pwNew=pwNewS[0]; var setPwNew=pwNewS[1];
+  var pwConfirmS=useState(''); var pwConfirm=pwConfirmS[0]; var setPwConfirm=pwConfirmS[1];
+  var pwChangeErrS=useState(''); var pwChangeErr=pwChangeErrS[0]; var setPwChangeErr=pwChangeErrS[1];
+  var pwChangeDoneS=useState(false); var pwChangeDone=pwChangeDoneS[0]; var setPwChangeDone=pwChangeDoneS[1];
+  var pwChangeLoadS=useState(false); var pwChangeLoad=pwChangeLoadS[0]; var setPwChangeLoad=pwChangeLoadS[1];
+  // Notification settings
+  var notifLikesS=useState(localStorage.getItem('notif_likes')!=='0'); var notifLikes=notifLikesS[0]; var setNotifLikes=notifLikesS[1];
+  var notifCommentsS=useState(localStorage.getItem('notif_comments')!=='0'); var notifComments=notifCommentsS[0]; var setNotifComments=notifCommentsS[1];
+  var notifFollowsS=useState(localStorage.getItem('notif_follows')!=='0'); var notifFollows=notifFollowsS[0]; var setNotifFollows=notifFollowsS[1];
+  var notifCallsS=useState(localStorage.getItem('notif_calls')!=='0'); var notifCalls=notifCallsS[0]; var setNotifCalls=notifCallsS[1];
+  var notifMsgsS=useState(localStorage.getItem('notif_msgs')!=='0'); var notifMsgs=notifMsgsS[0]; var setNotifMsgs=notifMsgsS[1];
+  var notifWorkshopsS=useState(localStorage.getItem('notif_workshops')!=='0'); var notifWorkshops=notifWorkshopsS[0]; var setNotifWorkshops=notifWorkshopsS[1];
+  var notifPromoS=useState(localStorage.getItem('notif_promo')!=='0'); var notifPromo=notifPromoS[0]; var setNotifPromo=notifPromoS[1];
+  var notifEmailS=useState(localStorage.getItem('notif_email')!=='0'); var notifEmail=notifEmailS[0]; var setNotifEmail=notifEmailS[1];
   // Privacy state
   var profileVisS=useState(localStorage.getItem('profile_vis')||'public'); var profileVis=profileVisS[0]; var setProfileVis=profileVisS[1];
   var lockedS=useState(localStorage.getItem('profile_locked')==='1'); var profileLocked=lockedS[0]; var setProfileLocked=lockedS[1];
@@ -504,6 +636,210 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         )
   );
 
+  // ── ACCOUNT SETTINGS SCREEN ──
+  if(showAcct) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    // Header
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowAcct(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'<'),
+      React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Account Settings')
+    ),
+    React.createElement('div',{style:{padding:'16px 18px',flex:1,overflowY:'auto'}},
+      // Profile Info section
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Profile Info'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{marginBottom:'14px'}},
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Display Name'),
+          React.createElement('input',{type:'text',value:acctName,onChange:function(e){setAcctName(e.target.value);},placeholder:'Your display name',style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}})
+        ),
+        React.createElement('div',{style:{marginBottom:'14px'}},
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Tag / Title'),
+          React.createElement('input',{type:'text',value:acctTag,onChange:function(e){setAcctTag(e.target.value);},placeholder:'e.g. Software Engineer',style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}})
+        ),
+        React.createElement('button',{
+          onClick:function(){
+            localStorage.setItem('acct_name',acctName);
+            localStorage.setItem('acct_tag',acctTag);
+            if(userId){
+              var newBio=JSON.stringify({about:profileInfo.about||'',tag:acctTag,website_name:profileInfo.website_name||'',website_url:profileInfo.website_url||''});
+              sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(){});
+            }
+            setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2000);
+          },
+          style:{width:'100%',padding:'11px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer'}
+        },acctSaved?'Saved ✓':'Save Profile Info')
+      ),
+      // Contact section
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Contact'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Phone Number'),
+        React.createElement('div',{style:{display:'flex',gap:'8px'}},
+          React.createElement('button',{
+            onClick:function(){setShowPhoneCodePicker(true);setAcctCountrySearch('');},
+            style:{padding:'12px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}
+          },acctPhoneCode),
+          React.createElement('input',{type:'tel',value:acctPhone,onChange:function(e){setAcctPhone(e.target.value);localStorage.setItem('acct_phone',e.target.value);},placeholder:'Phone number',style:{flex:1,padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}})
+        )
+      ),
+      // Location section
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Location'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Country'),
+        React.createElement('button',{
+          onClick:function(){setShowCountryPicker(true);setAcctCountrySearch('');},
+          style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:acctCountry?'var(--text)':'var(--t3)',fontSize:'14px',cursor:'pointer',textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}
+        },
+          React.createElement('span',null,acctCountry?acctCountry:'Select Country'),
+          React.createElement('span',{style:{color:'var(--t3)',fontSize:'12px'}},'▼')
+        )
+      ),
+      // Timezone section
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Time Zone'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Your Timezone'),
+        React.createElement('button',{
+          onClick:function(){setShowTzPicker(true);setTzSearch('');},
+          style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',cursor:'pointer',textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}
+        },
+          React.createElement('span',null,(function(){var tz=TIMEZONES.find(function(t){return t[0]===acctTz;});return tz?tz[1]:acctTz;})()),
+          React.createElement('span',{style:{color:'var(--t3)',fontSize:'12px'}},'▼')
+        ),
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',fontStyle:'italic'}},'This setting controls how times appear across the app')
+      ),
+      // Save All button
+      React.createElement('button',{
+        onClick:function(){
+          localStorage.setItem('acct_name',acctName);
+          localStorage.setItem('acct_tag',acctTag);
+          localStorage.setItem('acct_country',acctCountry);
+          localStorage.setItem('acct_phone_code',acctPhoneCode);
+          localStorage.setItem('acct_phone',acctPhone);
+          if(userId){
+            var newBio=JSON.stringify({about:profileInfo.about||'',tag:acctTag,website_name:profileInfo.website_name||'',website_url:profileInfo.website_url||''});
+            sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(){});
+          }
+          setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
+        },
+        style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'30px'}
+      },acctSaved?'All Saved ✓':'Save All'),
+    ),
+    // Country Picker Modal
+    showCountryPicker ? React.createElement('div',{
+      onClick:function(){setShowCountryPicker(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,0.4)'}},
+        React.createElement('div',{style:{padding:'16px 16px 10px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
+          React.createElement('input',{autoFocus:true,type:'text',value:acctCountrySearch,onChange:function(e){setAcctCountrySearch(e.target.value);},placeholder:'Search country...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
+          React.createElement('button',{onClick:function(){setShowCountryPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
+        ),
+        React.createElement('div',{style:{overflowY:'auto',maxHeight:'60vh'}},
+          COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase());}).map(function(c){
+            var sel=acctCountry===c[1];
+            return React.createElement('div',{key:c[0],onClick:function(){setAcctCountry(c[1]);localStorage.setItem('acct_country',c[1]);setShowCountryPicker(false);},
+              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+              React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
+              sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
+            );
+          })
+        )
+      )
+    ) : null,
+    // Phone Code Picker Modal
+    showPhoneCodePicker ? React.createElement('div',{
+      onClick:function(){setShowPhoneCodePicker(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,0.4)'}},
+        React.createElement('div',{style:{padding:'16px 16px 10px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
+          React.createElement('input',{autoFocus:true,type:'text',value:acctCountrySearch,onChange:function(e){setAcctCountrySearch(e.target.value);},placeholder:'Search country code...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
+          React.createElement('button',{onClick:function(){setShowPhoneCodePicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
+        ),
+        React.createElement('div',{style:{overflowY:'auto',maxHeight:'60vh'}},
+          COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase())||c[2].includes(acctCountrySearch);}).map(function(c){
+            var sel=acctPhoneCode===c[2];
+            return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);},
+              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+              React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
+              React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
+            );
+          })
+        )
+      )
+    ) : null,
+    // Timezone Picker Modal
+    showTzPicker ? React.createElement('div',{
+      onClick:function(){setShowTzPicker(false);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,0.4)'}},
+        React.createElement('div',{style:{padding:'16px 16px 10px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
+          React.createElement('input',{autoFocus:true,type:'text',value:tzSearch,onChange:function(e){setTzSearch(e.target.value);},placeholder:'Search timezone...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
+          React.createElement('button',{onClick:function(){setShowTzPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
+        ),
+        React.createElement('div',{style:{overflowY:'auto',maxHeight:'60vh'}},
+          TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());}).map(function(t){
+            var sel=acctTz===t[0];
+            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);localStorage.setItem('user_timezone',t[0]);setShowTzPicker(false);},
+              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+              React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
+              sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
+            );
+          })
+        )
+      )
+    ) : null
+  );
+
+  // ── NOTIFICATION SETTINGS SCREEN ──
+  if(showNotif) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowNotif(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'<'),
+      React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notification Settings')
+    ),
+    React.createElement('div',{style:{padding:'16px 18px'}},
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Push Notifications'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
+        [
+          {label:'Likes on your posts',sub:'When someone likes your post',val:notifLikes,key:'notif_likes',set:setNotifLikes},
+          {label:'Comments on your posts',sub:'When someone comments on your post',val:notifComments,key:'notif_comments',set:setNotifComments},
+          {label:'New followers',sub:'When someone follows you',val:notifFollows,key:'notif_follows',set:setNotifFollows},
+          {label:'Call requests',sub:'When an expert calls you',val:notifCalls,key:'notif_calls',set:setNotifCalls},
+          {label:'New messages',sub:'When you receive a message',val:notifMsgs,key:'notif_msgs',set:setNotifMsgs},
+          {label:'Upcoming workshops',sub:'Reminders for workshops you joined',val:notifWorkshops,key:'notif_workshops',set:setNotifWorkshops},
+          {label:'Promotions & offers',sub:'Special deals and app updates',val:notifPromo,key:'notif_promo',set:setNotifPromo},
+        ].map(function(row,i,arr){
+          return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}},
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'2px'}},row.label),
+              React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},row.sub)
+            ),
+            React.createElement('button',{
+              onClick:function(){var n=!row.val;row.set(n);localStorage.setItem(row.key,n?'1':'0');},
+              style:{width:'46px',height:'26px',borderRadius:'13px',background:row.val?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
+            },
+              React.createElement('div',{style:{position:'absolute',top:'3px',left:row.val?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+            )
+          );
+        })
+      ),
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Email Notifications'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px'}},
+          React.createElement('div',{style:{flex:1}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'2px'}},'Email me updates'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Receive important updates and newsletters by email')
+          ),
+          React.createElement('button',{
+            onClick:function(){var n=!notifEmail;setNotifEmail(n);localStorage.setItem('notif_email',n?'1':'0');},
+            style:{width:'46px',height:'26px',borderRadius:'13px',background:notifEmail?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
+          },
+            React.createElement('div',{style:{position:'absolute',top:'3px',left:notifEmail?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+          )
+        )
+      )
+    )
+  );
+
   // ── PRIVACY SCREEN ──
   if(showPrivacy) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
@@ -512,33 +848,85 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ),
     React.createElement('div',{style:{padding:'16px 18px'}},
 
-      // ── Password Reset ──
+      // ── Password Section (two-tab) ──
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Account Security'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
-        React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},'Reset Password'),
-        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'14px'}},'We\'ll send a reset link to your email address.'),
-        pwResetSent
-          ? React.createElement('div',{style:{textAlign:'center',padding:'8px'}},
-              React.createElement('div',{style:{fontSize:'28px',marginBottom:'6px'}},'📧'),
-              React.createElement('div',{style:{fontSize:'13px',color:'#27C96A',fontWeight:600}},'Reset link sent! Check your inbox.')
+        // Tab switcher
+        React.createElement('div',{style:{display:'flex',background:'var(--bg4)',borderRadius:'10px',padding:'3px',marginBottom:'14px'}},
+          React.createElement('button',{onClick:function(){setPwMode('reset');setPwChangeErr('');setPwChangeDone(false);},style:{flex:1,padding:'8px',borderRadius:'8px',border:'none',background:pwMode==='reset'?'var(--bg3)':'transparent',color:pwMode==='reset'?'var(--text)':'var(--t2)',fontSize:'12px',fontWeight:pwMode==='reset'?700:500,cursor:'pointer',transition:'all 0.15s'}},'Reset via Email'),
+          React.createElement('button',{onClick:function(){setPwMode('change');setPwResetErr('');setPwResetSent(false);},style:{flex:1,padding:'8px',borderRadius:'8px',border:'none',background:pwMode==='change'?'var(--bg3)':'transparent',color:pwMode==='change'?'var(--text)':'var(--t2)',fontSize:'12px',fontWeight:pwMode==='change'?700:500,cursor:'pointer',transition:'all 0.15s'}},'Change Password')
+        ),
+        pwMode==='reset'
+          ? React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'10px'}},'We\'ll send a reset link to your email address.'),
+              pwResetSent
+                ? React.createElement('div',{style:{textAlign:'center',padding:'8px'}},
+                    React.createElement('div',{style:{fontSize:'28px',marginBottom:'6px'}},'📧'),
+                    React.createElement('div',{style:{fontSize:'13px',color:'#27C96A',fontWeight:600}},'Reset link sent! Check your inbox.')
+                  )
+                : React.createElement('div',null,
+                    React.createElement('input',{type:'email',value:pwResetEmail||email,onChange:function(e){setPwResetEmail(e.target.value);},placeholder:'Email address',style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',marginBottom:'10px',fontFamily:'inherit',boxSizing:'border-box'}}),
+                    React.createElement('button',{
+                      disabled:pwResetLoad,
+                      onClick:function(){
+                        var addr=(pwResetEmail||email).trim();
+                        if(!addr){setPwResetErr('Enter your email');return;}
+                        setPwResetLoad(true); setPwResetErr('');
+                        sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:'https://ring-in.vercel.app'}).then(function(res){
+                          setPwResetLoad(false);
+                          if(res.error) setPwResetErr(res.error.message);
+                          else setPwResetSent(true);
+                        });
+                      },
+                      style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwResetLoad?0.6:1}
+                    },pwResetLoad?'Sending…':'Send Reset Link'),
+                    pwResetErr?React.createElement('div',{style:{fontSize:'12px',color:'#ef4747',marginTop:'8px',textAlign:'center'}},pwResetErr):null
+                  )
             )
           : React.createElement('div',null,
-              React.createElement('input',{type:'email',value:pwResetEmail||email,onChange:function(e){setPwResetEmail(e.target.value);},placeholder:'Email address',style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',marginBottom:'10px',fontFamily:'inherit',boxSizing:'border-box'}}),
-              React.createElement('button',{
-                disabled:pwResetLoad,
-                onClick:function(){
-                  var addr=(pwResetEmail||email).trim();
-                  if(!addr){setPwResetErr('Enter your email');return;}
-                  setPwResetLoad(true); setPwResetErr('');
-                  sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:'https://ring-in.vercel.app'}).then(function(res){
-                    setPwResetLoad(false);
-                    if(res.error) setPwResetErr(res.error.message);
-                    else setPwResetSent(true);
-                  });
-                },
-                style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwResetLoad?0.6:1}
-              },pwResetLoad?'Sending…':'Send Reset Link'),
-              pwResetErr?React.createElement('div',{style:{fontSize:'12px',color:'#ef4747',marginTop:'8px',textAlign:'center'}},pwResetErr):null
+              pwChangeDone
+                ? React.createElement('div',{style:{textAlign:'center',padding:'12px'}},
+                    React.createElement('div',{style:{fontSize:'36px',marginBottom:'8px'}},'✅'),
+                    React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},'Password changed!'),
+                    React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)'}},'Your password has been updated successfully.'),
+                    React.createElement('button',{onClick:function(){setPwChangeDone(false);setPwCurrent('');setPwNew('');setPwConfirm('');setPwChangeErr('');},style:{marginTop:'12px',padding:'8px 20px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:600,cursor:'pointer'}},'Done')
+                  )
+                : React.createElement('div',null,
+                    React.createElement('div',{style:{marginBottom:'10px'}},
+                      React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'5px'}},'Current Password'),
+                      React.createElement('input',{type:'password',value:pwCurrent,onChange:function(e){setPwCurrent(e.target.value);},placeholder:'Enter current password',style:{width:'100%',padding:'11px 13px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}})
+                    ),
+                    React.createElement('div',{style:{marginBottom:'10px'}},
+                      React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'5px'}},'New Password'),
+                      React.createElement('input',{type:'password',value:pwNew,onChange:function(e){setPwNew(e.target.value);},placeholder:'Min 8 characters',style:{width:'100%',padding:'11px 13px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}),
+                      pwNew.length>0?React.createElement('div',{style:{marginTop:'5px',fontSize:'11px',fontWeight:600,color:pwNew.length>=12?'#27C96A':pwNew.length>=8?'#f5a623':'#ef4747'}},pwNew.length>=12?'Strong password':pwNew.length>=8?'Medium — add more characters':'Weak — needs at least 8 characters'):null
+                    ),
+                    React.createElement('div',{style:{marginBottom:'14px'}},
+                      React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'5px'}},'Confirm New Password'),
+                      React.createElement('input',{type:'password',value:pwConfirm,onChange:function(e){setPwConfirm(e.target.value);},placeholder:'Repeat new password',style:{width:'100%',padding:'11px 13px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}})
+                    ),
+                    pwChangeErr?React.createElement('div',{style:{fontSize:'12px',color:'#ef4747',marginBottom:'10px',textAlign:'center'}},pwChangeErr):null,
+                    React.createElement('button',{
+                      disabled:pwChangeLoad,
+                      onClick:function(){
+                        setPwChangeErr('');
+                        if(!pwCurrent||!pwNew||!pwConfirm){setPwChangeErr('Please fill in all fields.');return;}
+                        if(pwNew===pwCurrent){setPwChangeErr('New password must be different from current.');return;}
+                        if(pwNew!==pwConfirm){setPwChangeErr('Passwords do not match.');return;}
+                        if(pwNew.length<8){setPwChangeErr('New password must be at least 8 characters.');return;}
+                        setPwChangeLoad(true);
+                        sbProfile.auth.signInWithPassword({email:email,password:pwCurrent}).then(function(res){
+                          if(res.error){setPwChangeErr('Current password is incorrect.');setPwChangeLoad(false);return;}
+                          sbProfile.auth.updateUser({password:pwNew}).then(function(r){
+                            setPwChangeLoad(false);
+                            if(r.error){setPwChangeErr(r.error.message);return;}
+                            setPwChangeDone(true);
+                          });
+                        });
+                      },
+                      style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwChangeLoad?0.6:1}
+                    },pwChangeLoad?'Changing…':'Change Password')
+                  )
             )
       ),
 
@@ -642,13 +1030,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       ),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',overflow:'hidden',marginBottom:'16px'}},
         [
-          {icon:'🎓',label:'Become an Expert',sub:'Start earning by sharing your knowledge',fn:function(){alert('Expert application coming soon!');}},
-          {icon:'🔔',label:'Notifications',sub:'Manage your alerts',fn:function(){alert('Notification settings coming soon!');}},
+          {icon:'👤',label:'Account Settings',sub:'Name, phone, country, timezone',fn:function(){setShowAcct(true);}},
           {icon:'🔒',label:'Privacy & Security',sub:'Password, visibility, locked profile',fn:function(){setShowPrivacy(true);}},
+          {icon:'🔔',label:'Notification Settings',sub:'Manage your alerts',fn:function(){setShowNotif(true);}},
           {icon:'💬',label:'Help & Support',sub:'FAQs and contact us',fn:function(){setShowSupport(true);}},
           {icon:'⭐',label:'Rate the App',sub:'Enjoying RingIn? Let us know!',fn:function(){setShowRate(true);}},
-        ].map(function(item,i){
-          return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
+        ].map(function(item,i,arr){
+          return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}},
             React.createElement('span',{style:{fontSize:'18px',width:'28px',textAlign:'center'}},item.icon),
             React.createElement('div',{style:{flex:1}},
               React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},item.label),
@@ -657,6 +1045,18 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('span',{style:{color:'var(--t3)',fontSize:'16px'}},'>')
           );
         })
+      ),
+      // Become an Expert card
+      React.createElement('div',{
+        onClick:function(){alert('Expert application coming soon!');},
+        style:{background:'linear-gradient(135deg,#534AB7,#E84D9A)',borderRadius:'14px',padding:'18px 16px',marginBottom:'16px',display:'flex',alignItems:'center',gap:'14px',cursor:'pointer',boxShadow:'0 4px 20px rgba(123,110,255,0.3)'}
+      },
+        React.createElement('div',{style:{fontSize:'32px'}},'🎓'),
+        React.createElement('div',{style:{flex:1}},
+          React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'#fff',marginBottom:'3px'}},'Become an Expert'),
+          React.createElement('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.8)'}},'Share your knowledge and start earning')
+        ),
+        React.createElement('span',{style:{color:'rgba(255,255,255,0.7)',fontSize:'18px'}},'>')
       ),
       showRate ? React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'16px',marginBottom:'16px',textAlign:'center'}},
         rateDone
