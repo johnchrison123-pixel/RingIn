@@ -10,11 +10,14 @@ var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medi
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
-// Facebook-style post image — full natural size, zero cropping
+// Feed post image — 4:5 ratio (Instagram standard), objectFit:cover centers subject, crops dark edges
 function PostImage(props){
   var src=props.src; var onClick=props.onClick;
-  return React.createElement('div',{style:{width:'100%',background:'#000',cursor:onClick?'pointer':'default'},onClick:onClick},
-    React.createElement('img',{src:src,style:{width:'100%',height:'auto',display:'block',maxWidth:'100%'}})
+  return React.createElement('div',{
+    style:{width:'100%',aspectRatio:'4/5',overflow:'hidden',background:'#111',cursor:onClick?'pointer':'default'},
+    onClick:onClick
+  },
+    React.createElement('img',{src:src,style:{width:'100%',height:'100%',objectFit:'cover',objectPosition:'center',display:'block'}})
   );
 }
 
@@ -384,16 +387,25 @@ export function UserProfileView(props){
             React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
               commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
               commentsArr.map(function(c){
-                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+                var cLiked=(commentLikes[c.id]||0)>0;
+                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'12px'}},
                   React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
                     c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
                   ),
                   React.createElement('div',{style:{flex:1}},
-                    React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
-                      React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
+                    React.createElement('div',{style:{background:'var(--bg4)',borderRadius:'12px',padding:'7px 10px',marginBottom:'4px'}},
+                      React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'2px'}},
+                        React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                        React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
+                      ),
+                      React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
                     ),
-                    React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
+                    React.createElement('div',{style:{display:'flex',gap:'14px',paddingLeft:'4px'}},
+                      React.createElement('button',{onClick:function(){setCommentLikes(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
+                        React.createElement('span',{style:{fontSize:'13px'}},cLiked?'❤️':'🤍'), cLiked?'Liked':'Like'
+                      ),
+                      React.createElement('button',{onClick:function(){setCommentInput('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
+                    )
                   )
                 );
               })
@@ -568,6 +580,10 @@ export default function HomeScreen(props){
   var postDetailS=useState(null); var postDetail=postDetailS[0]; var setPostDetail=postDetailS[1];
   var postDetailIdxS=useState(0); var postDetailIdx=postDetailIdxS[0]; var setPostDetailIdx=postDetailIdxS[1];
   var pdMenuOpenS=useState(false); var pdMenuOpen=pdMenuOpenS[0]; var setPdMenuOpen=pdMenuOpenS[1];
+  var pdUiVisibleS=useState(true); var pdUiVisible=pdUiVisibleS[0]; var setPdUiVisible=pdUiVisibleS[1];
+  var pdShowCommentsS=useState(false); var pdShowComments=pdShowCommentsS[0]; var setPdShowComments=pdShowCommentsS[1];
+  var commentLikesS=useState({}); var commentLikes=commentLikesS[0]; var setCommentLikes=commentLikesS[1];
+  var replyingToS=useState(null); var replyingTo=replyingToS[0]; var setReplyingTo=replyingToS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
@@ -753,7 +769,7 @@ export default function HomeScreen(props){
     var pdImgs=pd.postImg?[pd.postImg].concat(pd.extraImgs||[]):[];
     var pdComments=commentsCache[pd.id]||[];
     var curImg=pdImgs[postDetailIdx]||null;
-    function closePd(){setPostDetail(null);setPostDetailIdx(0);setPdMenuOpen(false);}
+    function closePd(){setPostDetail(null);setPostDetailIdx(0);setPdMenuOpen(false);setPdUiVisible(true);setPdShowComments(false);setReplyingTo(null);}
     function savePhoto(){
       if(!curImg) return;
       var a=document.createElement('a'); a.href=curImg; a.download='ringin-photo.jpg'; a.target='_blank'; a.click();
@@ -765,118 +781,126 @@ export default function HomeScreen(props){
       else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');}
       setPdMenuOpen(false);
     }
-    return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:9999,display:'flex',flexDirection:'column'}},
+    function toggleCommentLike(cid){
+      setCommentLikes(function(prev){var m=Object.assign({},prev);m[cid]=(m[cid]||0)===0?1:0;return m;});
+    }
+    var uiTrans='opacity 0.25s ease, visibility 0.25s ease';
+    return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#000',zIndex:9999,display:'flex',flexDirection:'column',overflowY:'auto'}},
 
-      // ── IMAGE SECTION (75vh, objectFit:cover — center-crops ~10% top+bottom) ──
-      React.createElement('div',{style:{position:'relative',width:'100%',height:'75vh',flexShrink:0,overflow:'hidden',background:'#000'}},
+      // ── IMAGE — natural height, max 90vh, tap toggles UI ──
+      React.createElement('div',{style:{position:'relative',width:'100%',flexShrink:0,cursor:'pointer'},onClick:function(){setPdUiVisible(function(v){return !v;});}},
         pd.video_url
-          ? React.createElement('video',{src:pd.video_url,controls:true,playsInline:true,autoPlay:false,style:{width:'100%',height:'100%',objectFit:'contain',display:'block'}})
+          ? React.createElement('video',{src:pd.video_url,controls:true,playsInline:true,autoPlay:false,onClick:function(e){e.stopPropagation();},style:{width:'100%',maxHeight:'90vh',display:'block',objectFit:'contain',background:'#000'}})
           : pdImgs.length>0
-            ? React.createElement('img',{src:pdImgs[postDetailIdx],style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}})
+            ? React.createElement('img',{src:pdImgs[postDetailIdx],style:{width:'100%',height:'auto',maxHeight:'90vh',display:'block',objectFit:'contain'}})
             : null,
-        // Carousel prev/next
-        pdImgs.length>1&&postDetailIdx>0?React.createElement('button',{onClick:function(){setPostDetailIdx(function(i){return i-1;});},style:{position:'absolute',left:'12px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.55)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3}},'‹'):null,
-        pdImgs.length>1&&postDetailIdx<pdImgs.length-1?React.createElement('button',{onClick:function(){setPostDetailIdx(function(i){return i+1;});},style:{position:'absolute',right:'12px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.55)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3}},'›'):null,
-        pdImgs.length>1?React.createElement('div',{style:{position:'absolute',bottom:'12px',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'5px',zIndex:3}},
+        // Floating X — top left
+        React.createElement('button',{onClick:function(e){e.stopPropagation();closePd();},style:{position:'absolute',top:'48px',left:'16px',width:'36px',height:'36px',borderRadius:'50%',background:'rgba(30,30,40,0.7)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:4,opacity:pdUiVisible?1:0,visibility:pdUiVisible?'visible':'hidden',transition:uiTrans}},'✕'),
+        // Floating ⋮ — top right
+        React.createElement('button',{onClick:function(e){e.stopPropagation();setPdMenuOpen(function(v){return !v;});},style:{position:'absolute',top:'48px',right:'16px',width:'36px',height:'36px',borderRadius:'50%',background:'rgba(30,30,40,0.7)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'none',color:'#fff',fontSize:'22px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:4,letterSpacing:'-1px',opacity:pdUiVisible?1:0,visibility:pdUiVisible?'visible':'hidden',transition:uiTrans}},'⋮'),
+        // Carousel dots
+        pdImgs.length>1?React.createElement('div',{style:{position:'absolute',bottom:'12px',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'5px',zIndex:3,opacity:pdUiVisible?1:0,transition:uiTrans}},
           pdImgs.map(function(_,di){return React.createElement('div',{key:di,style:{width:di===postDetailIdx?'18px':'6px',height:'6px',borderRadius:'3px',background:di===postDetailIdx?'#fff':'rgba(255,255,255,0.45)',transition:'all 0.2s'}});})
         ):null,
-        // ── FLOATING BUTTONS ON IMAGE ──
-        // Grey X close — top left
-        React.createElement('button',{onClick:closePd,style:{position:'absolute',top:'16px',left:'16px',width:'36px',height:'36px',borderRadius:'50%',background:'rgba(100,100,110,0.75)',backdropFilter:'blur(10px)',WebkitBackdropFilter:'blur(10px)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:4,fontWeight:300,lineHeight:1}},'✕'),
-        // 3-dot menu — top right
-        React.createElement('button',{onClick:function(e){e.stopPropagation();setPdMenuOpen(function(v){return !v;});},style:{position:'absolute',top:'16px',right:'16px',width:'36px',height:'36px',borderRadius:'50%',background:'rgba(100,100,110,0.75)',backdropFilter:'blur(10px)',WebkitBackdropFilter:'blur(10px)',border:'none',color:'#fff',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:4,letterSpacing:'-1px'}},'⋮')
+        // Carousel arrows
+        pdImgs.length>1&&postDetailIdx>0?React.createElement('button',{onClick:function(e){e.stopPropagation();setPostDetailIdx(function(i){return i-1;});},style:{position:'absolute',left:'12px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.5)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3}},'‹'):null,
+        pdImgs.length>1&&postDetailIdx<pdImgs.length-1?React.createElement('button',{onClick:function(e){e.stopPropagation();setPostDetailIdx(function(i){return i+1;});},style:{position:'absolute',right:'12px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.5)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3}},'›'):null
       ),
 
-      // ── SCROLLABLE: caption + comments ──
-      React.createElement('div',{style:{flex:1,overflowY:'auto',background:'var(--bg)'}},
-        // Author row
+      // ── BELOW IMAGE: author + caption + action bar + comments ──
+      React.createElement('div',{style:{background:'var(--bg)',flexShrink:0}},
+        // Author
         React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px 6px'}},
-          pd.img?React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',overflow:'hidden',flexShrink:0}},React.createElement('img',{src:pd.img,style:{width:'100%',height:'100%',objectFit:'cover'}})):
-            React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:pd.color||'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'12px',fontWeight:700,flexShrink:0}},pd.initials),
+          pd.img?React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',overflow:'hidden',flexShrink:0}},React.createElement('img',{src:pd.img,style:{width:'100%',height:'100%',objectFit:'cover'}})):
+            React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:pd.color||'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'13px',fontWeight:700,flexShrink:0}},pd.initials),
           React.createElement('div',null,
             React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}},pd.name),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},pd.createdAt?timeAgo(pd.createdAt):(pd.time||''))
           )
         ),
         // Caption + tags
-        (pd.text||pd.tags&&pd.tags.length>0)?React.createElement('div',{style:{padding:'0 16px 12px',borderBottom:'1px solid var(--border)'}},
-          pd.text?React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.6,marginBottom:'6px'}},pd.text):null,
-          pd.tags&&pd.tags.length>0?React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px'}},
+        pd.text?React.createElement('div',{style:{padding:'0 16px 10px'}},
+          React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.6}},pd.text),
+          pd.tags&&pd.tags.length>0?React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'6px'}},
             pd.tags.map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'var(--ac)',background:'var(--acg)',padding:'2px 8px',borderRadius:'20px'}},'#'+t);})):null
         ):null,
-        // Comments list
-        React.createElement('div',{style:{padding:'10px 16px'}},
-          pdComments.length===0?React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'var(--t3)',fontSize:'13px'}},'No comments yet. Be the first!'):
-          pdComments.map(function(c){
-            return React.createElement('div',{key:c.id,style:{display:'flex',gap:'10px',marginBottom:'14px'}},
-              React.createElement('div',{style:{width:'32px',height:'32px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff'}},
-                c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
-              ),
-              React.createElement('div',{style:{flex:1,background:'var(--bg3)',borderRadius:'12px',padding:'8px 12px'}},
-                React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'3px'}},
-                  React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                  React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
-                ),
-                React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
-              )
-            );
-          })
-        )
-      ),
-
-      // ── FIXED BOTTOM: like/comment/share + input ──
-      React.createElement('div',{style:{background:'var(--bg)',borderTop:'1px solid var(--border)',flexShrink:0}},
         // Action bar
-        React.createElement('div',{style:{display:'flex',borderBottom:'1px solid var(--border)'}},
-          React.createElement('button',{onClick:function(){toggleLike(pd.id);setPostDetail(function(prev){if(!prev)return prev;var liked=!prev.liked;return Object.assign({},prev,{liked:liked,likes:prev.likes+(liked?1:-1)});});},
-            style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'12px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:pd.liked?'#B44FE8':'var(--t2)',fontWeight:pd.liked?700:400}},
+        React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}},
+          React.createElement('button',{
+            onClick:function(){toggleLike(pd.id);setPostDetail(function(prev){if(!prev)return prev;var liked=!prev.liked;return Object.assign({},prev,{liked:liked,likes:prev.likes+(liked?1:-1)});});},
+            style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'13px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:pd.liked?'#B44FE8':'var(--t2)',fontWeight:pd.liked?700:400}
+          },
             React.createElement('svg',{viewBox:'0 0 24 24',width:'20',height:'20'},
               pd.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lgpd',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
               React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:pd.liked?'url(#lgpd)':'none',stroke:pd.liked?'none':'var(--t2)',strokeWidth:'2'})
             ),
             pd.likes+' Likes'
           ),
-          React.createElement('button',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'12px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
-            '💬 '+(pdComments.length||pd.comments||0)
-          ),
-          React.createElement('button',{onClick:sharePhoto,style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'12px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},
-            '↗ Share'
-          )
+          React.createElement('button',{
+            onClick:function(){setPdShowComments(function(v){return !v;});},
+            style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'13px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:pdShowComments?'var(--ac)':'var(--t2)'}
+          },'💬 '+(pdComments.length||pd.comments||0)+' Comments'),
+          React.createElement('button',{onClick:sharePhoto,style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'13px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}},'↗ Share')
         ),
-        // Comment input
-        React.createElement('div',{style:{display:'flex',gap:'8px',padding:'10px 14px'}},
-          React.createElement('div',{style:{width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-            currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
+        // Comments section — only visible when toggled
+        pdShowComments?React.createElement('div',{style:{borderTop:'1px solid var(--border)'}},
+          // Comment list
+          React.createElement('div',{style:{padding:'10px 16px',maxHeight:'40vh',overflowY:'auto'}},
+            pdComments.length===0?React.createElement('div',{style:{textAlign:'center',padding:'16px',color:'var(--t3)',fontSize:'13px'}},'No comments yet. Be the first!'):
+            pdComments.map(function(c){
+              var cLiked=(commentLikes[c.id]||0)>0;
+              return React.createElement('div',{key:c.id,style:{display:'flex',gap:'10px',marginBottom:'14px'}},
+                React.createElement('div',{style:{width:'32px',height:'32px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff'}},
+                  c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                ),
+                React.createElement('div',{style:{flex:1}},
+                  React.createElement('div',{style:{background:'var(--bg3)',borderRadius:'12px',padding:'8px 12px',marginBottom:'4px'}},
+                    React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'3px'}},
+                      React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
+                    ),
+                    React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
+                  ),
+                  // Like + Reply row
+                  React.createElement('div',{style:{display:'flex',gap:'14px',paddingLeft:'4px'}},
+                    React.createElement('button',{onClick:function(){toggleCommentLike(c.id);},style:{background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
+                      React.createElement('span',{style:{fontSize:'14px'}},cLiked?'❤️':'🤍'),
+                      cLiked?'Liked':'Like'
+                    ),
+                    React.createElement('button',{onClick:function(){setReplyingTo(c);setCommentInput('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
+                  )
+                )
+              );
+            })
           ),
-          React.createElement('input',{value:commentInput,onChange:function(e){setCommentInput(e.target.value);},
-            onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(pd.id,commentInput);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});}},
-            placeholder:'Add a comment...',
-            style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'8px 14px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
-          }),
-          React.createElement('button',{onClick:function(){if(commentInput.trim()){submitComment(pd.id,commentInput);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});}},
-            style:{padding:'8px 16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'22px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
-          },'Post')
-        )
+          // Comment input
+          replyingTo?React.createElement('div',{style:{padding:'4px 16px 0',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',gap:'6px'}},
+            'Replying to @'+(replyingTo.user_name||'User'),
+            React.createElement('button',{onClick:function(){setReplyingTo(null);setCommentInput('');},style:{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',fontSize:'14px',padding:'0'}},'✕')
+          ):null,
+          React.createElement('div',{style:{display:'flex',gap:'8px',padding:'10px 14px'}},
+            React.createElement('div',{style:{width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+              currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
+            ),
+            React.createElement('input',{value:commentInput,onChange:function(e){setCommentInput(e.target.value);},autoFocus:true,
+              onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}},
+              placeholder:'Add a comment...',
+              style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'8px 14px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
+            }),
+            React.createElement('button',{onClick:function(){if(commentInput.trim()){submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}},
+              style:{padding:'8px 16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'22px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
+            },'Post')
+          )
+        ):null
       ),
 
-      // ── FROSTED GLASS 3-DOT MENU (center popup) ──
-      pdMenuOpen?React.createElement('div',{onClick:function(){setPdMenuOpen(false);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}},
-        React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'rgba(28,24,40,0.75)',backdropFilter:'blur(48px)',WebkitBackdropFilter:'blur(48px)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'20px',width:'260px',overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}},
-          [
-            {label:'Save Photo',icon:'⬇️',action:savePhoto},
-            {label:'Share',icon:'↗️',action:sharePhoto},
-            {label:'Report Photo',icon:'🚩',action:function(){setPdMenuOpen(false);alert('Thank you for your report. We will review it.');},danger:false},
-            {label:'Cancel',icon:'',action:function(){setPdMenuOpen(false);},danger:true}
-          ].map(function(item,i,arr){
-            return React.createElement('button',{key:item.label,onClick:item.action,style:{
-              display:'flex',alignItems:'center',gap:'12px',width:'100%',padding:'16px 20px',
-              background:'none',border:'none',borderBottom:i<arr.length-1?'1px solid rgba(255,255,255,0.08)':'none',
-              color:item.danger?'rgba(255,100,100,0.9)':'var(--text)',
-              fontSize:'15px',fontWeight:item.danger?400:500,cursor:'pointer',textAlign:'left',
-              fontFamily:'DM Sans,sans-serif'
-            }},
-              item.icon?React.createElement('span',{style:{fontSize:'16px'}},item.icon):null,
-              item.label
+      // ── FROSTED GLASS 3-DOT MENU ──
+      pdMenuOpen?React.createElement('div',{onClick:function(){setPdMenuOpen(false);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}},
+        React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'rgba(28,24,40,0.82)',backdropFilter:'blur(48px)',WebkitBackdropFilter:'blur(48px)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'20px',width:'270px',overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,0.6)'}},
+          [{label:'Save Photo',icon:'⬇️',action:savePhoto},{label:'Share',icon:'↗️',action:sharePhoto},{label:'Report Photo',icon:'🚩',action:function(){setPdMenuOpen(false);alert('Thank you. We will review this.');}},{label:'Cancel',icon:'',action:function(){setPdMenuOpen(false);},danger:true}]
+          .map(function(item,i,arr){
+            return React.createElement('button',{key:item.label,onClick:item.action,style:{display:'flex',alignItems:'center',gap:'12px',width:'100%',padding:'16px 20px',background:'none',border:'none',borderBottom:i<arr.length-1?'1px solid rgba(255,255,255,0.08)':'none',color:item.danger?'rgba(255,80,80,0.9)':'var(--text)',fontSize:'15px',fontWeight:item.danger?400:500,cursor:'pointer',textAlign:'left',fontFamily:'DM Sans,sans-serif'}},
+              item.icon?React.createElement('span',{style:{fontSize:'17px'}},item.icon):null, item.label
             );
           })
         )
@@ -1493,16 +1517,25 @@ export default function HomeScreen(props){
             React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
               commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
               commentsArr.map(function(c){
-                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+                var cLiked=(commentLikes[c.id]||0)>0;
+                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'12px'}},
                   React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
                     c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
                   ),
                   React.createElement('div',{style:{flex:1}},
-                    React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px'}},
-                      React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
+                    React.createElement('div',{style:{background:'var(--bg4)',borderRadius:'12px',padding:'7px 10px',marginBottom:'4px'}},
+                      React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'2px'}},
+                        React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                        React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
+                      ),
+                      React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
                     ),
-                    React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginTop:'2px'}},c.text)
+                    React.createElement('div',{style:{display:'flex',gap:'14px',paddingLeft:'4px'}},
+                      React.createElement('button',{onClick:function(){setCommentLikes(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
+                        React.createElement('span',{style:{fontSize:'13px'}},cLiked?'❤️':'🤍'), cLiked?'Liked':'Like'
+                      ),
+                      React.createElement('button',{onClick:function(){setCommentInput('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
+                    )
                   )
                 );
               })
