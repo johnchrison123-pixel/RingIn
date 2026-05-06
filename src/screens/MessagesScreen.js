@@ -104,7 +104,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           ) : null,
           React.createElement('div',null,
             React.createElement('div',{style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4}},m.text),
-            isMe ? React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:'right',marginTop:'2px'}}, (m.created_at?timeAgo(m.created_at)+' · ':''),(m.read?'✓✓ Seen':'✓ Sent')) : null
+            React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
+              m.created_at ? React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})) : null,
+              isMe ? React.createElement('span',{style:{color:m.read?'var(--ac)':'var(--t3)'}},m.read?'✓✓':'✓') : null
+            )
           )
         );
       }),
