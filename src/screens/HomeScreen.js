@@ -555,6 +555,8 @@ export default function HomeScreen(props){
   var compMediaTypeS=useState('photo'); var compMediaType=compMediaTypeS[0]; var setCompMediaType=compMediaTypeS[1];
   var uploadingMediaS=useState(false); var uploadingMedia=uploadingMediaS[0]; var setUploadingMedia=uploadingMediaS[1];
   var carouselIdxS=useState({}); var carouselIdx=carouselIdxS[0]; var setCarouselIdx=carouselIdxS[1];
+  var postDetailS=useState(null); var postDetail=postDetailS[0]; var setPostDetail=postDetailS[1];
+  var postDetailIdxS=useState(0); var postDetailIdx=postDetailIdxS[0]; var setPostDetailIdx=postDetailIdxS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
@@ -734,6 +736,92 @@ export default function HomeScreen(props){
   }
 
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
+
+  if(postDetail){
+    var pd=postDetail;
+    var pdImgs=pd.postImg?[pd.postImg].concat(pd.extraImgs||[]):[];
+    var pdComments=commentsCache[pd.id]||[];
+    return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'var(--bg)',zIndex:9999,display:'flex',flexDirection:'column',overflowY:'auto'}},
+      // Header
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,position:'sticky',top:0,background:'var(--bg)',zIndex:2}},
+        React.createElement('button',{onClick:function(){setPostDetail(null);setPostDetailIdx(0);},style:{background:'none',border:'none',color:'var(--text)',fontSize:'22px',cursor:'pointer',padding:'0',lineHeight:1,marginRight:'4px'}},'←'),
+        pd.img?React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',overflow:'hidden',flexShrink:0}},React.createElement('img',{src:pd.img,style:{width:'100%',height:'100%',objectFit:'cover'}})):
+          React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:pd.color,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'12px',fontWeight:700,flexShrink:0}},pd.initials),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}},pd.name),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},pd.createdAt?timeAgo(pd.createdAt):(pd.time||''))
+        )
+      ),
+      // Media
+      pd.video_url?React.createElement('div',{style:{background:'#000',width:'100%'}},
+        React.createElement('video',{src:pd.video_url,controls:true,playsInline:true,autoPlay:false,style:{width:'100%',maxHeight:'70vh',display:'block',objectFit:'contain'}})
+      ):pdImgs.length>0?React.createElement('div',{style:{background:'#000',position:'relative',width:'100%'}},
+        React.createElement('img',{src:pdImgs[postDetailIdx],style:{width:'100%',maxHeight:'70vh',objectFit:'contain',display:'block'}}),
+        pdImgs.length>1?[
+          postDetailIdx>0?React.createElement('button',{key:'prev',onClick:function(){setPostDetailIdx(function(i){return i-1;});},style:{position:'absolute',left:'10px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.6)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'‹'):null,
+          postDetailIdx<pdImgs.length-1?React.createElement('button',{key:'next',onClick:function(){setPostDetailIdx(function(i){return i+1;});},style:{position:'absolute',right:'10px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.6)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'›'):null,
+          React.createElement('div',{key:'dots',style:{position:'absolute',bottom:'10px',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'5px'}},
+            pdImgs.map(function(_,di){return React.createElement('div',{key:di,style:{width:di===postDetailIdx?'18px':'6px',height:'6px',borderRadius:'3px',background:di===postDetailIdx?'#fff':'rgba(255,255,255,0.45)',transition:'all 0.2s'}});})
+          ),
+          React.createElement('div',{key:'ctr',style:{position:'absolute',top:'10px',right:'10px',background:'rgba(0,0,0,0.6)',color:'#fff',fontSize:'11px',padding:'2px 8px',borderRadius:'10px'}},(postDetailIdx+1)+'/'+pdImgs.length)
+        ]:null
+      ):null,
+      // Caption + tags
+      React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid var(--border)'}},
+        pd.text?React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.6,marginBottom:'8px'}},pd.text):null,
+        pd.tags&&pd.tags.length>0?React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px'}},
+          pd.tags.map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'var(--ac)',background:'var(--acg)',padding:'2px 8px',borderRadius:'20px'}},'#'+t);})):null
+      ),
+      // Actions
+      React.createElement('div',{style:{display:'flex',alignItems:'center',padding:'8px 16px',borderBottom:'1px solid var(--border)',gap:'20px'}},
+        React.createElement('button',{onClick:function(){toggleLike(pd.id);},style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px',padding:'6px 0',fontSize:'13px',color:pd.liked?'#B44FE8':'var(--t2)',fontWeight:pd.liked?700:400}},
+          React.createElement('svg',{viewBox:'0 0 24 24',width:'20',height:'20'},
+            pd.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lgd'+pd.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
+            React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:pd.liked?'url(#lgd'+pd.id+')':'none',stroke:pd.liked?'none':'var(--t2)',strokeWidth:'2'})
+          ),
+          pd.likes+' Likes'
+        ),
+        React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',display:'flex',alignItems:'center',gap:'6px'}},
+          '💬 '+(pdComments.length||pd.comments||0)+' Comments'
+        )
+      ),
+      // Comments
+      React.createElement('div',{style:{flex:1,padding:'12px 16px'}},
+        pdComments.length===0?React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t3)',fontSize:'13px'}},'No comments yet. Be the first!'):
+        pdComments.map(function(c){
+          return React.createElement('div',{key:c.id,style:{display:'flex',gap:'10px',marginBottom:'14px'}},
+            React.createElement('div',{style:{width:'32px',height:'32px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff'}},
+              c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+            ),
+            React.createElement('div',{style:{flex:1,background:'var(--bg3)',borderRadius:'12px',padding:'8px 12px'}},
+              React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'3px'}},
+                React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
+              ),
+              React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
+            )
+          );
+        })
+      ),
+      // Comment input — sticky at bottom
+      React.createElement('div',{style:{display:'flex',gap:'8px',padding:'10px 14px',borderTop:'1px solid var(--border)',background:'var(--bg)',position:'sticky',bottom:0}},
+        React.createElement('div',{style:{width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+          currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
+        ),
+        React.createElement('input',{
+          value:commentInput,
+          onChange:function(e){setCommentInput(e.target.value);},
+          onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(pd.id,commentInput);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});}},
+          placeholder:'Add a comment...',
+          style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'8px 14px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
+        }),
+        React.createElement('button',{
+          onClick:function(){if(commentInput.trim()){submitComment(pd.id,commentInput);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});}},
+          style:{padding:'8px 16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'22px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
+        },'Post')
+      )
+    );
+  }
   if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
   var onlineExperts = fe.filter(function(e){return e.online===true;});
@@ -1279,17 +1367,20 @@ export default function HomeScreen(props){
           (function(){
             var allImgs = p.postImg ? [p.postImg].concat(p.extraImgs||[]) : [];
             var cidx = carouselIdx[p.id]||0;
+            function openDetail(e){e.stopPropagation();loadComments(p.id);setPostDetail(p);setPostDetailIdx(cidx);}
             if(p.video_url){
-              return React.createElement('div',{style:{position:'relative',background:'#000'}},
-                React.createElement('video',{src:p.video_url,controls:true,playsInline:true,preload:'metadata',style:{width:'100%',maxHeight:'340px',display:'block',objectFit:'contain'}})
+              return React.createElement('div',{style:{background:'#000',width:'100%'}},
+                React.createElement('video',{src:p.video_url,controls:true,playsInline:true,preload:'metadata',style:{width:'100%',maxHeight:'80vh',display:'block',objectFit:'contain'}})
               );
             }
             if(allImgs.length===0) return null;
             if(allImgs.length===1){
-              return React.createElement('img',{src:allImgs[0],alt:'post',style:{width:'100%',display:'block',maxWidth:'100%'}});
+              return React.createElement('div',{style:{background:'#000',cursor:'pointer'},onClick:openDetail},
+                React.createElement('img',{src:allImgs[0],alt:'post',style:{width:'100%',maxHeight:'80vh',objectFit:'contain',display:'block'}})
+              );
             }
-            return React.createElement('div',{style:{position:'relative',overflow:'hidden',background:'#000'}},
-              React.createElement('img',{src:allImgs[cidx],alt:'post '+cidx,style:{width:'100%',display:'block',maxWidth:'100%'}}),
+            return React.createElement('div',{style:{position:'relative',background:'#000'}},
+              React.createElement('img',{src:allImgs[cidx],alt:'post '+cidx,onClick:openDetail,style:{width:'100%',maxHeight:'80vh',objectFit:'contain',display:'block',cursor:'pointer'}}),
               cidx>0?React.createElement('button',{
                 onClick:function(e){e.stopPropagation();setCarouselIdx(function(prev){var m=Object.assign({},prev);m[p.id]=cidx-1;return m;});},
                 style:{position:'absolute',left:'8px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.55)',border:'none',color:'#fff',borderRadius:'50%',width:'30px',height:'30px',fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}
