@@ -551,6 +551,10 @@ export default function HomeScreen(props){
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
   var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
   var compImgsS=useState([]); var compImgs=compImgsS[0]; var setCompImgs=compImgsS[1];
+  var compVideoS=useState(null); var compVideo=compVideoS[0]; var setCompVideo=compVideoS[1];
+  var compMediaTypeS=useState('photo'); var compMediaType=compMediaTypeS[0]; var setCompMediaType=compMediaTypeS[1];
+  var uploadingMediaS=useState(false); var uploadingMedia=uploadingMediaS[0]; var setUploadingMedia=uploadingMediaS[1];
+  var carouselIdxS=useState({}); var carouselIdx=carouselIdxS[0]; var setCarouselIdx=carouselIdxS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
@@ -626,6 +630,7 @@ export default function HomeScreen(props){
       expertId:null,
       postImg:p.images&&p.images.length>0?p.images[0]:null,
       extraImgs:p.images&&p.images.length>1?p.images.slice(1):[],
+      video_url:p.video_url||null,
       isUserPost:true
     };
   }
@@ -734,7 +739,9 @@ export default function HomeScreen(props){
   var onlineExperts = fe.filter(function(e){return e.online===true;});
 
   function submitPost(){
-    if(!compText.trim()&&compImgs.length===0){alert('Write something or add a photo!');return;}
+    if(!compText.trim()&&compImgs.length===0&&!compVideo){alert('Write something or add a photo/video!');return;}
+    if(compVideo&&compVideo.uploading){alert('Video is still uploading, please wait...');return;}
+    if(uploadingMedia){alert('Media is still uploading, please wait...');return;}
     var session = props.session;
     if(!session||!session.user){alert('Please log in to post');return;}
     setPosting(true);
@@ -745,6 +752,7 @@ export default function HomeScreen(props){
       user_avatar: localStorage.getItem('avatar_'+session.user.id)||null,
       text: compText,
       images: compImgs,
+      video_url: compVideo&&compVideo.supaUrl?compVideo.supaUrl:null,
       tags: tags.map(function(t){return t.replace('#','');}),
       likes: [],
       comments_count: 0
@@ -793,12 +801,15 @@ export default function HomeScreen(props){
           expertId:null,
           postImg:compImgs[0]||null,
           extraImgs:compImgs.slice(1),
+          video_url:postData.video_url||null,
           isUserPost:true
         };
         setPosts(function(prev){return [newPost].concat(prev);});
       }
       setCompText('');
       setCompImgs([]);
+      setCompVideo(null);
+      setCompMediaType('photo');
       setShowComp(false);
       setPosting(false);
     });
@@ -806,18 +817,42 @@ export default function HomeScreen(props){
 
   function handleImageUpload(files){
     if(!files||files.length===0) return;
-    var newImgs = [];
-    var remaining = files.length;
-    Array.from(files).forEach(function(file){
-      var reader = new FileReader();
-      reader.onload = function(e){
-        newImgs.push(e.target.result);
-        remaining--;
-        if(remaining===0){
-          setCompImgs(function(prev){return prev.concat(newImgs);});
-        }
-      };
-      reader.readAsDataURL(file);
+    var session = props.session;
+    if(!session||!session.user){alert('Please log in to add photos');return;}
+    setUploadingMedia(true);
+    var uid = session.user.id;
+    var uploads = Array.from(files).map(function(file){
+      var ext = (file.name||'img').split('.').pop()||'jpg';
+      var path = 'posts/'+uid+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+      return sbHome.storage.from('posts-media').upload(path, file, {upsert:true}).then(function(res){
+        if(res.error){console.error('img upload err',res.error);return null;}
+        return sbHome.storage.from('posts-media').getPublicUrl(path).data.publicUrl;
+      });
+    });
+    Promise.all(uploads).then(function(urls){
+      var valid = urls.filter(Boolean);
+      setCompImgs(function(prev){return prev.concat(valid);});
+      setUploadingMedia(false);
+    });
+  }
+
+  function handleVideoUpload(file){
+    if(!file) return;
+    var session = props.session;
+    if(!session||!session.user){alert('Please log in to add video');return;}
+    var maxMB = 100;
+    if(file.size > maxMB*1024*1024){alert('Video must be under '+maxMB+'MB');return;}
+    var localUrl = URL.createObjectURL(file);
+    setCompVideo({localUrl:localUrl, supaUrl:null, uploading:true});
+    setUploadingMedia(true);
+    var uid = session.user.id;
+    var ext = (file.name||'video').split('.').pop()||'mp4';
+    var path = 'posts/'+uid+'/vid_'+Date.now()+'.'+ext;
+    sbHome.storage.from('posts-media').upload(path, file, {upsert:true}).then(function(res){
+      if(res.error){alert('Video upload failed: '+res.error.message);setCompVideo(null);setUploadingMedia(false);return;}
+      var publicUrl = sbHome.storage.from('posts-media').getPublicUrl(path).data.publicUrl;
+      setCompVideo({localUrl:localUrl, supaUrl:publicUrl, uploading:false});
+      setUploadingMedia(false);
     });
   }
 
@@ -1157,16 +1192,42 @@ export default function HomeScreen(props){
           }, "What's on your mind?")
       ),
       showComp ? React.createElement('div',null,
-        compImgs.length>0 ? React.createElement('div',{style:{display:'flex',gap:'6px',padding:'0 0 8px',flexWrap:'wrap'}},
-          compImgs.map(function(img,i){
-            return React.createElement('div',{key:i,style:{position:'relative',width:'70px',height:'70px',borderRadius:'8px',overflow:'hidden'}},
-              React.createElement('img',{src:img,style:{width:'100%',height:'100%',objectFit:'cover'}}),
-              React.createElement('button',{
-                onClick:function(){setCompImgs(function(prev){return prev.filter(function(_,idx){return idx!==i;});});},
-                style:{position:'absolute',top:'2px',right:'2px',width:'18px',height:'18px',borderRadius:'50%',background:'rgba(0,0,0,0.7)',border:'none',color:'#fff',fontSize:'10px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')
-            );
-          })
+        // Media type tabs
+        React.createElement('div',{style:{display:'flex',gap:'0',marginBottom:'8px',borderRadius:'10px',overflow:'hidden',background:'var(--bg3)',border:'1px solid var(--border)'}},
+          React.createElement('button',{
+            onClick:function(){setCompMediaType('photo');setCompVideo(null);},
+            style:{flex:1,padding:'7px',border:'none',background:compMediaType==='photo'?'linear-gradient(135deg,#7B6EFF,#E84D9A)':'transparent',color:compMediaType==='photo'?'#fff':'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer',transition:'all 0.2s'}
+          },'🖼️ Photo / Carousel'),
+          React.createElement('button',{
+            onClick:function(){setCompMediaType('video');setCompImgs([]);},
+            style:{flex:1,padding:'7px',border:'none',background:compMediaType==='video'?'linear-gradient(135deg,#7B6EFF,#E84D9A)':'transparent',color:compMediaType==='video'?'#fff':'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer',transition:'all 0.2s'}
+          },'🎬 Video')
+        ),
+        // Image previews (carousel)
+        compImgs.length>0 ? React.createElement('div',null,
+          React.createElement('div',{style:{display:'flex',gap:'6px',padding:'0 0 8px',overflowX:'auto',paddingBottom:'8px'}},
+            compImgs.map(function(img,i){
+              return React.createElement('div',{key:i,style:{position:'relative',flexShrink:0,width:'80px',height:'80px',borderRadius:'8px',overflow:'hidden',border:'2px solid var(--border)'}},
+                React.createElement('img',{src:img,style:{width:'100%',height:'100%',objectFit:'cover'}}),
+                React.createElement('button',{
+                  onClick:function(e){e.stopPropagation();setCompImgs(function(prev){return prev.filter(function(_,idx){return idx!==i;});});},
+                  style:{position:'absolute',top:'2px',right:'2px',width:'18px',height:'18px',borderRadius:'50%',background:'rgba(0,0,0,0.75)',border:'none',color:'#fff',fontSize:'10px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'✕'),
+                i===0?React.createElement('div',{style:{position:'absolute',bottom:'2px',left:'2px',background:'rgba(0,0,0,0.6)',color:'#fff',fontSize:'8px',padding:'1px 4px',borderRadius:'4px'}},'Cover'):null
+              );
+            })
+          ),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginBottom:'6px'}},compImgs.length+' photo'+(compImgs.length>1?'s — will show as carousel':''))
         ) : null,
+        // Video preview
+        compVideo ? React.createElement('div',{style:{position:'relative',marginBottom:'8px',borderRadius:'10px',overflow:'hidden',border:'2px solid var(--border)'}},
+          React.createElement('video',{src:compVideo.localUrl,controls:true,playsInline:true,style:{width:'100%',maxHeight:'200px',display:'block',background:'#000',objectFit:'contain'}}),
+          compVideo.uploading?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'13px',fontWeight:600}},'⏳ Uploading video...'):null,
+          React.createElement('button',{
+            onClick:function(){setCompVideo(null);},
+            style:{position:'absolute',top:'6px',right:'6px',width:'22px',height:'22px',borderRadius:'50%',background:'rgba(0,0,0,0.75)',border:'none',color:'#fff',fontSize:'12px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}},'✕')
+        ) : null,
+        // Upload progress
+        uploadingMedia&&!compVideo?React.createElement('div',{style:{padding:'8px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}},'⏳ Uploading photos...'):null,
         compEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px 0',borderTop:'1px solid var(--border)'}},
           EMOJIS.map(function(em){
             return React.createElement('span',{key:em,onClick:function(){setCompText(function(t){return t+em;});setCompEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
@@ -1174,22 +1235,21 @@ export default function HomeScreen(props){
         ) : null,
         React.createElement('div', {className:'comp-btns'},
           React.createElement('div', {className:'comp-att'},
-            React.createElement('label',{className:'comp-att-btn',style:{cursor:'pointer'}},
-              '🖼️ Photo',
-              React.createElement('input',{type:'file',accept:'image/*',multiple:true,style:{display:'none'},onChange:function(e){handleImageUpload(e.target.files);}})
-            ),
-            React.createElement('label',{className:'comp-att-btn',style:{cursor:'pointer'}},
-              '📎 File',
-              React.createElement('input',{type:'file',style:{display:'none'},onChange:function(e){if(e.target.files[0])alert('File sharing coming soon!');}})
+            compMediaType==='photo'?React.createElement('label',{className:'comp-att-btn',style:{cursor:'pointer',opacity:compImgs.length>=10?0.5:1}},
+              '🖼️ '+(compImgs.length===0?'Add Photo':'Add More'),
+              React.createElement('input',{type:'file',accept:'image/*',multiple:true,style:{display:'none'},disabled:compImgs.length>=10,onChange:function(e){handleImageUpload(e.target.files);}})
+            ):React.createElement('label',{className:'comp-att-btn',style:{cursor:'pointer',opacity:compVideo?0.5:1}},
+              '🎬 '+(compVideo?'Change Video':'Add Video'),
+              React.createElement('input',{type:'file',accept:'video/*',style:{display:'none'},disabled:!!compVideo,onChange:function(e){if(e.target.files[0])handleVideoUpload(e.target.files[0]);}})
             ),
             React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setCompEmoji(function(v){return !v;});}},compEmoji?'😊 Hide':'😊 Emoji'),
-            React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setShowComp(false);setCompText('');setCompImgs([]);setCompEmoji(false);}},'✕ Cancel')
+            React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setShowComp(false);setCompText('');setCompImgs([]);setCompVideo(null);setCompEmoji(false);}},'✕ Cancel')
           ),
           React.createElement('button', {
             className:'comp-post-btn',
-            disabled:posting,
+            disabled:posting||uploadingMedia||(compVideo&&compVideo.uploading),
             onClick:submitPost
-          }, posting?'Posting...':'Post')
+          }, posting?'Posting...':(uploadingMedia||(compVideo&&compVideo.uploading)?'Uploading...':'Post'))
         )
       ) : null
     ),
@@ -1216,7 +1276,38 @@ export default function HomeScreen(props){
               style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'4px 8px',position:'absolute',right:'0',top:'4px'}
             },'⋯')
           ),
-          p.postImg ? React.createElement('img',{src:p.postImg,alt:'post',style:{width:'100%',height:'280px',objectFit:'cover',display:'block'}}) : null,
+          (function(){
+            var allImgs = p.postImg ? [p.postImg].concat(p.extraImgs||[]) : [];
+            var cidx = carouselIdx[p.id]||0;
+            if(p.video_url){
+              return React.createElement('div',{style:{position:'relative',background:'#000'}},
+                React.createElement('video',{src:p.video_url,controls:true,playsInline:true,preload:'metadata',style:{width:'100%',maxHeight:'340px',display:'block',objectFit:'contain'}})
+              );
+            }
+            if(allImgs.length===0) return null;
+            if(allImgs.length===1){
+              return React.createElement('img',{src:allImgs[0],alt:'post',style:{width:'100%',display:'block',maxWidth:'100%'}});
+            }
+            return React.createElement('div',{style:{position:'relative',overflow:'hidden',background:'#000'}},
+              React.createElement('img',{src:allImgs[cidx],alt:'post '+cidx,style:{width:'100%',display:'block',maxWidth:'100%'}}),
+              cidx>0?React.createElement('button',{
+                onClick:function(e){e.stopPropagation();setCarouselIdx(function(prev){var m=Object.assign({},prev);m[p.id]=cidx-1;return m;});},
+                style:{position:'absolute',left:'8px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.55)',border:'none',color:'#fff',borderRadius:'50%',width:'30px',height:'30px',fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}
+              },'‹'):null,
+              cidx<allImgs.length-1?React.createElement('button',{
+                onClick:function(e){e.stopPropagation();setCarouselIdx(function(prev){var m=Object.assign({},prev);m[p.id]=cidx+1;return m;});},
+                style:{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.55)',border:'none',color:'#fff',borderRadius:'50%',width:'30px',height:'30px',fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}
+              },'›'):null,
+              React.createElement('div',{style:{position:'absolute',bottom:'8px',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'5px',zIndex:2}},
+                allImgs.map(function(_,di){
+                  return React.createElement('div',{key:di,style:{width:di===cidx?'18px':'6px',height:'6px',borderRadius:'3px',background:di===cidx?'#fff':'rgba(255,255,255,0.5)',transition:'all 0.2s ease'}});
+                })
+              ),
+              React.createElement('div',{style:{position:'absolute',top:'8px',right:'8px',background:'rgba(0,0,0,0.6)',color:'#fff',fontSize:'11px',padding:'2px 8px',borderRadius:'10px',zIndex:2}},
+                (cidx+1)+'/'+allImgs.length
+              )
+            );
+          })(),
           React.createElement('div', {className:'pb'},
             React.createElement('div', {className:'ptxt'}, p.text),
             React.createElement('div', null,
