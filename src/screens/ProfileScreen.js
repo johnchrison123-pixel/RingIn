@@ -128,6 +128,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var showSupportS=useState(false); var showSupport=showSupportS[0]; var setShowSupport=showSupportS[1];
   var showAcctS=useState(false); var showAcct=showAcctS[0]; var setShowAcct=showAcctS[1];
   var showNotifS=useState(false); var showNotif=showNotifS[0]; var setShowNotif=showNotifS[1];
+  var showActivityLogS=useState(false); var showActivityLog=showActivityLogS[0]; var setShowActivityLog=showActivityLogS[1];
+  var activityItemsS=useState([]); var activityItems=activityItemsS[0]; var setActivityItems=activityItemsS[1];
+  var activityLoadingS=useState(false); var activityLoading=activityLoadingS[0]; var setActivityLoading=activityLoadingS[1];
   // Account settings fields
   var acctNameS=useState(localStorage.getItem('acct_name')||''); var acctName=acctNameS[0]; var setAcctName=acctNameS[1];
   var acctTagS=useState(localStorage.getItem('acct_tag')||''); var acctTag=acctTagS[0]; var setAcctTag=acctTagS[1];
@@ -315,6 +318,20 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   useEffect(function(){
     if(!userId) return;
+    // Record login event (once per session)
+    try{
+      var loginLog=JSON.parse(localStorage.getItem('login_log_'+userId)||'[]');
+      var lastLogin=loginLog.length?new Date(loginLog[loginLog.length-1].t):null;
+      var now=new Date();
+      if(!lastLogin||now-lastLogin>3600000){// more than 1 hour gap = new session
+        loginLog.push({t:now.toISOString()});
+        localStorage.setItem('login_log_'+userId,JSON.stringify(loginLog.slice(-90)));
+      }
+    }catch(e){}
+  },[userId]);
+
+  useEffect(function(){
+    if(!userId) return;
     sbProfile.from('profiles').select('full_name,bio').eq('id',userId).single().then(function(res){
       if(res.data){
         var name = res.data.full_name || email.split('@')[0];
@@ -407,6 +424,64 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     }
     if(savedCover) setCoverUrl(savedCover);
   },[userId]);
+
+  // Activity log: fetch + realtime
+  useEffect(function(){
+    if(!userId||!showActivityLog) return;
+    setActivityLoading(true);
+
+    function buildItems(posts,comments,follows,messages){
+      var items=[];
+      // Login events from localStorage
+      var logins=[];try{logins=JSON.parse(localStorage.getItem('login_log_'+userId)||'[]');}catch(e){}
+      logins.forEach(function(l){items.push({id:'login_'+l.t,type:'login',icon:'🔑',text:'Logged in',created_at:l.t});});
+      // Posts
+      (posts||[]).forEach(function(p){items.push({id:'post_'+p.id,type:'post',icon:'📝',text:'Posted: '+(p.text||'').substring(0,60)+(p.text&&p.text.length>60?'…':''),created_at:p.created_at});});
+      // Comments
+      (comments||[]).forEach(function(c){items.push({id:'comment_'+c.id,type:'comment',icon:'💬',text:'Commented: '+(c.text||'').substring(0,60)+(c.text&&c.text.length>60?'…':''),created_at:c.created_at});});
+      // Follows
+      (follows||[]).forEach(function(f){items.push({id:'follow_'+f.id,type:'follow',icon:'👤',text:'Followed '+(f.following_name||'a user'),created_at:f.created_at});});
+      // Messages
+      (messages||[]).forEach(function(m){items.push({id:'msg_'+m.id,type:'message',icon:'✉️',text:'Sent a message'+(m.receiver_name?' to '+m.receiver_name:''),created_at:m.created_at});});
+      // Sort newest first
+      items.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+      setActivityItems(items);
+      setActivityLoading(false);
+    }
+
+    // Record current login if not already logged today
+    var today=new Date().toDateString();
+    var logins=[];try{logins=JSON.parse(localStorage.getItem('login_log_'+userId)||'[]');}catch(e){}
+    if(!logins.length||new Date(logins[logins.length-1].t).toDateString()!==today){
+      logins.push({t:new Date().toISOString()});
+      try{localStorage.setItem('login_log_'+userId,JSON.stringify(logins.slice(-90)));}catch(e){}
+    }
+
+    var posts=[],comments=[],follows=[],messages=[];
+    var done=0;
+    function check(){done++;if(done===4)buildItems(posts,comments,follows,messages);}
+    sbProfile.from('posts').select('id,text,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){posts=r.data||[];check();});
+    sbProfile.from('comments').select('id,text,post_id,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){comments=r.data||[];check();});
+    sbProfile.from('follows').select('id,following_name,created_at').eq('follower_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){follows=r.data||[];check();});
+    sbProfile.from('messages').select('id,content,created_at').eq('sender_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){messages=r.data||[];check();});
+
+    // Realtime: re-fetch on any new post, comment, follow, message
+    var ch=sbProfile.channel('activity-log-'+userId)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts',filter:'user_id=eq.'+userId},function(p){
+        setActivityItems(function(prev){return [{id:'post_'+p.new.id,type:'post',icon:'📝',text:'Posted: '+(p.new.text||'').substring(0,60),created_at:p.new.created_at}].concat(prev);});
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments',filter:'user_id=eq.'+userId},function(p){
+        setActivityItems(function(prev){return [{id:'comment_'+p.new.id,type:'comment',icon:'💬',text:'Commented: '+(p.new.text||'').substring(0,60),created_at:p.new.created_at}].concat(prev);});
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'follows',filter:'follower_id=eq.'+userId},function(p){
+        setActivityItems(function(prev){return [{id:'follow_'+p.new.id,type:'follow',icon:'👤',text:'Followed '+(p.new.following_name||'a user'),created_at:p.new.created_at}].concat(prev);});
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'sender_id=eq.'+userId},function(p){
+        setActivityItems(function(prev){return [{id:'msg_'+p.new.id,type:'message',icon:'✉️',text:'Sent a message',created_at:p.new.created_at}].concat(prev);});
+      })
+      .subscribe();
+    return function(){sbProfile.removeChannel(ch);};
+  },[userId,showActivityLog]);
 
   function uploadAvatar(file){
     if(!file||!userId) return;
@@ -581,6 +656,64 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   }
 
   // SETTINGS SCREEN
+  // ── ACTIVITY LOG SCREEN ──
+  if(showActivityLog){
+    // Group items by date label
+    var tz=localStorage.getItem('user_timezone')||'UTC';
+    function dayLabel(iso){
+      var d=new Date(iso);
+      var today=new Date();
+      var yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
+      if(d.toDateString()===today.toDateString()) return 'Today';
+      if(d.toDateString()===yesterday.toDateString()) return 'Yesterday';
+      return d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric',timeZone:tz});
+    }
+    function fmtTime(iso){return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:tz});}
+    var grouped=[];
+    var seenDays={};
+    activityItems.forEach(function(item){
+      var label=dayLabel(item.created_at);
+      if(!seenDays[label]){seenDays[label]=true;grouped.push({type:'day',label:label});}
+      grouped.push(item);
+    });
+    var typeColors={login:'rgba(39,201,106,0.15)',post:'rgba(123,110,255,0.15)',comment:'rgba(232,77,154,0.15)',follow:'rgba(245,166,35,0.15)',message:'rgba(91,79,212,0.15)'};
+    var typeBorder={login:'#27C96A',post:'#7B6EFF',comment:'#E84D9A',follow:'#F5A623',message:'#5B4FD4'};
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowActivityLog(false);setActivityItems([]);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'<'),
+        React.createElement('div',{style:{flex:1}},
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Activity Log'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},'Your recent actions in real time')
+        ),
+        activityLoading?React.createElement('div',{style:{fontSize:'12px',color:'var(--t3)'}},'Loading…'):null
+      ),
+      React.createElement('div',{style:{overflowY:'auto',flex:1,padding:'12px 18px 32px'}},
+        activityItems.length===0&&!activityLoading
+          ? React.createElement('div',{style:{textAlign:'center',padding:'60px 24px'}},
+              React.createElement('div',{style:{fontSize:'40px',marginBottom:'12px'}},'📋'),
+              React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)',marginBottom:'6px'}},'No activity yet'),
+              React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)'}},'Your posts, likes, comments and follows will appear here.')
+            )
+          : grouped.map(function(item,i){
+              if(item.type==='day'){
+                return React.createElement('div',{key:'day_'+i,style:{display:'flex',alignItems:'center',gap:'10px',margin:'18px 0 10px'}},
+                  React.createElement('div',{style:{flex:1,height:'1px',background:'var(--border)'}}),
+                  React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',whiteSpace:'nowrap',padding:'3px 10px',background:'var(--bg3)',borderRadius:'20px',border:'1px solid var(--border)'}},item.label),
+                  React.createElement('div',{style:{flex:1,height:'1px',background:'var(--border)'}})
+                );
+              }
+              return React.createElement('div',{key:item.id,style:{display:'flex',gap:'12px',marginBottom:'8px',alignItems:'flex-start'}},
+                React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'10px',background:typeColors[item.type]||'var(--bg3)',border:'1.5px solid '+(typeBorder[item.type]||'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',flexShrink:0,marginTop:'2px'}},item.icon),
+                React.createElement('div',{style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'10px 12px'}},
+                  React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4,marginBottom:'4px'}},item.text),
+                  React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},fmtTime(item.created_at))
+                )
+              );
+            })
+      )
+    );
+  }
+
   // ── SUPPORT SCREEN ──
   if(showSupport) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
@@ -1035,6 +1168,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           {icon:'👤',label:'Account Settings',sub:'Name, phone, country, timezone',fn:function(){setShowAcct(true);}},
           {icon:'🔒',label:'Privacy & Security',sub:'Password, visibility, locked profile',fn:function(){setShowPrivacy(true);}},
           {icon:'🔔',label:'Notification Settings',sub:'Manage your alerts',fn:function(){setShowNotif(true);}},
+          {icon:'📋',label:'Activity Log',sub:'Your logins, posts, likes & more',fn:function(){setShowActivityLog(true);}},
           {icon:'💬',label:'Help & Support',sub:'FAQs and contact us',fn:function(){setShowSupport(true);}},
           {icon:'⭐',label:'Rate the App',sub:'Enjoying RingIn? Let us know!',fn:function(){setShowRate(true);}},
         ].map(function(item,i,arr){
