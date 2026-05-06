@@ -24,6 +24,22 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var userId = session && session.user ? session.user.id : null;
 
   var settingsS=useState(false); var showSettings=settingsS[0]; var setShowSettings=settingsS[1];
+  var showPrivacyS=useState(false); var showPrivacy=showPrivacyS[0]; var setShowPrivacy=showPrivacyS[1];
+  var showSupportS=useState(false); var showSupport=showSupportS[0]; var setShowSupport=showSupportS[1];
+  // Privacy state
+  var profileVisS=useState(localStorage.getItem('profile_vis')||'public'); var profileVis=profileVisS[0]; var setProfileVis=profileVisS[1];
+  var lockedS=useState(localStorage.getItem('profile_locked')==='1'); var profileLocked=lockedS[0]; var setProfileLocked=lockedS[1];
+  var pwResetEmailS=useState(''); var pwResetEmail=pwResetEmailS[0]; var setPwResetEmail=pwResetEmailS[1];
+  var pwResetSentS=useState(false); var pwResetSent=pwResetSentS[0]; var setPwResetSent=pwResetSentS[1];
+  var pwResetLoadS=useState(false); var pwResetLoad=pwResetLoadS[0]; var setPwResetLoad=pwResetLoadS[1];
+  var pwResetErrS=useState(''); var pwResetErr=pwResetErrS[0]; var setPwResetErr=pwResetErrS[1];
+  var muteStoryS=useState(localStorage.getItem('mute_activity')==='1'); var muteActivity=muteStoryS[0]; var setMuteActivity=muteStoryS[1];
+  var showActivityS=useState(localStorage.getItem('show_online')!=='0'); var showOnline=showActivityS[0]; var setShowOnline=showActivityS[1];
+  // Support state
+  var supportEmailS=useState(email||''); var supportEmail=supportEmailS[0]; var setSupportEmail=supportEmailS[1];
+  var supportMsgS=useState(''); var supportMsg=supportMsgS[0]; var setSupportMsg=supportMsgS[1];
+  var supportCatS=useState('general'); var supportCat=supportCatS[0]; var setSupportCat=supportCatS[1];
+  var supportSentS=useState(false); var supportSent=supportSentS[0]; var setSupportSent=supportSentS[1];
   var tabS=useState('posts'); var activeTab=tabS[0]; var setActiveTab=tabS[1];
   var rateS=useState(0); var rateVal=rateS[0]; var setRateVal=rateS[1];
   var rateDoneS=useState(false); var rateDone=rateDoneS[0]; var setRateDone=rateDoneS[1];
@@ -433,6 +449,180 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   }
 
   // SETTINGS SCREEN
+  // ── SUPPORT SCREEN ──
+  if(showSupport) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowSupport(false);setSupportSent(false);setSupportMsg('');},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'<'),
+      React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Help & Support')
+    ),
+    supportSent
+      ? React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,padding:'40px 24px',textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:'56px',marginBottom:'16px'}},'✅'),
+          React.createElement('div',{style:{fontSize:'20px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}},'Message Sent!'),
+          React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'28px'}},'We\'ll get back to you within 24 hours.'),
+          React.createElement('button',{onClick:function(){setShowSupport(false);setSupportSent(false);setSupportMsg('');},style:{padding:'12px 32px',background:'var(--ac)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer'}},'Back to Settings')
+        )
+      : React.createElement('div',{style:{padding:'20px 18px',flex:1}},
+          // Category chips
+          React.createElement('div',{style:{marginBottom:'20px'}},
+            React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'10px',textTransform:'uppercase',letterSpacing:'0.5px'}},'What do you need help with?'),
+            React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+              [['general','General Inquiry'],['bug','Report a Bug'],['account','Account Issue'],['payment','Payment / Coins'],['call','Call Quality'],['safety','Safety Concern']].map(function(c){
+                return React.createElement('button',{key:c[0],onClick:function(){setSupportCat(c[0]);},style:{padding:'7px 14px',borderRadius:'20px',border:'1px solid '+(supportCat===c[0]?'var(--ac)':'var(--border)'),background:supportCat===c[0]?'var(--acg)':'transparent',color:supportCat===c[0]?'var(--ac)':'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer'}},c[1]);
+              })
+            )
+          ),
+          // Email
+          React.createElement('div',{style:{marginBottom:'14px'}},
+            React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Your Email'),
+            React.createElement('input',{type:'email',value:supportEmail,onChange:function(e){setSupportEmail(e.target.value);},placeholder:'your@email.com',style:{width:'100%',padding:'13px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}})
+          ),
+          // Message
+          React.createElement('div',{style:{marginBottom:'20px'}},
+            React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Describe your issue'),
+            React.createElement('textarea',{value:supportMsg,onChange:function(e){setSupportMsg(e.target.value);},placeholder:'Tell us what happened, as much detail as possible...',rows:5,style:{width:'100%',padding:'13px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',outline:'none',resize:'none',fontFamily:'inherit',lineHeight:1.6}})
+          ),
+          React.createElement('button',{
+            onClick:function(){if(supportEmail.trim()&&supportMsg.trim())setSupportSent(true);else alert('Please fill in your email and describe your issue.');},
+            style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer'}
+          },'Send Message'),
+          // FAQ section
+          React.createElement('div',{style:{marginTop:'28px'}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'12px'}},'Common Questions'),
+            [
+              ['How do I top up coins?','Go to your wallet (coin icon in the top bar) and choose a coin package.'],
+              ['How do calls work?','Tap an expert\'s profile, press Call. Coins are deducted per minute. Balance runs out = call ends.'],
+              ['Can I get a refund?','Unused coins can be refunded within 7 days of purchase. Contact us with your order details.'],
+              ['How do I become an expert?','Go to Settings → Become an Expert and fill in the form. We review in 2–3 business days.'],
+            ].map(function(faq,i){
+              return React.createElement('div',{key:i,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'13px 14px',marginBottom:'8px'}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'4px'}},faq[0]),
+                React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5}},faq[1])
+              );
+            })
+          )
+        )
+  );
+
+  // ── PRIVACY SCREEN ──
+  if(showPrivacy) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowPrivacy(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'<'),
+      React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Privacy & Security')
+    ),
+    React.createElement('div',{style:{padding:'16px 18px'}},
+
+      // ── Password Reset ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Account Security'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},'Reset Password'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'14px'}},'We\'ll send a reset link to your email address.'),
+        pwResetSent
+          ? React.createElement('div',{style:{textAlign:'center',padding:'8px'}},
+              React.createElement('div',{style:{fontSize:'28px',marginBottom:'6px'}},'📧'),
+              React.createElement('div',{style:{fontSize:'13px',color:'#27C96A',fontWeight:600}},'Reset link sent! Check your inbox.')
+            )
+          : React.createElement('div',null,
+              React.createElement('input',{type:'email',value:pwResetEmail||email,onChange:function(e){setPwResetEmail(e.target.value);},placeholder:'Email address',style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',marginBottom:'10px',fontFamily:'inherit',boxSizing:'border-box'}}),
+              React.createElement('button',{
+                disabled:pwResetLoad,
+                onClick:function(){
+                  var addr=(pwResetEmail||email).trim();
+                  if(!addr){setPwResetErr('Enter your email');return;}
+                  setPwResetLoad(true); setPwResetErr('');
+                  sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:'https://ring-in.vercel.app'}).then(function(res){
+                    setPwResetLoad(false);
+                    if(res.error) setPwResetErr(res.error.message);
+                    else setPwResetSent(true);
+                  });
+                },
+                style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwResetLoad?0.6:1}
+              },pwResetLoad?'Sending…':'Send Reset Link'),
+              pwResetErr?React.createElement('div',{style:{fontSize:'12px',color:'#ef4747',marginTop:'8px',textAlign:'center'}},pwResetErr):null
+            )
+      ),
+
+      // ── Profile Visibility ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Profile Visibility'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
+        [['public','🌐','Public','Anyone can see your profile and posts'],['followers','👥','Followers Only','Only people you follow back can see your posts'],['private','🔒','Private','Only you can see your posts']].map(function(opt,i,arr){
+          var isSelected=profileVis===opt[0];
+          return React.createElement('div',{key:opt[0],onClick:function(){setProfileVis(opt[0]);localStorage.setItem('profile_vis',opt[0]);},style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer',background:isSelected?'rgba(123,110,255,0.08)':'transparent'}},
+            React.createElement('span',{style:{fontSize:'20px'}},opt[1]),
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},opt[2]),
+              React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}},opt[3])
+            ),
+            React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',border:'2px solid '+(isSelected?'var(--ac)':'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
+              isSelected?React.createElement('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:'var(--ac)'}}):null
+            )
+          );
+        })
+      ),
+
+      // ── Lock Profile ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Follow Requests'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'}},
+          React.createElement('div',null,
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},'🔏 Lock My Profile'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',lineHeight:1.5,maxWidth:'230px'}},'People must send a follow request and you must approve it before they can see your posts and full profile.')
+          ),
+          React.createElement('button',{
+            onClick:function(){var n=!profileLocked;setProfileLocked(n);localStorage.setItem('profile_locked',n?'1':'0');},
+            style:{width:'46px',height:'26px',borderRadius:'13px',background:profileLocked?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
+          },
+            React.createElement('div',{style:{position:'absolute',top:'3px',left:profileLocked?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+          )
+        ),
+        profileLocked?React.createElement('div',{style:{marginTop:'8px',padding:'8px 10px',background:'rgba(123,110,255,0.1)',borderRadius:'8px',fontSize:'11px',color:'var(--ac)'}},'✓ Profile is locked — new followers need your approval')
+          :React.createElement('div',{style:{marginTop:'8px',padding:'8px 10px',background:'var(--bg4)',borderRadius:'8px',fontSize:'11px',color:'var(--t3)'}},'Profile is open — anyone can follow without approval')
+      ),
+
+      // ── Activity Status ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Activity'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
+        [
+          {label:'Show Online Status',sub:'Others can see when you\'re active',val:showOnline,toggle:function(){var n=!showOnline;setShowOnline(n);localStorage.setItem('show_online',n?'1':'0');sbProfile.from('profiles').update({is_online:n?true:false}).eq('id',userId).then(function(){});}},
+          {label:'Mute Activity Feed',sub:'Your likes and comments won\'t appear in others\' feeds',val:muteActivity,toggle:function(){var n=!muteActivity;setMuteActivity(n);localStorage.setItem('mute_activity',n?'1':'0');}},
+        ].map(function(row,i,arr){
+          return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}},
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'2px'}},row.label),
+              React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},row.sub)
+            ),
+            React.createElement('button',{
+              onClick:row.toggle,
+              style:{width:'46px',height:'26px',borderRadius:'13px',background:row.val?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
+            },
+              React.createElement('div',{style:{position:'absolute',top:'3px',left:row.val?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+            )
+          );
+        })
+      ),
+
+      // ── Blocked users (placeholder) ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Content Controls'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
+        [
+          {icon:'🚫',label:'Blocked Users',sub:'Manage people you\'ve blocked',fn:function(){alert('Blocked users list coming soon.');}},
+          {icon:'🔇',label:'Muted Words',sub:'Hide posts containing specific words',fn:function(){alert('Muted words coming soon.');}},
+          {icon:'📥',label:'Download My Data',sub:'Get a copy of your RingIn data',fn:function(){alert('Data export coming soon.');}},
+          {icon:'🗑️',label:'Delete Account',sub:'Permanently remove your account',fn:function(){if(window.confirm('Are you sure? This cannot be undone.'))alert('Please contact support@ringin.app to delete your account.');},red:true},
+        ].map(function(item,i,arr){
+          return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}},
+            React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},item.icon),
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:item.red?'#ef4747':'var(--text)',marginBottom:'1px'}},item.label),
+              React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},item.sub)
+            ),
+            React.createElement('span',{style:{color:'var(--t3)',fontSize:'14px'}},'>')
+          );
+        })
+      )
+    )
+  );
+
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
       React.createElement('button',{onClick:function(){setShowSettings(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'<'),
@@ -454,8 +644,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         [
           {icon:'🎓',label:'Become an Expert',sub:'Start earning by sharing your knowledge',fn:function(){alert('Expert application coming soon!');}},
           {icon:'🔔',label:'Notifications',sub:'Manage your alerts',fn:function(){alert('Notification settings coming soon!');}},
-          {icon:'🔒',label:'Privacy & Security',sub:'Password, 2FA, data',fn:function(){alert('Privacy settings coming soon!');}},
-          {icon:'💬',label:'Help & Support',sub:'FAQs and contact us',fn:function(){window.open('mailto:support@ringin.app');}},
+          {icon:'🔒',label:'Privacy & Security',sub:'Password, visibility, locked profile',fn:function(){setShowPrivacy(true);}},
+          {icon:'💬',label:'Help & Support',sub:'FAQs and contact us',fn:function(){setShowSupport(true);}},
           {icon:'⭐',label:'Rate the App',sub:'Enjoying RingIn? Let us know!',fn:function(){setShowRate(true);}},
         ].map(function(item,i){
           return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
