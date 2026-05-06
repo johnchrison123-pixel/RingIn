@@ -434,13 +434,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       var items=[];
       // Login events from localStorage
       var logins=[];try{logins=JSON.parse(localStorage.getItem('login_log_'+userId)||'[]');}catch(e){}
-      logins.forEach(function(l){items.push({id:'login_'+l.t,type:'login',icon:'🔑',text:'Logged in',created_at:l.t});});
+      logins.forEach(function(l){items.push({id:'login_'+l.t,type:'login',icon:'🔑',text:'Signed in to RingIn',created_at:l.t});});
       // Posts
-      (posts||[]).forEach(function(p){items.push({id:'post_'+p.id,type:'post',icon:'📝',text:'Posted: '+(p.text||'').substring(0,60)+(p.text&&p.text.length>60?'…':''),created_at:p.created_at});});
+      (posts||[]).forEach(function(p){items.push({id:'post_'+p.id,type:'post',icon:'📝',text:'Shared a post with everyone',created_at:p.created_at});});
       // Comments
-      (comments||[]).forEach(function(c){items.push({id:'comment_'+c.id,type:'comment',icon:'💬',text:'Commented: '+(c.text||'').substring(0,60)+(c.text&&c.text.length>60?'…':''),created_at:c.created_at});});
+      (comments||[]).forEach(function(c){items.push({id:'comment_'+c.id,type:'comment',icon:'💬',text:'Commented on a post',created_at:c.created_at});});
       // Follows
-      (follows||[]).forEach(function(f){items.push({id:'follow_'+f.id,type:'follow',icon:'👤',text:'Followed '+(f.following_name||'a user'),created_at:f.created_at});});
+      (follows||[]).forEach(function(f){items.push({id:'follow_'+f.id,type:'follow',icon:'👤',text:'Followed '+(f.following_name||'someone'),created_at:f.created_at});});
       // Messages
       (messages||[]).forEach(function(m){items.push({id:'msg_'+m.id,type:'message',icon:'✉️',text:'Sent a message'+(m.receiver_name?' to '+m.receiver_name:''),created_at:m.created_at});});
       // Sort newest first
@@ -468,16 +468,16 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     // Realtime: re-fetch on any new post, comment, follow, message
     var ch=sbProfile.channel('activity-log-'+userId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts',filter:'user_id=eq.'+userId},function(p){
-        setActivityItems(function(prev){return [{id:'post_'+p.new.id,type:'post',icon:'📝',text:'Posted: '+(p.new.text||'').substring(0,60),created_at:p.new.created_at}].concat(prev);});
+        setActivityItems(function(prev){return [{id:'post_'+p.new.id,type:'post',icon:'📝',text:'Shared a post with everyone',created_at:p.new.created_at}].concat(prev);});
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments',filter:'user_id=eq.'+userId},function(p){
-        setActivityItems(function(prev){return [{id:'comment_'+p.new.id,type:'comment',icon:'💬',text:'Commented: '+(p.new.text||'').substring(0,60),created_at:p.new.created_at}].concat(prev);});
+        setActivityItems(function(prev){return [{id:'comment_'+p.new.id,type:'comment',icon:'💬',text:'Commented on a post',created_at:p.new.created_at}].concat(prev);});
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'follows',filter:'follower_id=eq.'+userId},function(p){
-        setActivityItems(function(prev){return [{id:'follow_'+p.new.id,type:'follow',icon:'👤',text:'Followed '+(p.new.following_name||'a user'),created_at:p.new.created_at}].concat(prev);});
+        setActivityItems(function(prev){return [{id:'follow_'+p.new.id,type:'follow',icon:'👤',text:'Followed '+(p.new.following_name||'someone'),created_at:p.new.created_at}].concat(prev);});
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'sender_id=eq.'+userId},function(p){
-        setActivityItems(function(prev){return [{id:'msg_'+p.new.id,type:'message',icon:'✉️',text:'Sent a message',created_at:p.new.created_at}].concat(prev);});
+        setActivityItems(function(prev){return [{id:'msg_'+p.new.id,type:'message',icon:'✉️',text:'Sent a message'+(p.new.receiver_name?' to '+p.new.receiver_name:''),created_at:p.new.created_at}].concat(prev);});
       })
       .subscribe();
     return function(){sbProfile.removeChannel(ch);};
