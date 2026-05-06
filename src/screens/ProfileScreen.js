@@ -732,10 +732,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('input',{autoFocus:true,type:'text',value:acctCountrySearch,onChange:function(e){setAcctCountrySearch(e.target.value);},placeholder:'Search country...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
           React.createElement('button',{onClick:function(){setShowCountryPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
-        React.createElement('div',{style:{overflowY:'auto',maxHeight:'60vh'}},
+        React.createElement('div',{key:'clist-'+acctCountrySearch,style:{overflowY:'auto',flex:1}},
           COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase());}).map(function(c){
             var sel=acctCountry===c[1];
-            return React.createElement('div',{key:c[0],onClick:function(){setAcctCountry(c[1]);localStorage.setItem('acct_country',c[1]);setShowCountryPicker(false);},
+            return React.createElement('div',{key:c[0],onClick:function(){setAcctCountry(c[1]);localStorage.setItem('acct_country',c[1]);setShowCountryPicker(false);setAcctCountrySearch('');},
               style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
               React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
               sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
@@ -754,10 +754,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('input',{autoFocus:true,type:'text',value:acctCountrySearch,onChange:function(e){setAcctCountrySearch(e.target.value);},placeholder:'Search country code...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
           React.createElement('button',{onClick:function(){setShowPhoneCodePicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
-        React.createElement('div',{style:{overflowY:'auto',maxHeight:'60vh'}},
+        React.createElement('div',{key:'plist-'+acctCountrySearch,style:{overflowY:'auto',flex:1}},
           COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase())||c[2].includes(acctCountrySearch);}).map(function(c){
             var sel=acctPhoneCode===c[2];
-            return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);},
+            return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
               style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
               React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
               React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
@@ -776,10 +776,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('input',{autoFocus:true,type:'text',value:tzSearch,onChange:function(e){setTzSearch(e.target.value);},placeholder:'Search timezone...',style:{flex:1,padding:'10px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}}),
           React.createElement('button',{onClick:function(){setShowTzPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
-        React.createElement('div',{style:{overflowY:'auto',maxHeight:'60vh'}},
+        React.createElement('div',{key:'tzlist-'+tzSearch,style:{overflowY:'auto',flex:1}},
           TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());}).map(function(t){
             var sel=acctTz===t[0];
-            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);localStorage.setItem('user_timezone',t[0]);setShowTzPicker(false);},
+            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);localStorage.setItem('user_timezone',t[0]);setShowTzPicker(false);setTzSearch('');},
               style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
               React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
               sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
