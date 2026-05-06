@@ -337,7 +337,7 @@ export function UserProfileView(props){
             (p.tags||[]).map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'#7B6EFF'}},('#'+t));})
           ):null,
           // Post image
-          p.img?React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',height:'220px',objectFit:'cover',display:'block'}}):null,
+          p.img?React.createElement('img',{src:p.img,alt:'post',style:{width:'100%',display:'block',maxWidth:'100%'}}):null,
           // Actions
           React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
             React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
