@@ -10,22 +10,11 @@ var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medi
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
-// Instagram/Facebook/LinkedIn style post image — auto-measures ratio, clamps 4:5 → 1.91:1, covers perfectly
+// Facebook-style post image — full natural size, zero cropping
 function PostImage(props){
-  var src=props.src; var onClick=props.onClick; var style=props.style||{};
-  var ratioS=useState(1); var ratio=ratioS[0]; var setRatio=ratioS[1];
-  function onLoad(e){
-    var w=e.target.naturalWidth; var h=e.target.naturalHeight;
-    if(!w||!h) return;
-    // Clamp: portrait max 4:5 (0.8), landscape max 1.91:1 — same as all major platforms
-    var r=Math.min(Math.max(w/h, 0.8), 1.91);
-    setRatio(r);
-  }
-  return React.createElement('div',{
-    style:Object.assign({width:'100%',aspectRatio:String(ratio),overflow:'hidden',background:'#111',cursor:onClick?'pointer':'default'},style),
-    onClick:onClick
-  },
-    React.createElement('img',{src:src,onLoad:onLoad,style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}})
+  var src=props.src; var onClick=props.onClick;
+  return React.createElement('div',{style:{width:'100%',background:'#000',cursor:onClick?'pointer':'default'},onClick:onClick},
+    React.createElement('img',{src:src,style:{width:'100%',height:'auto',display:'block',maxWidth:'100%'}})
   );
 }
 
@@ -355,8 +344,10 @@ export function UserProfileView(props){
           (p.tags||[]).length>0?React.createElement('div',{style:{padding:'0 12px 8px',display:'flex',flexWrap:'wrap',gap:'4px'}},
             (p.tags||[]).map(function(t){return React.createElement('span',{key:t,style:{fontSize:'11px',color:'#7B6EFF'}},('#'+t));})
           ):null,
-          // Post image
-          p.img?React.createElement(PostImage,{src:p.img}):null,
+          // Post image — full natural size, no crop
+          p.img?React.createElement('div',{style:{width:'100%',background:'#000'}},
+            React.createElement('img',{src:p.img,style:{width:'100%',height:'auto',display:'block',maxWidth:'100%'}})
+          ):null,
           // Actions
           React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)'}},
             React.createElement('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
@@ -771,11 +762,11 @@ export default function HomeScreen(props){
           React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},pd.createdAt?timeAgo(pd.createdAt):(pd.time||''))
         )
       ),
-      // Media
-      pd.video_url?React.createElement('div',{style:{width:'100%',aspectRatio:'16/9',background:'#000',overflow:'hidden'}},
-        React.createElement('video',{src:pd.video_url,controls:true,playsInline:true,autoPlay:false,style:{width:'100%',height:'100%',objectFit:'contain',display:'block'}})
-      ):pdImgs.length>0?React.createElement('div',{style:{position:'relative'}},
-        React.createElement(PostImage,{src:pdImgs[postDetailIdx]}),
+      // Media — full black screen, image fully contained (no crop), like Facebook tap view
+      pd.video_url?React.createElement('div',{style:{width:'100%',background:'#000',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'200px'}},
+        React.createElement('video',{src:pd.video_url,controls:true,playsInline:true,autoPlay:false,style:{width:'100%',maxHeight:'75vh',display:'block',objectFit:'contain'}})
+      ):pdImgs.length>0?React.createElement('div',{style:{position:'relative',background:'#000',display:'flex',alignItems:'center',justifyContent:'center'}},
+        React.createElement('img',{src:pdImgs[postDetailIdx],style:{width:'100%',height:'auto',maxHeight:'75vh',objectFit:'contain',display:'block'}}),
         pdImgs.length>1?[
           postDetailIdx>0?React.createElement('button',{key:'prev',onClick:function(){setPostDetailIdx(function(i){return i-1;});},style:{position:'absolute',left:'10px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.6)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}},'‹'):null,
           postDetailIdx<pdImgs.length-1?React.createElement('button',{key:'next',onClick:function(){setPostDetailIdx(function(i){return i+1;});},style:{position:'absolute',right:'10px',top:'50%',transform:'translateY(-50%)',background:'rgba(0,0,0,0.6)',border:'none',color:'#fff',borderRadius:'50%',width:'36px',height:'36px',fontSize:'20px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}},'›'):null,
