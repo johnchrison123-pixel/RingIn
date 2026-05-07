@@ -2,7 +2,7 @@
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
-import {playSound,previewSound,saveSoundPrefs,SOUND_META} from '../utils/soundEngine';
+import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META} from '../utils/soundEngine';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var COUNTRIES=[
@@ -608,6 +608,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   function toggleLike(id){
     if(!userId) return;
     if(typeof id !== 'string') return;
+    // Play sound — compute direction from current state
+    var currentPost=myPosts.find(function(p){return p.id===id;});
+    if(currentPost){if(!currentPost.liked)playSound('like');else playUnlikeSound();}
     // Instant UI update
     setMyPosts(function(prev){return prev.map(function(p){
       if(p.id!==id) return p;

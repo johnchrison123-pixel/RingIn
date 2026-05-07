@@ -3,6 +3,7 @@ import React,{useState,useEffect} from 'react';
 import CallScreen from './CallScreen';
 import {createClient} from '@supabase/supabase-js';
 import {useFollow} from './useFollow';
+import {playSound} from '../utils/soundEngine';
 var sb = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 const EXPERTS = [
@@ -98,7 +99,7 @@ export default function SearchScreen(props){
     ),
     React.createElement('div',{style:{padding:'0 18px 8px'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'7px 11px',display:'flex',alignItems:'center',gap:'7px'}},
-        React.createElement('input',{placeholder:'Search experts...',style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'}})
+        React.createElement('input',{placeholder:'Search experts...',style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'},onChange:function(){playSound('typing');}})
       )
     ),
     React.createElement('div',{style:{padding:'0 18px 14px'}},
