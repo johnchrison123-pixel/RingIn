@@ -133,7 +133,8 @@ export function UserProfileView(props){
   var commentsCacheUS=useState({}); var commentsCacheU=commentsCacheUS[0]; var setCommentsCacheU=commentsCacheUS[1];
   var commentInputUS=useState(''); var commentInputU=commentInputUS[0]; var setCommentInputU=commentInputUS[1];
   var commentLoadingUS=useState(false); var commentLoadingU=commentLoadingUS[0]; var setCommentLoadingU=commentLoadingUS[1];
-  var commentLikesUS=useState({}); var commentLikesU=commentLikesUS[0]; var setCommentLikesU=commentLikesUS[1];
+  var commentLikesUS=useState(function(){try{var s=localStorage.getItem('ringin_clikes');return s?JSON.parse(s):{}}catch(e){return {};}}); var commentLikesU=commentLikesUS[0]; var _setCommentLikesU=commentLikesUS[1];
+  function setCommentLikesU(updater){_setCommentLikesU(function(prev){var next=typeof updater==='function'?updater(prev):updater;try{localStorage.setItem('ringin_clikes',JSON.stringify(next));}catch(e){}return next;});}
 
   // Post menu state
   var postMenuUS=useState(null); var postMenuU=postMenuUS[0]; var setPostMenuU=postMenuUS[1];
@@ -194,18 +195,25 @@ export function UserProfileView(props){
 
   function toggleLikeU(pid){
     if(!currentUserId) return;
+    // Capture snapshot before optimistic update for correct revert
+    var snapU = userPosts.find(function(p){return p.id===pid;});
+    if(!snapU) return;
+    var newLikedU = !snapU.liked;
+    playLikeSound(newLikedU);
+    var newIdsU = newLikedU ? [currentUserId].concat(snapU.likedByIds||[]) : (snapU.likedByIds||[]).filter(function(id){return id!==currentUserId;});
     setUserPosts(function(prev){
       return prev.map(function(p){
         if(p.id!==pid) return p;
-        var newLiked=!p.liked;
-        playLikeSound(newLiked);
-        var newLikedByIds=newLiked?[currentUserId].concat(p.likedByIds||[]):(p.likedByIds||[]).filter(function(id){return id!==currentUserId;});
-        return Object.assign({},p,{liked:newLiked,likes:newLiked?p.likes+1:Math.max(0,p.likes-1),likedByIds:newLikedByIds});
+        return Object.assign({},p,{liked:newLikedU,likes:newLikedU?snapU.likes+1:Math.max(0,snapU.likes-1),likedByIds:newIdsU});
       });
     });
     sbHome.rpc('toggle_like',{post_id:pid,user_id:currentUserId}).then(function(r){
       if(r.error){
-        setUserPosts(function(prev){return prev.map(function(p){if(p.id!==pid)return p;var rev=!p.liked;return Object.assign({},p,{liked:rev,likes:rev?p.likes+1:Math.max(0,p.likes-1)});});});
+        // Revert to exact pre-toggle snapshot
+        setUserPosts(function(prev){return prev.map(function(p){
+          if(p.id!==pid) return p;
+          return Object.assign({},p,{liked:snapU.liked,likes:snapU.likes,likedByIds:snapU.likedByIds});
+        });});
       }
     });
   }
@@ -583,26 +591,33 @@ export default function HomeScreen(props){
     var userAvatar = userId ? localStorage.getItem("avatar_"+userId) : null;
     if(!userId) return;
     if(typeof pid !== "string") return;
-    var postOwner = null;
+    // Capture snapshot BEFORE optimistic update — used for correct revert + notification
+    var snap = posts.find(function(p){return p.id===pid;});
+    if(!snap) return;
+    var newLiked = !snap.liked;
+    playLikeSound(newLiked);
+    var newLikes = newLiked ? snap.likes+1 : Math.max(0,snap.likes-1);
+    var newLikedBy = newLiked ? [userName].concat(snap.likedBy||[]) : (snap.likedBy||[]).filter(function(n){return n!==userName;});
+    var newLikedByIds = newLiked ? [userId].concat(snap.likedByIds||[]) : (snap.likedByIds||[]).filter(function(id){return id!==userId;});
     setPosts(function(prev){
       return prev.map(function(p){
         if(p.id!==pid) return p;
-        postOwner = p;
-        var newLiked = !p.liked;
-        playLikeSound(newLiked);
-        var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
-        var newLikedBy = newLiked ? [userName].concat(p.likedBy||[]) : (p.likedBy||[]).filter(function(n){return n!==userName;});
-        var newLikedByIds = newLiked ? [userId].concat(p.likedByIds||[]) : (p.likedByIds||[]).filter(function(id){return id!==userId;});
         return Object.assign({},p,{liked:newLiked,likes:newLikes,likedBy:newLikedBy,likedByIds:newLikedByIds});
       });
     });
     sbHome.rpc("toggle_like",{post_id:pid,user_id:userId}).then(function(r){
-      if(r.error){console.log("like error:",r.error);
-        setPosts(function(prev){return prev.map(function(p){if(p.id!==pid)return p;return Object.assign({},p,{liked:!p.liked,likes:p.liked?p.likes+1:Math.max(0,p.likes-1)});});});
+      if(r.error){
+        console.log("like error:",r.error);
+        // Revert to exact pre-toggle snapshot — not a re-toggle, a true restore
+        setPosts(function(prev){return prev.map(function(p){
+          if(p.id!==pid) return p;
+          return Object.assign({},p,{liked:snap.liked,likes:snap.likes,likedBy:snap.likedBy,likedByIds:snap.likedByIds});
+        });});
         return;
       }
-      if(postOwner&&!postOwner.liked&&postOwner.userId&&postOwner.userId!==userId){
-        sbHome.from("notifications").insert([{user_id:postOwner.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
+      // Notify post owner only when this was a like action (snap.liked was false)
+      if(!snap.liked&&snap.userId&&snap.userId!==userId){
+        sbHome.from("notifications").insert([{user_id:snap.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
     });
   }
@@ -655,7 +670,8 @@ export default function HomeScreen(props){
   var pdMenuOpenS=useState(false); var pdMenuOpen=pdMenuOpenS[0]; var setPdMenuOpen=pdMenuOpenS[1];
   var pdUiVisibleS=useState(true); var pdUiVisible=pdUiVisibleS[0]; var setPdUiVisible=pdUiVisibleS[1];
   var pdShowCommentsS=useState(false); var pdShowComments=pdShowCommentsS[0]; var setPdShowComments=pdShowCommentsS[1];
-  var commentLikesS=useState({}); var commentLikes=commentLikesS[0]; var setCommentLikes=commentLikesS[1];
+  var commentLikesS=useState(function(){try{var s=localStorage.getItem('ringin_clikes');return s?JSON.parse(s):{}}catch(e){return {};}}); var commentLikes=commentLikesS[0]; var _setCommentLikes=commentLikesS[1];
+  function setCommentLikes(updater){_setCommentLikes(function(prev){var next=typeof updater==='function'?updater(prev):updater;try{localStorage.setItem('ringin_clikes',JSON.stringify(next));}catch(e){}return next;});}
   var replyingToS=useState(null); var replyingTo=replyingToS[0]; var setReplyingTo=replyingToS[1];
   var collapsedThreadsS=useState({}); var collapsedThreads=collapsedThreadsS[0]; var setCollapsedThreads=collapsedThreadsS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
@@ -685,6 +701,7 @@ export default function HomeScreen(props){
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+uid},function(p){
         setNotifs(function(prev){return [p.new].concat(prev);});
         setUnreadNotif(function(n){return n+1;});
+        playSound('notification');
       }).subscribe();
     return function(){sbHome.removeChannel(ch);};
   },[props.session]);
@@ -839,7 +856,9 @@ export default function HomeScreen(props){
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
 
   if(postDetail){
-    var pd=postDetail;
+    // Always derive pd from live posts array so likes/comments stay in sync
+    // with realtime updates and toggleLike — falls back to snapshot if removed
+    var pd=posts.find(function(p){return p.id===postDetail.id;})||postDetail;
     var pdImgs=pd.postImg?[pd.postImg].concat(pd.extraImgs||[]):[];
     var pdComments=commentsCache[pd.id]||[];
     var curImg=pdImgs[postDetailIdx]||null;
@@ -901,7 +920,7 @@ export default function HomeScreen(props){
         // Action bar
         React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}},
           React.createElement('button',{
-            onClick:function(){var liked=!pd.liked;playLikeSound(liked);toggleLike(pd.id);setPostDetail(function(prev){if(!prev)return prev;return Object.assign({},prev,{liked:liked,likes:prev.likes+(liked?1:-1)});});},
+            onClick:function(){toggleLike(pd.id);},
             style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'13px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:pd.liked?'#B44FE8':'var(--t2)',fontWeight:pd.liked?700:400}
           },
             React.createElement('svg',{viewBox:'0 0 24 24',width:'20',height:'20'},
