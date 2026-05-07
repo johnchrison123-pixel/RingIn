@@ -384,7 +384,7 @@ export function UserProfileView(props){
     // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
-      React.createElement('button',{onClick:props.onBack,style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.45)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 14px',cursor:'pointer',fontSize:'12px',fontWeight:600,zIndex:3}},'< Back'),
+      React.createElement('button',{onClick:props.onBack,style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.45)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 14px',cursor:'pointer',fontSize:'12px',fontWeight:600,zIndex:3}},'← Back'),
       React.createElement('div',{
         onClick:function(){if(avatarUrl)setShowAvatarBigU(true);},
         style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:4,cursor:avatarUrl?'pointer':'default'}},
@@ -1495,7 +1495,7 @@ export default function HomeScreen(props){
         uploadingMedia&&!compVideo?React.createElement('div',{style:{padding:'8px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}},'⏳ Uploading photos...'):null,
         compEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px 0',borderTop:'1px solid var(--border)'}},
           EMOJIS.map(function(em){
-            return React.createElement('span',{key:em,onClick:function(){setCompText(function(t){return t+em;});setCompEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
+            return React.createElement('span',{key:em,onClick:function(){setCompText(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
           })
         ) : null,
         React.createElement('div', {className:'comp-btns'},

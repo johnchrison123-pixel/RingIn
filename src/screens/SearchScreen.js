@@ -17,7 +17,7 @@ const EXPERTS = [
 function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded}){
   var isFollowing = following ? !!following[String(expert.id)] : false;
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
-    React.createElement('button',{onClick:onBack,style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 10px',cursor:'pointer',fontSize:'12px',fontWeight:600}},'< Back'),
+    React.createElement('button',{onClick:onBack,style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.4)',border:'none',borderRadius:'20px',color:'#fff',padding:'5px 10px',cursor:'pointer',fontSize:'12px',fontWeight:600}},'← Back'),
     React.createElement('div',{style:{position:'relative',flexShrink:0}},
       React.createElement('div',{style:{height:'140px',background:expert.cover}}),
       React.createElement('div',{style:{position:'absolute',bottom:'-36px',left:'16px',width:'72px',height:'72px',borderRadius:'50%',background:expert.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#fff',border:'4px solid #09090E',zIndex:5,overflow:'hidden'}},

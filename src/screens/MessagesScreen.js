@@ -237,7 +237,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   },
     // ── Header ──
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'<'),
+      React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'←'),
       React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
         convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
       ),
@@ -340,7 +340,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
     showEmoji?React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}},
       ['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','😢','😮','🥳','😎','🙏','💯','😅','🤣'].map(function(em){
-        return React.createElement('span',{key:em,onClick:function(){setTxt(function(t){return t+em;});setShowEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
+        return React.createElement('span',{key:em,onClick:function(){setTxt(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
       })
     ):null,
 
