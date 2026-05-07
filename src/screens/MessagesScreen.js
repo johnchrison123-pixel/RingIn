@@ -150,24 +150,27 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       var pct=Math.min(elapsed,1);
       setLevHoldPct(pct);
       var now=Date.now();
-      // Progressive haptic tiers — intensity + frequency both grow with pct
-      // tier 0: nothing (<30%)
-      // tier 1: 30-50% — feather tap every 420ms  [4]
-      // tier 2: 50-70% — light double every 300ms  [7,5,7]
-      // tier 3: 70-90% — medium roll every 220ms   [12,7,12,7]
-      // tier 4: 90-99% — strong burst every 160ms  [18,9,18,9,18]
-      // tier 5: 100%   — max explosion every 140ms  [25,12,25,12,25,12,25]
+      // Progressive haptic tiers — durations in ms must be felt by the motor (50ms+)
+      // interval must be >= pattern total so the buzz completes before the next call
+      // tier 1: 30-50%  gentle single tap    [55]          every 700ms
+      // tier 2: 50-70%  soft double          [65,45,65]    every 600ms  (175ms pat)
+      // tier 3: 70-90%  medium roll          [90,50,90,50] every 500ms  (280ms pat)
+      // tier 4: 90-99%  strong triple        [110,55,110,55,110] every 500ms (440ms pat)
+      // tier 5: 100%    max continuous burst [130,65,130,65,130,65,130] every 700ms
       var tier,interval,pattern;
-      if(pct>=1)      {tier=5;interval=140;pattern=[25,12,25,12,25,12,25];}
-      else if(pct>=0.9){tier=4;interval=160;pattern=[18,9,18,9,18];}
-      else if(pct>=0.7){tier=3;interval=220;pattern=[12,7,12,7];}
-      else if(pct>=0.5){tier=2;interval=300;pattern=[7,5,7];}
-      else if(pct>=0.3){tier=1;interval=420;pattern=[4];}
+      if(pct>=1)       {tier=5;interval=700; pattern=[130,65,130,65,130,65,130];}
+      else if(pct>=0.9){tier=4;interval=500; pattern=[110,55,110,55,110];}
+      else if(pct>=0.7){tier=3;interval=500; pattern=[90,50,90,50];}
+      else if(pct>=0.5){tier=2;interval=600; pattern=[65,45,65];}
+      else if(pct>=0.3){tier=1;interval=700; pattern=[55];}
       else             {tier=0;interval=9999;pattern=null;}
       if(pattern&&(now-lastHapticRef.current)>=interval){
-        // If tier jumped (escalating), give an immediate stronger pulse
-        if(tier>lastHapticTierRef.current&&tier>=2){hapticPulse(pattern);}
-        else{hapticPulse(pattern);}
+        // On tier escalation give an immediate bump so the jump is felt
+        if(tier>lastHapticTierRef.current&&tier>=2){
+          hapticPulse(pattern);
+        } else {
+          hapticPulse(pattern);
+        }
         lastHapticRef.current=now;
         lastHapticTierRef.current=tier;
       }
@@ -192,6 +195,14 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   }
 
   function leverRelease(){
+    // Release thump — intensity matches how far the hold went
+    var relPct=levHoldPct;
+    if(relPct>=0.9)     hapticPulse([120,60,120]);   // full send — strong double
+    else if(relPct>=0.5)hapticPulse([80,40,80]);      // partial — medium double
+    else if(relPct>=0.3)hapticPulse([60]);             // light tap
+    // (below 30% — no reaction)
+    //
+    // Original leverRelease body:
     var active=levActive;
     deactivateLever();
     setLevY(0);
