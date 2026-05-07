@@ -6,6 +6,48 @@ import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
 
+// ── Sound effects using Web Audio API ──
+var _audioCtx=null;
+function getAudioCtx(){
+  if(!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  return _audioCtx;
+}
+function playKeyClick(){
+  var ctx=getAudioCtx(); if(!ctx) return;
+  var o=ctx.createOscillator(); var g=ctx.createGain();
+  o.connect(g); g.connect(ctx.destination);
+  o.type='sine'; o.frequency.setValueAtTime(1200,ctx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(800,ctx.currentTime+0.04);
+  g.gain.setValueAtTime(0.08,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.06);
+  o.start(ctx.currentTime); o.stop(ctx.currentTime+0.06);
+}
+function playLikeSound(liked){
+  var ctx=getAudioCtx(); if(!ctx) return;
+  if(liked){
+    // Heart pop — two quick rising tones
+    [0,0.07].forEach(function(delay,i){
+      var o=ctx.createOscillator(); var g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type='sine';
+      o.frequency.setValueAtTime(520+i*80,ctx.currentTime+delay);
+      o.frequency.exponentialRampToValueAtTime(820+i*80,ctx.currentTime+delay+0.12);
+      g.gain.setValueAtTime(0.12,ctx.currentTime+delay);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+delay+0.18);
+      o.start(ctx.currentTime+delay); o.stop(ctx.currentTime+delay+0.18);
+    });
+  } else {
+    // Unlike — soft descending tone
+    var o=ctx.createOscillator(); var g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type='sine'; o.frequency.setValueAtTime(600,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(380,ctx.currentTime+0.1);
+    g.gain.setValueAtTime(0.07,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);
+    o.start(ctx.currentTime); o.stop(ctx.currentTime+0.12);
+  }
+}
+
 var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medical'},{id:'tech',icon:'Tech',label:'Tech'},{id:'legal',icon:'Law',label:'Legal'},{id:'trades',icon:'Fix',label:'Trades'},{id:'mental',icon:'Mind',label:'Mental'}];
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
@@ -51,7 +93,7 @@ function renderCommentThread(nodes,depth,opts){
           ),
           React.createElement('div',{style:{display:'flex',gap:'16px',paddingLeft:'4px',alignItems:'center',marginBottom:'6px'}},
             React.createElement('button',{
-              onClick:function(){opts.setLikes(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},
+              onClick:function(){var next=(opts.likes[c.id]||0)===0;playLikeSound(next);opts.setLikes(function(prev){var m=Object.assign({},prev);m[c.id]=next?1:0;return m;});},
               style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'2px 0',fontFamily:'DM Sans,sans-serif',fontWeight:cLiked?600:400}
             },React.createElement('span',{style:{fontSize:'13px'}},cLiked?'❤️':'🤍'),cLiked?'Liked':'Like'),
             React.createElement('button',{
@@ -191,6 +233,7 @@ export function UserProfileView(props){
       return prev.map(function(p){
         if(p.id!==pid) return p;
         var newLiked=!p.liked;
+        playLikeSound(newLiked);
         var newLikedByIds=newLiked?[currentUserId].concat(p.likedByIds||[]):(p.likedByIds||[]).filter(function(id){return id!==currentUserId;});
         return Object.assign({},p,{liked:newLiked,likes:newLiked?p.likes+1:Math.max(0,p.likes-1),likedByIds:newLikedByIds});
       });
@@ -476,7 +519,7 @@ export function UserProfileView(props){
               ),
               React.createElement('input',{
                 value:commentInputU,
-                onChange:function(e){setCommentInputU(e.target.value);},
+                onChange:function(e){playKeyClick();setCommentInputU(e.target.value);},
                 onKeyDown:function(e){if(e.key==='Enter'&&commentInputU.trim()){submitCommentU(p.id,commentInputU);}},
                 placeholder:'Write a comment...',
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
@@ -581,6 +624,7 @@ export default function HomeScreen(props){
         if(p.id!==pid) return p;
         postOwner = p;
         var newLiked = !p.liked;
+        playLikeSound(newLiked);
         var newLikes = newLiked ? p.likes+1 : Math.max(0,p.likes-1);
         var newLikedBy = newLiked ? [userName].concat(p.likedBy||[]) : (p.likedBy||[]).filter(function(n){return n!==userName;});
         var newLikedByIds = newLiked ? [userId].concat(p.likedByIds||[]) : (p.likedByIds||[]).filter(function(id){return id!==userId;});
@@ -892,7 +936,7 @@ export default function HomeScreen(props){
         // Action bar
         React.createElement('div',{style:{display:'flex',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}},
           React.createElement('button',{
-            onClick:function(){toggleLike(pd.id);setPostDetail(function(prev){if(!prev)return prev;var liked=!prev.liked;return Object.assign({},prev,{liked:liked,likes:prev.likes+(liked?1:-1)});});},
+            onClick:function(){var liked=!pd.liked;playLikeSound(liked);toggleLike(pd.id);setPostDetail(function(prev){if(!prev)return prev;return Object.assign({},prev,{liked:liked,likes:prev.likes+(liked?1:-1)});});},
             style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'13px 4px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:pd.liked?'#B44FE8':'var(--t2)',fontWeight:pd.liked?700:400}
           },
             React.createElement('svg',{viewBox:'0 0 24 24',width:'20',height:'20'},
@@ -930,7 +974,7 @@ export default function HomeScreen(props){
             React.createElement('div',{style:{width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
               currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
             ),
-            React.createElement('input',{value:commentInput,onChange:function(e){setCommentInput(e.target.value);},autoFocus:true,
+            React.createElement('input',{value:commentInput,onChange:function(e){playKeyClick();setCommentInput(e.target.value);},autoFocus:true,
               onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}},
               placeholder:'Add a comment...',
               style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'8px 14px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
@@ -1583,7 +1627,7 @@ export default function HomeScreen(props){
               ),
               React.createElement('input',{
                 value:commentInput,
-                onChange:function(e){setCommentInput(e.target.value);},
+                onChange:function(e){playKeyClick();setCommentInput(e.target.value);},
                 onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(p.id,commentInput);}},
                 placeholder:'Write a comment...',
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
