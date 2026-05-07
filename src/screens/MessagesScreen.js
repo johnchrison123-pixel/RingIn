@@ -279,15 +279,17 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         zIndex:10,
         background:'transparent'
       }},
-        // shine — crisp radial gradient, no blur
+        // shine — radial gradient matching heart/thumbs colors, fades to transparent outward
         React.createElement('div',{style:{
           position:'absolute',
-          width:(200+levHoldPct*260)+'px',
-          height:(200+levHoldPct*260)+'px',
+          width:(220+levHoldPct*240)+'px',
+          height:(220+levHoldPct*240)+'px',
           borderRadius:'50%',
           background:levActive==='heart'
-            ?'radial-gradient(circle, rgba(255,255,255,'+(0.18+levHoldPct*0.16)+') 0%, rgba(232,77,154,'+(0.55+levHoldPct*0.35)+') 28%, rgba(123,110,255,'+(0.28+levHoldPct*0.22)+') 58%, transparent 78%)'
-            :'radial-gradient(circle, rgba(255,255,255,'+(0.18+levHoldPct*0.16)+') 0%, rgba(123,110,255,'+(0.55+levHoldPct*0.35)+') 28%, rgba(232,77,154,'+(0.18+levHoldPct*0.16)+') 58%, transparent 78%)',
+            // heart: #7B6EFF center → #E84D9A mid → fully transparent edge
+            ?'radial-gradient(circle, rgba(123,110,255,'+(0.72+levHoldPct*0.28)+') 0%, rgba(180,80,210,'+(0.55+levHoldPct*0.25)+') 22%, rgba(232,77,154,'+(0.45+levHoldPct*0.25)+') 44%, rgba(232,77,154,'+(0.18+levHoldPct*0.12)+') 65%, transparent 82%)'
+            // thumbs: purple centre → fade out
+            :'radial-gradient(circle, rgba(123,110,255,'+(0.72+levHoldPct*0.28)+') 0%, rgba(123,110,255,'+(0.45+levHoldPct*0.25)+') 35%, rgba(123,110,255,'+(0.15+levHoldPct*0.1)+') 62%, transparent 80%)',
           transition:'none'
         }}),
         // emoji / heart centered, growing
