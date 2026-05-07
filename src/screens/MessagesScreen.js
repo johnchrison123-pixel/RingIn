@@ -104,38 +104,18 @@ function playReleaseMs(isHeart){
   }
 }
 
-// 3D heart — 20% darker signature gradient + highlight + shadow + specular dot
-var HEART_PATH='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z';
+// Flat gradient heart — strong signature colors #7B6EFF → #E84D9A
 function HeartSvg(props){
   var sz=props.size||60; var id=props.id||'hsvg';
-  // 20% darker: #7B6EFF→#6258CC, #E84D9A→#BA3E7B
   return React.createElement('svg',{viewBox:'0 0 24 24',width:sz,height:sz,style:{overflow:'visible'}},
     React.createElement('defs',null,
-      // base gradient — 20% darker
-      React.createElement('linearGradient',{id:id+'b',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
-        React.createElement('stop',{offset:'0%',stopColor:'#6258CC'}),
-        React.createElement('stop',{offset:'100%',stopColor:'#BA3E7B'})
-      ),
-      // top-left highlight (light source)
-      React.createElement('radialGradient',{id:id+'hl',cx:'32%',cy:'26%',r:'48%'},
-        React.createElement('stop',{offset:'0%',stopColor:'rgba(255,255,255,0.52)'}),
-        React.createElement('stop',{offset:'55%',stopColor:'rgba(255,255,255,0.12)'}),
-        React.createElement('stop',{offset:'100%',stopColor:'rgba(255,255,255,0)'})
-      ),
-      // bottom-right shadow (depth)
-      React.createElement('radialGradient',{id:id+'sh',cx:'78%',cy:'82%',r:'52%'},
-        React.createElement('stop',{offset:'0%',stopColor:'rgba(0,0,0,0.38)'}),
-        React.createElement('stop',{offset:'100%',stopColor:'rgba(0,0,0,0)'})
+      React.createElement('linearGradient',{id:id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
+        React.createElement('stop',{offset:'0%',stopColor:'#8B7FFF'}),
+        React.createElement('stop',{offset:'50%',stopColor:'#D455AA'}),
+        React.createElement('stop',{offset:'100%',stopColor:'#F03D8E'})
       )
     ),
-    // base fill
-    React.createElement('path',{d:HEART_PATH,fill:'url(#'+id+'b)',stroke:'none'}),
-    // highlight layer
-    React.createElement('path',{d:HEART_PATH,fill:'url(#'+id+'hl)',stroke:'none'}),
-    // shadow layer
-    React.createElement('path',{d:HEART_PATH,fill:'url(#'+id+'sh)',stroke:'none'}),
-    // specular dot — small bright ellipse top-left
-    React.createElement('ellipse',{cx:'8.2',cy:'7.8',rx:'2.2',ry:'1.3',fill:'rgba(255,255,255,0.38)',transform:'rotate(-35,8.2,7.8)'})
+    React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#'+id+')',stroke:'none'})
   );
 }
 
@@ -300,7 +280,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         zIndex:10,
         background:'transparent'
       }},
-        // shine — smooth dissolve, no hard edge, colors match heart gradient
+        // shine — 40% opacity at center, dissolves to 5% at edge, heart gradient colors
         React.createElement('div',{style:{
           position:'absolute',
           width:(230+levHoldPct*250)+'px',
@@ -308,23 +288,23 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           borderRadius:'50%',
           background:levActive==='heart'
             ?'radial-gradient(circle,'
-              +'rgba(98,88,204,'+(0.82+levHoldPct*0.18)+') 0%,'
-              +'rgba(130,72,200,'+(0.68+levHoldPct*0.18)+') 10%,'
-              +'rgba(165,60,175,'+(0.54+levHoldPct*0.18)+') 20%,'
-              +'rgba(200,55,148,'+(0.40+levHoldPct*0.18)+') 32%,'
-              +'rgba(186,62,123,'+(0.28+levHoldPct*0.14)+') 45%,'
-              +'rgba(186,62,123,'+(0.15+levHoldPct*0.10)+') 58%,'
-              +'rgba(150,60,140,'+(0.07+levHoldPct*0.06)+') 70%,'
-              +'rgba(120,80,180,0.03) 82%,'
-              +'transparent 92%)'
+              +'rgba(139,127,255,0.60) 0%,'
+              +'rgba(180,80,200,0.50) 14%,'
+              +'rgba(212,85,170,0.40) 28%,'
+              +'rgba(240,61,142,0.28) 42%,'
+              +'rgba(220,70,155,0.16) 57%,'
+              +'rgba(180,80,200,0.08) 70%,'
+              +'rgba(139,127,255,0.04) 82%,'
+              +'rgba(139,127,255,0.01) 90%,'
+              +'transparent 96%)'
             :'radial-gradient(circle,'
-              +'rgba(98,88,204,'+(0.82+levHoldPct*0.18)+') 0%,'
-              +'rgba(98,88,204,'+(0.60+levHoldPct*0.18)+') 18%,'
-              +'rgba(98,88,204,'+(0.38+levHoldPct*0.14)+') 36%,'
-              +'rgba(98,88,204,'+(0.18+levHoldPct*0.10)+') 55%,'
-              +'rgba(98,88,204,'+(0.06+levHoldPct*0.05)+') 72%,'
-              +'rgba(98,88,204,0.02) 84%,'
-              +'transparent 93%)',
+              +'rgba(139,127,255,0.60) 0%,'
+              +'rgba(139,127,255,0.45) 20%,'
+              +'rgba(139,127,255,0.28) 40%,'
+              +'rgba(139,127,255,0.13) 58%,'
+              +'rgba(139,127,255,0.05) 74%,'
+              +'rgba(139,127,255,0.01) 87%,'
+              +'transparent 95%)',
           transition:'none'
         }}),
         // emoji / heart centered, growing
