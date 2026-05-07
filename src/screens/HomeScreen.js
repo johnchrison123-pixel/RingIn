@@ -444,7 +444,7 @@ export function UserProfileView(props){
           ),
           // Comment section
           openCommentsU===p.id?React.createElement('div',{style:{borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
-            React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
+            React.createElement('div',{style:{maxHeight:'360px',overflowY:'auto',padding:'8px 12px'}},
               commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
               commentsArr.map(function(c){
                 var cLiked=(commentLikes[c.id]||0)>0;
@@ -1562,7 +1562,7 @@ export default function HomeScreen(props){
           ),
           // Comment section
           openComments===p.id?React.createElement('div',{style:{borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
-            React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
+            React.createElement('div',{style:{maxHeight:'360px',overflowY:'auto',padding:'8px 12px'}},
               commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
               renderCommentThread(buildCommentTree(commentsArr),0,{
                 likes:commentLikes,
