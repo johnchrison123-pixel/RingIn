@@ -227,7 +227,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var openCommentsProfS=useState(null); var openCommentsProf=openCommentsProfS[0]; var setOpenCommentsProf=openCommentsProfS[1];
   var commentsCacheProfS=useState({}); var commentsCacheProf=commentsCacheProfS[0]; var setCommentsCacheProf=commentsCacheProfS[1];
   var commentInputProfS=useState(''); var commentInputProf=commentInputProfS[0]; var setCommentInputProf=commentInputProfS[1];
-  var commentLikesProfS=useState({}); var commentLikesProf=commentLikesProfS[0]; var setCommentLikesProf=commentLikesProfS[1];
+  var commentLikesProfS=useState(function(){try{var s=localStorage.getItem('ringin_clikes');return s?JSON.parse(s):{}}catch(e){return {};}}); var commentLikesProf=commentLikesProfS[0]; var _setCommentLikesProf=commentLikesProfS[1];
+  function setCommentLikesProf(updater){_setCommentLikesProf(function(prev){var next=typeof updater==='function'?updater(prev):updater;try{localStorage.setItem('ringin_clikes',JSON.stringify(next));}catch(e){}return next;});}
   var postMenuProfS=useState(null); var postMenuProf=postMenuProfS[0]; var setPostMenuProf=postMenuProfS[1];
 
   function prefetchLikerNamesProf(postsArr, existingNames){
