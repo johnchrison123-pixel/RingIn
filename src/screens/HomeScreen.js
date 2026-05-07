@@ -10,6 +10,66 @@ var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medi
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
+// Build threaded tree from flat comments array using parent_comment_id
+function buildCommentTree(comments){
+  var map={};
+  comments.forEach(function(c){map[c.id]=Object.assign({},c,{replies:[]});});
+  var roots=[];
+  comments.forEach(function(c){
+    if(c.parent_comment_id&&map[c.parent_comment_id]){
+      map[c.parent_comment_id].replies.push(map[c.id]);
+    } else {
+      roots.push(map[c.id]);
+    }
+  });
+  return roots;
+}
+
+// Recursive threaded comment renderer
+// opts: {likes, setLikes, onReply, collapsed, setCollapsed, timeAgo}
+function renderCommentThread(nodes,depth,opts){
+  if(!nodes||!nodes.length) return null;
+  return nodes.map(function(c){
+    var cLiked=(opts.likes[c.id]||0)>0;
+    var hasReplies=c.replies&&c.replies.length>0;
+    var isCollapsed=!!opts.collapsed[c.id];
+    var indent=Math.min(depth,2)*44;
+    var avSize=depth===0?32:26;
+    return React.createElement(React.Fragment,{key:c.id},
+      React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'6px',marginLeft:indent+'px',position:'relative'}},
+        depth>0?React.createElement('div',{style:{position:'absolute',left:'-22px',top:'4px',bottom:0,width:'2px',background:'rgba(255,255,255,0.08)',borderRadius:'1px'}}):null,
+        React.createElement('div',{style:{width:avSize+'px',height:avSize+'px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:depth===0?'11px':'9px',fontWeight:700,color:'#fff',marginTop:'2px'}},
+          c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+        ),
+        React.createElement('div',{style:{flex:1,minWidth:0}},
+          React.createElement('div',{style:{background:depth===0?'var(--bg3)':'rgba(255,255,255,0.06)',borderRadius:'14px',padding:'8px 12px',marginBottom:'4px'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'2px',flexWrap:'wrap'}},
+              React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
+              React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?opts.timeAgo(c.created_at):'')
+            ),
+            React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.45,wordBreak:'break-word'}},c.text)
+          ),
+          React.createElement('div',{style:{display:'flex',gap:'16px',paddingLeft:'4px',alignItems:'center',marginBottom:'6px'}},
+            React.createElement('button',{
+              onClick:function(){opts.setLikes(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'2px 0',fontFamily:'DM Sans,sans-serif',fontWeight:cLiked?600:400}
+            },React.createElement('span',{style:{fontSize:'13px'}},cLiked?'❤️':'🤍'),cLiked?'Liked':'Like'),
+            React.createElement('button',{
+              onClick:function(){opts.onReply(c);},
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--t3)',padding:'2px 0',fontFamily:'DM Sans,sans-serif'}
+            },'Reply'),
+            hasReplies?React.createElement('button',{
+              onClick:function(){opts.setCollapsed(function(prev){var m=Object.assign({},prev);m[c.id]=!m[c.id];return m;});},
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--ac)',padding:'2px 0',fontFamily:'DM Sans,sans-serif'}
+            },isCollapsed?'▶ '+c.replies.length+' repl'+(c.replies.length===1?'y':'ies'):'▼ Hide replies'):null
+          )
+        )
+      ),
+      hasReplies&&!isCollapsed?renderCommentThread(c.replies,depth+1,opts):null
+    );
+  });
+}
+
 // Feed post image — 4:5 ratio (Instagram standard), objectFit:cover centers subject, crops dark edges
 function PostImage(props){
   var src=props.src; var onClick=props.onClick;
@@ -466,6 +526,7 @@ export default function HomeScreen(props){
 
   function submitComment(postId,text){
     if(!text.trim()||!currentUserId) return;
+    var parentId=replyingTo?replyingTo.id:null;
     var newComment={
       id:Date.now()+'_local',
       post_id:postId,
@@ -473,6 +534,7 @@ export default function HomeScreen(props){
       user_name:currentUserName,
       user_avatar:currentUserAvatar,
       text:text.trim(),
+      parent_comment_id:parentId||null,
       created_at:new Date().toISOString(),
       likes:[]
     };
@@ -482,13 +544,15 @@ export default function HomeScreen(props){
       return Object.assign({},prev,{[postId]:cur});
     });
     setCommentInput('');
+    setReplyingTo(null);
     setPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:(p.comments||0)+1}):p;});});
     sbHome.from('comments').insert({
       post_id:postId,
       user_id:currentUserId,
       user_name:currentUserName,
       user_avatar:currentUserAvatar||null,
-      text:text.trim()
+      text:text.trim(),
+      parent_comment_id:parentId||null
     }).select().then(function(res){
       if(res.data&&res.data[0]){
         setCommentsCache(function(prev){
@@ -584,6 +648,7 @@ export default function HomeScreen(props){
   var pdShowCommentsS=useState(false); var pdShowComments=pdShowCommentsS[0]; var setPdShowComments=pdShowCommentsS[1];
   var commentLikesS=useState({}); var commentLikes=commentLikesS[0]; var setCommentLikes=commentLikesS[1];
   var replyingToS=useState(null); var replyingTo=replyingToS[0]; var setReplyingTo=replyingToS[1];
+  var collapsedThreadsS=useState({}); var collapsedThreads=collapsedThreadsS[0]; var setCollapsedThreads=collapsedThreadsS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
@@ -844,33 +909,16 @@ export default function HomeScreen(props){
         ),
         // Comments section — only visible when toggled
         pdShowComments?React.createElement('div',{style:{borderTop:'1px solid var(--border)'}},
-          // Comment list
+          // Comment list — threaded
           React.createElement('div',{style:{padding:'10px 16px',maxHeight:'40vh',overflowY:'auto'}},
             pdComments.length===0?React.createElement('div',{style:{textAlign:'center',padding:'16px',color:'var(--t3)',fontSize:'13px'}},'No comments yet. Be the first!'):
-            pdComments.map(function(c){
-              var cLiked=(commentLikes[c.id]||0)>0;
-              return React.createElement('div',{key:c.id,style:{display:'flex',gap:'10px',marginBottom:'14px'}},
-                React.createElement('div',{style:{width:'32px',height:'32px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff'}},
-                  c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
-                ),
-                React.createElement('div',{style:{flex:1}},
-                  React.createElement('div',{style:{background:'var(--bg3)',borderRadius:'12px',padding:'8px 12px',marginBottom:'4px'}},
-                    React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'3px'}},
-                      React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                      React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
-                    ),
-                    React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
-                  ),
-                  // Like + Reply row
-                  React.createElement('div',{style:{display:'flex',gap:'14px',paddingLeft:'4px'}},
-                    React.createElement('button',{onClick:function(){toggleCommentLike(c.id);},style:{background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
-                      React.createElement('span',{style:{fontSize:'14px'}},cLiked?'❤️':'🤍'),
-                      cLiked?'Liked':'Like'
-                    ),
-                    React.createElement('button',{onClick:function(){setReplyingTo(c);setCommentInput('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
-                  )
-                )
-              );
+            renderCommentThread(buildCommentTree(pdComments),0,{
+              likes:commentLikes,
+              setLikes:setCommentLikes,
+              onReply:function(c){setReplyingTo(c);setCommentInput('@'+(c.user_name||'User')+' ');},
+              collapsed:collapsedThreads,
+              setCollapsed:setCollapsedThreads,
+              timeAgo:timeAgoUtil
             })
           ),
           // Comment input
@@ -1516,30 +1564,19 @@ export default function HomeScreen(props){
           openComments===p.id?React.createElement('div',{style:{borderTop:'1px solid var(--border)',background:'var(--bg4)'}},
             React.createElement('div',{style:{maxHeight:'200px',overflowY:'auto',padding:'8px 12px'}},
               commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
-              commentsArr.map(function(c){
-                var cLiked=(commentLikes[c.id]||0)>0;
-                return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'12px'}},
-                  React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                    c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
-                  ),
-                  React.createElement('div',{style:{flex:1}},
-                    React.createElement('div',{style:{background:'var(--bg4)',borderRadius:'12px',padding:'7px 10px',marginBottom:'4px'}},
-                      React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'6px',marginBottom:'2px'}},
-                        React.createElement('span',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)'}},(c.user_name||'User')),
-                        React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.created_at?timeAgoUtil(c.created_at):'')
-                      ),
-                      React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
-                    ),
-                    React.createElement('div',{style:{display:'flex',gap:'14px',paddingLeft:'4px'}},
-                      React.createElement('button',{onClick:function(){setCommentLikes(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
-                        React.createElement('span',{style:{fontSize:'13px'}},cLiked?'❤️':'🤍'), cLiked?'Liked':'Like'
-                      ),
-                      React.createElement('button',{onClick:function(){setCommentInput('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
-                    )
-                  )
-                );
+              renderCommentThread(buildCommentTree(commentsArr),0,{
+                likes:commentLikes,
+                setLikes:setCommentLikes,
+                onReply:function(c){setReplyingTo(c);setCommentInput('@'+(c.user_name||'User')+' ');},
+                collapsed:collapsedThreads,
+                setCollapsed:setCollapsedThreads,
+                timeAgo:timeAgoUtil
               })
             ),
+            replyingTo?React.createElement('div',{style:{padding:'2px 12px 0',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',gap:'6px'}},
+              'Replying to @'+(replyingTo.user_name||'User'),
+              React.createElement('button',{onClick:function(){setReplyingTo(null);setCommentInput('');},style:{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',fontSize:'14px',padding:'0'}},'✕')
+            ):null,
             React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
               React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
                 currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
