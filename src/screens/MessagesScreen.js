@@ -280,32 +280,35 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         zIndex:10,
         background:'transparent'
       }},
-        // shine — 40% opacity at center, dissolves to 5% at edge, heart gradient colors
+        // shine — grows with heart, fully dissolves to rgba(0) at 100%
         React.createElement('div',{style:{
           position:'absolute',
-          width:(230+levHoldPct*250)+'px',
-          height:(230+levHoldPct*250)+'px',
+          width:(overlayScale*160)+'px',
+          height:(overlayScale*160)+'px',
           borderRadius:'50%',
           background:levActive==='heart'
             ?'radial-gradient(circle,'
               +'rgba(139,127,255,0.60) 0%,'
-              +'rgba(180,80,200,0.50) 14%,'
-              +'rgba(212,85,170,0.40) 28%,'
-              +'rgba(240,61,142,0.28) 42%,'
-              +'rgba(220,70,155,0.16) 57%,'
-              +'rgba(180,80,200,0.08) 70%,'
-              +'rgba(139,127,255,0.04) 82%,'
-              +'rgba(139,127,255,0.01) 90%,'
-              +'transparent 96%)'
+              +'rgba(170,90,210,0.52) 10%,'
+              +'rgba(200,75,180,0.42) 20%,'
+              +'rgba(225,70,155,0.32) 30%,'
+              +'rgba(240,61,142,0.22) 42%,'
+              +'rgba(220,70,150,0.13) 54%,'
+              +'rgba(180,80,200,0.07) 65%,'
+              +'rgba(150,100,220,0.03) 76%,'
+              +'rgba(139,127,255,0.01) 87%,'
+              +'rgba(139,127,255,0.00) 100%)'
             :'radial-gradient(circle,'
               +'rgba(139,127,255,0.60) 0%,'
-              +'rgba(139,127,255,0.45) 20%,'
-              +'rgba(139,127,255,0.28) 40%,'
-              +'rgba(139,127,255,0.13) 58%,'
-              +'rgba(139,127,255,0.05) 74%,'
-              +'rgba(139,127,255,0.01) 87%,'
-              +'transparent 95%)',
-          transition:'none'
+              +'rgba(139,127,255,0.48) 12%,'
+              +'rgba(139,127,255,0.34) 26%,'
+              +'rgba(139,127,255,0.20) 40%,'
+              +'rgba(139,127,255,0.10) 54%,'
+              +'rgba(139,127,255,0.04) 68%,'
+              +'rgba(139,127,255,0.01) 82%,'
+              +'rgba(139,127,255,0.00) 100%)',
+          transition:'none',
+          pointerEvents:'none'
         }}),
         // emoji / heart centered, growing
         React.createElement('div',{style:{
