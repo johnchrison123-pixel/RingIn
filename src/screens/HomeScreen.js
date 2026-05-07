@@ -34,25 +34,23 @@ function playEmojiClick(){
 }
 function playPostSound(){
   var ctx=getAudioCtx(); if(!ctx) return;
-  // Swoosh: sawtooth sweep up
+  // Smooth sine swoosh → sweet tick (–45%)
   var sw=ctx.createOscillator(); var swg=ctx.createGain();
-  var bpf=ctx.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=900; bpf.Q.value=0.8;
-  sw.connect(bpf); bpf.connect(swg); swg.connect(ctx.destination);
-  sw.type='sawtooth'; sw.frequency.setValueAtTime(320,ctx.currentTime);
-  sw.frequency.exponentialRampToValueAtTime(1100,ctx.currentTime+0.18);
+  sw.connect(swg); swg.connect(ctx.destination);
+  sw.type='sine'; sw.frequency.setValueAtTime(380,ctx.currentTime);
+  sw.frequency.exponentialRampToValueAtTime(980,ctx.currentTime+0.18);
   swg.gain.setValueAtTime(0.0,ctx.currentTime);
-  swg.gain.linearRampToValueAtTime(0.18,ctx.currentTime+0.08);
-  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
-  sw.start(ctx.currentTime); sw.stop(ctx.currentTime+0.18);
-  // Tick: clean sine at the end
+  swg.gain.linearRampToValueAtTime(0.099,ctx.currentTime+0.07);
+  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
+  sw.start(ctx.currentTime); sw.stop(ctx.currentTime+0.20);
   var tk=ctx.createOscillator(); var tkg=ctx.createGain();
   tk.connect(tkg); tkg.connect(ctx.destination);
   tk.type='sine'; tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
-  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.22);
+  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.24);
   tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
-  tkg.gain.linearRampToValueAtTime(0.14,ctx.currentTime+0.17);
-  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
-  tk.start(ctx.currentTime+0.14); tk.stop(ctx.currentTime+0.28);
+  tkg.gain.linearRampToValueAtTime(0.077,ctx.currentTime+0.18);
+  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
+  tk.start(ctx.currentTime+0.14); tk.stop(ctx.currentTime+0.30);
 }
 function playLikeSound(liked){
   var ctx=getAudioCtx(); if(!ctx) return;

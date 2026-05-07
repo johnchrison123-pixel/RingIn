@@ -31,17 +31,18 @@ var _swooshRef={osc:null,gain:null};
 function startSwooshMs(isHeart){
   stopSwooshMs();
   var ctx=getMsCtx();if(!ctx)return;
+  // Smooth sine-wave swoosh — no harsh sawtooth, just a warm rising tone
   var osc=ctx.createOscillator();
   var gain=ctx.createGain();
   var filter=ctx.createBiquadFilter();
   osc.connect(filter);filter.connect(gain);gain.connect(ctx.destination);
-  filter.type='bandpass';filter.frequency.value=isHeart?600:400;filter.Q.value=2;
-  osc.type='sawtooth';
-  osc.frequency.setValueAtTime(isHeart?180:140,ctx.currentTime);
-  osc.frequency.linearRampToValueAtTime(isHeart?560:380,ctx.currentTime+2.0);
+  filter.type='lowpass';filter.frequency.value=isHeart?2200:1800;filter.Q.value=0.5;
+  osc.type='sine';
+  osc.frequency.setValueAtTime(isHeart?260:220,ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(isHeart?680:520,ctx.currentTime+2.0);
   gain.gain.setValueAtTime(0.001,ctx.currentTime);
-  gain.gain.linearRampToValueAtTime(0.07,ctx.currentTime+0.25);
-  gain.gain.linearRampToValueAtTime(0.14,ctx.currentTime+2.0);
+  gain.gain.linearRampToValueAtTime(0.038,ctx.currentTime+0.35);
+  gain.gain.linearRampToValueAtTime(0.055,ctx.currentTime+2.0);
   osc.start();
   _swooshRef.osc=osc;_swooshRef.gain=gain;_swooshRef.ctx=ctx;
 }
@@ -49,9 +50,9 @@ function stopSwooshMs(){
   if(_swooshRef.osc){
     try{
       var ctx=_swooshRef.ctx;
-      _swooshRef.gain.gain.setValueAtTime(_swooshRef.gain.gain.value||0.05,ctx.currentTime);
-      _swooshRef.gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.08);
-      _swooshRef.osc.stop(ctx.currentTime+0.09);
+      _swooshRef.gain.gain.setValueAtTime(_swooshRef.gain.gain.value||0.03,ctx.currentTime);
+      _swooshRef.gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.12);
+      _swooshRef.osc.stop(ctx.currentTime+0.13);
     }catch(e){}
     _swooshRef.osc=null;_swooshRef.gain=null;
   }
@@ -59,48 +60,49 @@ function stopSwooshMs(){
 function playReleaseMs(isHeart){
   var ctx=getMsCtx();if(!ctx)return;
   if(isHeart){
-    // soft thud + rising chime = heartbeat
+    // sweet soft thud + rising chime (–45% volume)
     var o1=ctx.createOscillator();var g1=ctx.createGain();
     o1.connect(g1);g1.connect(ctx.destination);
     o1.type='sine';o1.frequency.setValueAtTime(90,ctx.currentTime);
-    g1.gain.setValueAtTime(0.28,ctx.currentTime);
-    g1.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
-    o1.start();o1.stop(ctx.currentTime+0.18);
+    g1.gain.setValueAtTime(0.154,ctx.currentTime);
+    g1.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
+    o1.start();o1.stop(ctx.currentTime+0.20);
     var o2=ctx.createOscillator();var g2=ctx.createGain();
     o2.connect(g2);g2.connect(ctx.destination);
     o2.type='sine';o2.frequency.setValueAtTime(680,ctx.currentTime+0.05);
-    o2.frequency.exponentialRampToValueAtTime(920,ctx.currentTime+0.28);
-    g2.gain.setValueAtTime(0.18,ctx.currentTime+0.05);
-    g2.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.34);
-    o2.start(ctx.currentTime+0.05);o2.stop(ctx.currentTime+0.34);
-    // third sparkle
+    o2.frequency.exponentialRampToValueAtTime(960,ctx.currentTime+0.30);
+    g2.gain.setValueAtTime(0.099,ctx.currentTime+0.05);
+    g2.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.36);
+    o2.start(ctx.currentTime+0.05);o2.stop(ctx.currentTime+0.36);
     var o3=ctx.createOscillator();var g3=ctx.createGain();
     o3.connect(g3);g3.connect(ctx.destination);
-    o3.type='sine';o3.frequency.setValueAtTime(1200,ctx.currentTime+0.12);
-    g3.gain.setValueAtTime(0.08,ctx.currentTime+0.12);
-    g3.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.26);
-    o3.start(ctx.currentTime+0.12);o3.stop(ctx.currentTime+0.26);
+    o3.type='sine';o3.frequency.setValueAtTime(1320,ctx.currentTime+0.13);
+    o3.frequency.exponentialRampToValueAtTime(1680,ctx.currentTime+0.28);
+    g3.gain.setValueAtTime(0.044,ctx.currentTime+0.13);
+    g3.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.32);
+    o3.start(ctx.currentTime+0.13);o3.stop(ctx.currentTime+0.32);
   } else {
-    // thumbs: crisp pop + chord
+    // thumbs: sweet pop + chord (–45% volume)
     var o=ctx.createOscillator();var g=ctx.createGain();
     o.connect(g);g.connect(ctx.destination);
-    o.type='triangle';o.frequency.setValueAtTime(320,ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(560,ctx.currentTime+0.10);
-    g.gain.setValueAtTime(0.24,ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.13);
-    o.start();o.stop(ctx.currentTime+0.13);
+    o.type='sine';o.frequency.setValueAtTime(380,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(620,ctx.currentTime+0.12);
+    g.gain.setValueAtTime(0.132,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.15);
+    o.start();o.stop(ctx.currentTime+0.15);
     var ob=ctx.createOscillator();var gb=ctx.createGain();
     ob.connect(gb);gb.connect(ctx.destination);
-    ob.type='sine';ob.frequency.setValueAtTime(880,ctx.currentTime+0.06);
-    gb.gain.setValueAtTime(0.12,ctx.currentTime+0.06);
-    gb.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.22);
-    ob.start(ctx.currentTime+0.06);ob.stop(ctx.currentTime+0.22);
+    ob.type='sine';ob.frequency.setValueAtTime(880,ctx.currentTime+0.07);
+    gb.gain.setValueAtTime(0.066,ctx.currentTime+0.07);
+    gb.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.24);
+    ob.start(ctx.currentTime+0.07);ob.stop(ctx.currentTime+0.24);
     var oc=ctx.createOscillator();var gc=ctx.createGain();
     oc.connect(gc);gc.connect(ctx.destination);
-    oc.type='sine';oc.frequency.setValueAtTime(1100,ctx.currentTime+0.09);
-    gc.gain.setValueAtTime(0.07,ctx.currentTime+0.09);
-    gc.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
-    oc.start(ctx.currentTime+0.09);oc.stop(ctx.currentTime+0.20);
+    oc.type='sine';oc.frequency.setValueAtTime(1200,ctx.currentTime+0.10);
+    oc.frequency.exponentialRampToValueAtTime(1560,ctx.currentTime+0.26);
+    gc.gain.setValueAtTime(0.038,ctx.currentTime+0.10);
+    gc.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
+    oc.start(ctx.currentTime+0.10);oc.stop(ctx.currentTime+0.30);
   }
 }
 
@@ -110,29 +112,29 @@ function playMsEmojiClick(){
   o.connect(g);g.connect(ctx.destination);
   o.type='sine';o.frequency.setValueAtTime(1400,ctx.currentTime);
   o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
-  g.gain.setValueAtTime(0.06,ctx.currentTime);
+  g.gain.setValueAtTime(0.033,ctx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
   o.start(ctx.currentTime);o.stop(ctx.currentTime+0.07);
 }
 function playMsSendSound(){
   var ctx=getMsCtx();if(!ctx)return;
+  // smooth sine swoosh → sweet tick (–45%)
   var sw=ctx.createOscillator();var swg=ctx.createGain();
-  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=900;bpf.Q.value=0.8;
-  sw.connect(bpf);bpf.connect(swg);swg.connect(ctx.destination);
-  sw.type='sawtooth';sw.frequency.setValueAtTime(320,ctx.currentTime);
-  sw.frequency.exponentialRampToValueAtTime(1100,ctx.currentTime+0.18);
+  sw.connect(swg);swg.connect(ctx.destination);
+  sw.type='sine';sw.frequency.setValueAtTime(380,ctx.currentTime);
+  sw.frequency.exponentialRampToValueAtTime(980,ctx.currentTime+0.18);
   swg.gain.setValueAtTime(0.0,ctx.currentTime);
-  swg.gain.linearRampToValueAtTime(0.18,ctx.currentTime+0.08);
-  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
-  sw.start(ctx.currentTime);sw.stop(ctx.currentTime+0.18);
+  swg.gain.linearRampToValueAtTime(0.099,ctx.currentTime+0.07);
+  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
+  sw.start(ctx.currentTime);sw.stop(ctx.currentTime+0.20);
   var tk=ctx.createOscillator();var tkg=ctx.createGain();
   tk.connect(tkg);tkg.connect(ctx.destination);
   tk.type='sine';tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
-  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.22);
+  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.24);
   tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
-  tkg.gain.linearRampToValueAtTime(0.14,ctx.currentTime+0.17);
-  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
-  tk.start(ctx.currentTime+0.14);tk.stop(ctx.currentTime+0.28);
+  tkg.gain.linearRampToValueAtTime(0.077,ctx.currentTime+0.18);
+  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
+  tk.start(ctx.currentTime+0.14);tk.stop(ctx.currentTime+0.30);
 }
 // Flat gradient heart — strong signature colors #7B6EFF → #E84D9A
 function HeartSvg(props){
@@ -207,9 +209,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     levHoldStartRef.current=Date.now();
     clearInterval(levHoldIntervalRef.current);
     startSwooshMs(type==='heart');
+    var wasMax=false;
     levHoldIntervalRef.current=setInterval(function(){
       var elapsed=(Date.now()-levHoldStartRef.current)/1500;
-      setLevHoldPct(Math.min(elapsed,1));
+      var pct=Math.min(elapsed,1);
+      setLevHoldPct(pct);
+      if(pct>=1){
+        if(!wasMax){wasMax=true;try{navigator.vibrate&&navigator.vibrate([18,10,18,10,18]);}catch(e){}}
+        else{try{navigator.vibrate&&navigator.vibrate([12,8,12]);}catch(e){}}
+      }
       if(elapsed>=1)clearInterval(levHoldIntervalRef.current);
     },16);
   }
@@ -442,20 +450,30 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
               React.createElement(HeartSvg,{size:14,id:'levHTop'})
             ),
             // knob
-            React.createElement('div',{style:{
-              width:'30px',height:'30px',borderRadius:'50%',flexShrink:0,
-              background:'linear-gradient(145deg,#FFFFFF,#EDE8FF)',
-              boxShadow:'0 3px 12px rgba(0,0,0,0.45), 0 0 0 2px '+knobGlow,
-              transform:'translateY('+levY+'px)',
-              transition:levStart!==null?'box-shadow 0.15s':'transform 0.42s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.15s',
-              display:'flex',alignItems:'center',justifyContent:'center',zIndex:2
-            }},
-              React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'3.5px',alignItems:'center'}},
-                React.createElement('div',{style:{width:'13px',height:'1.5px',borderRadius:'1px',background:'rgba(80,60,160,0.28)'}}),
-                React.createElement('div',{style:{width:'9px',height:'1.5px',borderRadius:'1px',background:'rgba(80,60,160,0.18)'}}),
-                React.createElement('div',{style:{width:'13px',height:'1.5px',borderRadius:'1px',background:'rgba(80,60,160,0.28)'}})
-              )
-            ),
+            (function(){
+              var atMax=levHoldPct>=1;
+              var knobBg=levActive==='heart'
+                ?'linear-gradient(145deg,#8B7FFF,#D455AA,#F03D8E)'
+                :levActive==='thumbs'
+                ?'linear-gradient(145deg,#7B6EFF,#B44FD4,#E84D9A)'
+                :'linear-gradient(145deg,#8B7FFF,#D455AA,#F03D8E)';
+              var shakeAnim=atMax?'knobShake 0.18s ease-in-out infinite':'none';
+              return React.createElement('div',{style:{
+                width:'30px',height:'30px',borderRadius:'50%',flexShrink:0,
+                background:knobBg,
+                boxShadow:'0 3px 14px rgba(0,0,0,0.5), 0 0 0 2px '+knobGlow+(atMax?', 0 0 18px rgba(232,77,154,0.65)':''),
+                transform:'translateY('+levY+'px)',
+                transition:levStart!==null?'box-shadow 0.15s,background 0.3s':'transform 0.42s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.15s,background 0.3s',
+                animation:shakeAnim,
+                display:'flex',alignItems:'center',justifyContent:'center',zIndex:2
+              }},
+                React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'3.5px',alignItems:'center'}},
+                  React.createElement('div',{style:{width:'13px',height:'1.5px',borderRadius:'1px',background:'rgba(255,255,255,0.45)'}}),
+                  React.createElement('div',{style:{width:'9px',height:'1.5px',borderRadius:'1px',background:'rgba(255,255,255,0.28)'}}),
+                  React.createElement('div',{style:{width:'13px',height:'1.5px',borderRadius:'1px',background:'rgba(255,255,255,0.45)'}})
+                )
+              );
+            })(),
             // thumbs icon bottom
             React.createElement('div',{style:{fontSize:'12px',opacity:levActive==='thumbs'?0.9+levHoldPct*0.1:0.28,transition:'opacity 0.15s'}},'👍')
           ),
