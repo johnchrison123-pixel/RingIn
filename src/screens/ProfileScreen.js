@@ -2,6 +2,7 @@
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
+import {playSound,previewSound,saveSoundPrefs,SOUND_META} from '../utils/soundEngine';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var COUNTRIES=[
@@ -104,55 +105,9 @@ var TIMEZONES=[
   ['Pacific/Guam','Guam (ChST, +10)','+10'],
 ];
 
-var _profAudioCtx=null;
-function getProfAudioCtx(){
-  if(!_profAudioCtx){try{_profAudioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
-  return _profAudioCtx;
-}
-function playProfKeyClick(){
-  var ctx=getProfAudioCtx();if(!ctx)return;
-  var buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);
-  var data=buf.getChannelData(0);
-  for(var i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
-  var src=ctx.createBufferSource();src.buffer=buf;
-  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=3200;bpf.Q.value=2.5;
-  var g=ctx.createGain();
-  src.connect(bpf);bpf.connect(g);g.connect(ctx.destination);
-  g.gain.setValueAtTime(0.0,ctx.currentTime);
-  g.gain.linearRampToValueAtTime(0.055,ctx.currentTime+0.003);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.048);
-  src.start(ctx.currentTime);src.stop(ctx.currentTime+0.05);
-}
-function playProfEmojiClick(){
-  var ctx=getProfAudioCtx();if(!ctx)return;
-  var o=ctx.createOscillator();var g=ctx.createGain();
-  o.connect(g);g.connect(ctx.destination);
-  o.type='sine';o.frequency.setValueAtTime(1400,ctx.currentTime);
-  o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
-  g.gain.setValueAtTime(0.06,ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
-  o.start(ctx.currentTime);o.stop(ctx.currentTime+0.07);
-}
-function playProfPostSound(){
-  var ctx=getProfAudioCtx();if(!ctx)return;
-  // Smooth sine swoosh → sweet tick (–45%)
-  var sw=ctx.createOscillator();var swg=ctx.createGain();
-  sw.connect(swg);swg.connect(ctx.destination);
-  sw.type='sine';sw.frequency.setValueAtTime(380,ctx.currentTime);
-  sw.frequency.exponentialRampToValueAtTime(980,ctx.currentTime+0.18);
-  swg.gain.setValueAtTime(0.0,ctx.currentTime);
-  swg.gain.linearRampToValueAtTime(0.099,ctx.currentTime+0.07);
-  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
-  sw.start(ctx.currentTime);sw.stop(ctx.currentTime+0.20);
-  var tk=ctx.createOscillator();var tkg=ctx.createGain();
-  tk.connect(tkg);tkg.connect(ctx.destination);
-  tk.type='sine';tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
-  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.24);
-  tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
-  tkg.gain.linearRampToValueAtTime(0.077,ctx.currentTime+0.18);
-  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
-  tk.start(ctx.currentTime+0.14);tk.stop(ctx.currentTime+0.30);
-}
+function playProfKeyClick(){playSound('typing');}
+function playProfEmojiClick(){playSound('emoji');}
+function playProfPostSound(){playSound('send');}
 function timeAgoProf(dateStr){
   if(!dateStr) return '';
   var now=new Date();
@@ -219,6 +174,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var pwResetErrS=useState(''); var pwResetErr=pwResetErrS[0]; var setPwResetErr=pwResetErrS[1];
   var muteStoryS=useState(localStorage.getItem('mute_activity')==='1'); var muteActivity=muteStoryS[0]; var setMuteActivity=muteStoryS[1];
   var showActivityS=useState(localStorage.getItem('show_online')!=='0'); var showOnline=showActivityS[0]; var setShowOnline=showActivityS[1];
+  // Sound settings state
+  var showSoundS=useState(false); var showSound=showSoundS[0]; var setShowSound=showSoundS[1];
+  var soundPrefsS=useState(function(){try{var s=localStorage.getItem('ringin_sound_prefs');if(s)return Object.assign({typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}},JSON.parse(s));}catch(e){}return {typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}};}); var soundPrefs=soundPrefsS[0]; var setSoundPrefs=soundPrefsS[1];
   // Support state
   var supportEmailS=useState(email||''); var supportEmail=supportEmailS[0]; var setSupportEmail=supportEmailS[1];
   var supportMsgS=useState(''); var supportMsg=supportMsgS[0]; var setSupportMsg=supportMsgS[1];
@@ -1197,6 +1155,81 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     )
   );
 
+  if(showSound){
+    var SOUND_ORDER=['typing','emoji','send','like','likeThumb','notification'];
+    function updateSoundPref(type,key,val){
+      setSoundPrefs(function(prev){
+        var next=Object.assign({},prev);
+        next[type]=Object.assign({},prev[type],{[key]:val});
+        saveSoundPrefs(next);
+        return next;
+      });
+    }
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowSound(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Sound & Haptics'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Customize sounds for every action')
+        )
+      ),
+      React.createElement('div',{style:{padding:'16px',display:'flex',flexDirection:'column',gap:'12px'}},
+        SOUND_ORDER.map(function(type){
+          var meta=SOUND_META[type];
+          var pref=soundPrefs[type]||{variant:0,volume:0.55,enabled:true};
+          return React.createElement('div',{key:type,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px',opacity:pref.enabled?1:0.5,transition:'opacity 0.2s'}},
+            // Header row
+            React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}},
+              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+                React.createElement('span',{style:{fontSize:'20px'}},meta.icon),
+                React.createElement('div',null,
+                  React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},meta.label),
+                  React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},meta.variants[pref.variant])
+                )
+              ),
+              // Enable toggle
+              React.createElement('div',{
+                onClick:function(){updateSoundPref(type,'enabled',!pref.enabled);},
+                style:{width:'42px',height:'24px',borderRadius:'12px',background:pref.enabled?'linear-gradient(135deg,#7B6EFF,#E84D9A)':'var(--border)',cursor:'pointer',position:'relative',transition:'background 0.2s',flexShrink:0}
+              },
+                React.createElement('div',{style:{position:'absolute',top:'2px',left:pref.enabled?'20px':'2px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+              )
+            ),
+            // Variant buttons
+            React.createElement('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
+              meta.variants.map(function(name,idx){
+                var active=pref.variant===idx;
+                return React.createElement('button',{key:idx,
+                  onClick:function(){
+                    updateSoundPref(type,'variant',idx);
+                    previewSound(type,idx,pref.volume);
+                  },
+                  style:{flex:1,padding:'7px 4px',borderRadius:'10px',border:'1px solid '+(active?'transparent':'var(--border)'),background:active?'linear-gradient(135deg,#7B6EFF,#E84D9A)':'var(--bg4)',color:active?'#fff':'var(--t2)',fontSize:'11px',fontWeight:active?700:500,cursor:'pointer',transition:'all 0.18s'}
+                },name);
+              })
+            ),
+            // Volume slider
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
+              React.createElement('span',{style:{fontSize:'13px',minWidth:'16px'}},pref.volume<0.1?'🔇':pref.volume<0.5?'🔉':'🔊'),
+              React.createElement('input',{
+                type:'range',min:'0',max:'1',step:'0.01',
+                value:pref.volume,
+                onChange:function(e){
+                  var v=parseFloat(e.target.value);
+                  updateSoundPref(type,'volume',v);
+                },
+                onMouseUp:function(e){previewSound(type,pref.variant,parseFloat(e.target.value));},
+                onTouchEnd:function(e){previewSound(type,pref.variant,pref.volume);},
+                style:{flex:1,accentColor:'#7B6EFF',height:'4px',cursor:'pointer'}
+              }),
+              React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)',minWidth:'30px',textAlign:'right'}},Math.round(pref.volume*100)+'%')
+            )
+          );
+        })
+      )
+    );
+  }
+
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
       React.createElement('button',{onClick:function(){setShowSettings(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
@@ -1219,6 +1252,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           {icon:'👤',label:'Account Settings',sub:'Name, phone, country, timezone',fn:function(){setShowAcct(true);}},
           {icon:'🔒',label:'Privacy & Security',sub:'Password, visibility, locked profile',fn:function(){setShowPrivacy(true);}},
           {icon:'🔔',label:'Notification Settings',sub:'Manage your alerts',fn:function(){setShowNotif(true);}},
+          {icon:'🔊',label:'Sound & Haptics',sub:'Typing, emoji, send, like, notification sounds',fn:function(){setShowSound(true);}},
           {icon:'📋',label:'Activity Log',sub:'Your logins, posts, likes & more',fn:function(){setShowActivityLog(true);}},
           {icon:'💬',label:'Help & Support',sub:'FAQs and contact us',fn:function(){setShowSupport(true);}},
           {icon:'⭐',label:'Rate the App',sub:'Enjoying RingIn? Let us know!',fn:function(){setShowRate(true);}},

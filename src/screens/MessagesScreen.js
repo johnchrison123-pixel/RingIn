@@ -2,6 +2,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import CallScreen from './CallScreen';
 import {createClient} from '@supabase/supabase-js';
+import {playSound} from '../utils/soundEngine';
 var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var EXPERT_CONVOS_BASE=[
@@ -57,99 +58,11 @@ function stopSwooshMs(){
     _swooshRef.osc=null;_swooshRef.gain=null;
   }
 }
-function playReleaseMs(isHeart){
-  var ctx=getMsCtx();if(!ctx)return;
-  if(isHeart){
-    // sweet soft thud + rising chime (–45% volume)
-    var o1=ctx.createOscillator();var g1=ctx.createGain();
-    o1.connect(g1);g1.connect(ctx.destination);
-    o1.type='sine';o1.frequency.setValueAtTime(90,ctx.currentTime);
-    g1.gain.setValueAtTime(0.154,ctx.currentTime);
-    g1.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
-    o1.start();o1.stop(ctx.currentTime+0.20);
-    var o2=ctx.createOscillator();var g2=ctx.createGain();
-    o2.connect(g2);g2.connect(ctx.destination);
-    o2.type='sine';o2.frequency.setValueAtTime(680,ctx.currentTime+0.05);
-    o2.frequency.exponentialRampToValueAtTime(960,ctx.currentTime+0.30);
-    g2.gain.setValueAtTime(0.099,ctx.currentTime+0.05);
-    g2.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.36);
-    o2.start(ctx.currentTime+0.05);o2.stop(ctx.currentTime+0.36);
-    var o3=ctx.createOscillator();var g3=ctx.createGain();
-    o3.connect(g3);g3.connect(ctx.destination);
-    o3.type='sine';o3.frequency.setValueAtTime(1320,ctx.currentTime+0.13);
-    o3.frequency.exponentialRampToValueAtTime(1680,ctx.currentTime+0.28);
-    g3.gain.setValueAtTime(0.044,ctx.currentTime+0.13);
-    g3.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.32);
-    o3.start(ctx.currentTime+0.13);o3.stop(ctx.currentTime+0.32);
-  } else {
-    // thumbs: sweet pop + chord (–45% volume)
-    var o=ctx.createOscillator();var g=ctx.createGain();
-    o.connect(g);g.connect(ctx.destination);
-    o.type='sine';o.frequency.setValueAtTime(380,ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(620,ctx.currentTime+0.12);
-    g.gain.setValueAtTime(0.132,ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.15);
-    o.start();o.stop(ctx.currentTime+0.15);
-    var ob=ctx.createOscillator();var gb=ctx.createGain();
-    ob.connect(gb);gb.connect(ctx.destination);
-    ob.type='sine';ob.frequency.setValueAtTime(880,ctx.currentTime+0.07);
-    gb.gain.setValueAtTime(0.066,ctx.currentTime+0.07);
-    gb.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.24);
-    ob.start(ctx.currentTime+0.07);ob.stop(ctx.currentTime+0.24);
-    var oc=ctx.createOscillator();var gc=ctx.createGain();
-    oc.connect(gc);gc.connect(ctx.destination);
-    oc.type='sine';oc.frequency.setValueAtTime(1200,ctx.currentTime+0.10);
-    oc.frequency.exponentialRampToValueAtTime(1560,ctx.currentTime+0.26);
-    gc.gain.setValueAtTime(0.038,ctx.currentTime+0.10);
-    gc.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
-    oc.start(ctx.currentTime+0.10);oc.stop(ctx.currentTime+0.30);
-  }
-}
+function playReleaseMs(isHeart){if(isHeart)playSound("like");else playSound("likeThumb");}
 
-function playMsKeyClick(){
-  var ctx=getMsCtx();if(!ctx)return;
-  var buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);
-  var data=buf.getChannelData(0);
-  for(var i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
-  var src=ctx.createBufferSource();src.buffer=buf;
-  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=3200;bpf.Q.value=2.5;
-  var g=ctx.createGain();
-  src.connect(bpf);bpf.connect(g);g.connect(ctx.destination);
-  g.gain.setValueAtTime(0.0,ctx.currentTime);
-  g.gain.linearRampToValueAtTime(0.055,ctx.currentTime+0.003);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.048);
-  src.start(ctx.currentTime);src.stop(ctx.currentTime+0.05);
-}
-function playMsEmojiClick(){
-  var ctx=getMsCtx();if(!ctx)return;
-  var o=ctx.createOscillator();var g=ctx.createGain();
-  o.connect(g);g.connect(ctx.destination);
-  o.type='sine';o.frequency.setValueAtTime(1400,ctx.currentTime);
-  o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
-  g.gain.setValueAtTime(0.033,ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
-  o.start(ctx.currentTime);o.stop(ctx.currentTime+0.07);
-}
-function playMsSendSound(){
-  var ctx=getMsCtx();if(!ctx)return;
-  // smooth sine swoosh → sweet tick (–45%)
-  var sw=ctx.createOscillator();var swg=ctx.createGain();
-  sw.connect(swg);swg.connect(ctx.destination);
-  sw.type='sine';sw.frequency.setValueAtTime(380,ctx.currentTime);
-  sw.frequency.exponentialRampToValueAtTime(980,ctx.currentTime+0.18);
-  swg.gain.setValueAtTime(0.0,ctx.currentTime);
-  swg.gain.linearRampToValueAtTime(0.099,ctx.currentTime+0.07);
-  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
-  sw.start(ctx.currentTime);sw.stop(ctx.currentTime+0.20);
-  var tk=ctx.createOscillator();var tkg=ctx.createGain();
-  tk.connect(tkg);tkg.connect(ctx.destination);
-  tk.type='sine';tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
-  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.24);
-  tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
-  tkg.gain.linearRampToValueAtTime(0.077,ctx.currentTime+0.18);
-  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
-  tk.start(ctx.currentTime+0.14);tk.stop(ctx.currentTime+0.30);
-}
+function playMsKeyClick(){playSound("typing");}
+function playMsEmojiClick(){playSound("emoji");}
+function playMsSendSound(){playSound("send");}
 // Flat gradient heart — strong signature colors #7B6EFF → #E84D9A
 function HeartSvg(props){
   var sz=props.size||60; var id=props.id||'hsvg';

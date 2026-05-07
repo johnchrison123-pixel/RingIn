@@ -5,83 +5,12 @@ var sbHome = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_
 import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
+import {playSound} from '../utils/soundEngine';
 
-// ── Sound effects using Web Audio API ──
-var _audioCtx=null;
-function getAudioCtx(){
-  if(!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
-  return _audioCtx;
-}
-function playKeyClick(){
-  var ctx=getAudioCtx(); if(!ctx) return;
-  // Smooth tick: noise burst shaped like a soft key press
-  var buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);
-  var data=buf.getChannelData(0);
-  for(var i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
-  var src=ctx.createBufferSource(); src.buffer=buf;
-  var bpf=ctx.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=3200; bpf.Q.value=2.5;
-  var g=ctx.createGain();
-  src.connect(bpf); bpf.connect(g); g.connect(ctx.destination);
-  g.gain.setValueAtTime(0.0,ctx.currentTime);
-  g.gain.linearRampToValueAtTime(0.055,ctx.currentTime+0.003);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.048);
-  src.start(ctx.currentTime); src.stop(ctx.currentTime+0.05);
-}
-function playEmojiClick(){
-  var ctx=getAudioCtx(); if(!ctx) return;
-  var o=ctx.createOscillator(); var g=ctx.createGain();
-  o.connect(g); g.connect(ctx.destination);
-  o.type='sine'; o.frequency.setValueAtTime(1400,ctx.currentTime);
-  o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
-  g.gain.setValueAtTime(0.06,ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
-  o.start(ctx.currentTime); o.stop(ctx.currentTime+0.07);
-}
-function playPostSound(){
-  var ctx=getAudioCtx(); if(!ctx) return;
-  // Smooth sine swoosh → sweet tick (–45%)
-  var sw=ctx.createOscillator(); var swg=ctx.createGain();
-  sw.connect(swg); swg.connect(ctx.destination);
-  sw.type='sine'; sw.frequency.setValueAtTime(380,ctx.currentTime);
-  sw.frequency.exponentialRampToValueAtTime(980,ctx.currentTime+0.18);
-  swg.gain.setValueAtTime(0.0,ctx.currentTime);
-  swg.gain.linearRampToValueAtTime(0.099,ctx.currentTime+0.07);
-  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
-  sw.start(ctx.currentTime); sw.stop(ctx.currentTime+0.20);
-  var tk=ctx.createOscillator(); var tkg=ctx.createGain();
-  tk.connect(tkg); tkg.connect(ctx.destination);
-  tk.type='sine'; tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
-  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.24);
-  tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
-  tkg.gain.linearRampToValueAtTime(0.077,ctx.currentTime+0.18);
-  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.30);
-  tk.start(ctx.currentTime+0.14); tk.stop(ctx.currentTime+0.30);
-}
-function playLikeSound(liked){
-  var ctx=getAudioCtx(); if(!ctx) return;
-  if(liked){
-    // Heart pop — two quick rising tones
-    [0,0.07].forEach(function(delay,i){
-      var o=ctx.createOscillator(); var g=ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.type='sine';
-      o.frequency.setValueAtTime(520+i*80,ctx.currentTime+delay);
-      o.frequency.exponentialRampToValueAtTime(820+i*80,ctx.currentTime+delay+0.12);
-      g.gain.setValueAtTime(0.12,ctx.currentTime+delay);
-      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+delay+0.18);
-      o.start(ctx.currentTime+delay); o.stop(ctx.currentTime+delay+0.18);
-    });
-  } else {
-    // Unlike — soft descending tone
-    var o=ctx.createOscillator(); var g=ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type='sine'; o.frequency.setValueAtTime(600,ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(380,ctx.currentTime+0.1);
-    g.gain.setValueAtTime(0.07,ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);
-    o.start(ctx.currentTime); o.stop(ctx.currentTime+0.12);
-  }
-}
+function playKeyClick(){playSound('typing');}
+function playEmojiClick(){playSound('emoji');}
+function playPostSound(){playSound('send');}
+function playLikeSound(liked){if(liked)playSound('like');}
 
 var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medical'},{id:'tech',icon:'Tech',label:'Tech'},{id:'legal',icon:'Law',label:'Legal'},{id:'trades',icon:'Fix',label:'Trades'},{id:'mental',icon:'Mind',label:'Mental'}];
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
