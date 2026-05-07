@@ -276,22 +276,64 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         position:'absolute',inset:0,
         display:'flex',alignItems:'center',justifyContent:'center',
         pointerEvents:'none',
-        background:levActive==='heart'
-          ?'radial-gradient(ellipse at center, rgba(232,77,154,0.10) 0%, transparent 65%)'
-          :'radial-gradient(ellipse at center, rgba(123,110,255,0.10) 0%, transparent 65%)',
-        zIndex:10
+        zIndex:10,
+        background:'transparent'
       }},
+        // light rays behind emoji
         React.createElement('div',{style:{
+          position:'absolute',
+          width:(180+levHoldPct*220)+'px',
+          height:(180+levHoldPct*220)+'px',
+          borderRadius:'50%',
+          background:levActive==='heart'
+            ?'radial-gradient(circle, rgba(232,77,154,'+(0.22+levHoldPct*0.28)+') 0%, rgba(123,110,255,'+(0.12+levHoldPct*0.18)+') 40%, transparent 72%)'
+            :'radial-gradient(circle, rgba(123,110,255,'+(0.22+levHoldPct*0.28)+') 0%, rgba(232,77,154,'+(0.08+levHoldPct*0.12)+') 40%, transparent 72%)',
+          transition:'none',
+          filter:'blur('+(6+levHoldPct*10)+'px)'
+        }}),
+        // ray spikes SVG (8 light beams)
+        React.createElement('svg',{
+          style:{position:'absolute',opacity:0.18+levHoldPct*0.42,transition:'none'},
+          width:280+levHoldPct*180+'',height:280+levHoldPct*180+'',
+          viewBox:'0 0 200 200'
+        },
+          React.createElement('defs',null,
+            React.createElement('radialGradient',{id:'rayG',cx:'50%',cy:'50%',r:'50%'},
+              React.createElement('stop',{offset:'0%',stopColor:levActive==='heart'?'#E84D9A':'#7B6EFF',stopOpacity:'0.9'}),
+              React.createElement('stop',{offset:'100%',stopColor:'transparent',stopOpacity:'0'})
+            )
+          ),
+          [0,45,90,135,180,225,270,315].map(function(angle,i){
+            var rad=angle*Math.PI/180;
+            var cx=100,cy=100;
+            var len=55+levHoldPct*45;
+            var w=5-levHoldPct*1;
+            var ex=cx+Math.cos(rad)*len;
+            var ey=cy+Math.sin(rad)*len;
+            var px1=cx+Math.cos(rad+Math.PI/2)*w;
+            var py1=cy+Math.sin(rad+Math.PI/2)*w;
+            var px2=cx+Math.cos(rad-Math.PI/2)*w;
+            var py2=cy+Math.sin(rad-Math.PI/2)*w;
+            return React.createElement('polygon',{
+              key:i,
+              points:px1+','+py1+' '+ex+','+ey+' '+px2+','+py2,
+              fill:levActive==='heart'?'#E84D9A':'#7B6EFF',
+              opacity:0.6+levHoldPct*0.3
+            });
+          })
+        ),
+        // emoji / heart centered, growing
+        React.createElement('div',{style:{
+          position:'relative',
           transform:'scale('+overlayScale+')',
           transformOrigin:'center',
-          transition:'none',
-          display:'flex',alignItems:'center',justifyContent:'center'
+          transition:'none'
         }},
           levActive==='heart'
             ?React.createElement(HeartSvg,{size:64,id:'chatOverlayHeart'})
             :React.createElement('div',{style:{
                 fontSize:'60px',lineHeight:1,
-                filter:'drop-shadow(0 0 '+(glowRadius*0.5)+'px rgba(123,110,255,0.7))'
+                filter:'drop-shadow(0 0 '+(8+levHoldPct*22)+'px rgba(123,110,255,'+(0.7+levHoldPct*0.3)+')'
               }},'👍')
         )
       ):null
