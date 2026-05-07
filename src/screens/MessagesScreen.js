@@ -99,9 +99,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   // levHoldPct: 0→1 over 1.5s while holding past threshold
   var levHoldPctS=useState(0); var levHoldPct=levHoldPctS[0]; var setLevHoldPct=levHoldPctS[1];
   var levHoldIntervalRef=useRef(null);
+  var levHapticIntervalRef=useRef(null); // separate haptic ticker
   var levHoldStartRef=useRef(null);
-  var lastHapticRef=useRef(0);   // timestamp of last haptic pulse
-  var lastHapticTierRef=useRef(0); // last intensity tier fired (0-4)
+  var levHoldPctRef=useRef(0); // always-current pct for use in event handlers
+  var lastHapticRef=useRef(0);
+  var lastHapticTierRef=useRef(0);
 
   var bottomRef=useRef(null);
 
@@ -144,42 +146,54 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     lastHapticRef.current=0;
     lastHapticTierRef.current=0;
     clearInterval(levHoldIntervalRef.current);
+    clearInterval(levHapticIntervalRef.current);
     startSwooshMs(type==='heart');
+
+    // ── Immediate activation buzz — called directly from touch event stack
+    // so it always fires even on strict Chrome user-activation builds
+    hapticPulse([80]);
+
+    // ── Animation loop (16ms) — graphics + pct only, no haptics here
+    levHoldPctRef.current=0;
     levHoldIntervalRef.current=setInterval(function(){
       var elapsed=(Date.now()-levHoldStartRef.current)/1500;
       var pct=Math.min(elapsed,1);
       setLevHoldPct(pct);
+      levHoldPctRef.current=pct;
+      if(elapsed>=1)clearInterval(levHoldIntervalRef.current);
+    },16);
+
+    // ── Haptic loop (100ms tick) — completely separate from animation
+    // Each interval is longer than the vibration pattern so buzzes fully complete
+    // Tier durations (on, off, on …):
+    //   tier 1  30-50%  [70]ms             every 500ms
+    //   tier 2  50-70%  [80,45,80]ms       every 450ms  (205ms pat)
+    //   tier 3  70-90%  [100,50,100]ms     every 400ms  (250ms pat)
+    //   tier 4  90-99%  [120,55,120,55,120]ms  every 600ms  (470ms pat)
+    //   tier 5  100%    [150,65,150,65,150]ms  every 700ms  (580ms pat)
+    levHapticIntervalRef.current=setInterval(function(){
+      var elapsed=(Date.now()-levHoldStartRef.current)/1500;
+      var pct=Math.min(elapsed,1);
       var now=Date.now();
-      // Progressive haptic tiers — durations in ms must be felt by the motor (50ms+)
-      // interval must be >= pattern total so the buzz completes before the next call
-      // tier 1: 30-50%  gentle single tap    [55]          every 700ms
-      // tier 2: 50-70%  soft double          [65,45,65]    every 600ms  (175ms pat)
-      // tier 3: 70-90%  medium roll          [90,50,90,50] every 500ms  (280ms pat)
-      // tier 4: 90-99%  strong triple        [110,55,110,55,110] every 500ms (440ms pat)
-      // tier 5: 100%    max continuous burst [130,65,130,65,130,65,130] every 700ms
-      var tier,interval,pattern;
-      if(pct>=1)       {tier=5;interval=700; pattern=[130,65,130,65,130,65,130];}
-      else if(pct>=0.9){tier=4;interval=500; pattern=[110,55,110,55,110];}
-      else if(pct>=0.7){tier=3;interval=500; pattern=[90,50,90,50];}
-      else if(pct>=0.5){tier=2;interval=600; pattern=[65,45,65];}
-      else if(pct>=0.3){tier=1;interval=700; pattern=[55];}
-      else             {tier=0;interval=9999;pattern=null;}
-      if(pattern&&(now-lastHapticRef.current)>=interval){
-        // On tier escalation give an immediate bump so the jump is felt
-        if(tier>lastHapticTierRef.current&&tier>=2){
-          hapticPulse(pattern);
-        } else {
-          hapticPulse(pattern);
-        }
+      var tier,gap,pattern;
+      if(pct>=1)       {tier=5;gap=700; pattern=[150,65,150,65,150];}
+      else if(pct>=0.9){tier=4;gap=600; pattern=[120,55,120,55,120];}
+      else if(pct>=0.7){tier=3;gap=400; pattern=[100,50,100];}
+      else if(pct>=0.5){tier=2;gap=450; pattern=[80,45,80];}
+      else if(pct>=0.3){tier=1;gap=500; pattern=[70];}
+      else             {tier=0;gap=9999;pattern=null;}
+      if(pattern&&(now-lastHapticRef.current)>=gap){
+        hapticPulse(pattern);
         lastHapticRef.current=now;
         lastHapticTierRef.current=tier;
       }
-      if(elapsed>=1)clearInterval(levHoldIntervalRef.current);
-    },16);
+    },100);
   }
 
   function deactivateLever(){
     clearInterval(levHoldIntervalRef.current);
+    clearInterval(levHapticIntervalRef.current);
+    try{if(navigator.vibrate)navigator.vibrate(0);}catch(e){} // cancel any ongoing buzz
     stopSwooshMs();
     setLevActive(null);
     setLevHoldPct(0);
@@ -195,14 +209,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   }
 
   function leverRelease(){
-    // Release thump — intensity matches how far the hold went
-    var relPct=levHoldPct;
-    if(relPct>=0.9)     hapticPulse([120,60,120]);   // full send — strong double
-    else if(relPct>=0.5)hapticPulse([80,40,80]);      // partial — medium double
-    else if(relPct>=0.3)hapticPulse([60]);             // light tap
-    // (below 30% — no reaction)
-    //
-    // Original leverRelease body:
+    // Release thump — use ref so pct is never stale in this closure
+    var relPct=levHoldPctRef.current;
+    if(relPct>=0.9)     hapticPulse([130,60,130]);  // full send — strong double
+    else if(relPct>=0.5)hapticPulse([90,45,90]);    // partial — medium double
+    else if(relPct>=0.3)hapticPulse([70]);           // light tap
     var active=levActive;
     deactivateLever();
     setLevY(0);
