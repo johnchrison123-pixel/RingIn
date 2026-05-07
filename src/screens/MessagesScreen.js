@@ -33,8 +33,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var mS=useState(initMsgs); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var emojiS=useState(false); var showEmoji=emojiS[0]; var setShowEmoji=emojiS[1];
-  var rxnS=useState('heart'); var rxn=rxnS[0]; var setRxn=rxnS[1];
-  var rxnDragS=useState(null); var rxnDrag=rxnDragS[0]; var setRxnDrag=rxnDragS[1];
+  // Lever state: leverY = 0 center, negative = up (heart), positive = down (thumbs)
+  var LEVER_MAX=28;
+  var levYS=useState(0); var levY=levYS[0]; var setLevY=levYS[1];
+  var levStartS=useState(null); var levStart=levStartS[0]; var setLevStart=levStartS[1];
+  var levDraggingS=useState(false); var levDragging=levDraggingS[0]; var setLevDragging=levDraggingS[1];
+  var levSentS=useState(null); var levSent=levSentS[0]; var setLevSent=levSentS[1]; // 'heart'|'thumbs'|null flash
+  var levRef=useRef(null);
 
   var bottomRef=useRef(null);
 
@@ -62,14 +67,34 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
 
-  function sendReaction(){
-    var emoji = rxn==='thumbs'?'👍':'❤️';
+  function sendReactionEmoji(emoji){
     var receiverId = convo.receiverId || (convId.replace(myId,'').replace('_',''));
     var m={conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:emoji,read:false};
     sb.from('messages').insert([m]).then(function(r){
       if(r.error) console.error(r.error);
       else if(onMessageSent) onMessageSent(convo, emoji);
     });
+  }
+
+  function leverRelease(){
+    if(levY<=-14){
+      sendReactionEmoji('❤️');
+      setLevSent('heart');
+      setTimeout(function(){setLevSent(null);},600);
+    } else if(levY>=14){
+      sendReactionEmoji('👍');
+      setLevSent('thumbs');
+      setTimeout(function(){setLevSent(null);},600);
+    }
+    setLevY(0);
+    setLevDragging(false);
+    setLevStart(null);
+  }
+
+  function getClientY(e){
+    if(e.touches&&e.touches.length) return e.touches[0].clientY;
+    if(e.changedTouches&&e.changedTouches.length) return e.changedTouches[0].clientY;
+    return e.clientY;
   }
 
   function send(){
@@ -133,11 +158,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center',background:'var(--bg)'}},
       React.createElement('label',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}},
         '📷',
-        React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){
-          if(e.target.files[0]){
-            alert('Photo sharing coming soon!');
-          }
-        }})
+        React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0])alert('Photo sharing coming soon!');}})
       ),
       React.createElement('button',{
         onClick:function(){setShowEmoji(function(v){return !v;});},
@@ -150,74 +171,131 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         placeholder:'Type a message...',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
       }),
-      // ── Vertical reaction switcher ──
-      React.createElement('div',{
-        style:{position:'relative',width:'36px',height:'68px',flexShrink:0,userSelect:'none'},
-        onTouchStart:function(e){setRxnDrag(e.touches[0].clientY);},
-        onTouchMove:function(e){
-          if(rxnDrag===null) return;
-          var dy=e.touches[0].clientY-rxnDrag;
-          if(dy<-12){setRxn('thumbs');setRxnDrag(null);}
-          else if(dy>12){setRxn('heart');setRxnDrag(null);}
+
+      // ── Floating Lever Reaction Toggle ──
+      (function(){
+        var pct=Math.min(Math.abs(levY)/LEVER_MAX,1); // 0→1
+        var isUp=levY<=-14;
+        var isDown=levY>=14;
+        var heartScale=levY<0?1+pct*1.6:1;
+        var thumbScale=levY>0?1+pct*1.6:1;
+        var knobY=levY; // px, clamped by drag logic
+        return React.createElement('div',{
+          ref:levRef,
+          style:{position:'relative',flexShrink:0,width:'38px',display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',userSelect:'none',touchAction:'none'}
         },
-        onTouchEnd:function(){setRxnDrag(null);},
-        onMouseDown:function(e){setRxnDrag(e.clientY);},
-        onMouseMove:function(e){
-          if(rxnDrag===null) return;
-          var dy=e.clientY-rxnDrag;
-          if(dy<-12){setRxn('thumbs');setRxnDrag(null);}
-          else if(dy>12){setRxn('heart');setRxnDrag(null);}
-        },
-        onMouseUp:function(){setRxnDrag(null);},
-        onMouseLeave:function(){setRxnDrag(null);}
-      },
-        // pill background
-        React.createElement('div',{style:{position:'absolute',inset:0,borderRadius:'18px',background:'var(--bg3)',border:'1px solid var(--border)',overflow:'hidden'}},
-          // sliding highlight
+          // ── floating emoji preview above lever ──
           React.createElement('div',{style:{
-            position:'absolute',left:0,right:0,height:'50%',
-            top:rxn==='thumbs'?'0':'50%',
-            background:'rgba(123,110,255,0.13)',
-            borderRadius:rxn==='thumbs'?'18px 18px 0 0':'0 0 18px 18px',
-            transition:'top 0.2s cubic-bezier(.4,0,.2,1)'
-          }})
-        ),
-        // 👍 thumbs up — top half
-        React.createElement('div',{
-          onClick:function(){if(rxn==='thumbs'){sendReaction();}else{setRxn('thumbs');}},
-          style:{position:'absolute',top:0,left:0,right:0,height:'50%',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:rxn==='thumbs'?'20px':'15px',transition:'font-size 0.2s',opacity:rxn==='thumbs'?1:0.45}
-        },'👍'),
-        // ❤️ heart — bottom half (gradient SVG)
-        React.createElement('div',{
-          onClick:function(){if(rxn==='heart'){sendReaction();}else{setRxn('heart');}},
-          style:{position:'absolute',bottom:0,left:0,right:0,height:'50%',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:rxn==='heart'?1:0.45,transition:'opacity 0.2s'}
-        },
-          React.createElement('svg',{viewBox:'0 0 24 24',width:rxn==='heart'?22:17,height:rxn==='heart'?22:17,style:{transition:'width 0.2s,height 0.2s',flexShrink:0}},
-            React.createElement('defs',null,
-              React.createElement('linearGradient',{id:'rxnHG',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
-                React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),
-                React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'})
+            position:'absolute',bottom:'calc(100% + 6px)',left:'50%',
+            transform:'translateX(-50%)',
+            pointerEvents:'none',
+            display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',
+            zIndex:100
+          }},
+            // heart preview (appears when pushing up)
+            React.createElement('div',{style:{
+              transform:'scale('+heartScale+')',
+              transformOrigin:'bottom center',
+              transition:levDragging?'none':'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+              opacity:levY<0?Math.min(pct*2,1):0,
+              transition2:levDragging?'none':'opacity 0.2s'
+            }},
+              React.createElement('svg',{viewBox:'0 0 24 24',width:28,height:28},
+                React.createElement('defs',null,
+                  React.createElement('linearGradient',{id:'lhg',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
+                    React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),
+                    React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'})
+                  )
+                ),
+                React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#lhg)',stroke:'none'})
               )
             ),
-            React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#rxnHG)',stroke:'none'})
+            // thumbs preview (appears when pushing down — show above lever still)
+            React.createElement('div',{style:{
+              transform:'scale('+thumbScale+')',
+              transformOrigin:'bottom center',
+              transition:levDragging?'none':'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+              opacity:levY>0?Math.min(pct*2,1):0,
+              fontSize:'26px',lineHeight:1
+            }},'👍')
+          ),
+
+          // ── sent flash ──
+          levSent?React.createElement('div',{style:{
+            position:'absolute',bottom:'calc(100% + 10px)',left:'50%',
+            transform:'translateX(-50%) scale(1)',
+            animation:'leverSentPop 0.5s ease forwards',
+            fontSize:'30px',pointerEvents:'none',zIndex:101
+          }},levSent==='heart'?'❤️':'👍'):null,
+
+          // ── housing pill ──
+          React.createElement('div',{
+            style:{
+              width:'38px',height:'80px',borderRadius:'19px',
+              background:'rgba(18,14,32,0.88)',
+              backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',
+              border:'1px solid rgba(255,255,255,0.13)',
+              boxShadow:'0 4px 24px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07)',
+              position:'relative',overflow:'hidden',cursor:'ns-resize',
+              display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'space-between',
+              padding:'9px 0'
+            },
+            onTouchStart:function(e){e.preventDefault();setLevDragging(true);setLevStart(getClientY(e));},
+            onTouchMove:function(e){e.preventDefault();if(!levDragging||levStart===null)return;var dy=getClientY(e)-levStart;setLevY(Math.max(-LEVER_MAX,Math.min(LEVER_MAX,dy)));},
+            onTouchEnd:function(e){e.preventDefault();leverRelease();},
+            onMouseDown:function(e){setLevDragging(true);setLevStart(getClientY(e));},
+            onMouseMove:function(e){if(!levDragging||levStart===null)return;var dy=getClientY(e)-levStart;setLevY(Math.max(-LEVER_MAX,Math.min(LEVER_MAX,dy)));},
+            onMouseUp:function(){leverRelease();},
+            onMouseLeave:function(){if(levDragging)leverRelease();}
+          },
+            // heart icon at top of housing
+            React.createElement('div',{style:{opacity:levY<0?0.2+pct*0.8:0.25,transition:'opacity 0.15s',transform:'scale('+(levY<0?0.8+pct*0.2:0.8)+')',transition2:'transform 0.15s'}},
+              React.createElement('svg',{viewBox:'0 0 24 24',width:13,height:13},
+                React.createElement('defs',null,
+                  React.createElement('linearGradient',{id:'hsg',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
+                    React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),
+                    React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'})
+                  )
+                ),
+                React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#hsg)',stroke:'none'})
+              )
+            ),
+
+            // knob
+            React.createElement('div',{style:{
+              width:'28px',height:'28px',borderRadius:'50%',flexShrink:0,
+              background:'linear-gradient(145deg,rgba(255,255,255,0.96),rgba(228,220,255,0.92))',
+              boxShadow:'0 2px 10px rgba(0,0,0,0.4),0 0 0 1.5px rgba(123,110,255,'+(0.2+pct*0.5)+')',
+              transform:'translateY('+knobY+'px)',
+              transition:levDragging?'box-shadow 0.1s':'transform 0.38s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.1s',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              position:'relative',zIndex:2
+            }},
+              // knob grip lines
+              React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'3px',alignItems:'center'}},
+                React.createElement('div',{style:{width:'12px',height:'1.5px',borderRadius:'1px',background:'rgba(100,80,180,0.3)'}}),
+                React.createElement('div',{style:{width:'8px',height:'1.5px',borderRadius:'1px',background:'rgba(100,80,180,0.2)'}}),
+                React.createElement('div',{style:{width:'12px',height:'1.5px',borderRadius:'1px',background:'rgba(100,80,180,0.3)'}})
+              )
+            ),
+
+            // thumbs icon at bottom of housing
+            React.createElement('div',{style:{fontSize:'11px',opacity:levY>0?0.2+pct*0.8:0.25,transition:'opacity 0.15s',transform:'scale('+(levY>0?0.8+pct*0.2:0.8)+')',transition2:'transform 0.15s'}},'👍')
+          ),
+
+          // label
+          React.createElement('div',{style:{fontSize:'8px',color:'var(--t3)',fontFamily:'DM Sans,sans-serif',letterSpacing:'0.3px',textAlign:'center',lineHeight:1.2}},
+            levY<=-14?'♥ send':levY>=14?'👍 send':'react'
           )
-        ),
-        // swipe hint arrows
-        React.createElement('div',{style:{position:'absolute',top:'-14px',left:0,right:0,textAlign:'center',fontSize:'8px',color:'var(--t3)',pointerEvents:'none'}},'▲'),
-        React.createElement('div',{style:{position:'absolute',bottom:'-14px',left:0,right:0,textAlign:'center',fontSize:'8px',color:'var(--t3)',pointerEvents:'none'}},'▼')
-      ),
-      txt.trim() ? React.createElement('button',{
-        onClick:send,
-        style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 0.2s'}
-      },'✓') :
+        );
+      })(),
+
+      // send button
       React.createElement('button',{
-        onClick:function(){sendReaction();},
-        style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 12px rgba(123,110,255,0.4)'}
-      }, rxn==='thumbs'?'👍':
-        React.createElement('svg',{viewBox:'0 0 24 24',width:20,height:20},
-          React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'#fff',stroke:'none'})
-        )
-      )
+        onClick:send,
+        disabled:!txt.trim(),
+        style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:txt.trim()?'pointer':'default',flexShrink:0,opacity:txt.trim()?1:0.35,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 0.2s'}
+      },'✓')
     )
   );
 }
