@@ -2,7 +2,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import CallScreen from './CallScreen';
 import {createClient} from '@supabase/supabase-js';
-import {playSound,getSCtx,getSoundPrefs} from '../utils/soundEngine';
+import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
 var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var EXPERT_CONVOS_BASE=[
@@ -100,6 +100,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var levHoldPctS=useState(0); var levHoldPct=levHoldPctS[0]; var setLevHoldPct=levHoldPctS[1];
   var levHoldIntervalRef=useRef(null);
   var levHoldStartRef=useRef(null);
+  var lastHapticRef=useRef(0);   // timestamp of last haptic pulse
+  var lastHapticTierRef=useRef(0); // last intensity tier fired (0-4)
 
   var bottomRef=useRef(null);
 
@@ -139,16 +141,35 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     setLevActive(type);
     setLevHoldPct(0);
     levHoldStartRef.current=Date.now();
+    lastHapticRef.current=0;
+    lastHapticTierRef.current=0;
     clearInterval(levHoldIntervalRef.current);
     startSwooshMs(type==='heart');
-    var wasMax=false;
     levHoldIntervalRef.current=setInterval(function(){
       var elapsed=(Date.now()-levHoldStartRef.current)/1500;
       var pct=Math.min(elapsed,1);
       setLevHoldPct(pct);
-      if(pct>=1){
-        if(!wasMax){wasMax=true;try{navigator.vibrate&&navigator.vibrate([18,10,18,10,18]);}catch(e){}}
-        else{try{navigator.vibrate&&navigator.vibrate([12,8,12]);}catch(e){}}
+      var now=Date.now();
+      // Progressive haptic tiers — intensity + frequency both grow with pct
+      // tier 0: nothing (<30%)
+      // tier 1: 30-50% — feather tap every 420ms  [4]
+      // tier 2: 50-70% — light double every 300ms  [7,5,7]
+      // tier 3: 70-90% — medium roll every 220ms   [12,7,12,7]
+      // tier 4: 90-99% — strong burst every 160ms  [18,9,18,9,18]
+      // tier 5: 100%   — max explosion every 140ms  [25,12,25,12,25,12,25]
+      var tier,interval,pattern;
+      if(pct>=1)      {tier=5;interval=140;pattern=[25,12,25,12,25,12,25];}
+      else if(pct>=0.9){tier=4;interval=160;pattern=[18,9,18,9,18];}
+      else if(pct>=0.7){tier=3;interval=220;pattern=[12,7,12,7];}
+      else if(pct>=0.5){tier=2;interval=300;pattern=[7,5,7];}
+      else if(pct>=0.3){tier=1;interval=420;pattern=[4];}
+      else             {tier=0;interval=9999;pattern=null;}
+      if(pattern&&(now-lastHapticRef.current)>=interval){
+        // If tier jumped (escalating), give an immediate stronger pulse
+        if(tier>lastHapticTierRef.current&&tier>=2){hapticPulse(pattern);}
+        else{hapticPulse(pattern);}
+        lastHapticRef.current=now;
+        lastHapticTierRef.current=tier;
       }
       if(elapsed>=1)clearInterval(levHoldIntervalRef.current);
     },16);
