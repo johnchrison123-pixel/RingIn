@@ -2,7 +2,7 @@
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {createClient} from '@supabase/supabase-js';
-import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META} from '../utils/soundEngine';
+import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled} from '../utils/soundEngine';
 var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var COUNTRIES=[
@@ -177,6 +177,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   // Sound settings state
   var showSoundS=useState(false); var showSound=showSoundS[0]; var setShowSound=showSoundS[1];
   var soundPrefsS=useState(function(){try{var s=localStorage.getItem('ringin_sound_prefs');if(s)return Object.assign({typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}},JSON.parse(s));}catch(e){}return {typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}};}); var soundPrefs=soundPrefsS[0]; var setSoundPrefs=soundPrefsS[1];
+  var hapticsOnS=useState(getHapticsEnabled); var hapticsOn=hapticsOnS[0]; var setHapticsOn=hapticsOnS[1];
   // Support state
   var supportEmailS=useState(email||''); var supportEmail=supportEmailS[0]; var setSupportEmail=supportEmailS[1];
   var supportMsgS=useState(''); var supportMsg=supportMsgS[0]; var setSupportMsg=supportMsgS[1];
@@ -1177,6 +1178,29 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         )
       ),
       React.createElement('div',{style:{padding:'16px',display:'flex',flexDirection:'column',gap:'12px'}},
+        // ── Haptics global toggle card ──────────────────────────────────────
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'16px',padding:'16px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+            React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'12px',background:hapticsOn?'linear-gradient(135deg,#7B6EFF22,#E84D9A22)':'var(--bg4)',border:'1px solid '+(hapticsOn?'var(--ac)':'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',transition:'all 0.2s'}},'📳'),
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}},'Haptics'),
+              React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}},hapticsOn?'Vibration on for likes, messages & alerts':'Vibration is off')
+            )
+          ),
+          React.createElement('div',{
+            onClick:function(){
+              var next=!hapticsOn;
+              setHapticsOn(next);
+              setHapticsEnabled(next);
+              // Confirmation pulse when turning on
+              if(next){try{navigator.vibrate&&navigator.vibrate([15,8,25]);}catch(e){}}
+            },
+            style:{width:'50px',height:'28px',borderRadius:'14px',background:hapticsOn?'linear-gradient(135deg,#7B6EFF,#E84D9A)':'var(--border)',cursor:'pointer',position:'relative',transition:'background 0.25s',flexShrink:0}
+          },
+            React.createElement('div',{style:{position:'absolute',top:'3px',left:hapticsOn?'24px':'3px',width:'22px',height:'22px',borderRadius:'50%',background:'#fff',transition:'left 0.25s',boxShadow:'0 2px 6px rgba(0,0,0,0.35)'}})
+          )
+        ),
+        // ── Per-sound cards ─────────────────────────────────────────────────
         SOUND_ORDER.map(function(type){
           var meta=SOUND_META[type];
           var pref=soundPrefs[type]||{variant:0,volume:0.55,enabled:true};

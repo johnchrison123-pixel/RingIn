@@ -24,6 +24,19 @@ export function saveSoundPrefs(prefs){
   try{localStorage.setItem('ringin_sound_prefs',JSON.stringify(prefs));}catch(e){}
 }
 
+// ─── HAPTICS ───────────────────────────────────────────────────────────────
+export function getHapticsEnabled(){
+  try{return localStorage.getItem('ringin_haptics')!=='0';}catch(e){return true;}
+}
+export function setHapticsEnabled(val){
+  try{localStorage.setItem('ringin_haptics',val?'1':'0');}catch(e){}
+}
+// Vibrate only if haptics pref is on and device supports it
+export function hapticPulse(pattern){
+  if(!getHapticsEnabled())return;
+  try{if(navigator.vibrate)navigator.vibrate(pattern);}catch(e){}
+}
+
 // ─── TYPING ────────────────────────────────────────────────────────────────
 var TYPING_VARIANTS=[
   function crystal(ctx,vol){// Crystal — bandpass noise
