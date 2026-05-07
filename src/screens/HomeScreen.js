@@ -199,6 +199,7 @@ export function UserProfileView(props){
   var commentsCacheUS=useState({}); var commentsCacheU=commentsCacheUS[0]; var setCommentsCacheU=commentsCacheUS[1];
   var commentInputUS=useState(''); var commentInputU=commentInputUS[0]; var setCommentInputU=commentInputUS[1];
   var commentLoadingUS=useState(false); var commentLoadingU=commentLoadingUS[0]; var setCommentLoadingU=commentLoadingUS[1];
+  var commentLikesUS=useState({}); var commentLikesU=commentLikesUS[0]; var setCommentLikesU=commentLikesUS[1];
 
   // Post menu state
   var postMenuUS=useState(null); var postMenuU=postMenuUS[0]; var setPostMenuU=postMenuUS[1];
@@ -520,7 +521,7 @@ export function UserProfileView(props){
             React.createElement('div',{style:{maxHeight:'360px',overflowY:'auto',padding:'8px 12px'}},
               commentsArr.length===0?React.createElement('div',{style:{textAlign:'center',padding:'12px',color:'var(--t3)',fontSize:'12px'}},'No comments yet. Be the first!'):
               commentsArr.map(function(c){
-                var cLiked=(commentLikes[c.id]||0)>0;
+                var cLiked=(commentLikesU[c.id]||0)>0;
                 return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'12px'}},
                   React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
                     c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
@@ -534,10 +535,10 @@ export function UserProfileView(props){
                       React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.4}},c.text)
                     ),
                     React.createElement('div',{style:{display:'flex',gap:'14px',paddingLeft:'4px'}},
-                      React.createElement('button',{onClick:function(){setCommentLikes(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
+                      React.createElement('button',{onClick:function(){setCommentLikesU(function(prev){var m=Object.assign({},prev);m[c.id]=(m[c.id]||0)===0?1:0;return m;});},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:cLiked?'#E84D9A':'var(--t3)',display:'flex',alignItems:'center',gap:'3px',padding:'0',fontFamily:'DM Sans,sans-serif'}},
                         React.createElement('span',{style:{fontSize:'13px'}},cLiked?'❤️':'🤍'), cLiked?'Liked':'Like'
                       ),
-                      React.createElement('button',{onClick:function(){setCommentInput('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
+                      React.createElement('button',{onClick:function(){setCommentInputU('@'+(c.user_name||'User')+' ');},style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'var(--t3)',padding:'0',fontFamily:'DM Sans,sans-serif'}},'Reply')
                     )
                   )
                 );
