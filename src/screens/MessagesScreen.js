@@ -24,6 +24,100 @@ function timeAgo(dateStr){
   return date.toLocaleDateString([],{month:'short',day:'numeric'});
 }
 
+// ── Audio engine ──
+var _msCtx=null;
+function getMsCtx(){if(!_msCtx){try{_msCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}return _msCtx;}
+var _swooshRef={osc:null,gain:null};
+function startSwooshMs(isHeart){
+  stopSwooshMs();
+  var ctx=getMsCtx();if(!ctx)return;
+  var osc=ctx.createOscillator();
+  var gain=ctx.createGain();
+  var filter=ctx.createBiquadFilter();
+  osc.connect(filter);filter.connect(gain);gain.connect(ctx.destination);
+  filter.type='bandpass';filter.frequency.value=isHeart?600:400;filter.Q.value=2;
+  osc.type='sawtooth';
+  osc.frequency.setValueAtTime(isHeart?180:140,ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(isHeart?560:380,ctx.currentTime+2.0);
+  gain.gain.setValueAtTime(0.001,ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.07,ctx.currentTime+0.25);
+  gain.gain.linearRampToValueAtTime(0.14,ctx.currentTime+2.0);
+  osc.start();
+  _swooshRef.osc=osc;_swooshRef.gain=gain;_swooshRef.ctx=ctx;
+}
+function stopSwooshMs(){
+  if(_swooshRef.osc){
+    try{
+      var ctx=_swooshRef.ctx;
+      _swooshRef.gain.gain.setValueAtTime(_swooshRef.gain.gain.value||0.05,ctx.currentTime);
+      _swooshRef.gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.08);
+      _swooshRef.osc.stop(ctx.currentTime+0.09);
+    }catch(e){}
+    _swooshRef.osc=null;_swooshRef.gain=null;
+  }
+}
+function playReleaseMs(isHeart){
+  var ctx=getMsCtx();if(!ctx)return;
+  if(isHeart){
+    // soft thud + rising chime = heartbeat
+    var o1=ctx.createOscillator();var g1=ctx.createGain();
+    o1.connect(g1);g1.connect(ctx.destination);
+    o1.type='sine';o1.frequency.setValueAtTime(90,ctx.currentTime);
+    g1.gain.setValueAtTime(0.28,ctx.currentTime);
+    g1.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
+    o1.start();o1.stop(ctx.currentTime+0.18);
+    var o2=ctx.createOscillator();var g2=ctx.createGain();
+    o2.connect(g2);g2.connect(ctx.destination);
+    o2.type='sine';o2.frequency.setValueAtTime(680,ctx.currentTime+0.05);
+    o2.frequency.exponentialRampToValueAtTime(920,ctx.currentTime+0.28);
+    g2.gain.setValueAtTime(0.18,ctx.currentTime+0.05);
+    g2.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.34);
+    o2.start(ctx.currentTime+0.05);o2.stop(ctx.currentTime+0.34);
+    // third sparkle
+    var o3=ctx.createOscillator();var g3=ctx.createGain();
+    o3.connect(g3);g3.connect(ctx.destination);
+    o3.type='sine';o3.frequency.setValueAtTime(1200,ctx.currentTime+0.12);
+    g3.gain.setValueAtTime(0.08,ctx.currentTime+0.12);
+    g3.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.26);
+    o3.start(ctx.currentTime+0.12);o3.stop(ctx.currentTime+0.26);
+  } else {
+    // thumbs: crisp pop + chord
+    var o=ctx.createOscillator();var g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.type='triangle';o.frequency.setValueAtTime(320,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(560,ctx.currentTime+0.10);
+    g.gain.setValueAtTime(0.24,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.13);
+    o.start();o.stop(ctx.currentTime+0.13);
+    var ob=ctx.createOscillator();var gb=ctx.createGain();
+    ob.connect(gb);gb.connect(ctx.destination);
+    ob.type='sine';ob.frequency.setValueAtTime(880,ctx.currentTime+0.06);
+    gb.gain.setValueAtTime(0.12,ctx.currentTime+0.06);
+    gb.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.22);
+    ob.start(ctx.currentTime+0.06);ob.stop(ctx.currentTime+0.22);
+    var oc=ctx.createOscillator();var gc=ctx.createGain();
+    oc.connect(gc);gc.connect(ctx.destination);
+    oc.type='sine';oc.frequency.setValueAtTime(1100,ctx.currentTime+0.09);
+    gc.gain.setValueAtTime(0.07,ctx.currentTime+0.09);
+    gc.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
+    oc.start(ctx.currentTime+0.09);oc.stop(ctx.currentTime+0.20);
+  }
+}
+
+// Gradient heart SVG for chat overlay
+function HeartSvg(props){
+  var sz=props.size||60; var id=props.id||'hsvg';
+  return React.createElement('svg',{viewBox:'0 0 24 24',width:sz,height:sz,style:{filter:'drop-shadow(0 0 '+(sz*0.25)+'px rgba(232,77,154,0.85))'}},
+    React.createElement('defs',null,
+      React.createElement('linearGradient',{id:id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
+        React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),
+        React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'})
+      )
+    ),
+    React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#'+id+')',stroke:'none'})
+  );
+}
+
 function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var myId = session&&session.user ? session.user.id : 'guest';
   var myName = session&&session.user ? session.user.email.split('@')[0] : 'You';
@@ -33,13 +127,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var mS=useState(initMsgs); var msgs=mS[0]; var setMsgs=mS[1];
   var tS=useState(''); var txt=tS[0]; var setTxt=tS[1];
   var emojiS=useState(false); var showEmoji=emojiS[0]; var setShowEmoji=emojiS[1];
-  // Lever state: leverY = 0 center, negative = up (heart), positive = down (thumbs)
-  var LEVER_MAX=28;
+  var LMAX=28;
   var levYS=useState(0); var levY=levYS[0]; var setLevY=levYS[1];
   var levStartS=useState(null); var levStart=levStartS[0]; var setLevStart=levStartS[1];
-  var levDraggingS=useState(false); var levDragging=levDraggingS[0]; var setLevDragging=levDraggingS[1];
-  var levSentS=useState(null); var levSent=levSentS[0]; var setLevSent=levSentS[1]; // 'heart'|'thumbs'|null flash
-  var levRef=useRef(null);
+  // levActive: null | 'heart' | 'thumbs'  — set the moment lever crosses threshold
+  var levActiveS=useState(null); var levActive=levActiveS[0]; var setLevActive=levActiveS[1];
+  // levHoldPct: 0→1 over 1.5s while holding past threshold
+  var levHoldPctS=useState(0); var levHoldPct=levHoldPctS[0]; var setLevHoldPct=levHoldPctS[1];
+  var levHoldIntervalRef=useRef(null);
+  var levHoldStartRef=useRef(null);
 
   var bottomRef=useRef(null);
 
@@ -67,34 +163,51 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
 
+  function getCY(e){
+    if(e.touches&&e.touches.length)return e.touches[0].clientY;
+    if(e.changedTouches&&e.changedTouches.length)return e.changedTouches[0].clientY;
+    return e.clientY;
+  }
+
+  function activateLever(type){
+    if(levActive===type) return;
+    setLevActive(type);
+    setLevHoldPct(0);
+    levHoldStartRef.current=Date.now();
+    clearInterval(levHoldIntervalRef.current);
+    startSwooshMs(type==='heart');
+    levHoldIntervalRef.current=setInterval(function(){
+      var elapsed=(Date.now()-levHoldStartRef.current)/1500;
+      setLevHoldPct(Math.min(elapsed,1));
+      if(elapsed>=1)clearInterval(levHoldIntervalRef.current);
+    },16);
+  }
+
+  function deactivateLever(){
+    clearInterval(levHoldIntervalRef.current);
+    stopSwooshMs();
+    setLevActive(null);
+    setLevHoldPct(0);
+  }
+
   function sendReactionEmoji(emoji){
-    var receiverId = convo.receiverId || (convId.replace(myId,'').replace('_',''));
+    var receiverId=convo.receiverId||(convId.replace(myId,'').replace('_',''));
     var m={conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:emoji,read:false};
     sb.from('messages').insert([m]).then(function(r){
-      if(r.error) console.error(r.error);
-      else if(onMessageSent) onMessageSent(convo, emoji);
+      if(r.error)console.error(r.error);
+      else if(onMessageSent)onMessageSent(convo,emoji);
     });
   }
 
   function leverRelease(){
-    if(levY<=-14){
-      sendReactionEmoji('❤️');
-      setLevSent('heart');
-      setTimeout(function(){setLevSent(null);},600);
-    } else if(levY>=14){
-      sendReactionEmoji('👍');
-      setLevSent('thumbs');
-      setTimeout(function(){setLevSent(null);},600);
-    }
+    var active=levActive;
+    deactivateLever();
     setLevY(0);
-    setLevDragging(false);
     setLevStart(null);
-  }
-
-  function getClientY(e){
-    if(e.touches&&e.touches.length) return e.touches[0].clientY;
-    if(e.changedTouches&&e.changedTouches.length) return e.changedTouches[0].clientY;
-    return e.clientY;
+    if(active){
+      sendReactionEmoji(active==='heart'?'❤️':'👍');
+      playReleaseMs(active==='heart');
+    }
   }
 
   function send(){
@@ -115,46 +228,82 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     });
   }
 
+  var overlayScale = 1 + levHoldPct * 2; // 1x → 3x
+  var glowRadius = 10 + levHoldPct * 30;
+
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
   },
+    // ── Header ──
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
       React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'<'),
       React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
-        convo.img ? React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
+        convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
       ),
       React.createElement('div',{style:{flex:1}},
         React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},convo.name),
-        convo.isOnline ? React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
-          React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}), 'Online'
-        ) : React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
+        convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
+          React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
+        ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
       ),
-      convo.rate ? React.createElement('button',{onClick:function(){if(onCall)onCall(convo);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call') : null
+      convo.rate?React.createElement('button',{onClick:function(){if(onCall)onCall(convo);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call'):null
     ),
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}},
-      msgs.length===0 && React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi! 👋'),
-      msgs.map(function(m){
-        var isMe = m.sender_id===myId;
-        return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:isMe?'flex-end':'flex-start',alignItems:'flex-end',gap:'6px'}},
-          !isMe ? React.createElement('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-            convo.img ? React.createElement('img',{src:convo.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (convo.initials||'?')
-          ) : null,
-          React.createElement('div',null,
-            React.createElement('div',{style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4}},m.text),
-            React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
-              m.created_at ? React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})) : null,
-              isMe ? React.createElement('span',{style:{color:m.read?'var(--ac)':'var(--t3)'}},m.read?'✓✓':'✓') : null
+
+    // ── Chat messages area with reaction overlay ──
+    React.createElement('div',{style:{flex:1,position:'relative',overflow:'hidden'}},
+      React.createElement('div',{style:{height:'100%',overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}},
+        msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi! 👋'),
+        msgs.map(function(m){
+          var isMe=m.sender_id===myId;
+          return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:isMe?'flex-end':'flex-start',alignItems:'flex-end',gap:'6px'}},
+            !isMe?React.createElement('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
+              convo.img?React.createElement('img',{src:convo.img,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||'?')
+            ):null,
+            React.createElement('div',null,
+              React.createElement('div',{style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4}},m.text),
+              React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
+                m.created_at?React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})):null,
+                isMe?React.createElement('span',{style:{color:m.read?'var(--ac)':'var(--t3)'}},m.read?'✓✓':'✓'):null
+              )
             )
-          )
-        );
-      }),
-      React.createElement('div',{ref:bottomRef})
+          );
+        }),
+        React.createElement('div',{ref:bottomRef})
+      ),
+
+      // ── Reaction overlay in chat window ──
+      levActive?React.createElement('div',{style:{
+        position:'absolute',inset:0,
+        display:'flex',alignItems:'center',justifyContent:'center',
+        pointerEvents:'none',
+        background:levActive==='heart'
+          ?'radial-gradient(ellipse at center, rgba(232,77,154,0.10) 0%, transparent 65%)'
+          :'radial-gradient(ellipse at center, rgba(123,110,255,0.10) 0%, transparent 65%)',
+        zIndex:10
+      }},
+        React.createElement('div',{style:{
+          transform:'scale('+overlayScale+')',
+          transformOrigin:'center',
+          transition:'none',
+          display:'flex',alignItems:'center',justifyContent:'center'
+        }},
+          levActive==='heart'
+            ?React.createElement(HeartSvg,{size:64,id:'chatOverlayHeart'})
+            :React.createElement('div',{style:{
+                fontSize:'60px',lineHeight:1,
+                filter:'drop-shadow(0 0 '+(glowRadius*0.5)+'px rgba(123,110,255,0.7))'
+              }},'👍')
+        )
+      ):null
     ),
-    showEmoji ? React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}},
+
+    showEmoji?React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}},
       ['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','😢','😮','🥳','😎','🙏','💯','😅','🤣'].map(function(em){
         return React.createElement('span',{key:em,onClick:function(){setTxt(function(t){return t+em;});setShowEmoji(false);},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
       })
-    ) : null,
+    ):null,
+
+    // ── Input bar ──
     React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center',background:'var(--bg)'}},
       React.createElement('label',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}},
         '📷',
@@ -172,129 +321,83 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
       }),
 
-      // ── Floating Lever Reaction Toggle ──
+      // ── Lever ──
       (function(){
-        var pct=Math.min(Math.abs(levY)/LEVER_MAX,1); // 0→1
-        var isUp=levY<=-14;
-        var isDown=levY>=14;
-        var heartScale=levY<0?1+pct*1.6:1;
-        var thumbScale=levY>0?1+pct*1.6:1;
-        var knobY=levY; // px, clamped by drag logic
-        return React.createElement('div',{
-          ref:levRef,
-          style:{position:'relative',flexShrink:0,width:'38px',display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',userSelect:'none',touchAction:'none'}
-        },
-          // ── floating emoji preview above lever ──
-          React.createElement('div',{style:{
-            position:'absolute',bottom:'calc(100% + 6px)',left:'50%',
-            transform:'translateX(-50%)',
-            pointerEvents:'none',
-            display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',
-            zIndex:100
-          }},
-            // heart preview (appears when pushing up)
-            React.createElement('div',{style:{
-              transform:'scale('+heartScale+')',
-              transformOrigin:'bottom center',
-              transition:levDragging?'none':'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
-              opacity:levY<0?Math.min(pct*2,1):0,
-              transition2:levDragging?'none':'opacity 0.2s'
-            }},
-              React.createElement('svg',{viewBox:'0 0 24 24',width:28,height:28},
-                React.createElement('defs',null,
-                  React.createElement('linearGradient',{id:'lhg',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
-                    React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),
-                    React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'})
-                  )
-                ),
-                React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#lhg)',stroke:'none'})
-              )
-            ),
-            // thumbs preview (appears when pushing down — show above lever still)
-            React.createElement('div',{style:{
-              transform:'scale('+thumbScale+')',
-              transformOrigin:'bottom center',
-              transition:levDragging?'none':'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
-              opacity:levY>0?Math.min(pct*2,1):0,
-              fontSize:'26px',lineHeight:1
-            }},'👍')
-          ),
-
-          // ── sent flash ──
-          levSent?React.createElement('div',{style:{
-            position:'absolute',bottom:'calc(100% + 10px)',left:'50%',
-            transform:'translateX(-50%) scale(1)',
-            animation:'leverSentPop 0.5s ease forwards',
-            fontSize:'30px',pointerEvents:'none',zIndex:101
-          }},levSent==='heart'?'❤️':'👍'):null,
-
-          // ── housing pill ──
+        var pct=Math.min(Math.abs(levY)/LMAX,1);
+        var knobGlow=levActive==='heart'?'rgba(232,77,154,'+(0.3+levHoldPct*0.5)+')':levActive==='thumbs'?'rgba(123,110,255,'+(0.3+levHoldPct*0.5)+')':'rgba(123,110,255,0.25)';
+        return React.createElement('div',{style:{position:'relative',flexShrink:0,width:'38px',display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',userSelect:'none',touchAction:'none'}},
+          // ── housing ──
           React.createElement('div',{
             style:{
-              width:'38px',height:'80px',borderRadius:'19px',
-              background:'rgba(18,14,32,0.88)',
+              width:'38px',height:'82px',borderRadius:'19px',
+              background:'rgba(16,12,28,0.9)',
               backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',
-              border:'1px solid rgba(255,255,255,0.13)',
-              boxShadow:'0 4px 24px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.07)',
+              border:'1px solid '+(levActive==='heart'?'rgba(232,77,154,0.45)':levActive==='thumbs'?'rgba(123,110,255,0.45)':'rgba(255,255,255,0.12)'),
+              boxShadow:'0 6px 28px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.08)'
+                +(levActive?', 0 0 20px '+(levActive==='heart'?'rgba(232,77,154,0.25)':'rgba(123,110,255,0.25)'):''),
               position:'relative',overflow:'hidden',cursor:'ns-resize',
               display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'space-between',
-              padding:'9px 0'
+              padding:'10px 0',
+              transition:'border-color 0.2s,box-shadow 0.2s'
             },
-            onTouchStart:function(e){e.preventDefault();setLevDragging(true);setLevStart(getClientY(e));},
-            onTouchMove:function(e){e.preventDefault();if(!levDragging||levStart===null)return;var dy=getClientY(e)-levStart;setLevY(Math.max(-LEVER_MAX,Math.min(LEVER_MAX,dy)));},
+            onTouchStart:function(e){e.preventDefault();setLevStart(getCY(e));},
+            onTouchMove:function(e){
+              e.preventDefault();
+              if(levStart===null)return;
+              var dy=getCY(e)-levStart;
+              var clamped=Math.max(-LMAX,Math.min(LMAX,dy));
+              setLevY(clamped);
+              if(clamped<=-14)activateLever('heart');
+              else if(clamped>=14)activateLever('thumbs');
+              else deactivateLever();
+            },
             onTouchEnd:function(e){e.preventDefault();leverRelease();},
-            onMouseDown:function(e){setLevDragging(true);setLevStart(getClientY(e));},
-            onMouseMove:function(e){if(!levDragging||levStart===null)return;var dy=getClientY(e)-levStart;setLevY(Math.max(-LEVER_MAX,Math.min(LEVER_MAX,dy)));},
+            onMouseDown:function(e){setLevStart(getCY(e));},
+            onMouseMove:function(e){
+              if(levStart===null)return;
+              var dy=getCY(e)-levStart;
+              var clamped=Math.max(-LMAX,Math.min(LMAX,dy));
+              setLevY(clamped);
+              if(clamped<=-14)activateLever('heart');
+              else if(clamped>=14)activateLever('thumbs');
+              else deactivateLever();
+            },
             onMouseUp:function(){leverRelease();},
-            onMouseLeave:function(){if(levDragging)leverRelease();}
+            onMouseLeave:function(){if(levStart!==null)leverRelease();}
           },
-            // heart icon at top of housing
-            React.createElement('div',{style:{opacity:levY<0?0.2+pct*0.8:0.25,transition:'opacity 0.15s',transform:'scale('+(levY<0?0.8+pct*0.2:0.8)+')',transition2:'transform 0.15s'}},
-              React.createElement('svg',{viewBox:'0 0 24 24',width:13,height:13},
-                React.createElement('defs',null,
-                  React.createElement('linearGradient',{id:'hsg',x1:'0%',y1:'0%',x2:'100%',y2:'100%'},
-                    React.createElement('stop',{offset:'0%',stopColor:'#7B6EFF'}),
-                    React.createElement('stop',{offset:'100%',stopColor:'#E84D9A'})
-                  )
-                ),
-                React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:'url(#hsg)',stroke:'none'})
-              )
+            // heart icon top
+            React.createElement('div',{style:{opacity:levActive==='heart'?0.9+levHoldPct*0.1:0.28,transition:'opacity 0.15s'}},
+              React.createElement(HeartSvg,{size:14,id:'levHTop'})
             ),
-
             // knob
             React.createElement('div',{style:{
-              width:'28px',height:'28px',borderRadius:'50%',flexShrink:0,
-              background:'linear-gradient(145deg,rgba(255,255,255,0.96),rgba(228,220,255,0.92))',
-              boxShadow:'0 2px 10px rgba(0,0,0,0.4),0 0 0 1.5px rgba(123,110,255,'+(0.2+pct*0.5)+')',
-              transform:'translateY('+knobY+'px)',
-              transition:levDragging?'box-shadow 0.1s':'transform 0.38s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.1s',
-              display:'flex',alignItems:'center',justifyContent:'center',
-              position:'relative',zIndex:2
+              width:'30px',height:'30px',borderRadius:'50%',flexShrink:0,
+              background:'linear-gradient(145deg,#FFFFFF,#EDE8FF)',
+              boxShadow:'0 3px 12px rgba(0,0,0,0.45), 0 0 0 2px '+knobGlow,
+              transform:'translateY('+levY+'px)',
+              transition:levStart!==null?'box-shadow 0.15s':'transform 0.42s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.15s',
+              display:'flex',alignItems:'center',justifyContent:'center',zIndex:2
             }},
-              // knob grip lines
-              React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'3px',alignItems:'center'}},
-                React.createElement('div',{style:{width:'12px',height:'1.5px',borderRadius:'1px',background:'rgba(100,80,180,0.3)'}}),
-                React.createElement('div',{style:{width:'8px',height:'1.5px',borderRadius:'1px',background:'rgba(100,80,180,0.2)'}}),
-                React.createElement('div',{style:{width:'12px',height:'1.5px',borderRadius:'1px',background:'rgba(100,80,180,0.3)'}})
+              React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'3.5px',alignItems:'center'}},
+                React.createElement('div',{style:{width:'13px',height:'1.5px',borderRadius:'1px',background:'rgba(80,60,160,0.28)'}}),
+                React.createElement('div',{style:{width:'9px',height:'1.5px',borderRadius:'1px',background:'rgba(80,60,160,0.18)'}}),
+                React.createElement('div',{style:{width:'13px',height:'1.5px',borderRadius:'1px',background:'rgba(80,60,160,0.28)'}})
               )
             ),
-
-            // thumbs icon at bottom of housing
-            React.createElement('div',{style:{fontSize:'11px',opacity:levY>0?0.2+pct*0.8:0.25,transition:'opacity 0.15s',transform:'scale('+(levY>0?0.8+pct*0.2:0.8)+')',transition2:'transform 0.15s'}},'👍')
+            // thumbs icon bottom
+            React.createElement('div',{style:{fontSize:'12px',opacity:levActive==='thumbs'?0.9+levHoldPct*0.1:0.28,transition:'opacity 0.15s'}},'👍')
           ),
-
           // label
-          React.createElement('div',{style:{fontSize:'8px',color:'var(--t3)',fontFamily:'DM Sans,sans-serif',letterSpacing:'0.3px',textAlign:'center',lineHeight:1.2}},
-            levY<=-14?'♥ send':levY>=14?'👍 send':'react'
+          React.createElement('div',{style:{fontSize:'7.5px',color:levActive?'var(--ac)':'var(--t3)',fontFamily:'DM Sans,sans-serif',textAlign:'center',letterSpacing:'0.2px',transition:'color 0.2s'}},
+            levActive==='heart'?'♥ hold':levActive==='thumbs'?'👍 hold':'react'
           )
         );
       })(),
 
       // send button
       React.createElement('button',{
-        onClick:send,
-        disabled:!txt.trim(),
-        style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:txt.trim()?'pointer':'default',flexShrink:0,opacity:txt.trim()?1:0.35,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 0.2s'}
+        onClick:send,disabled:!txt.trim(),
+        style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:txt.trim()?'pointer':'default',flexShrink:0,opacity:txt.trim()?1:0.32,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 0.2s'}
       },'✓')
     )
   );
