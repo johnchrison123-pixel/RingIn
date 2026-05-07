@@ -14,13 +14,18 @@ function getAudioCtx(){
 }
 function playKeyClick(){
   var ctx=getAudioCtx(); if(!ctx) return;
-  var o=ctx.createOscillator(); var g=ctx.createGain();
-  o.connect(g); g.connect(ctx.destination);
-  o.type='sine'; o.frequency.setValueAtTime(1200,ctx.currentTime);
-  o.frequency.exponentialRampToValueAtTime(800,ctx.currentTime+0.04);
-  g.gain.setValueAtTime(0.08,ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.06);
-  o.start(ctx.currentTime); o.stop(ctx.currentTime+0.06);
+  // Smooth tick: noise burst shaped like a soft key press
+  var buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);
+  var data=buf.getChannelData(0);
+  for(var i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
+  var src=ctx.createBufferSource(); src.buffer=buf;
+  var bpf=ctx.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=3200; bpf.Q.value=2.5;
+  var g=ctx.createGain();
+  src.connect(bpf); bpf.connect(g); g.connect(ctx.destination);
+  g.gain.setValueAtTime(0.0,ctx.currentTime);
+  g.gain.linearRampToValueAtTime(0.055,ctx.currentTime+0.003);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.048);
+  src.start(ctx.currentTime); src.stop(ctx.currentTime+0.05);
 }
 function playEmojiClick(){
   var ctx=getAudioCtx(); if(!ctx) return;

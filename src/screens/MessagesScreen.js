@@ -106,6 +106,20 @@ function playReleaseMs(isHeart){
   }
 }
 
+function playMsKeyClick(){
+  var ctx=getMsCtx();if(!ctx)return;
+  var buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);
+  var data=buf.getChannelData(0);
+  for(var i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
+  var src=ctx.createBufferSource();src.buffer=buf;
+  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=3200;bpf.Q.value=2.5;
+  var g=ctx.createGain();
+  src.connect(bpf);bpf.connect(g);g.connect(ctx.destination);
+  g.gain.setValueAtTime(0.0,ctx.currentTime);
+  g.gain.linearRampToValueAtTime(0.055,ctx.currentTime+0.003);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.048);
+  src.start(ctx.currentTime);src.stop(ctx.currentTime+0.05);
+}
 function playMsEmojiClick(){
   var ctx=getMsCtx();if(!ctx)return;
   var o=ctx.createOscillator();var g=ctx.createGain();
@@ -395,7 +409,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       },'😊'),
       React.createElement('input',{
         value:txt,
-        onChange:function(e){playMsEmojiClick();setTxt(e.target.value);},
+        onChange:function(e){playMsKeyClick();setTxt(e.target.value);},
         onKeyDown:function(e){if(e.key==='Enter')send();},
         placeholder:'Type a message...',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}

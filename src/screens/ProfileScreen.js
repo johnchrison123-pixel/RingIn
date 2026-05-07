@@ -109,6 +109,20 @@ function getProfAudioCtx(){
   if(!_profAudioCtx){try{_profAudioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
   return _profAudioCtx;
 }
+function playProfKeyClick(){
+  var ctx=getProfAudioCtx();if(!ctx)return;
+  var buf=ctx.createBuffer(1,ctx.sampleRate*0.05,ctx.sampleRate);
+  var data=buf.getChannelData(0);
+  for(var i=0;i<data.length;i++) data[i]=(Math.random()*2-1);
+  var src=ctx.createBufferSource();src.buffer=buf;
+  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=3200;bpf.Q.value=2.5;
+  var g=ctx.createGain();
+  src.connect(bpf);bpf.connect(g);g.connect(ctx.destination);
+  g.gain.setValueAtTime(0.0,ctx.currentTime);
+  g.gain.linearRampToValueAtTime(0.055,ctx.currentTime+0.003);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.048);
+  src.start(ctx.currentTime);src.stop(ctx.currentTime+0.05);
+}
 function playProfEmojiClick(){
   var ctx=getProfAudioCtx();if(!ctx)return;
   var o=ctx.createOscillator();var g=ctx.createGain();
@@ -1539,7 +1553,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
               avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
             ),
-            React.createElement('textarea',{value:postText,onChange:function(e){playProfEmojiClick();setPostText(e.target.value);},placeholder:"What's on your mind?",style:{flex:1,background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 11px',fontSize:'13px',color:'var(--text)',outline:'none',resize:'none',minHeight:'70px',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}})
+            React.createElement('textarea',{value:postText,onChange:function(e){playProfKeyClick();setPostText(e.target.value);},placeholder:"What's on your mind?",style:{flex:1,background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 11px',fontSize:'13px',color:'var(--text)',outline:'none',resize:'none',minHeight:'70px',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}})
           ),
           showEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px',background:'var(--bg4)',borderRadius:'10px',marginBottom:'8px'}},
             EMOJIS.map(function(em){return React.createElement('span',{key:em,onClick:function(){playProfEmojiClick();setPostText(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);})
@@ -1658,7 +1672,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                 ),
                 React.createElement('input',{
                   value:commentInputProf,
-                  onChange:function(e){playProfEmojiClick();setCommentInputProf(e.target.value);},
+                  onChange:function(e){playProfKeyClick();setCommentInputProf(e.target.value);},
                   onKeyDown:function(e){if(e.key==='Enter'&&commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}},
                   placeholder:'Write a comment...',
                   style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
