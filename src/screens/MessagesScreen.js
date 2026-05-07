@@ -374,20 +374,39 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           transition:'none',
           pointerEvents:'none'
         }}),
-        // emoji / heart centered, growing
-        React.createElement('div',{style:{
-          position:'relative',
-          transform:'scale('+overlayScale+')',
-          transformOrigin:'center',
-          transition:'none'
-        }},
-          levActive==='heart'
-            ?React.createElement(HeartSvg,{size:64,id:'chatOverlayHeart'})
-            :React.createElement('div',{style:{
-                fontSize:'60px',lineHeight:1,
-                filter:'drop-shadow(0 0 '+(8+levHoldPct*22)+'px rgba(123,110,255,'+(0.7+levHoldPct*0.3)+')'
-              }},'👍')
-        )
+        // emoji / heart centered, growing with earthquake shake
+        (function(){
+          var pct=levHoldPct;
+          var shaking=pct>0.06;
+          var animName=pct>0.55?'quake2':'quake1';
+          // duration shrinks 0.50s → 0.08s as pct goes 0→1 (gets more frantic)
+          var animDur=(0.50-pct*0.42)+'s';
+          // shake offset magnitude grows with pct (used inside keyframes via CSS var)
+          var baseStyle={
+            position:'relative',
+            transformOrigin:'center',
+            transition:'none',
+            display:'inline-block'
+          };
+          if(shaking){
+            // use CSS var for scale so keyframes can embed it
+            baseStyle['--qs']=String(overlayScale);
+            baseStyle.animationName=animName;
+            baseStyle.animationDuration=animDur;
+            baseStyle.animationTimingFunction='linear';
+            baseStyle.animationIterationCount='infinite';
+          } else {
+            baseStyle.transform='scale('+overlayScale+')';
+          }
+          return React.createElement('div',{style:baseStyle},
+            levActive==='heart'
+              ?React.createElement(HeartSvg,{size:64,id:'chatOverlayHeart'})
+              :React.createElement('div',{style:{
+                  fontSize:'60px',lineHeight:1,
+                  filter:'drop-shadow(0 0 '+(8+levHoldPct*22)+'px rgba(123,110,255,'+(0.7+levHoldPct*0.3)+')'
+                }},'👍')
+          );
+        })()
       ):null
     ),
 
