@@ -2,7 +2,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import CallScreen from './CallScreen';
 import {createClient} from '@supabase/supabase-js';
-import {playSound} from '../utils/soundEngine';
+import {playSound,getSCtx,getSoundPrefs} from '../utils/soundEngine';
 var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var EXPERT_CONVOS_BASE=[
@@ -25,14 +25,16 @@ function timeAgo(dateStr){
   return date.toLocaleDateString([],{month:'short',day:'numeric'});
 }
 
-// ── Audio engine ──
-var _msCtx=null;
-function getMsCtx(){if(!_msCtx){try{_msCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}return _msCtx;}
-var _swooshRef={osc:null,gain:null};
+// ── Audio engine — swoosh routed through central sound engine ──
+var _swooshRef={osc:null,gain:null,ctx:null};
 function startSwooshMs(isHeart){
   stopSwooshMs();
-  var ctx=getMsCtx();if(!ctx)return;
-  // Smooth sine-wave swoosh — no harsh sawtooth, just a warm rising tone
+  var ctx=getSCtx();if(!ctx)return;
+  // Read like volume from user prefs so Settings volume slider controls this too
+  var prefs=getSoundPrefs();
+  var likeP=prefs&&prefs.like;
+  var vol=(likeP&&likeP.enabled!==false)?((likeP.volume||0.55)):(0);
+  if(vol<=0)return;
   var osc=ctx.createOscillator();
   var gain=ctx.createGain();
   var filter=ctx.createBiquadFilter();
@@ -41,9 +43,11 @@ function startSwooshMs(isHeart){
   osc.type='sine';
   osc.frequency.setValueAtTime(isHeart?260:220,ctx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(isHeart?680:520,ctx.currentTime+2.0);
+  // Scale gain by vol (default 0.55 → original 0.038/0.055 targets)
+  var scale=vol/0.55;
   gain.gain.setValueAtTime(0.001,ctx.currentTime);
-  gain.gain.linearRampToValueAtTime(0.038,ctx.currentTime+0.35);
-  gain.gain.linearRampToValueAtTime(0.055,ctx.currentTime+2.0);
+  gain.gain.linearRampToValueAtTime(0.038*scale,ctx.currentTime+0.35);
+  gain.gain.linearRampToValueAtTime(0.055*scale,ctx.currentTime+2.0);
   osc.start();
   _swooshRef.osc=osc;_swooshRef.gain=gain;_swooshRef.ctx=ctx;
 }
@@ -55,7 +59,7 @@ function stopSwooshMs(){
       _swooshRef.gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.12);
       _swooshRef.osc.stop(ctx.currentTime+0.13);
     }catch(e){}
-    _swooshRef.osc=null;_swooshRef.gain=null;
+    _swooshRef.osc=null;_swooshRef.gain=null;_swooshRef.ctx=null;
   }
 }
 function playReleaseMs(isHeart){if(isHeart)playSound("like");else playSound("likeThumb");}
@@ -113,9 +117,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           if(prev.find(function(m){return m.id===p.new.id;})) return prev;
           return prev.concat([p.new]);
         });
-        // Mark received messages as read
+        // Mark received messages as read + play notification sound
         if(p.new.sender_id!==myId){
           sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
+          playSound('notification');
         }
       }).subscribe();
     return function(){sb.removeChannel(ch);};

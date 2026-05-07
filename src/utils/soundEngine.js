@@ -1,7 +1,7 @@
 /* eslint-disable */
 // ─── RingIn Central Sound Engine ───────────────────────────────────────────
 var _sCtx=null;
-function getSCtx(){
+export function getSCtx(){
   if(!_sCtx){try{_sCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
   if(_sCtx&&_sCtx.state==='suspended'){try{_sCtx.resume();}catch(e){}}
   return _sCtx;
@@ -310,4 +310,23 @@ export function playSound(type){
   if(!p||p.enabled===false)return;
   var fns=_TYPE_MAP[type];
   if(fns&&fns[p.variant]){try{fns[p.variant](ctx,p.volume);}catch(e){}}
+}
+
+// Unlike sound — soft descending tone, respects like volume pref
+export function playUnlikeSound(){
+  var ctx=getSCtx();if(!ctx)return;
+  var prefs=getSoundPrefs();
+  var p=prefs['like'];
+  if(!p||p.enabled===false)return;
+  var vol=p.volume;
+  try{
+    var o=ctx.createOscillator();var g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.type='sine';
+    o.frequency.setValueAtTime(680,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(320,ctx.currentTime+0.18);
+    g.gain.setValueAtTime(vol*0.13,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.20);
+    o.start();o.stop(ctx.currentTime+0.20);
+  }catch(e){}
 }
