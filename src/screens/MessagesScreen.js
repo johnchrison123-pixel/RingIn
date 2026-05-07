@@ -1,9 +1,8 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef} from 'react';
 import CallScreen from './CallScreen';
-import {createClient} from '@supabase/supabase-js';
+import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
-var sb=createClient(process.env.REACT_APP_SUPABASE_URL,process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -98,6 +97,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var levActiveS=useState(null); var levActive=levActiveS[0]; var setLevActive=levActiveS[1];
   // levHoldPct: 0→1 over 1.5s while holding past threshold
   var levHoldPctS=useState(0); var levHoldPct=levHoldPctS[0]; var setLevHoldPct=levHoldPctS[1];
+  var msgMenuS=useState(null); var msgMenu=msgMenuS[0]; var setMsgMenu=msgMenuS[1];
+  var toastS=useState(''); var toast=toastS[0]; var setToast=toastS[1];
+  var chatMenuOpenS=useState(false); var chatMenuOpen=chatMenuOpenS[0]; var setChatMenuOpen=chatMenuOpenS[1];
+  var mutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var mutedConvos=mutedConvosS[0]; var setMutedConvos=mutedConvosS[1];
+  var pressTimerRef=useRef(null);
+  var fileInputRef=useRef(null);
+  var chatTypingTimerRef=useRef(null);
   var levHoldIntervalRef=useRef(null);
   var levHapticIntervalRef=useRef(null); // separate haptic ticker
   var levHoldStartRef=useRef(null);
@@ -124,7 +130,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         // Mark received messages as read + play notification sound
         if(p.new.sender_id!==myId){
           sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
-          playSound('notification');
+          var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
+          if(!mc.includes(p.new.conversation_id)) playSound('notification');
         }
       }).subscribe();
     return function(){sb.removeChannel(ch);};
@@ -201,10 +208,24 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   function sendReactionEmoji(emoji){
     var receiverId=convo.receiverId||(convId.replace(myId,'').replace('_',''));
+    var tempId='tmp_'+Date.now();
     var m={conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:emoji,read:false};
-    sb.from('messages').insert([m]).then(function(r){
-      if(r.error)console.error(r.error);
-      else if(onMessageSent)onMessageSent(convo,emoji);
+    var optimisticMsg=Object.assign({},m,{id:tempId,created_at:new Date().toISOString()});
+    setMsgs(function(prev){return prev.concat([optimisticMsg]);});
+    sb.from('messages').insert([m]).select().then(function(r){
+      if(r.error){
+        console.error('RingIn Error [sendReactionEmoji]:', r.error);
+        setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+        return;
+      }
+      if(r.data&&r.data[0]){
+        setMsgs(function(prev){
+          var hasReal=prev.find(function(msg){return msg.id===r.data[0].id;});
+          if(hasReal) return prev.filter(function(msg){return msg.id!==tempId;});
+          return prev.map(function(msg){return msg.id===tempId?r.data[0]:msg;});
+        });
+      }
+      if(onMessageSent)onMessageSent(convo,emoji);
     });
   }
 
@@ -224,22 +245,111 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     }
   }
 
+  function blockUser(){
+    setChatMenuOpen(false);
+    var otherId = convo.receiverId || convo.other_user_id || convo.id;
+    var otherName = convo.name || 'this person';
+    if(!window.confirm('Block '+otherName+'? They will not be able to message you.')) return;
+    var blocked = [];
+    try{ var bs=localStorage.getItem('ringin_blocked'); if(bs) blocked=JSON.parse(bs); }catch(e){}
+    if(!blocked.includes(otherId)){
+      blocked.push(otherId);
+      try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
+    }
+    sb.from('blocked_users').upsert({blocker_id: myId, blocked_id: otherId}).then(function(){});
+    if(onBack) onBack();
+  }
+
+  function toggleMuteConvo(){
+    setChatMenuOpen(false);
+    var convId2 = convo.convId || convo.id;
+    setMutedConvos(function(prev){
+      var next = prev.includes(convId2) ? prev.filter(function(x){return x!==convId2;}) : prev.concat([convId2]);
+      try{ localStorage.setItem('ringin_muted_convos', JSON.stringify(next)); }catch(e){}
+      return next;
+    });
+  }
+
+  function clearAllChat(){
+    setChatMenuOpen(false);
+    if(!window.confirm('Clear all messages in this conversation? This cannot be undone.')) return;
+    var convId2 = convo.convId || convo.id;
+    var snap = msgs.slice();
+    setMsgs([]);
+    sb.from('messages').delete().eq('conversation_id', convId2).then(function(r){
+      if(r.error){
+        console.error('RingIn Error [clearAllChat]:', r.error);
+        setMsgs(snap);
+        setToast('Failed to clear chat');
+        setTimeout(function(){setToast('');}, 2000);
+      } else {
+        setToast('Chat cleared');
+        setTimeout(function(){setToast('');}, 2000);
+      }
+    });
+  }
+
   function send(){
     if(!txt.trim()) return;
     playMsSendSound();
     var receiverId = convo.receiverId || (convId.replace(myId,'').replace('_',''));
+    var sentText = txt.trim();
+    var tempId = 'tmp_'+Date.now();
     var m={
       conversation_id:convId,
       sender_id:myId,
       sender_name:myName,
       receiver_id:receiverId,
-      text:txt.trim(),
+      text:sentText,
       read:false
     };
     setTxt('');
-    sb.from('messages').insert([m]).then(function(r){
-      if(r.error) console.error(r.error);
-      else if(onMessageSent) onMessageSent(convo, txt.trim());
+    // Optimistic insert — realtime will dedup via id check
+    var optimisticMsg = Object.assign({},m,{id:tempId,created_at:new Date().toISOString()});
+    setMsgs(function(prev){return prev.concat([optimisticMsg]);});
+    sb.from('messages').insert([m]).select().then(function(r){
+      if(r.error){
+        console.error('RingIn Error [send message]:', r.error);
+        // Remove optimistic message on failure
+        setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+        return;
+      }
+      // Replace temp with real message from server
+      if(r.data&&r.data[0]){
+        setMsgs(function(prev){
+          // If realtime already added it, just remove the temp
+          var hasReal = prev.find(function(msg){return msg.id===r.data[0].id;});
+          if(hasReal) return prev.filter(function(msg){return msg.id!==tempId;});
+          return prev.map(function(msg){return msg.id===tempId?r.data[0]:msg;});
+        });
+      }
+      if(onMessageSent) onMessageSent(convo, sentText);
+    });
+  }
+
+  function openMsgMenu(msg,ev){
+    if(msg.sender_id!==myId) return;
+    var rect=ev.currentTarget?ev.currentTarget.getBoundingClientRect():{left:0,top:0,width:0,height:0};
+    setMsgMenu({msgId:msg.id,x:rect.left,y:rect.top});
+  }
+
+  function unsendMessage(msgId){
+    var snap=msgs.find(function(m){return m.id===msgId;});
+    setMsgs(function(prev){return prev.filter(function(m){return m.id!==msgId;});});
+    setMsgMenu(null);
+    setToast('Message unsent');
+    setTimeout(function(){setToast('');},2000);
+    sb.from('messages').delete().eq('id',msgId).then(function(r){
+      if(r.error){
+        console.error('RingIn Error [unsendMessage]:',r.error);
+        if(snap) setMsgs(function(prev){
+          var idx=prev.findIndex(function(m){return m.id>msgId;});
+          if(idx===-1) return prev.concat([snap]);
+          return prev.slice(0,idx).concat([snap]).concat(prev.slice(idx));
+        });
+        setToast('Failed to unsend');
+        setTimeout(function(){setToast('');},2000);
+      }
     });
   }
 
@@ -250,19 +360,59 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
   },
     // ── Header ──
-    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'←'),
-      React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
-        convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
+        React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'←'),
+        React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
+          convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
+        ),
+        React.createElement('div',{style:{flex:1,minWidth:0}},
+          React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},convo.name),
+          convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
+            React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
+          ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
+        ),
+        convo.rate?React.createElement('button',{onClick:function(){if(onCall)onCall(convo);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call'):null
       ),
-      React.createElement('div',{style:{flex:1}},
-        React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},convo.name),
-        convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
-          React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
-        ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
-      ),
-      convo.rate?React.createElement('button',{onClick:function(){if(onCall)onCall(convo);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call'):null
+      React.createElement('button',{
+        onClick:function(e){e.stopPropagation();setChatMenuOpen(function(v){return !v;});},
+        style:{background:'none',border:'none',color:'var(--text)',fontSize:'20px',cursor:'pointer',padding:'4px 8px',lineHeight:1,flexShrink:0}
+      },'⋮')
     ),
+
+    // ── Chat header 3-dot menu dropdown ──
+    chatMenuOpen ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,zIndex:300},
+        onClick:function(){setChatMenuOpen(false);}
+      }),
+      React.createElement('div',{
+        style:{position:'fixed',top:'56px',right:'12px',zIndex:301,
+          background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',
+          padding:'6px',boxShadow:'0 4px 24px rgba(0,0,0,0.5)',minWidth:'200px'}
+      },
+        React.createElement('button',{
+          onClick:toggleMuteConvo,
+          style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
+            background:'none',border:'none',borderRadius:'8px',color:'var(--text)',
+            fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
+        }, mutedConvos.includes(convo&&(convo.convId||convo.id)) ? '🔔 Unmute Conversation' : '🔕 Mute Conversation'),
+        React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
+        React.createElement('button',{
+          onClick:clearAllChat,
+          style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
+            background:'none',border:'none',borderRadius:'8px',color:'var(--amber)',
+            fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
+        }, '🗑 Clear All Chat'),
+        React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
+        React.createElement('button',{
+          onClick:blockUser,
+          style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
+            background:'none',border:'none',borderRadius:'8px',color:'#FF4757',
+            fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
+        }, '🚫 Block '+(convo&&convo.name ? convo.name.split(' ')[0] : 'User'))
+      )
+    ) : null,
 
     // ── Chat messages area with reaction overlay ──
     React.createElement('div',{style:{flex:1,position:'relative',overflow:'hidden'}},
@@ -275,7 +425,18 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
               convo.img?React.createElement('img',{src:convo.img,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||'?')
             ):null,
             React.createElement('div',null,
-              React.createElement('div',{style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4}},m.text),
+              React.createElement('div',{
+                style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4},
+                onMouseDown:function(ev){if(m.sender_id!==myId)return;pressTimerRef.current=setTimeout(function(){openMsgMenu(m,ev);},500);},
+                onMouseUp:function(){clearTimeout(pressTimerRef.current);},
+                onMouseLeave:function(){clearTimeout(pressTimerRef.current);},
+                onTouchStart:function(ev){if(m.sender_id!==myId)return;pressTimerRef.current=setTimeout(function(){openMsgMenu(m,{currentTarget:ev.currentTarget});},500);},
+                onTouchEnd:function(){clearTimeout(pressTimerRef.current);}
+              },
+                m.text&&m.text.startsWith('[img]')
+                  ?React.createElement('img',{src:m.text.slice(5),alt:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
+                  :React.createElement('span',null,m.text)
+              ),
               React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
                 m.created_at?React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})):null,
                 isMe?React.createElement('span',{style:{color:m.read?'var(--ac)':'var(--t3)'}},m.read?'✓✓':'✓'):null
@@ -368,6 +529,29 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
                 }},'👍')
           );
         })()
+      ):null,
+
+      // ── Toast ──
+      toast?React.createElement('div',{style:{position:'absolute',bottom:'70px',left:'50%',transform:'translateX(-50%)',background:'rgba(0,0,0,0.75)',color:'#fff',padding:'6px 16px',borderRadius:'20px',fontSize:'12px',fontWeight:600,pointerEvents:'none',zIndex:100}},toast):null,
+
+      // ── Message context menu ──
+      msgMenu?React.createElement('div',{
+        style:{position:'fixed',inset:0,zIndex:200},
+        onClick:function(){setMsgMenu(null);}
+      },
+        React.createElement('div',{
+          style:{position:'fixed',left:Math.min(msgMenu.x,window.innerWidth-160)+'px',top:(msgMenu.y-48)+'px',
+            background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',
+            padding:'4px',boxShadow:'0 4px 20px rgba(0,0,0,0.4)',zIndex:201,minWidth:'140px'},
+          onClick:function(e){e.stopPropagation();}
+        },
+          React.createElement('button',{
+            onClick:function(){unsendMessage(msgMenu.msgId);},
+            style:{display:'flex',alignItems:'center',gap:'8px',width:'100%',padding:'8px 12px',
+              background:'none',border:'none',borderRadius:'8px',color:'#FF4757',fontSize:'13px',
+              fontWeight:600,cursor:'pointer',textAlign:'left'}
+          },'🗑 Unsend')
+        )
       ):null
     ),
 
@@ -379,17 +563,59 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
     // ── Input bar ──
     React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center',background:'var(--bg)'}},
-      React.createElement('label',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}},
-        '📷',
-        React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0])alert('Photo sharing coming soon!');}})
-      ),
+      React.createElement('button',{
+        onClick:function(){fileInputRef.current&&fileInputRef.current.click();},
+        style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}
+      },'📷'),
+      React.createElement('input',{
+        ref:fileInputRef,
+        type:'file',
+        accept:'image/*',
+        style:{display:'none'},
+        onChange:function(ev){
+          var file=ev.target.files&&ev.target.files[0];
+          if(!file) return;
+          var fileName='chat_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9.]/g,'_');
+          var tempId='tmp_img_'+Date.now();
+          var localUrl=URL.createObjectURL(file);
+          var receiverId=convo.receiverId||(convId.replace(myId,'').replace('_',''));
+          // Optimistic placeholder while uploading
+          var optimisticMsg={id:tempId,conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+localUrl,read:false,created_at:new Date().toISOString()};
+          setMsgs(function(prev){return prev.concat([optimisticMsg]);});
+          sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(r){
+            if(r.error){
+              console.error('RingIn Error [chatPhotoUpload]:', r.error);
+              setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+              alert('Photo upload failed: '+r.error.message);
+              return;
+            }
+            var url=sb.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
+            sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
+              if(mr.error){
+                console.error('RingIn Error [chatPhotoInsert]:', mr.error);
+                setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                return;
+              }
+              if(mr.data&&mr.data[0]){
+                setMsgs(function(prev){
+                  var hasReal=prev.find(function(msg){return msg.id===mr.data[0].id;});
+                  if(hasReal) return prev.filter(function(msg){return msg.id!==tempId;});
+                  return prev.map(function(msg){return msg.id===tempId?mr.data[0]:msg;});
+                });
+              }
+              if(onMessageSent) onMessageSent(convo,'📷 Photo');
+            });
+          });
+          ev.target.value='';
+        }
+      }),
       React.createElement('button',{
         onClick:function(){setShowEmoji(function(v){return !v;});},
         style:{width:'34px',height:'34px',borderRadius:'50%',background:showEmoji?'var(--acg)':'var(--bg3)',border:showEmoji?'1px solid var(--ac)':'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px',color:showEmoji?'var(--ac)':'var(--text)'}
       },'😊'),
       React.createElement('input',{
         value:txt,
-        onChange:function(e){playMsKeyClick();setTxt(e.target.value);},
+        onChange:function(e){setTxt(e.target.value);clearTimeout(chatTypingTimerRef.current);chatTypingTimerRef.current=setTimeout(function(){playMsKeyClick();},80);},
         onKeyDown:function(e){if(e.key==='Enter')send();},
         placeholder:'Type a message...',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
@@ -505,27 +731,36 @@ export default function MessagesScreen(props){
     return [];
   }); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
+  var loadingConvosS=useState(true); var loadingConvos=loadingConvosS[0]; var setLoadingConvos=loadingConvosS[1];
+  var typingTimerRef=useRef(null);
   var totalUnreadS=useState(function(){
     try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
     return 0;
   }); var totalUnread=totalUnreadS[0]; var setTotalUnread=totalUnreadS[1];
 
-  // Load real user conversations
   useEffect(function(){
-    // Auto reconnect when user comes back to tab
+    if(props.initConvo){
+      setActive(props.initConvo);
+      if(props.onConvoConsumed) props.onConvoConsumed();
+    }
+  },[props.initConvo]);
+
+  // Refresh conversations when user comes back to tab (don't remove channels — ChatBox manages its own)
+  useEffect(function(){
     function handleVisibility(){
-      if(document.visibilityState==='visible'){
-        sb.removeAllChannels();
+      if(document.visibilityState==='visible' && myId){
+        refreshConvos();
       }
     }
     document.addEventListener('visibilitychange', handleVisibility);
     return function(){document.removeEventListener('visibilitychange', handleVisibility);};
-  },[]);
+  },[myId]);
 
   useEffect(function(){
     if(!myId) return;
     // Get all messages where I am sender or receiver
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
+      setLoadingConvos(false);
       if(!res.data||res.data.length===0) return;
       // Filter out expert fake convos
       res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
@@ -660,16 +895,20 @@ export default function MessagesScreen(props){
   }
 
   function handleMessageSent(convo, text){
-    // Update user convos
+    // Update user convos and persist to localStorage
     setUserConvos(function(prev){
+      var updated;
       var exists = prev.find(function(c){return c.convId===convo.convId;});
       if(exists){
-        return prev.map(function(c){
+        updated = prev.map(function(c){
           if(c.convId!==convo.convId) return c;
           return Object.assign({},c,{lastMsg:text,lastTime:new Date().toISOString()});
         });
+      } else {
+        updated = [Object.assign({},convo,{lastMsg:text,unreadCount:0,lastTime:new Date().toISOString()})].concat(prev);
       }
-      return [Object.assign({},convo,{lastMsg:text,unreadCount:0,lastTime:new Date().toISOString()})].concat(prev);
+      try{localStorage.setItem('convos_'+myId, JSON.stringify(updated));}catch(e){}
+      return updated;
     });
     // Update expert convos
     setExpertConvos(function(prev){
@@ -719,8 +958,9 @@ export default function MessagesScreen(props){
     ) : null,
     // Conversations
     React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'0 16px'}},
+      loadingConvos ? React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)',fontSize:'14px'}},'Loading...') : null,
       // Real user conversations
-      userConvos.length>0 ? React.createElement('div',null,
+      !loadingConvos && userConvos.length>0 ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
         userConvos.map(function(c){
           return React.createElement('div',{key:c.id,onClick:function(){

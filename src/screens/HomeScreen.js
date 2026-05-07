@@ -1,7 +1,6 @@
 import React,{useState,useEffect,useRef} from 'react';
 import {useFollow} from './useFollow';
-import {createClient} from '@supabase/supabase-js';
-var sbHome = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
+import {sb as sbHome} from '../utils/supabase';
 import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
@@ -165,8 +164,10 @@ export function UserProfileView(props){
       created_at:new Date().toISOString(),
       likes:[]
     };
+    var snapCommentsU=null;
     setCommentsCacheU(function(prev){
-      var cur=(prev[postId]||[]).concat([newComment]);
+      snapCommentsU=prev[postId]||[];
+      var cur=snapCommentsU.concat([newComment]);
       try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
       return Object.assign({},prev,{[postId]:cur});
     });
@@ -179,6 +180,15 @@ export function UserProfileView(props){
       user_avatar:userAvatar||null,
       text:text.trim()
     }).select().then(function(res){
+      if(res.error){
+        console.error('RingIn Error [submitCommentU]:', res.error);
+        setCommentsCacheU(function(prev){
+          try{localStorage.setItem('comments_'+postId,JSON.stringify(snapCommentsU));}catch(e){}
+          return Object.assign({},prev,{[postId]:snapCommentsU});
+        });
+        setUserPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:Math.max(0,(p.comments||1)-1)}):p;});});
+        return;
+      }
       if(res.data&&res.data[0]){
         setCommentsCacheU(function(prev){
           var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
@@ -328,10 +338,10 @@ export function UserProfileView(props){
           if(!p) return null;
           var isOwn=p.userId===currentUserId;
           var items=isOwn?[
-            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){sbHome.from('posts').delete().eq('id',p.id).then(function(){});setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){var snapU2=userPosts.slice();setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);alert('Failed to delete post.');}});}}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuU(null);}},
-            {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenuU(null);}},
-            {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenuU(null);}}
+            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.content});setShowEditPost(true);setPostMenuU(null);}},
+            {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenuU(null);}}
           ]:[
             {icon:'🔖',label:'Save Post',fn:function(){try{var s=JSON.parse(localStorage.getItem('saved_posts')||'[]');s.push(p.id);localStorage.setItem('saved_posts',JSON.stringify(s));}catch(e){}alert('Post saved!');setPostMenuU(null);}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuU(null);}},
@@ -523,6 +533,10 @@ export default function HomeScreen(props){
 
   // Post menu state
   var postMenuS=useState(null); var postMenu=postMenuS[0]; var setPostMenu=postMenuS[1];
+  var showEditPostS=useState(false); var showEditPost=showEditPostS[0]; var setShowEditPost=showEditPostS[1];
+  var editPostDataS=useState(null); var editPostData=editPostDataS[0]; var setEditPostData=editPostDataS[1];
+  var mutedPostsS=useState(function(){try{var s=localStorage.getItem('ringin_muted_posts');return s?JSON.parse(s):[];}catch(e){return [];}});
+  var mutedPosts=mutedPostsS[0]; var setMutedPosts=mutedPostsS[1];
 
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
   var currentUserName = props.session&&props.session.user ? props.session.user.email.split('@')[0] : null;
@@ -554,8 +568,10 @@ export default function HomeScreen(props){
       created_at:new Date().toISOString(),
       likes:[]
     };
+    var snapComments=null;
     setCommentsCache(function(prev){
-      var cur=(prev[postId]||[]).concat([newComment]);
+      snapComments=prev[postId]||[];
+      var cur=snapComments.concat([newComment]);
       try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
       return Object.assign({},prev,{[postId]:cur});
     });
@@ -570,6 +586,16 @@ export default function HomeScreen(props){
       text:text.trim(),
       parent_comment_id:parentId||null
     }).select().then(function(res){
+      if(res.error){
+        console.error('RingIn Error [submitComment]:', res.error);
+        // Rollback optimistic comment
+        setCommentsCache(function(prev){
+          try{localStorage.setItem('comments_'+postId,JSON.stringify(snapComments));}catch(e){}
+          return Object.assign({},prev,{[postId]:snapComments});
+        });
+        setPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:Math.max(0,(p.comments||1)-1)}):p;});});
+        return;
+      }
       if(res.data&&res.data[0]){
         setCommentsCache(function(prev){
           var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
@@ -607,7 +633,7 @@ export default function HomeScreen(props){
     });
     sbHome.rpc("toggle_like",{post_id:pid,user_id:userId}).then(function(r){
       if(r.error){
-        console.log("like error:",r.error);
+        console.error('RingIn Error [toggleLike]:', r.error);
         // Revert to exact pre-toggle snapshot — not a re-toggle, a true restore
         setPosts(function(prev){return prev.map(function(p){
           if(p.id!==pid) return p;
@@ -677,7 +703,9 @@ export default function HomeScreen(props){
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
+  var loadingS=useState(true); var loading=loadingS[0]; var setLoading=loadingS[1];
   var fileInputRef=useRef(null);
+  var typingTimerRef=useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
   useEffect(function(){
     if(!currentUserId||!currentUserName) return;
@@ -701,10 +729,34 @@ export default function HomeScreen(props){
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+uid},function(p){
         setNotifs(function(prev){return [p.new].concat(prev);});
         setUnreadNotif(function(n){return n+1;});
-        playSound('notification');
+        var mp=[];try{var ms=localStorage.getItem('ringin_muted_posts');if(ms)mp=JSON.parse(ms);}catch(e){}
+        if(!mp.includes(p.new.post_id)) playSound('notification');
       }).subscribe();
     return function(){sbHome.removeChannel(ch);};
   },[props.session]);
+
+  function saveEditPost(){
+    if(!editPostData||!editPostData.content||!editPostData.content.trim()) return;
+    var snapPosts = posts.slice();
+    sbHome.from('posts').update({text:editPostData.content}).eq('id',editPostData.id).then(function(r){
+      if(r.error){
+        console.error('RingIn Error [saveEditPost]:', r.error);
+        setPosts(snapPosts);
+        alert('Failed to save edit: '+r.error.message);
+        return;
+      }
+      setPosts(function(prev){return prev.map(function(x){return x.id===editPostData.id?Object.assign({},x,{text:editPostData.content}):x;});});
+      setShowEditPost(false);
+      setEditPostData(null);
+    });
+  }
+  function toggleMutePost(pid){
+    setMutedPosts(function(prev){
+      var next=prev.includes(pid)?prev.filter(function(x){return x!==pid;}):prev.concat([pid]);
+      try{localStorage.setItem('ringin_muted_posts',JSON.stringify(next));}catch(e){}
+      return next;
+    });
+  }
 
   function loadMoreFeed(){
     if(loadMoreH||!hasMoreH) return;
@@ -757,6 +809,8 @@ export default function HomeScreen(props){
 
   useEffect(function(){
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
+      setLoading(false);
+      if(res.error){ console.error('Error fetching posts:', res.error); return; }
       if(res.data&&res.data.length>0){
         var dbPosts = res.data.map(mapPost);
         setPosts(function(prev){return dbPosts.concat(prev.filter(function(p){return typeof p.id === 'number';}));});
@@ -1008,13 +1062,14 @@ export default function HomeScreen(props){
       comments_count: 0
     };
     sbHome.from('posts').insert([postData]).select().then(function(res){
+      if(res.error){console.error('RingIn Error [submitPost]:', res.error);alert('Failed to post: '+res.error.message);setPosting(false);return;}
       if(res.data&&res.data[0]){
         sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
           if(fres.data&&fres.data.length>0){
-            var notifPromises = fres.data.map(function(f){
-              return sbHome.from('notification_settings').select('notify_posts').eq('user_id',f.follower_id).eq('following_id',session.user.id).single().then(function(ns){
+            fres.data.forEach(function(f){
+              sbHome.from('notification_settings').select('notify_posts').eq('user_id',f.follower_id).eq('following_id',session.user.id).single().then(function(ns){
                 if(!ns.data||ns.data.notify_posts!==false){
-                  return sbHome.from('notifications').insert([{
+                  sbHome.from('notifications').insert([{
                     user_id:f.follower_id,
                     from_user_id:session.user.id,
                     from_user_name:postData.user_name,
@@ -1023,14 +1078,13 @@ export default function HomeScreen(props){
                     message:postData.user_name+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
                     post_id:res.data[0].id,
                     read:false
-                  }]);
+                  }]).then(function(){});
                 }
               });
             });
           }
         });
       }
-      if(res.error){alert('Failed to post: '+res.error.message);setPosting(false);return;}
       if(res.data&&res.data[0]){
         var newPost = {
           id:res.data[0].id,
@@ -1221,10 +1275,10 @@ export default function HomeScreen(props){
           if(!p) return null;
           var isOwn=p.userId===currentUserId;
           var items=isOwn?[
-            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){sbHome.from('posts').delete().eq('id',p.id).then(function(){});setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){var snapBefore=posts.slice();setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePost]:', r.error);setPosts(snapBefore);alert('Failed to delete post.');}});}}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenu(null);}},
-            {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenu(null);}},
-            {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenu(null);}}
+            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.content});setShowEditPost(true);setPostMenu(null);}},
+            {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenu(null);}}
           ]:[
             {icon:'🔖',label:'Save Post',fn:function(){try{var s=JSON.parse(localStorage.getItem('saved_posts')||'[]');s.push(p.id);localStorage.setItem('saved_posts',JSON.stringify(s));}catch(e){}alert('Post saved!');setPostMenu(null);}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenu(null);}},
@@ -1503,6 +1557,7 @@ export default function HomeScreen(props){
         )
       ) : null
     ),
+    loading ? React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)',fontSize:'14px'}},'Loading...') : null,
     React.createElement('div', {style:{padding:'0'}},
       posts.map(function(p){
         var commentsArr=commentsCache[p.id]||[];
@@ -1612,7 +1667,7 @@ export default function HomeScreen(props){
               ),
               React.createElement('input',{
                 value:commentInput,
-                onChange:function(e){playKeyClick();setCommentInput(e.target.value);},
+                onChange:function(e){setCommentInput(e.target.value);clearTimeout(typingTimerRef.current);typingTimerRef.current=setTimeout(function(){playKeyClick();},80);},
                 onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(p.id,commentInput);}},
                 placeholder:'Write a comment...',
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
@@ -1632,6 +1687,23 @@ export default function HomeScreen(props){
         style:{padding:'10px 28px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}
       }, loadMoreH?'Loading...':'Load more posts')
     ) : null,
-    React.createElement('div', {style:{height:'12px'}})
+    React.createElement('div', {style:{height:'12px'}}),
+    showEditPost&&editPostData ? React.createElement('div',{
+      onClick:function(){setShowEditPost(false);setEditPostData(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:10000,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'16px',width:'320px',padding:'20px',boxShadow:'0 8px 40px rgba(0,0,0,0.4)'}},
+        React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)',marginBottom:'14px'}},'Edit Post'),
+        React.createElement('textarea',{
+          value:editPostData.content,
+          onChange:function(ev){setEditPostData(function(prev){return Object.assign({},prev,{content:ev.target.value});});},
+          style:{width:'100%',minHeight:'100px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',fontSize:'14px',color:'var(--text)',resize:'vertical',outline:'none',fontFamily:'DM Sans,sans-serif',boxSizing:'border-box'}
+        }),
+        React.createElement('div',{style:{display:'flex',gap:'10px',marginTop:'14px',justifyContent:'flex-end'}},
+          React.createElement('button',{onClick:function(){setShowEditPost(false);setEditPostData(null);},style:{padding:'8px 18px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}},'Cancel'),
+          React.createElement('button',{onClick:saveEditPost,style:{padding:'8px 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'13px',cursor:'pointer',fontWeight:600}},'Save')
+        )
+      )
+    ) : null
   );
 }

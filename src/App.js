@@ -1,6 +1,5 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import './App.css';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
@@ -9,11 +8,7 @@ import WalletScreen from './screens/WalletScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import WorkshopsScreen from './screens/WorkshopsScreen';
 import MessagesScreen from './screens/MessagesScreen';
-
-const supabase = createClient(
-  process.env.REACT_APP_SUPABASE_URL,
-  process.env.REACT_APP_SUPABASE_ANON_KEY
-);
+import {sb as supabase} from './utils/supabase';
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -127,9 +122,9 @@ export default function App() {
       onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUserStack([]);}
     });
     if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
-    if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet});
+    if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
-    if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
+    if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet});
     if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUserStack([u]);}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});

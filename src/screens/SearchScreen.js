@@ -1,10 +1,9 @@
 /* eslint-disable */
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import CallScreen from './CallScreen';
-import {createClient} from '@supabase/supabase-js';
+import {sb} from '../utils/supabase';
 import {useFollow} from './useFollow';
 import {playSound} from '../utils/soundEngine';
-var sb = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
@@ -33,7 +32,7 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
             onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
             style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px'}
           }, isFollowing ? 'Following' : '+ Follow'),
-          React.createElement('button',{onClick:function(){alert('Message coming soon!');},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
+          React.createElement('button',{onClick:function(){if(props.onGoToMessages)props.onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
           React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
         )
       ),
@@ -69,6 +68,7 @@ export default function SearchScreen(props){
   var callS = useState(null); var activeCall = callS[0]; var setActiveCall = callS[1];
   var coinsS = useState(50); var coins = coinsS[0]; var setCoins = coinsS[1];
   var acS = useState('all'); var activecat = acS[0]; var setAc = acS[1];
+  var typingTimerRef = useRef(null);
   // CUSTOM HOOKS AFTER useState
   var session = props.session;
   var currentUserId = session&&session.user ? session.user.id : null;
@@ -99,7 +99,7 @@ export default function SearchScreen(props){
     ),
     React.createElement('div',{style:{padding:'0 18px 8px'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'7px 11px',display:'flex',alignItems:'center',gap:'7px'}},
-        React.createElement('input',{placeholder:'Search experts...',style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'},onChange:function(){playSound('typing');}})
+        React.createElement('input',{placeholder:'Search experts...',style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'},onChange:function(){clearTimeout(typingTimerRef.current);typingTimerRef.current=setTimeout(function(){playSound('typing');},80);}})
       )
     ),
     React.createElement('div',{style:{padding:'0 18px 14px'}},
