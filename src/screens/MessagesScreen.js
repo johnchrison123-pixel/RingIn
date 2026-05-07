@@ -279,49 +279,17 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         zIndex:10,
         background:'transparent'
       }},
-        // light rays behind emoji
+        // shine — crisp radial gradient, no blur
         React.createElement('div',{style:{
           position:'absolute',
-          width:(180+levHoldPct*220)+'px',
-          height:(180+levHoldPct*220)+'px',
+          width:(200+levHoldPct*260)+'px',
+          height:(200+levHoldPct*260)+'px',
           borderRadius:'50%',
           background:levActive==='heart'
-            ?'radial-gradient(circle, rgba(232,77,154,'+(0.22+levHoldPct*0.28)+') 0%, rgba(123,110,255,'+(0.12+levHoldPct*0.18)+') 40%, transparent 72%)'
-            :'radial-gradient(circle, rgba(123,110,255,'+(0.22+levHoldPct*0.28)+') 0%, rgba(232,77,154,'+(0.08+levHoldPct*0.12)+') 40%, transparent 72%)',
-          transition:'none',
-          filter:'blur('+(6+levHoldPct*10)+'px)'
+            ?'radial-gradient(circle, rgba(255,255,255,'+(0.18+levHoldPct*0.16)+') 0%, rgba(232,77,154,'+(0.55+levHoldPct*0.35)+') 28%, rgba(123,110,255,'+(0.28+levHoldPct*0.22)+') 58%, transparent 78%)'
+            :'radial-gradient(circle, rgba(255,255,255,'+(0.18+levHoldPct*0.16)+') 0%, rgba(123,110,255,'+(0.55+levHoldPct*0.35)+') 28%, rgba(232,77,154,'+(0.18+levHoldPct*0.16)+') 58%, transparent 78%)',
+          transition:'none'
         }}),
-        // ray spikes SVG (8 light beams)
-        React.createElement('svg',{
-          style:{position:'absolute',opacity:0.18+levHoldPct*0.42,transition:'none'},
-          width:280+levHoldPct*180+'',height:280+levHoldPct*180+'',
-          viewBox:'0 0 200 200'
-        },
-          React.createElement('defs',null,
-            React.createElement('radialGradient',{id:'rayG',cx:'50%',cy:'50%',r:'50%'},
-              React.createElement('stop',{offset:'0%',stopColor:levActive==='heart'?'#E84D9A':'#7B6EFF',stopOpacity:'0.9'}),
-              React.createElement('stop',{offset:'100%',stopColor:'transparent',stopOpacity:'0'})
-            )
-          ),
-          [0,45,90,135,180,225,270,315].map(function(angle,i){
-            var rad=angle*Math.PI/180;
-            var cx=100,cy=100;
-            var len=55+levHoldPct*45;
-            var w=5-levHoldPct*1;
-            var ex=cx+Math.cos(rad)*len;
-            var ey=cy+Math.sin(rad)*len;
-            var px1=cx+Math.cos(rad+Math.PI/2)*w;
-            var py1=cy+Math.sin(rad+Math.PI/2)*w;
-            var px2=cx+Math.cos(rad-Math.PI/2)*w;
-            var py2=cy+Math.sin(rad-Math.PI/2)*w;
-            return React.createElement('polygon',{
-              key:i,
-              points:px1+','+py1+' '+ex+','+ey+' '+px2+','+py2,
-              fill:levActive==='heart'?'#E84D9A':'#7B6EFF',
-              opacity:0.6+levHoldPct*0.3
-            });
-          })
-        ),
         // emoji / heart centered, growing
         React.createElement('div',{style:{
           position:'relative',
