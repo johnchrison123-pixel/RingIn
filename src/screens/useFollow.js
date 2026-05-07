@@ -1,9 +1,9 @@
 /* eslint-disable */
 import {useState, useEffect} from 'react';
-import {createClient} from '@supabase/supabase-js';
-var sb = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
+import {sb as _sb} from '../utils/supabase';
 
 export function useFollow(supabase, currentUserId){
+  var sb = supabase || _sb;
   // Load from localStorage instantly - no flash
   var initial = {};
   try{
@@ -22,12 +22,13 @@ export function useFollow(supabase, currentUserId){
     if(!currentUserId) return;
     // Sync with Supabase in background
     sb.from('follows').select('following_id').eq('follower_id',currentUserId).then(function(res){
+      if(res.error){ console.error('RingIn Error [loadFollows]:', res.error); return; }
       if(res.data){
         var map = {};
         res.data.forEach(function(f){ map[f.following_id] = true; });
         setFollowing(map);
         setLoaded(true);
-        localStorage.setItem('follows_'+currentUserId, JSON.stringify(map));
+        try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(map));}catch(e){}
       }
     });
   },[currentUserId]);
@@ -37,18 +38,25 @@ export function useFollow(supabase, currentUserId){
     var tid = String(targetId);
     if(following[tid]){
       // Unfollow instantly
+      var snapUnfollow = Object.assign({},following);
       var newMap = Object.assign({},following);
       delete newMap[tid];
       setFollowing(newMap);
-      localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap));
+      try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap));}catch(e){}
       sb.from('follows').delete().eq('follower_id',currentUserId).eq('following_id',tid).then(function(r){
-        if(r.error) console.log('unfollow error:',r.error);
+        if(r.error){
+          console.error('RingIn Error [unfollow]:', r.error);
+          // Rollback
+          setFollowing(snapUnfollow);
+          try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapUnfollow));}catch(e){}
+        }
       });
     } else {
       // Follow instantly
+      var snapFollow = Object.assign({},following);
       var newMap2 = Object.assign({},following,{[tid]:true});
       setFollowing(newMap2);
-      localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap2));
+      try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap2));}catch(e){}
       sb.from('follows').insert({
         follower_id: currentUserId,
         following_id: tid,
@@ -56,7 +64,12 @@ export function useFollow(supabase, currentUserId){
         following_avatar: targetAvatar||'',
         following_role: targetRole||''
       }).then(function(r){
-        if(r.error) console.log('follow error:',r.error);
+        if(r.error){
+          console.error('RingIn Error [follow]:', r.error);
+          // Rollback
+          setFollowing(snapFollow);
+          try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapFollow));}catch(e){}
+        }
       });
     }
   }

@@ -1,9 +1,8 @@
 /* eslint-disable */
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
-import {createClient} from '@supabase/supabase-js';
+import {sb as sbProfile} from '../utils/supabase';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled} from '../utils/soundEngine';
-var sbProfile = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 var COUNTRIES=[
   ['AF','Afghanistan','+93'],['AL','Albania','+355'],['DZ','Algeria','+213'],['AD','Andorra','+376'],['AO','Angola','+244'],
@@ -176,6 +175,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var showActivityS=useState(localStorage.getItem('show_online')!=='0'); var showOnline=showActivityS[0]; var setShowOnline=showActivityS[1];
   // Sound settings state
   var showSoundS=useState(false); var showSound=showSoundS[0]; var setShowSound=showSoundS[1];
+  // Blocked users state
+  var showBlockedS=useState(false); var showBlocked=showBlockedS[0]; var setShowBlocked=showBlockedS[1];
+  var blockedListS=useState(function(){try{var s=localStorage.getItem('ringin_blocked');return s?JSON.parse(s):[];}catch(e){return [];}}); var blockedList=blockedListS[0]; var setBlockedList=blockedListS[1];
+  // Muted words state
+  var showMutedS=useState(false); var showMuted=showMutedS[0]; var setShowMuted=showMutedS[1];
+  var mutedWordsS=useState(function(){try{var s=localStorage.getItem('ringin_muted_words');return s?JSON.parse(s):[];}catch(e){return [];}}); var mutedWords=mutedWordsS[0]; var setMutedWords=mutedWordsS[1];
+  var mutedInputS=useState(''); var mutedInput=mutedInputS[0]; var setMutedInput=mutedInputS[1];
+  // Expert application state
+  var showExpertAppS=useState(false); var showExpertApp=showExpertAppS[0]; var setShowExpertApp=showExpertAppS[1];
+  var expertAppNameS=useState(''); var expertAppName=expertAppNameS[0]; var setExpertAppName=expertAppNameS[1];
+  var expertAppAreaS=useState('Medical'); var expertAppArea=expertAppAreaS[0]; var setExpertAppArea=expertAppAreaS[1];
+  var expertAppBioS=useState(''); var expertAppBio=expertAppBioS[0]; var setExpertAppBio=expertAppBioS[1];
+  var expertAppExpS=useState(''); var expertAppExp=expertAppExpS[0]; var setExpertAppExp=expertAppExpS[1];
+  var expertAppRateS=useState(''); var expertAppRate=expertAppRateS[0]; var setExpertAppRate=expertAppRateS[1];
+  var expertAppSubmittedS=useState(false); var expertAppSubmitted=expertAppSubmittedS[0]; var setExpertAppSubmitted=expertAppSubmittedS[1];
   var soundPrefsS=useState(function(){try{var s=localStorage.getItem('ringin_sound_prefs');if(s)return Object.assign({typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}},JSON.parse(s));}catch(e){}return {typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}};}); var soundPrefs=soundPrefsS[0]; var setSoundPrefs=soundPrefsS[1];
   var hapticsOnS=useState(getHapticsEnabled); var hapticsOn=hapticsOnS[0]; var setHapticsOn=hapticsOnS[1];
   // Support state
@@ -281,8 +295,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       created_at:new Date().toISOString(),
       likes:[]
     };
+    var snapCommentsProf=null;
     setCommentsCacheProf(function(prev){
-      var cur=(prev[postId]||[]).concat([newComment]);
+      snapCommentsProf=prev[postId]||[];
+      var cur=snapCommentsProf.concat([newComment]);
       try{localStorage.setItem('comments_'+postId,JSON.stringify(cur));}catch(e){}
       return Object.assign({},prev,{[postId]:cur});
     });
@@ -295,6 +311,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       user_avatar:userAvatar,
       text:text.trim()
     }).select().then(function(res){
+      if(res.error){
+        console.error('RingIn Error [submitCommentProf]:', res.error);
+        setCommentsCacheProf(function(prev){
+          try{localStorage.setItem('comments_'+postId,JSON.stringify(snapCommentsProf));}catch(e){}
+          return Object.assign({},prev,{[postId]:snapCommentsProf});
+        });
+        setMyPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:Math.max(0,(p.comments||1)-1)}):p;});});
+        return;
+      }
       if(res.data&&res.data[0]){
         setCommentsCacheProf(function(prev){
           var cur=(prev[postId]||[]).map(function(c){return c.id===newComment.id?res.data[0]:c;});
@@ -369,6 +394,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     var newBio = JSON.stringify({about:editAbout,tag:editTag,website_name:editWebsiteName,website_url:editWebsiteUrl});
     sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
       setSavingEdit(false);
+      if(res.error){
+        console.error('RingIn Error [saveEditProfile]:', res.error);
+        alert('Failed to save profile: '+res.error.message);
+        return;
+      }
       var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
       setProfileInfo(updated);
       try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
@@ -804,11 +834,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         ),
         React.createElement('button',{
           onClick:function(){
-            localStorage.setItem('acct_name',acctName);
-            localStorage.setItem('acct_tag',acctTag);
+            try{localStorage.setItem('acct_name',acctName);localStorage.setItem('acct_tag',acctTag);}catch(e){}
             if(userId){
               var newBio=JSON.stringify({about:profileInfo.about||'',tag:acctTag,website_name:profileInfo.website_name||'',website_url:profileInfo.website_url||''});
-              sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(){});
+              sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [saveProfileInfo]:', r.error);});
             }
             setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2000);
           },
@@ -878,14 +907,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       // Save All button
       React.createElement('button',{
         onClick:function(){
-          localStorage.setItem('acct_name',acctName);
-          localStorage.setItem('acct_tag',acctTag);
-          localStorage.setItem('acct_country',acctCountry);
-          localStorage.setItem('acct_phone_code',acctPhoneCode);
-          localStorage.setItem('acct_phone',acctPhone);
+          try{localStorage.setItem('acct_name',acctName);localStorage.setItem('acct_tag',acctTag);localStorage.setItem('acct_country',acctCountry);localStorage.setItem('acct_phone_code',acctPhoneCode);localStorage.setItem('acct_phone',acctPhone);}catch(e){}
           if(userId){
             var newBio=JSON.stringify({about:profileInfo.about||'',tag:acctTag,website_name:profileInfo.website_name||'',website_url:profileInfo.website_url||''});
-            sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(){});
+            sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [saveAll]:', r.error);});
           }
           setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
         },
@@ -928,7 +953,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         React.createElement('div',{key:'tzlist-'+tzSearch,style:{overflowY:'auto',flex:1}},
           TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());}).map(function(t){
             var sel=acctTz===t[0];
-            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);localStorage.setItem('user_timezone',t[0]);setShowTzPicker(false);setTzSearch('');},
+            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);try{localStorage.setItem('user_timezone',t[0]);}catch(e){}setShowTzPicker(false);setTzSearch('');},
               style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
               React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
               sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
@@ -963,7 +988,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},row.sub)
             ),
             React.createElement('button',{
-              onClick:function(){var n=!row.val;row.set(n);localStorage.setItem(row.key,n?'1':'0');},
+              onClick:function(){var n=!row.val;row.set(n);try{localStorage.setItem(row.key,n?'1':'0');}catch(e){}},
               style:{width:'46px',height:'26px',borderRadius:'13px',background:row.val?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
             },
               React.createElement('div',{style:{position:'absolute',top:'3px',left:row.val?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
@@ -979,7 +1004,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Receive important updates and newsletters by email')
           ),
           React.createElement('button',{
-            onClick:function(){var n=!notifEmail;setNotifEmail(n);localStorage.setItem('notif_email',n?'1':'0');},
+            onClick:function(){var n=!notifEmail;setNotifEmail(n);try{localStorage.setItem('notif_email',n?'1':'0');}catch(e){}},
             style:{width:'46px',height:'26px',borderRadius:'13px',background:notifEmail?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
           },
             React.createElement('div',{style:{position:'absolute',top:'3px',left:notifEmail?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
@@ -1084,7 +1109,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
         [['public','🌐','Public','Anyone can see your profile and posts'],['followers','👥','Followers Only','Only people you follow back can see your posts'],['private','🔒','Private','Only you can see your posts']].map(function(opt,i,arr){
           var isSelected=profileVis===opt[0];
-          return React.createElement('div',{key:opt[0],onClick:function(){setProfileVis(opt[0]);localStorage.setItem('profile_vis',opt[0]);},style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer',background:isSelected?'rgba(123,110,255,0.08)':'transparent'}},
+          return React.createElement('div',{key:opt[0],onClick:function(){setProfileVis(opt[0]);try{localStorage.setItem('profile_vis',opt[0]);}catch(e){}},style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer',background:isSelected?'rgba(123,110,255,0.08)':'transparent'}},
             React.createElement('span',{style:{fontSize:'20px'}},opt[1]),
             React.createElement('div',{style:{flex:1}},
               React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},opt[2]),
@@ -1106,7 +1131,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',lineHeight:1.5,maxWidth:'230px'}},'People must send a follow request and you must approve it before they can see your posts and full profile.')
           ),
           React.createElement('button',{
-            onClick:function(){var n=!profileLocked;setProfileLocked(n);localStorage.setItem('profile_locked',n?'1':'0');},
+            onClick:function(){var n=!profileLocked;setProfileLocked(n);try{localStorage.setItem('profile_locked',n?'1':'0');}catch(e){}},
             style:{width:'46px',height:'26px',borderRadius:'13px',background:profileLocked?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
           },
             React.createElement('div',{style:{position:'absolute',top:'3px',left:profileLocked?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
@@ -1120,8 +1145,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Activity'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
         [
-          {label:'Show Online Status',sub:'Others can see when you\'re active',val:showOnline,toggle:function(){var n=!showOnline;setShowOnline(n);localStorage.setItem('show_online',n?'1':'0');sbProfile.from('profiles').update({is_online:n?true:false}).eq('id',userId).then(function(){});}},
-          {label:'Mute Activity Feed',sub:'Your likes and comments won\'t appear in others\' feeds',val:muteActivity,toggle:function(){var n=!muteActivity;setMuteActivity(n);localStorage.setItem('mute_activity',n?'1':'0');}},
+          {label:'Show Online Status',sub:'Others can see when you\'re active',val:showOnline,toggle:function(){var n=!showOnline;setShowOnline(n);try{localStorage.setItem('show_online',n?'1':'0');}catch(e){}sbProfile.from('profiles').update({is_online:n}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [setOnlineStatus]:', r.error);});}},
+          {label:'Mute Activity Feed',sub:'Your likes and comments won\'t appear in others\' feeds',val:muteActivity,toggle:function(){var n=!muteActivity;setMuteActivity(n);try{localStorage.setItem('mute_activity',n?'1':'0');}catch(e){}}},
         ].map(function(row,i,arr){
           return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}},
             React.createElement('div',{style:{flex:1}},
@@ -1142,9 +1167,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Content Controls'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
         [
-          {icon:'🚫',label:'Blocked Users',sub:'Manage people you\'ve blocked',fn:function(){alert('Blocked users list coming soon.');}},
-          {icon:'🔇',label:'Muted Words',sub:'Hide posts containing specific words',fn:function(){alert('Muted words coming soon.');}},
-          {icon:'📥',label:'Download My Data',sub:'Get a copy of your RingIn data',fn:function(){alert('Data export coming soon.');}},
+          {icon:'🚫',label:'Blocked Users',sub:'Manage people you\'ve blocked',fn:function(){setShowBlocked(true);}},
+          {icon:'🔇',label:'Muted Words',sub:'Hide posts containing specific words',fn:function(){setShowMuted(true);}},
+          {icon:'📥',label:'Download My Data',sub:'Get a copy of your RingIn data',fn:function(){var uid=userId;if(!uid){alert('Please log in first');return;}Promise.all([sbProfile.from('posts').select('*').eq('user_id',uid),sbProfile.from('comments').select('*').eq('user_id',uid)]).then(function(results){var data={exported_at:new Date().toISOString(),user_id:uid,email:email,posts:results[0].data||[],comments:results[1].data||[]};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ringin-data-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);});}},
           {icon:'🗑️',label:'Delete Account',sub:'Permanently remove your account',fn:function(){if(window.confirm('Are you sure? This cannot be undone.'))alert('Please contact support@ringin.app to delete your account.');},red:true},
         ].map(function(item,i,arr){
           return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}},
@@ -1258,6 +1283,187 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     );
   }
 
+  if(showBlocked) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowBlocked(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('div',null,
+        React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Blocked Users'),
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'People you have blocked')
+      )
+    ),
+    React.createElement('div',{style:{padding:'16px'}},
+      blockedList.length===0
+        ? React.createElement('div',{style:{textAlign:'center',padding:'48px 24px',color:'var(--t2)',fontSize:'14px'}},
+            React.createElement('div',{style:{fontSize:'40px',marginBottom:'12px'}},'🚫'),
+            React.createElement('div',{style:{fontWeight:600,marginBottom:'6px',color:'var(--text)'}},'No blocked users'),
+            React.createElement('div',null,'You haven\'t blocked anyone.')
+          )
+        : React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden'}},
+            blockedList.map(function(user,i){
+              var initStr=user.name?user.name.substring(0,2).toUpperCase():'??';
+              return React.createElement('div',{key:user.id||i,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',borderBottom:i<blockedList.length-1?'1px solid var(--border)':'none'}},
+                React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},initStr),
+                React.createElement('div',{style:{flex:1,minWidth:0}},
+                  React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},user.name||user.id)
+                ),
+                React.createElement('button',{
+                  onClick:function(){
+                    var newList=blockedList.filter(function(u){return u.id!==user.id;});
+                    setBlockedList(newList);
+                    try{localStorage.setItem('ringin_blocked',JSON.stringify(newList));}catch(e){}
+                  },
+                  style:{padding:'7px 14px',background:'rgba(239,71,71,0.12)',border:'1px solid rgba(239,71,71,0.3)',borderRadius:'8px',color:'#ef4747',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0}
+                },'Unblock')
+              );
+            })
+          )
+    )
+  );
+
+  if(showMuted) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowMuted(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('div',null,
+        React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Muted Words'),
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Hide posts containing these words')
+      )
+    ),
+    React.createElement('div',{style:{padding:'16px',display:'flex',flexDirection:'column',gap:'16px'}},
+      React.createElement('div',{style:{display:'flex',gap:'10px'}},
+        React.createElement('input',{
+          type:'text',
+          value:mutedInput,
+          onChange:function(e){setMutedInput(e.target.value);},
+          onKeyDown:function(e){
+            if(e.key==='Enter'&&mutedInput.trim()){
+              var word=mutedInput.trim().toLowerCase();
+              if(!mutedWords.includes(word)){
+                var newList=mutedWords.concat([word]);
+                setMutedWords(newList);
+                try{localStorage.setItem('ringin_muted_words',JSON.stringify(newList));}catch(e){}
+              }
+              setMutedInput('');
+            }
+          },
+          placeholder:'Add a word to mute...',
+          style:{flex:1,padding:'11px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}
+        }),
+        React.createElement('button',{
+          onClick:function(){
+            var word=mutedInput.trim().toLowerCase();
+            if(!word) return;
+            if(!mutedWords.includes(word)){
+              var newList=mutedWords.concat([word]);
+              setMutedWords(newList);
+              try{localStorage.setItem('ringin_muted_words',JSON.stringify(newList));}catch(e){}
+            }
+            setMutedInput('');
+          },
+          style:{padding:'11px 18px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:600,cursor:'pointer',flexShrink:0}
+        },'Add')
+      ),
+      mutedWords.length===0
+        ? React.createElement('div',{style:{textAlign:'center',padding:'32px 24px',color:'var(--t2)',fontSize:'13px'}},
+            React.createElement('div',{style:{fontSize:'36px',marginBottom:'10px'}},'🔇'),
+            React.createElement('div',{style:{fontWeight:600,marginBottom:'4px',color:'var(--text)'}},'No muted words'),
+            React.createElement('div',null,'Add words to hide posts containing them.')
+          )
+        : React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+            mutedWords.map(function(word,i){
+              return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'6px',padding:'7px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px'}},
+                React.createElement('span',{style:{fontSize:'13px',fontWeight:500,color:'var(--text)'}},'🔇 '+word),
+                React.createElement('button',{
+                  onClick:function(){
+                    var newList=mutedWords.filter(function(w){return w!==word;});
+                    setMutedWords(newList);
+                    try{localStorage.setItem('ringin_muted_words',JSON.stringify(newList));}catch(e){}
+                  },
+                  style:{background:'none',border:'none',color:'var(--t2)',fontSize:'15px',cursor:'pointer',padding:'0',lineHeight:1,display:'flex',alignItems:'center'}
+                },'✕')
+              );
+            })
+          )
+    )
+  );
+
+  if(showExpertApp) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{onClick:function(){setShowExpertApp(false);setExpertAppSubmitted(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('div',null,
+        React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Apply to be an Expert'),
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Share your knowledge and earn')
+      )
+    ),
+    expertAppSubmitted
+      ? React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,padding:'48px 24px',textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:'56px',marginBottom:'16px'}},'🎉'),
+          React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'10px'}},'Application Submitted!'),
+          React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',lineHeight:1.6,maxWidth:'280px'}},'We\'ll review and contact you within 3-5 days.')
+        )
+      : React.createElement('div',{style:{padding:'16px',display:'flex',flexDirection:'column',gap:'14px'}},
+          React.createElement('div',null,
+            React.createElement('label',{style:{fontSize:'11px',fontWeight:700,color:'var(--t2)',textTransform:'uppercase',letterSpacing:'0.6px',display:'block',marginBottom:'6px'}},'Display Name'),
+            React.createElement('input',{
+              type:'text',value:expertAppName,
+              onChange:function(e){setExpertAppName(e.target.value);},
+              placeholder:'Your full name',
+              style:{width:'100%',boxSizing:'border-box',padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}
+            })
+          ),
+          React.createElement('div',null,
+            React.createElement('label',{style:{fontSize:'11px',fontWeight:700,color:'var(--t2)',textTransform:'uppercase',letterSpacing:'0.6px',display:'block',marginBottom:'6px'}},'Expertise Area'),
+            React.createElement('select',{
+              value:expertAppArea,
+              onChange:function(e){setExpertAppArea(e.target.value);},
+              style:{width:'100%',boxSizing:'border-box',padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',cursor:'pointer'}
+            },
+              ['Medical','Legal','Tech','Finance','Mental Health','Fitness','Other'].map(function(opt){
+                return React.createElement('option',{key:opt,value:opt},opt);
+              })
+            )
+          ),
+          React.createElement('div',null,
+            React.createElement('label',{style:{fontSize:'11px',fontWeight:700,color:'var(--t2)',textTransform:'uppercase',letterSpacing:'0.6px',display:'block',marginBottom:'6px'}},'Short Bio'),
+            React.createElement('textarea',{
+              value:expertAppBio,
+              onChange:function(e){setExpertAppBio(e.target.value);},
+              placeholder:'Tell us about your expertise...',
+              rows:4,
+              style:{width:'100%',boxSizing:'border-box',padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',resize:'vertical',fontFamily:'inherit'}
+            })
+          ),
+          React.createElement('div',null,
+            React.createElement('label',{style:{fontSize:'11px',fontWeight:700,color:'var(--t2)',textTransform:'uppercase',letterSpacing:'0.6px',display:'block',marginBottom:'6px'}},'Years of Experience'),
+            React.createElement('input',{
+              type:'number',value:expertAppExp,min:'0',
+              onChange:function(e){setExpertAppExp(e.target.value);},
+              placeholder:'e.g. 5',
+              style:{width:'100%',boxSizing:'border-box',padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}
+            })
+          ),
+          React.createElement('div',null,
+            React.createElement('label',{style:{fontSize:'11px',fontWeight:700,color:'var(--t2)',textTransform:'uppercase',letterSpacing:'0.6px',display:'block',marginBottom:'6px'}},'Hourly Rate (coins/min)'),
+            React.createElement('input',{
+              type:'number',value:expertAppRate,min:'0',
+              onChange:function(e){setExpertAppRate(e.target.value);},
+              placeholder:'e.g. 10',
+              style:{width:'100%',boxSizing:'border-box',padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}
+            })
+          ),
+          React.createElement('button',{
+            onClick:function(){
+              if(!userId){alert('Please log in first');return;}
+              if(!expertAppName.trim()||!expertAppBio.trim()){alert('Please fill in all required fields.');return;}
+              sbProfile.from('profiles').update({bio:JSON.stringify(Object.assign({},profileInfo,{expert_request:{name:expertAppName,area:expertAppArea,bio:expertAppBio,exp:expertAppExp,rate:expertAppRate,applied_at:new Date().toISOString()}}))}).eq('id',userId).then(function(r){
+                if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error);alert('Failed to submit application: '+r.error.message);return;}
+                setExpertAppSubmitted(true);
+              });
+            },
+            style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#534AB7,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginTop:'4px',boxShadow:'0 4px 16px rgba(123,110,255,0.3)'}
+          },'Submit Application')
+        )
+  );
+
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
       React.createElement('button',{onClick:function(){setShowSettings(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
@@ -1297,7 +1503,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       ),
       // Become an Expert card
       React.createElement('div',{
-        onClick:function(){alert('Expert application coming soon!');},
+        onClick:function(){setShowExpertApp(true);},
         style:{background:'linear-gradient(135deg,#534AB7,#E84D9A)',borderRadius:'14px',padding:'18px 16px',marginBottom:'16px',display:'flex',alignItems:'center',gap:'14px',cursor:'pointer',boxShadow:'0 4px 20px rgba(123,110,255,0.3)'}
       },
         React.createElement('div',{style:{fontSize:'32px'}},'🎓'),
