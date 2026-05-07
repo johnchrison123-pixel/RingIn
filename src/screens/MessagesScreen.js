@@ -104,6 +104,36 @@ function playReleaseMs(isHeart){
   }
 }
 
+function playMsEmojiClick(){
+  var ctx=getMsCtx();if(!ctx)return;
+  var o=ctx.createOscillator();var g=ctx.createGain();
+  o.connect(g);g.connect(ctx.destination);
+  o.type='sine';o.frequency.setValueAtTime(1400,ctx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
+  g.gain.setValueAtTime(0.06,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
+  o.start(ctx.currentTime);o.stop(ctx.currentTime+0.07);
+}
+function playMsSendSound(){
+  var ctx=getMsCtx();if(!ctx)return;
+  var sw=ctx.createOscillator();var swg=ctx.createGain();
+  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=900;bpf.Q.value=0.8;
+  sw.connect(bpf);bpf.connect(swg);swg.connect(ctx.destination);
+  sw.type='sawtooth';sw.frequency.setValueAtTime(320,ctx.currentTime);
+  sw.frequency.exponentialRampToValueAtTime(1100,ctx.currentTime+0.18);
+  swg.gain.setValueAtTime(0.0,ctx.currentTime);
+  swg.gain.linearRampToValueAtTime(0.18,ctx.currentTime+0.08);
+  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
+  sw.start(ctx.currentTime);sw.stop(ctx.currentTime+0.18);
+  var tk=ctx.createOscillator();var tkg=ctx.createGain();
+  tk.connect(tkg);tkg.connect(ctx.destination);
+  tk.type='sine';tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
+  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.22);
+  tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
+  tkg.gain.linearRampToValueAtTime(0.14,ctx.currentTime+0.17);
+  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
+  tk.start(ctx.currentTime+0.14);tk.stop(ctx.currentTime+0.28);
+}
 // Flat gradient heart — strong signature colors #7B6EFF → #E84D9A
 function HeartSvg(props){
   var sz=props.size||60; var id=props.id||'hsvg';
@@ -213,6 +243,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   function send(){
     if(!txt.trim()) return;
+    playMsSendSound();
     var receiverId = convo.receiverId || (convId.replace(myId,'').replace('_',''));
     var m={
       conversation_id:convId,
@@ -340,7 +371,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
     showEmoji?React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}},
       ['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','😢','😮','🥳','😎','🙏','💯','😅','🤣'].map(function(em){
-        return React.createElement('span',{key:em,onClick:function(){setTxt(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
+        return React.createElement('span',{key:em,onClick:function(){playMsEmojiClick();setTxt(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
       })
     ):null,
 
@@ -356,7 +387,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
       },'😊'),
       React.createElement('input',{
         value:txt,
-        onChange:function(e){setTxt(e.target.value);},
+        onChange:function(e){playMsEmojiClick();setTxt(e.target.value);},
         onKeyDown:function(e){if(e.key==='Enter')send();},
         placeholder:'Type a message...',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}

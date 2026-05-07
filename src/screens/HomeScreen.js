@@ -22,6 +22,38 @@ function playKeyClick(){
   g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.06);
   o.start(ctx.currentTime); o.stop(ctx.currentTime+0.06);
 }
+function playEmojiClick(){
+  var ctx=getAudioCtx(); if(!ctx) return;
+  var o=ctx.createOscillator(); var g=ctx.createGain();
+  o.connect(g); g.connect(ctx.destination);
+  o.type='sine'; o.frequency.setValueAtTime(1400,ctx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
+  g.gain.setValueAtTime(0.06,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
+  o.start(ctx.currentTime); o.stop(ctx.currentTime+0.07);
+}
+function playPostSound(){
+  var ctx=getAudioCtx(); if(!ctx) return;
+  // Swoosh: sawtooth sweep up
+  var sw=ctx.createOscillator(); var swg=ctx.createGain();
+  var bpf=ctx.createBiquadFilter(); bpf.type='bandpass'; bpf.frequency.value=900; bpf.Q.value=0.8;
+  sw.connect(bpf); bpf.connect(swg); swg.connect(ctx.destination);
+  sw.type='sawtooth'; sw.frequency.setValueAtTime(320,ctx.currentTime);
+  sw.frequency.exponentialRampToValueAtTime(1100,ctx.currentTime+0.18);
+  swg.gain.setValueAtTime(0.0,ctx.currentTime);
+  swg.gain.linearRampToValueAtTime(0.18,ctx.currentTime+0.08);
+  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
+  sw.start(ctx.currentTime); sw.stop(ctx.currentTime+0.18);
+  // Tick: clean sine at the end
+  var tk=ctx.createOscillator(); var tkg=ctx.createGain();
+  tk.connect(tkg); tkg.connect(ctx.destination);
+  tk.type='sine'; tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
+  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.22);
+  tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
+  tkg.gain.linearRampToValueAtTime(0.14,ctx.currentTime+0.17);
+  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
+  tk.start(ctx.currentTime+0.14); tk.stop(ctx.currentTime+0.28);
+}
 function playLikeSound(liked){
   var ctx=getAudioCtx(); if(!ctx) return;
   if(liked){
@@ -525,7 +557,7 @@ export function UserProfileView(props){
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
               }),
               React.createElement('button',{
-                onClick:function(){if(commentInputU.trim())submitCommentU(p.id,commentInputU);},
+                onClick:function(){if(commentInputU.trim()){playPostSound();submitCommentU(p.id,commentInputU);}},
                 style:{padding:'6px 14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
               },'Send')
             )
@@ -979,7 +1011,7 @@ export default function HomeScreen(props){
               placeholder:'Add a comment...',
               style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'8px 14px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
             }),
-            React.createElement('button',{onClick:function(){if(commentInput.trim()){submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}},
+            React.createElement('button',{onClick:function(){if(commentInput.trim()){playPostSound();submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}},
               style:{padding:'8px 16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'22px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
             },'Post')
           )
@@ -1007,6 +1039,7 @@ export default function HomeScreen(props){
     if(!compText.trim()&&compImgs.length===0&&!compVideo){alert('Write something or add a photo/video!');return;}
     if(compVideo&&compVideo.uploading){alert('Video is still uploading, please wait...');return;}
     if(uploadingMedia){alert('Media is still uploading, please wait...');return;}
+    playPostSound();
     var session = props.session;
     if(!session||!session.user){alert('Please log in to post');return;}
     setPosting(true);
@@ -1495,7 +1528,7 @@ export default function HomeScreen(props){
         uploadingMedia&&!compVideo?React.createElement('div',{style:{padding:'8px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}},'⏳ Uploading photos...'):null,
         compEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px 0',borderTop:'1px solid var(--border)'}},
           EMOJIS.map(function(em){
-            return React.createElement('span',{key:em,onClick:function(){setCompText(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
+            return React.createElement('span',{key:em,onClick:function(){playEmojiClick();setCompText(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);
           })
         ) : null,
         React.createElement('div', {className:'comp-btns'},
@@ -1633,7 +1666,7 @@ export default function HomeScreen(props){
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
               }),
               React.createElement('button',{
-                onClick:function(){if(commentInput.trim())submitComment(p.id,commentInput);},
+                onClick:function(){if(commentInput.trim()){playPostSound();submitComment(p.id,commentInput);}},
                 style:{padding:'6px 14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
               },'Send')
             )

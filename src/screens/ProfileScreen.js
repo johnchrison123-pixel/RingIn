@@ -104,6 +104,41 @@ var TIMEZONES=[
   ['Pacific/Guam','Guam (ChST, +10)','+10'],
 ];
 
+var _profAudioCtx=null;
+function getProfAudioCtx(){
+  if(!_profAudioCtx){try{_profAudioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  return _profAudioCtx;
+}
+function playProfEmojiClick(){
+  var ctx=getProfAudioCtx();if(!ctx)return;
+  var o=ctx.createOscillator();var g=ctx.createGain();
+  o.connect(g);g.connect(ctx.destination);
+  o.type='sine';o.frequency.setValueAtTime(1400,ctx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(1000,ctx.currentTime+0.05);
+  g.gain.setValueAtTime(0.06,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
+  o.start(ctx.currentTime);o.stop(ctx.currentTime+0.07);
+}
+function playProfPostSound(){
+  var ctx=getProfAudioCtx();if(!ctx)return;
+  var sw=ctx.createOscillator();var swg=ctx.createGain();
+  var bpf=ctx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=900;bpf.Q.value=0.8;
+  sw.connect(bpf);bpf.connect(swg);swg.connect(ctx.destination);
+  sw.type='sawtooth';sw.frequency.setValueAtTime(320,ctx.currentTime);
+  sw.frequency.exponentialRampToValueAtTime(1100,ctx.currentTime+0.18);
+  swg.gain.setValueAtTime(0.0,ctx.currentTime);
+  swg.gain.linearRampToValueAtTime(0.18,ctx.currentTime+0.08);
+  swg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.18);
+  sw.start(ctx.currentTime);sw.stop(ctx.currentTime+0.18);
+  var tk=ctx.createOscillator();var tkg=ctx.createGain();
+  tk.connect(tkg);tkg.connect(ctx.destination);
+  tk.type='sine';tk.frequency.setValueAtTime(1600,ctx.currentTime+0.14);
+  tk.frequency.exponentialRampToValueAtTime(2200,ctx.currentTime+0.22);
+  tkg.gain.setValueAtTime(0.0,ctx.currentTime+0.14);
+  tkg.gain.linearRampToValueAtTime(0.14,ctx.currentTime+0.17);
+  tkg.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
+  tk.start(ctx.currentTime+0.14);tk.stop(ctx.currentTime+0.28);
+}
 function timeAgoProf(dateStr){
   if(!dateStr) return '';
   var now=new Date();
@@ -628,6 +663,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   function submitPost(){
     if(!postText.trim()){alert('Write something first!');return;}
     if(!userId){alert('Please log in to post');return;}
+    playProfPostSound();
     var postData = {
       user_id: userId,
       user_name: email.split('@')[0],
@@ -1503,10 +1539,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
               avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
             ),
-            React.createElement('textarea',{value:postText,onChange:function(e){setPostText(e.target.value);},placeholder:"What's on your mind?",style:{flex:1,background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 11px',fontSize:'13px',color:'var(--text)',outline:'none',resize:'none',minHeight:'70px',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}})
+            React.createElement('textarea',{value:postText,onChange:function(e){playProfEmojiClick();setPostText(e.target.value);},placeholder:"What's on your mind?",style:{flex:1,background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 11px',fontSize:'13px',color:'var(--text)',outline:'none',resize:'none',minHeight:'70px',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}})
           ),
           showEmoji ? React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',padding:'8px',background:'var(--bg4)',borderRadius:'10px',marginBottom:'8px'}},
-            EMOJIS.map(function(em){return React.createElement('span',{key:em,onClick:function(){setPostText(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);})
+            EMOJIS.map(function(em){return React.createElement('span',{key:em,onClick:function(){playProfEmojiClick();setPostText(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'2px'}},em);})
           ) : null,
           React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             React.createElement('div',{style:{display:'flex',gap:'6px'}},
@@ -1622,13 +1658,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                 ),
                 React.createElement('input',{
                   value:commentInputProf,
-                  onChange:function(e){setCommentInputProf(e.target.value);},
+                  onChange:function(e){playProfEmojiClick();setCommentInputProf(e.target.value);},
                   onKeyDown:function(e){if(e.key==='Enter'&&commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}},
                   placeholder:'Write a comment...',
                   style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
                 }),
                 React.createElement('button',{
-                  onClick:function(){if(commentInputProf.trim())submitCommentProf(p.id,commentInputProf);},
+                  onClick:function(){if(commentInputProf.trim()){playProfPostSound();submitCommentProf(p.id,commentInputProf);}},
                   style:{padding:'6px 14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
                 },'Send')
               )
