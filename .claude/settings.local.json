@@ -9,7 +9,12 @@
       "Bash(git push *)",
       "Bash(npm run *)",
       "Bash(node -e ' *)",
-      "mcp__Claude_in_Chrome__tabs_context_mcp"
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(node -c '/c/Users/johnc/Desktop/The project/RingIn/ringin-admin/src/screens/__TRACKED_VAR__.js')",
+      "Bash(awk '{print $9, \"\\(\" $5 \"\\)\"}')",
+      "Bash(gh repo *)",
+      "Bash(cd /tmp)",
+      "Bash(cat)"
     ]
   }
 }
