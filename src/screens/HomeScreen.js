@@ -197,7 +197,19 @@ export function UserProfileView(props){
         });
         // Persist count to DB
         sbHome.from('comments').select('id',{count:'exact',head:true}).eq('post_id',postId).then(function(r){
-          if(r.count!==null) sbHome.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){});
+          if(r.count!==null) sbHome.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){
+            // Notify post owner after comment count update succeeds
+            var snapU=userPosts.find(function(p){return p.id===postId;});
+            if(snapU&&snapU.userId&&snapU.userId!==currentUserId){
+              sbHome.from('notifications').insert({
+                user_id:snapU.userId,
+                type:'comment',
+                post_id:snapU.id,
+                sender_id:currentUserId,
+                message:'commented on your post'
+              }).then(function(){});
+            }
+          });
         });
       }
     });
@@ -604,7 +616,19 @@ export default function HomeScreen(props){
         });
         // Persist count to DB
         sbHome.from('comments').select('id',{count:'exact',head:true}).eq('post_id',postId).then(function(r){
-          if(r.count!==null) sbHome.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){});
+          if(r.count!==null) sbHome.from('posts').update({comments_count:r.count}).eq('id',postId).then(function(){
+            // Notify post owner after comment count update succeeds
+            var snap=posts.find(function(p){return p.id===postId;});
+            if(snap&&snap.userId&&snap.userId!==currentUserId){
+              sbHome.from('notifications').insert({
+                user_id:snap.userId,
+                type:'comment',
+                post_id:snap.id,
+                sender_id:currentUserId,
+                message:'commented on your post'
+              }).then(function(){});
+            }
+          });
         });
       }
     });

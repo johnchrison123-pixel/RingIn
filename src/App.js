@@ -10,6 +10,7 @@ import WorkshopsScreen from './screens/WorkshopsScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
+import {playSound} from './utils/soundEngine';
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -46,8 +47,12 @@ export default function App() {
         },{onConflict:'id'}).then(function(){});
         // Initialize push notifications
         initPushNotifications(session.user.id, function(payload){
-          // Show in-app toast or trigger notification sound
-          console.log('Foreground notification:', payload);
+          if(payload && payload.notification){
+            // Play sound for foreground push notifications
+            try{
+              playSound('notification');
+            }catch(e){}
+          }
         });
         // Set offline when window closes
         window.onbeforeunload = function(){
