@@ -203,10 +203,13 @@ export function UserProfileView(props){
             if(snapU&&snapU.userId&&snapU.userId!==currentUserId){
               sbHome.from('notifications').insert({
                 user_id:snapU.userId,
+                from_user_id:currentUserId,
+                from_user_name:userName,
+                from_user_avatar:userAvatar||'',
                 type:'comment',
                 post_id:snapU.id,
-                sender_id:currentUserId,
-                message:'commented on your post'
+                message:userName+' commented on your post',
+                read:false
               }).then(function(){});
             }
           });
@@ -622,10 +625,13 @@ export default function HomeScreen(props){
             if(snap&&snap.userId&&snap.userId!==currentUserId){
               sbHome.from('notifications').insert({
                 user_id:snap.userId,
+                from_user_id:currentUserId,
+                from_user_name:currentUserName,
+                from_user_avatar:currentUserAvatar||'',
                 type:'comment',
                 post_id:snap.id,
-                sender_id:currentUserId,
-                message:'commented on your post'
+                message:currentUserName+' commented on your post',
+                read:false
               }).then(function(){});
             }
           });
@@ -667,7 +673,7 @@ export default function HomeScreen(props){
       }
       // Notify post owner only when this was a like action (snap.liked was false)
       if(!snap.liked&&snap.userId&&snap.userId!==userId){
-        sbHome.from("notifications").insert([{user_id:snap.userId,sender_id:userId,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
+        sbHome.from("notifications").insert([{user_id:snap.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar||'',type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
     });
   }
@@ -1102,9 +1108,11 @@ export default function HomeScreen(props){
                 if(!ns.data||ns.data.notify_posts!==false){
                   sbHome.from('notifications').insert([{
                     user_id:f.follower_id,
-                    sender_id:session.user.id,
+                    from_user_id:session.user.id,
+                    from_user_name:postData.user_name||'Someone',
+                    from_user_avatar:postData.user_avatar||'',
                     type:'new_post',
-                    message:postData.user_name+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
+                    message:(postData.user_name||'Someone')+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
                     post_id:res.data[0].id,
                     read:false
                   }]).then(function(){});
