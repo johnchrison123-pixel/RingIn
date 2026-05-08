@@ -877,7 +877,9 @@ export default function HomeScreen(props){
         });
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
-        // Immediately bump comment count on the matching post — no waiting for post UPDATE
+        // Bump comment count in real-time — skip own comments (already optimistically updated)
+        var uid = props.session&&props.session.user ? props.session.user.id : null;
+        if(uid && p.new.user_id === uid) return;
         setPosts(function(prev){
           return prev.map(function(post){
             if(post.id!==p.new.post_id) return post;
