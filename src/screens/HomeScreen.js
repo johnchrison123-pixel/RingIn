@@ -719,6 +719,13 @@ export default function HomeScreen(props){
   useEffect(function(){
     if(!props.session||!props.session.user) return;
     var uid = props.session.user.id;
+    // Check if user is banned
+    sbHome.from('profiles').select('banned').eq('id', uid).single().then(function(r){
+      if(r.data && r.data.banned){
+        sbHome.auth.signOut();
+        alert('Your account has been suspended. Please contact support.');
+      }
+    });
     sbHome.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(20).then(function(res){
       if(res.data){
         setNotifs(res.data);
@@ -740,9 +747,9 @@ export default function HomeScreen(props){
     var snapPosts = posts.slice();
     sbHome.from('posts').update({text:editPostData.content}).eq('id',editPostData.id).then(function(r){
       if(r.error){
-        console.error('RingIn Error [saveEditPost]:', r.error);
+        console.error('RingIn Error [saveEditPost]:', r.error && r.error.message ? r.error.message : 'Unknown error');
         setPosts(snapPosts);
-        alert('Failed to save edit: '+r.error.message);
+        alert('Something went wrong. Please try again.');
         return;
       }
       setPosts(function(prev){return prev.map(function(x){return x.id===editPostData.id?Object.assign({},x,{text:editPostData.content}):x;});});
@@ -1062,7 +1069,7 @@ export default function HomeScreen(props){
       comments_count: 0
     };
     sbHome.from('posts').insert([postData]).select().then(function(res){
-      if(res.error){console.error('RingIn Error [submitPost]:', res.error);alert('Failed to post: '+res.error.message);setPosting(false);return;}
+      if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');alert('Something went wrong. Please try again.');setPosting(false);return;}
       if(res.data&&res.data[0]){
         sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
           if(fres.data&&fres.data.length>0){
@@ -1126,10 +1133,22 @@ export default function HomeScreen(props){
     setUploadingMedia(true);
     var uid = session.user.id;
     var uploads = Array.from(files).map(function(file){
-      var ext = (file.name||'img').split('.').pop()||'jpg';
-      var path = 'posts/'+uid+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+      // Validate file type
+      var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
+      if(!allowed.includes(file.type)){
+        alert('Only images allowed (JPG, PNG, GIF, WebP)');
+        return Promise.resolve(null);
+      }
+      // Validate file size (max 10MB)
+      if(file.size > 10 * 1024 * 1024){
+        alert('Image must be under 10MB');
+        return Promise.resolve(null);
+      }
+      var ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'webp';
+      var safeFileName = 'post_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+      var path = 'posts/'+uid+'/'+safeFileName;
       return sbHome.storage.from('posts-media').upload(path, file, {upsert:true}).then(function(res){
-        if(res.error){console.error('img upload err',res.error);return null;}
+        if(res.error){console.error('img upload err',res.error && res.error.message ? res.error.message : 'Unknown error');return null;}
         return sbHome.storage.from('posts-media').getPublicUrl(path).data.publicUrl;
       });
     });
@@ -1153,7 +1172,7 @@ export default function HomeScreen(props){
     var ext = (file.name||'video').split('.').pop()||'mp4';
     var path = 'posts/'+uid+'/vid_'+Date.now()+'.'+ext;
     sbHome.storage.from('posts-media').upload(path, file, {upsert:true}).then(function(res){
-      if(res.error){alert('Video upload failed: '+res.error.message);setCompVideo(null);setUploadingMedia(false);return;}
+      if(res.error){alert('Something went wrong. Please try again.');setCompVideo(null);setUploadingMedia(false);return;}
       var publicUrl = sbHome.storage.from('posts-media').getPublicUrl(path).data.publicUrl;
       setCompVideo({localUrl:localUrl, supaUrl:publicUrl, uploading:false});
       setUploadingMedia(false);

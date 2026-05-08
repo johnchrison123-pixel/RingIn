@@ -395,8 +395,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
       setSavingEdit(false);
       if(res.error){
-        console.error('RingIn Error [saveEditProfile]:', res.error);
-        alert('Failed to save profile: '+res.error.message);
+        console.error('RingIn Error [saveEditProfile]:', res.error && res.error.message ? res.error.message : 'Unknown error');
+        alert('Something went wrong. Please try again.');
         return;
       }
       var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
@@ -525,6 +525,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   function uploadAvatar(file){
     if(!file||!userId) return;
+    // Validate file type
+    var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
+    if(!allowed.includes(file.type)){
+      alert('Only images allowed (JPG, PNG, GIF, WebP)');
+      return;
+    }
+    // Validate file size (max 5MB)
+    if(file.size > 5 * 1024 * 1024){
+      alert('Image must be under 5MB');
+      return;
+    }
     var reader = new FileReader();
     reader.onload = function(e){
       setAdjustImg(e.target.result);
@@ -559,7 +570,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         setShowAdjust(false);
         var fileName = userId+'.jpg';
         supabase.storage.from('avatars').upload(fileName,blob,{upsert:true,contentType:'image/jpeg'}).then(function(res){
-          if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
+          if(res.error){alert('Something went wrong. Please try again.');setUploading(false);return;}
           var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
           var url = pub.data.publicUrl+'?t='+Date.now();
           setAvatarUrl(url);
@@ -575,6 +586,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   function uploadCover(file){
     if(!file||!userId) return;
+    // Validate file type
+    var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
+    if(!allowed.includes(file.type)){
+      alert('Only images allowed (JPG, PNG, GIF, WebP)');
+      return;
+    }
+    // Validate file size (max 5MB)
+    if(file.size > 5 * 1024 * 1024){
+      alert('Image must be under 5MB');
+      return;
+    }
     var reader = new FileReader();
     reader.onload = function(e){
       var tmp = new Image();
@@ -624,7 +646,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         setShowCoverAdjust(false);
         var fileName = userId+'_cover.jpg';
         supabase.storage.from('covers').upload(fileName, blob, {upsert:true, contentType:'image/jpeg'}).then(function(res){
-          if(res.error){alert('Upload failed: '+res.error.message);setUploading(false);return;}
+          if(res.error){alert('Something went wrong. Please try again.');setUploading(false);return;}
           var pub = supabase.storage.from('covers').getPublicUrl(fileName);
           var url = pub.data.publicUrl+'?t='+Date.now();
           setCoverUrl(url);
@@ -682,7 +704,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       comments_count: 0
     };
     sbProfile.from('posts').insert([postData]).select().then(function(res){
-      if(res.error){alert('Failed to post: '+res.error.message);return;}
+      if(res.error){alert('Something went wrong. Please try again.');return;}
       if(res.data&&res.data[0]){
         var newPost={
           id:res.data[0].id,
@@ -1455,7 +1477,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               if(!userId){alert('Please log in first');return;}
               if(!expertAppName.trim()||!expertAppBio.trim()){alert('Please fill in all required fields.');return;}
               sbProfile.from('profiles').update({bio:JSON.stringify(Object.assign({},profileInfo,{expert_request:{name:expertAppName,area:expertAppArea,bio:expertAppBio,exp:expertAppExp,rate:expertAppRate,applied_at:new Date().toISOString()}}))}).eq('id',userId).then(function(r){
-                if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error);alert('Failed to submit application: '+r.error.message);return;}
+                if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error && r.error.message ? r.error.message : 'Unknown error');alert('Something went wrong. Please try again.');return;}
                 setExpertAppSubmitted(true);
               });
             },

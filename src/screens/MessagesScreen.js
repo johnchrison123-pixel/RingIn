@@ -214,7 +214,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     setMsgs(function(prev){return prev.concat([optimisticMsg]);});
     sb.from('messages').insert([m]).select().then(function(r){
       if(r.error){
-        console.error('RingIn Error [sendReactionEmoji]:', r.error);
+        console.error('RingIn Error [sendReactionEmoji]:', r.error&&r.error.message?r.error.message:'Unknown error');
         setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
         return;
       }
@@ -278,7 +278,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     setMsgs([]);
     sb.from('messages').delete().eq('conversation_id', convId2).then(function(r){
       if(r.error){
-        console.error('RingIn Error [clearAllChat]:', r.error);
+        console.error('RingIn Error [clearAllChat]:', r.error&&r.error.message?r.error.message:'Unknown error');
         setMsgs(snap);
         setToast('Failed to clear chat');
         setTimeout(function(){setToast('');}, 2000);
@@ -291,6 +291,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   function send(){
     if(!txt.trim()) return;
+    // Check if other user is blocked
+    var blockedList=[];
+    try{var bs=localStorage.getItem('ringin_blocked');if(bs)blockedList=JSON.parse(bs);}catch(e){}
+    var otherId=convo.other_user_id||convo.id;
+    if(blockedList.includes(String(otherId))){
+      setToast('You have blocked this user');
+      setTimeout(function(){setToast('');},2500);
+      return;
+    }
     playMsSendSound();
     var receiverId = convo.receiverId || (convId.replace(myId,'').replace('_',''));
     var sentText = txt.trim();
@@ -309,7 +318,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     setMsgs(function(prev){return prev.concat([optimisticMsg]);});
     sb.from('messages').insert([m]).select().then(function(r){
       if(r.error){
-        console.error('RingIn Error [send message]:', r.error);
+        console.error('RingIn Error [send message]:', r.error&&r.error.message?r.error.message:'Unknown error');
         // Remove optimistic message on failure
         setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
         return;
@@ -341,7 +350,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     setTimeout(function(){setToast('');},2000);
     sb.from('messages').delete().eq('id',msgId).then(function(r){
       if(r.error){
-        console.error('RingIn Error [unsendMessage]:',r.error);
+        console.error('RingIn Error [unsendMessage]:',r.error&&r.error.message?r.error.message:'Unknown error');
         if(snap) setMsgs(function(prev){
           var idx=prev.findIndex(function(m){return m.id>msgId;});
           if(idx===-1) return prev.concat([snap]);
@@ -575,7 +584,23 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         onChange:function(ev){
           var file=ev.target.files&&ev.target.files[0];
           if(!file) return;
-          var fileName='chat_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9.]/g,'_');
+          // Validate file type
+          var allowed=['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
+          if(!allowed.includes(file.type)){
+            setToast('Only images allowed (JPG, PNG, GIF, WebP)');
+            setTimeout(function(){setToast('');},2500);
+            ev.target.value='';
+            return;
+          }
+          // Validate file size (max 5MB)
+          if(file.size>5*1024*1024){
+            setToast('Image must be under 5MB');
+            setTimeout(function(){setToast('');},2500);
+            ev.target.value='';
+            return;
+          }
+          var ext=file.type==='image/jpeg'?'jpg':file.type==='image/png'?'png':file.type==='image/gif'?'gif':'webp';
+          var fileName='chat_'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
           var tempId='tmp_img_'+Date.now();
           var localUrl=URL.createObjectURL(file);
           var receiverId=convo.receiverId||(convId.replace(myId,'').replace('_',''));
@@ -584,7 +609,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           setMsgs(function(prev){return prev.concat([optimisticMsg]);});
           sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(r){
             if(r.error){
-              console.error('RingIn Error [chatPhotoUpload]:', r.error);
+              console.error('RingIn Error [chatPhotoUpload]:', r.error&&r.error.message?r.error.message:'Unknown error');
               setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
               alert('Photo upload failed: '+r.error.message);
               return;
@@ -592,7 +617,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
             var url=sb.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
             sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
               if(mr.error){
-                console.error('RingIn Error [chatPhotoInsert]:', mr.error);
+                console.error('RingIn Error [chatPhotoInsert]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
                 setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
                 return;
               }
