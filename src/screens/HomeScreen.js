@@ -733,7 +733,7 @@ export default function HomeScreen(props){
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
-  var loadingS=useState(true); var loading=loadingS[0]; var setLoading=loadingS[1];
+  var loadingS=useState(_cachedPosts.length===0); var loading=loadingS[0]; var setLoading=loadingS[1];
   var fileInputRef=useRef(null);
   var typingTimerRef=useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
@@ -1629,7 +1629,21 @@ export default function HomeScreen(props){
         )
       ) : null
     ),
-    loading ? React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)',fontSize:'14px'}},'Loading...') : null,
+    loading ? React.createElement('div',{style:{padding:'0'}},
+      [0,1,2].map(function(i){
+        return React.createElement('div',{key:i,style:{margin:'0 0 2px',padding:'16px',background:'var(--bg2)',borderBottom:'1px solid var(--border)'}},
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}},
+            React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--bg3)',animation:'shimmer 1.4s ease-in-out infinite'}}),
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{height:'12px',borderRadius:'6px',background:'var(--bg3)',width:'40%',marginBottom:'6px',animation:'shimmer 1.4s ease-in-out infinite'}}),
+              React.createElement('div',{style:{height:'10px',borderRadius:'6px',background:'var(--bg3)',width:'25%',animation:'shimmer 1.4s ease-in-out infinite'}})
+            )
+          ),
+          React.createElement('div',{style:{height:'14px',borderRadius:'6px',background:'var(--bg3)',width:'90%',marginBottom:'8px',animation:'shimmer 1.4s ease-in-out infinite'}}),
+          React.createElement('div',{style:{height:'14px',borderRadius:'6px',background:'var(--bg3)',width:'70%',animation:'shimmer 1.4s ease-in-out infinite'}})
+        );
+      })
+    ) : null,
     React.createElement('div', {style:{padding:'0'}},
       posts.map(function(p){
         var commentsArr=commentsCache[p.id]||[];

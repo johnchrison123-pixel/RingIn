@@ -25,3 +25,8 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 .auth-switch:hover{color:var(--ac);}
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.4; }
+  100% { opacity: 1; }
+}
