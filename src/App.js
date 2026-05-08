@@ -9,6 +9,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import WorkshopsScreen from './screens/WorkshopsScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import {sb as supabase} from './utils/supabase';
+import {initPushNotifications} from './utils/pushNotifications';
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -43,6 +44,11 @@ export default function App() {
           is_online: true,
           last_seen: new Date().toISOString()
         },{onConflict:'id'}).then(function(){});
+        // Initialize push notifications
+        initPushNotifications(session.user.id, function(payload){
+          // Show in-app toast or trigger notification sound
+          console.log('Foreground notification:', payload);
+        });
         // Set offline when window closes
         window.onbeforeunload = function(){
           supabase.from('profiles').update({is_online:false,last_seen:new Date().toISOString()}).eq('id',session.user.id).then(function(){});
