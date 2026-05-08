@@ -20,6 +20,7 @@ export default function App() {
   var initConvoS = useState(null); var initConvo = initConvoS[0]; var setInitConvo = initConvoS[1];
   var viewUserStackS = useState([]); var viewUserStack = viewUserStackS[0]; var setViewUserStack = viewUserStackS[1];
   var unreadMsgS = useState(0); var unreadMsg = unreadMsgS[0]; var setUnreadMsg = unreadMsgS[1];
+  var msgResetKeyS = useState(0); var msgResetKey = msgResetKeyS[0]; var setMsgResetKey = msgResetKeyS[1];
   function pushViewUser(u){ setViewUserStack(function(prev){return prev.concat([u]);}); }
   function popViewUser(){ setViewUserStack(function(prev){return prev.slice(0,-1);}); }
   var swXS = useState(0); var swX = swXS[0]; var setSwX = swXS[1];
@@ -136,7 +137,7 @@ export default function App() {
     if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
-    if (activeTab === 'messages') return React.createElement(MessagesScreen, {session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet, onUnreadCount:setUnreadMsg});
+    if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages-'+msgResetKey, session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet, onUnreadCount:setUnreadMsg});
     if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUserStack([u]);}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
@@ -179,7 +180,12 @@ export default function App() {
         return React.createElement('button', {
           key:tab.id,
           className:'nav-tab '+(activeTab===tab.id?'active':''),
-          onClick:function(){setActiveTab(tab.id);}
+          onClick:function(){
+            if(tab.id==='messages' && activeTab==='messages'){
+              setMsgResetKey(function(k){return k+1;});
+            }
+            setActiveTab(tab.id);
+          }
         },
           React.createElement('div', {style:{position:'relative',display:'inline-flex',alignItems:'center',justifyContent:'center'}},
             React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:2},
