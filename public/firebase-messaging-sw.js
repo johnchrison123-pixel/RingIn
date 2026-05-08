@@ -5,12 +5,12 @@ importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
 var firebaseConfig = {
-  apiKey: 'REPLACE_WITH_YOUR_FIREBASE_API_KEY',
-  authDomain: 'REPLACE_WITH_YOUR_AUTH_DOMAIN',
-  projectId: 'REPLACE_WITH_YOUR_PROJECT_ID',
-  storageBucket: 'REPLACE_WITH_YOUR_STORAGE_BUCKET',
-  messagingSenderId: 'REPLACE_WITH_YOUR_SENDER_ID',
-  appId: 'REPLACE_WITH_YOUR_APP_ID',
+  apiKey: 'AIzaSyCUg0EvH_4sWWZwrah53PiCl8L3-d3jkXQ',
+  authDomain: 'ring-in-23c07.firebaseapp.com',
+  projectId: 'ring-in-23c07',
+  storageBucket: 'ring-in-23c07.firebasestorage.app',
+  messagingSenderId: '849352826995',
+  appId: '1:849352826995:web:2fd47580d8346e60b84a06',
 };
 
 firebase.initializeApp(firebaseConfig);
