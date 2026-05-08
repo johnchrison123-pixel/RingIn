@@ -838,21 +838,36 @@ export default function MessagesScreen(props){
     // Realtime - new message notification
     var ch = sb.channel('inbox-'+myId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+myId},function(p){
-        setTotalUnread(function(t){return t+1;});
-        if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
-        setUserConvos(function(prev){
-          var exists = prev.find(function(c){return c.convId===p.new.conversation_id;});
-          if(exists){
-            return prev.map(function(c){
-              if(c.convId!==p.new.conversation_id) return c;
-              return Object.assign({},c,{lastMsg:p.new.text,unreadCount:(c.unreadCount||0)+1});
+        // Use functional setActive to read current active convo without stale closure
+        setActive(function(currentActive){
+          var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
+          if(!isViewingThisConvo){
+            // Not viewing this chat — increment badge and unread count
+            setTotalUnread(function(t){return t+1;});
+            if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
+            setUserConvos(function(prev){
+              var exists=prev.find(function(c){return c.convId===p.new.conversation_id;});
+              if(exists){
+                return prev.map(function(c){
+                  if(c.convId!==p.new.conversation_id) return c;
+                  return Object.assign({},c,{lastMsg:p.new.text,unreadCount:(c.unreadCount||0)+1});
+                });
+              }
+              return prev;
+            });
+            var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
+            if(!mc.includes(p.new.conversation_id)) playSound('notification');
+          } else {
+            // Already viewing this chat — just update last message preview, no badge
+            setUserConvos(function(prev){
+              return prev.map(function(c){
+                if(c.convId!==p.new.conversation_id) return c;
+                return Object.assign({},c,{lastMsg:p.new.text});
+              });
             });
           }
-          return prev;
+          return currentActive; // don't change active
         });
-        // Play notification sound when a new message arrives in the list view
-        var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-        if(!mc.includes(p.new.conversation_id)) playSound('notification');
       }).subscribe();
     return function(){sb.removeChannel(ch);};
   },[myId]);
