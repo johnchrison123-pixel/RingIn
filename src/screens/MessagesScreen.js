@@ -756,7 +756,8 @@ export default function MessagesScreen(props){
     return [];
   }); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
-  var loadingConvosS=useState(true); var loadingConvos=loadingConvosS[0]; var setLoadingConvos=loadingConvosS[1];
+  var _hasCachedConvos=(function(){try{var cc=localStorage.getItem('convos_'+myId);return !!(cc&&JSON.parse(cc).length);}catch(e){return false;}})();
+  var loadingConvosS=useState(!_hasCachedConvos); var loadingConvos=loadingConvosS[0]; var setLoadingConvos=loadingConvosS[1];
   var typingTimerRef=useRef(null);
   var totalUnreadS=useState(function(){
     try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
@@ -1003,7 +1004,18 @@ export default function MessagesScreen(props){
     ) : null,
     // Conversations
     React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'0 16px'}},
-      loadingConvos ? React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)',fontSize:'14px'}},'Loading...') : null,
+      loadingConvos ? React.createElement('div',null,
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
+        [0,1,2].map(function(i){
+          return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)'}},
+            React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'var(--bg3)',flexShrink:0,animation:'shimmer 1.4s ease-in-out infinite'}}),
+            React.createElement('div',{style:{flex:1}},
+              React.createElement('div',{style:{height:'12px',borderRadius:'6px',background:'var(--bg3)',width:'50%',marginBottom:'7px',animation:'shimmer 1.4s ease-in-out infinite'}}),
+              React.createElement('div',{style:{height:'10px',borderRadius:'6px',background:'var(--bg3)',width:'75%',animation:'shimmer 1.4s ease-in-out infinite'}})
+            )
+          );
+        })
+      ) : null,
       // Real user conversations
       !loadingConvos && userConvos.length>0 ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
