@@ -1,6 +1,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import {useFollow} from './useFollow';
 import {sb as sbHome} from '../utils/supabase';
+import {usePostsRealtime} from '../utils/usePostsRealtime';
 import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
@@ -270,44 +271,9 @@ export function UserProfileView(props){
         if(Object.keys(cmap).length) setCommentsCacheU(cmap);
       }
     });
-    // Realtime: sync likes + comment counts on user profile posts
-    var chU=sbHome.channel('userprofile-posts-'+user.id)
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'posts'},function(p){
-        var uid=currentUserId;
-        var likesArr=Array.isArray(p.new.likes)?p.new.likes:[];
-        setUserPosts(function(prev){
-          return prev.map(function(post){
-            if(post.id!==p.new.id) return post;
-            return Object.assign({},post,{
-              likes:likesArr.length,
-              liked:uid?likesArr.includes(uid):post.liked,
-              likedByIds:likesArr,
-              comments:p.new.comments_count!=null?p.new.comments_count:post.comments
-            });
-          });
-        });
-      })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
-        var uid=currentUserId;
-        if(uid&&p.new.user_id===uid) return;
-        setUserPosts(function(prev){
-          return prev.map(function(post){
-            if(post.id!==p.new.post_id) return post;
-            return Object.assign({},post,{comments:(post.comments||0)+1});
-          });
-        });
-        setCommentsCacheU(function(prev){
-          var existing=prev[p.new.post_id];
-          if(!existing) return prev;
-          if(existing.find(function(c){return c.id===p.new.id;})) return prev;
-          var updated=existing.concat([p.new]);
-          try{localStorage.setItem('comments_'+p.new.post_id,JSON.stringify(updated));}catch(e){}
-          return Object.assign({},prev,{[p.new.post_id]:updated});
-        });
-      })
-      .subscribe();
-    return function(){sbHome.removeChannel(chU);};
   },[user.id]);
+  // Realtime: sync likes + comment counts on user profile posts (shared hook)
+  usePostsRealtime(sbHome,'userprofile-posts-'+user.id,currentUserId,setUserPosts,setCommentsCacheU);
 
   function prefetchLikersU(postsArr,existing){
     var allIds=[];
@@ -897,53 +863,17 @@ export default function HomeScreen(props){
         if(Object.keys(cmap).length) setCommentsCache(cmap);
       }
     });
-    var ch = sbHome.channel('public-posts')
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'posts'},function(p){
-        var session = props.session;
-        var userId = session&&session.user?session.user.id:null;
-        var likesArr = Array.isArray(p.new.likes)?p.new.likes:[];
-        setPosts(function(prev){
-          return prev.map(function(post){
-            if(post.id!==p.new.id) return post;
-            return Object.assign({},post,{
-              likes:likesArr.length,
-              liked:userId?likesArr.includes(userId):post.liked,
-              comments:p.new.comments_count!=null?p.new.comments_count:post.comments
-            });
-          });
-        });
-      })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
-        // Skip own comments — already handled optimistically in submitComment
-        var uid = props.session&&props.session.user ? props.session.user.id : null;
-        if(uid && p.new.user_id === uid) return;
-        // Bump post.comments count (shown when cache not loaded)
-        setPosts(function(prev){
-          return prev.map(function(post){
-            if(post.id!==p.new.post_id) return post;
-            return Object.assign({},post,{comments:(post.comments||0)+1});
-          });
-        });
-        // Also append to commentsCache so commentsCache[id].length stays accurate
-        // (display prefers cache.length over post.comments when cache exists)
-        setCommentsCache(function(prev){
-          var existing = prev[p.new.post_id];
-          if(!existing) return prev; // cache not loaded for this post yet — no action needed
-          if(existing.find(function(c){return c.id===p.new.id;})) return prev; // already there
-          var updated = existing.concat([p.new]);
-          try{localStorage.setItem('comments_'+p.new.post_id,JSON.stringify(updated));}catch(e){}
-          return Object.assign({},prev,{[p.new.post_id]:updated});
-        });
-      })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(p){
-        var newPost = mapPost(p.new);
-        setPosts(function(prev){
-          if(prev.find(function(pp){return pp.id===newPost.id;})) return prev;
-          return [newPost].concat(prev);
-        });
-      }).subscribe();
-    return function(){sbHome.removeChannel(ch);};
   },[]);
+  // Realtime: likes, comment counts, new posts in feed (shared hook)
+  usePostsRealtime(sbHome,'public-posts',currentUserId,setPosts,setCommentsCache,{
+    onNewPost:function(raw){
+      var newPost=mapPost(raw);
+      setPosts(function(prev){
+        if(prev.find(function(pp){return pp.id===newPost.id;})) return prev;
+        return [newPost].concat(prev);
+      });
+    }
+  });
   var followHook = useFollow(sbHome, currentUserId);
   var following = followHook.following;
   var toggleFollow = followHook.toggleFollow;

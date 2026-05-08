@@ -2,6 +2,7 @@
 import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {sb as sbProfile} from '../utils/supabase';
+import {usePostsRealtime} from '../utils/usePostsRealtime';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled} from '../utils/soundEngine';
 
 var COUNTRIES=[
@@ -445,42 +446,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         if(Object.keys(cmap).length) setCommentsCacheProf(cmap);
       }
     });
-    // Realtime: sync likes + comment counts on profile posts
-    var chProf=sbProfile.channel('profile-posts-rt-'+userId)
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'posts'},function(p){
-        var likesArr=Array.isArray(p.new.likes)?p.new.likes:[];
-        setMyPosts(function(prev){
-          return prev.map(function(post){
-            if(post.id!==p.new.id) return post;
-            return Object.assign({},post,{
-              likes:likesArr,
-              liked:likesArr.includes(userId),
-              likedByIds:likesArr,
-              comments:p.new.comments_count!=null?p.new.comments_count:post.comments
-            });
-          });
-        });
-      })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
-        if(p.new.user_id===userId) return;
-        setMyPosts(function(prev){
-          return prev.map(function(post){
-            if(post.id!==p.new.post_id) return post;
-            return Object.assign({},post,{comments:(post.comments||0)+1});
-          });
-        });
-        setCommentsCacheProf(function(prev){
-          var existing=prev[p.new.post_id];
-          if(!existing) return prev;
-          if(existing.find(function(c){return c.id===p.new.id;})) return prev;
-          var updated=existing.concat([p.new]);
-          try{localStorage.setItem('comments_'+p.new.post_id,JSON.stringify(updated));}catch(e){}
-          return Object.assign({},prev,{[p.new.post_id]:updated});
-        });
-      })
-      .subscribe();
-    return function(){sbProfile.removeChannel(chProf);};
   },[userId]);
+  // Realtime: sync likes + comment counts on profile posts (shared hook)
+  // likesAsArray:true because ProfileScreen stores likes as array of IDs (not a count)
+  usePostsRealtime(sbProfile,'profile-posts-rt-'+userId,userId,setMyPosts,setCommentsCacheProf,{likesAsArray:true});
 
   useEffect(function(){
     if(!userId) return;
