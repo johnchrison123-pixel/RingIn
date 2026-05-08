@@ -317,6 +317,7 @@ export function previewSound(type,variant,vol){
 }
 
 export function playSound(type){
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
   var ctx=getSCtx();if(!ctx)return;
   var prefs=getSoundPrefs();
   var p=prefs[type];
