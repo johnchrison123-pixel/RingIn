@@ -7,8 +7,8 @@ export async function initPushNotifications(userId, onNotification){
   // Request permission and get token
   var token = await requestNotificationPermission(userId, sb);
   if(!token) return;
-  // Listen for foreground messages
-  onMessageListener().then(function(payload){
+  // Listen for foreground messages (persistent — fires on every message)
+  onMessageListener(function(payload){
     if(!payload) return;
     if(onNotification) onNotification(payload);
   });

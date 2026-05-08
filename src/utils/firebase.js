@@ -58,17 +58,29 @@ export async function requestNotificationPermission(userId, sb){
   }
 }
 
-export function onMessageListener(){
+export function onMessageListener(callback){
   var messaging = initFirebase();
-  if(!messaging) return Promise.resolve(null);
+  if(!messaging){
+    if(callback) return function(){};
+    return Promise.resolve(null);
+  }
   try{
     var {onMessage} = require('firebase/messaging');
+    if(callback){
+      // Persistent listener — returns unsubscribe function
+      return onMessage(messaging, function(payload){
+        callback(payload);
+      });
+    }
+    // Legacy one-shot promise (kept for backwards compat)
     return new Promise(function(resolve){
-      onMessage(messaging, function(payload){
+      var unsub = onMessage(messaging, function(payload){
+        unsub();
         resolve(payload);
       });
     });
   }catch(e){
+    if(callback) return function(){};
     return Promise.resolve(null);
   }
 }

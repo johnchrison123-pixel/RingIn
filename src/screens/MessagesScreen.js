@@ -848,6 +848,9 @@ export default function MessagesScreen(props){
           }
           return prev;
         });
+        // Play notification sound when a new message arrives in the list view
+        var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
+        if(!mc.includes(p.new.conversation_id)) playSound('notification');
       }).subscribe();
     return function(){sb.removeChannel(ch);};
   },[myId]);
