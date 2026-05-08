@@ -667,7 +667,7 @@ export default function HomeScreen(props){
       }
       // Notify post owner only when this was a like action (snap.liked was false)
       if(!snap.liked&&snap.userId&&snap.userId!==userId){
-        sbHome.from("notifications").insert([{user_id:snap.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
+        sbHome.from("notifications").insert([{user_id:snap.userId,sender_id:userId,type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
     });
   }
@@ -1102,9 +1102,7 @@ export default function HomeScreen(props){
                 if(!ns.data||ns.data.notify_posts!==false){
                   sbHome.from('notifications').insert([{
                     user_id:f.follower_id,
-                    from_user_id:session.user.id,
-                    from_user_name:postData.user_name,
-                    from_user_avatar:postData.user_avatar,
+                    sender_id:session.user.id,
                     type:'new_post',
                     message:postData.user_name+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
                     post_id:res.data[0].id,
@@ -1372,7 +1370,7 @@ export default function HomeScreen(props){
         notifs.map(function(n){
           return React.createElement('div', {key:n.id, style:{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 18px',borderTop:'1px solid var(--border)',background:!n.read?'rgba(123,110,255,0.06)':'transparent'}},
             React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}},
-              n.from_user_avatar ? React.createElement('img',{src:n.from_user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (n.from_user_name||'?').substring(0,2).toUpperCase()
+              n.from_user_avatar ? React.createElement('img',{src:n.from_user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (n.from_user_name||n.message||'?').substring(0,2).toUpperCase()
             ),
             React.createElement('div', {style:{flex:1}},
               React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.message||'New notification'),
