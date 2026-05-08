@@ -877,14 +877,25 @@ export default function HomeScreen(props){
         });
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
-        // Bump comment count in real-time — skip own comments (already optimistically updated)
+        // Skip own comments — already handled optimistically in submitComment
         var uid = props.session&&props.session.user ? props.session.user.id : null;
         if(uid && p.new.user_id === uid) return;
+        // Bump post.comments count (shown when cache not loaded)
         setPosts(function(prev){
           return prev.map(function(post){
             if(post.id!==p.new.post_id) return post;
             return Object.assign({},post,{comments:(post.comments||0)+1});
           });
+        });
+        // Also append to commentsCache so commentsCache[id].length stays accurate
+        // (display prefers cache.length over post.comments when cache exists)
+        setCommentsCache(function(prev){
+          var existing = prev[p.new.post_id];
+          if(!existing) return prev; // cache not loaded for this post yet — no action needed
+          if(existing.find(function(c){return c.id===p.new.id;})) return prev; // already there
+          var updated = existing.concat([p.new]);
+          try{localStorage.setItem('comments_'+p.new.post_id,JSON.stringify(updated));}catch(e){}
+          return Object.assign({},prev,{[p.new.post_id]:updated});
         });
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(p){
