@@ -445,6 +445,41 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         if(Object.keys(cmap).length) setCommentsCacheProf(cmap);
       }
     });
+    // Realtime: sync likes + comment counts on profile posts
+    var chProf=sbProfile.channel('profile-posts-rt-'+userId)
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'posts'},function(p){
+        var likesArr=Array.isArray(p.new.likes)?p.new.likes:[];
+        setMyPosts(function(prev){
+          return prev.map(function(post){
+            if(post.id!==p.new.id) return post;
+            return Object.assign({},post,{
+              likes:likesArr,
+              liked:likesArr.includes(userId),
+              likedByIds:likesArr,
+              comments:p.new.comments_count!=null?p.new.comments_count:post.comments
+            });
+          });
+        });
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
+        if(p.new.user_id===userId) return;
+        setMyPosts(function(prev){
+          return prev.map(function(post){
+            if(post.id!==p.new.post_id) return post;
+            return Object.assign({},post,{comments:(post.comments||0)+1});
+          });
+        });
+        setCommentsCacheProf(function(prev){
+          var existing=prev[p.new.post_id];
+          if(!existing) return prev;
+          if(existing.find(function(c){return c.id===p.new.id;})) return prev;
+          var updated=existing.concat([p.new]);
+          try{localStorage.setItem('comments_'+p.new.post_id,JSON.stringify(updated));}catch(e){}
+          return Object.assign({},prev,{[p.new.post_id]:updated});
+        });
+      })
+      .subscribe();
+    return function(){sbProfile.removeChannel(chProf);};
   },[userId]);
 
   useEffect(function(){
