@@ -2,13 +2,13 @@
 // Firebase Cloud Messaging setup
 // Replace these with your actual Firebase config from console.firebase.google.com
 var firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || '',
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || '',
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || '',
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || '',
-  vapidKey: process.env.REACT_APP_FIREBASE_VAPID_KEY || '',
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || 'AIzaSyCUg0EvH_4sWWZwrah53PiCl8L3-d3jkXQ',
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || 'ring-in-23c07.firebaseapp.com',
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || 'ring-in-23c07',
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || 'ring-in-23c07.firebasestorage.app',
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || '849352826995',
+  appId: process.env.REACT_APP_FIREBASE_APP_ID || '1:849352826995:web:2fd47580d8346e60b84a06',
+  vapidKey: process.env.REACT_APP_FIREBASE_VAPID_KEY || 'BJVRM6-9tId75BVBkx48SUlAY2W_Z2pK8e-s5lhdkiLg7zRXA-hO1Ykt4V3RWAWrN3RjlzErH6GLM-0jJQoUx4M',
 };
 
 var _app = null;
