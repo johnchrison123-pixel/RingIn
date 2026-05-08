@@ -870,8 +870,18 @@ export default function HomeScreen(props){
             if(post.id!==p.new.id) return post;
             return Object.assign({},post,{
               likes:likesArr.length,
-              liked:userId?likesArr.includes(userId):post.liked
+              liked:userId?likesArr.includes(userId):post.liked,
+              comments:p.new.comments_count!=null?p.new.comments_count:post.comments
             });
+          });
+        });
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'comments'},function(p){
+        // Immediately bump comment count on the matching post — no waiting for post UPDATE
+        setPosts(function(prev){
+          return prev.map(function(post){
+            if(post.id!==p.new.post_id) return post;
+            return Object.assign({},post,{comments:(post.comments||0)+1});
           });
         });
       })
