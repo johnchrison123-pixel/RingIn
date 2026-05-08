@@ -50,10 +50,7 @@ export default function App() {
         // Initialize push notifications
         initPushNotifications(session.user.id, function(payload){
           if(payload && payload.notification){
-            // Play sound for foreground push notifications
-            try{
-              playSound('notification');
-            }catch(e){}
+            try{ playSound('notification'); }catch(e){}
           }
         });
         // Set offline when window closes
@@ -65,6 +62,30 @@ export default function App() {
       }
     });
   }, []);
+
+  // ── Global message badge listener — always active regardless of tab ──
+  useEffect(function(){
+    if(!appUserId) return;
+    // Load initial unread count from DB
+    supabase.from('messages').select('id',{count:'exact',head:true})
+      .eq('receiver_id',appUserId).eq('read',false)
+      .then(function(r){ if(r.count!=null) setUnreadMsg(r.count); });
+    // Realtime: increment badge when new message arrives
+    var ch = supabase.channel('app-inbox-badge-'+appUserId)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+appUserId},function(p){
+        // Don't increment if user is currently on messages tab (MessagesScreen handles it there)
+        setActiveTab(function(currentTab){
+          if(currentTab !== 'messages'){
+            setUnreadMsg(function(prev){ return prev+1; });
+            var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
+            if(!mc.includes(p.new.conversation_id)) playSound('notification');
+          }
+          return currentTab;
+        });
+      })
+      .subscribe();
+    return function(){ supabase.removeChannel(ch); };
+  },[appUserId]);
 
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }
 
@@ -183,6 +204,10 @@ export default function App() {
           onClick:function(){
             if(tab.id==='messages' && activeTab==='messages'){
               setMsgResetKey(function(k){return k+1;});
+            }
+            if(tab.id==='messages'){
+              // Clear badge when opening Messages tab
+              setUnreadMsg(0);
             }
             setActiveTab(tab.id);
           }
