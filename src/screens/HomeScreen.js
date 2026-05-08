@@ -1360,7 +1360,7 @@ export default function HomeScreen(props){
           React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'var(--t2)',strokeWidth:2,width:15,height:15},
             React.createElement('path', {d:'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0'})
           ),
-          unreadNotif>0 ? React.createElement('div', {className:'nd', style:{background:'#ef4444',minWidth:'14px',height:'14px',borderRadius:'7px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',top:'3px',right:'3px',padding:'0 2px'}}, unreadNotif>9?'9+':String(unreadNotif)) : React.createElement('div',{className:'nd'})
+          unreadNotif>0 ? React.createElement('div', {className:'nd', style:{background:'#ef4444',minWidth:'14px',height:'14px',borderRadius:'7px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',top:'3px',right:'3px',padding:'0 2px'}}, unreadNotif>9?'9+':String(unreadNotif)) : null
         )
       )
     ),
