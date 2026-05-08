@@ -831,6 +831,7 @@ export default function MessagesScreen(props){
         // Count total unread
         var total = enriched.reduce(function(sum,c){return sum+(c.unreadCount||0);},0);
         setTotalUnread(total);
+        if(props.onUnreadCount) props.onUnreadCount(total);
       });
     });
 
@@ -838,6 +839,7 @@ export default function MessagesScreen(props){
     var ch = sb.channel('inbox-'+myId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+myId},function(p){
         setTotalUnread(function(t){return t+1;});
+        if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
         setUserConvos(function(prev){
           var exists = prev.find(function(c){return c.convId===p.new.conversation_id;});
           if(exists){
@@ -890,6 +892,7 @@ export default function MessagesScreen(props){
         try{localStorage.setItem('convos_'+myId,JSON.stringify(enriched));}catch(e){}
         var total=enriched.reduce(function(sum,c){return sum+(c.unreadCount||0);},0);
         setTotalUnread(total);
+        if(props.onUnreadCount) props.onUnreadCount(total);
         setRefreshing(false);
       });
     });
@@ -995,6 +998,7 @@ export default function MessagesScreen(props){
             setActive(c);
             setUserConvos(function(prev){return prev.map(function(p){return p.id===c.id?Object.assign({},p,{unreadCount:0}):p;});});
             setTotalUnread(function(t){return Math.max(0,t-(c.unreadCount||0));});
+            if(props.onUnreadCount) props.onUnreadCount(function(prev){return Math.max(0,prev-(c.unreadCount||0));});
           },style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
             React.createElement('div',{style:{position:'relative',flexShrink:0}},
               React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
