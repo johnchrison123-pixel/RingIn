@@ -2,6 +2,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import {startCallSession} from '../utils/agora';
 import {sb} from '../utils/supabase';
+import {buildCallLog} from '../utils/callLog';
 
 // Props:
 //   expert            object   the remote party (name, img, initials, color, role, rate, id?)
@@ -226,6 +227,35 @@ export default function CallScreen(props){
           else console.log('[ringin] late-cancel applied');
         });
     }
+    // Write an in-chat call log message. Only the CALLER writes (to avoid duplicates).
+    // The callee's hangup() runs locally but they don't insert — the caller's onRemoteLeft
+    // will fire and they'll write the log on their side.
+    if(!isIncoming && session && session.user){
+      try {
+        var otherId = (expert && (expert.id || expert.user_id || expert.otherId || expert.receiverId)) || null;
+        var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if(otherId && UUID_RE.test(String(otherId)) && otherId !== session.user.id){
+          var convId = [session.user.id, otherId].sort().join('_');
+          var logText = buildCallLog({
+            d: secs,
+            s: newStatus,
+            r: reason || 'caller_hangup',
+            cid: session.user.id,
+          });
+          sb.from('messages').insert({
+            conversation_id: convId,
+            sender_id: session.user.id,
+            sender_name: 'system',
+            receiver_id: otherId,
+            text: logText,
+            read: false,
+          }).then(function(r){
+            if(r && r.error) console.error('[ringin] call log insert failed:', r.error);
+          });
+        }
+      } catch(e){ console.error('[ringin] call log error:', e); }
+    }
+
     setPhase('ended');
     setTimeout(function(){ if(onEnd) onEnd(); }, 800);
   }

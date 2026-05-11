@@ -4,6 +4,7 @@ import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
+import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -191,7 +192,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         if(p.new.sender_id!==myId){
           sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
           var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-          if(!mc.includes(p.new.conversation_id)) playSound('notification');
+          if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
         }
       }).subscribe();
     return function(){sb.removeChannel(ch);};
@@ -503,6 +504,25 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
         msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi! 👋'),
         msgs.map(function(m){
           var isMe=m.sender_id===myId;
+          // ── Call-log system message: centered bubble, not alignment-based ──
+          if(isCallLog(m.text)){
+            var log = parseCallLog(m.text);
+            var d = describeCallLog(log, myId);
+            return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:'center',padding:'4px 0'}},
+              React.createElement('div',{style:{
+                display:'inline-flex',alignItems:'center',gap:'8px',
+                padding:'6px 14px',borderRadius:'14px',
+                background: d.isMissed ? 'rgba(239,68,68,0.12)' : 'var(--bg3)',
+                border: '1px solid '+(d.isMissed?'rgba(239,68,68,0.3)':'var(--border)'),
+                fontSize:'11px',color: d.color, fontWeight:600,
+                maxWidth:'80%',
+              }},
+                React.createElement('span',{style:{fontSize:'13px'}}, d.icon),
+                React.createElement('span',null, d.label),
+                m.created_at ? React.createElement('span',{style:{color:'var(--t3)',fontWeight:400,marginLeft:'4px'}}, ' · '+new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})) : null
+              )
+            );
+          }
           return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:isMe?'flex-end':'flex-start',alignItems:'flex-end',gap:'6px'}},
             !isMe?React.createElement('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
               otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
@@ -974,7 +994,7 @@ export default function MessagesScreen(props){
               return prev;
             });
             var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-            if(!mc.includes(p.new.conversation_id)) playSound('notification');
+            if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
           } else {
             // Already viewing this chat — just update last message preview, no badge
             setUserConvos(function(prev){
@@ -1188,7 +1208,15 @@ export default function MessagesScreen(props){
                 React.createElement('span',{style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)'}},c.name),
                 React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?timeAgo(c.lastTime):'')
               ),
-              React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.lastMsg||'Start a conversation')
+              React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+                (function(){
+                  var lm = c.lastMsg;
+                  if(!lm) return 'Start a conversation';
+                  if(isCallLog(lm)) return previewCallLog(parseCallLog(lm), myId);
+                  if(typeof lm==='string' && lm.indexOf('[img]')===0) return '📷 Photo';
+                  return lm;
+                })()
+              )
             ),
             c.unreadCount>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unreadCount>9?'9+':c.unreadCount) : null,
             // Call button on each row — stop propagation so it doesn't open the chat
