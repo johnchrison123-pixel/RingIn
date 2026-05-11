@@ -468,6 +468,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     }
     if(savedCover) setCoverUrl(savedCover);
 
+    // Fall back to DB for cover_url if localStorage is empty (other device, cleared cache)
+    // Try column first, then bio.cover_url JSON (in case the cover_url column doesn't exist yet)
+    if(!savedCover){
+      supabase.from('profiles').select('cover_url, bio').eq('id',userId).single().then(function(res){
+        var url = (res.data && res.data.cover_url) || null;
+        if(!url && res.data && res.data.bio){
+          try{ var bj = JSON.parse(res.data.bio); if(bj && bj.cover_url) url = bj.cover_url; }catch(e){}
+        }
+        if(url){
+          setCoverUrl(url);
+          try{localStorage.setItem('cover_'+userId, url);}catch(e){}
+        }
+      });
+    }
+
     // Sync notif/sound prefs from profile.bio.notif_prefs (cross-device)
     sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r){
       if(!r.data||!r.data.bio) return;
@@ -678,12 +693,28 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         setShowCoverAdjust(false);
         var fileName = userId+'_cover.jpg';
         supabase.storage.from('covers').upload(fileName, blob, {upsert:true, contentType:'image/jpeg'}).then(function(res){
-          if(res.error){alert('Something went wrong. Please try again.');setUploading(false);return;}
+          if(res.error){alert('Cover upload failed: '+(res.error.message||'storage error'));setUploading(false);return;}
           var pub = supabase.storage.from('covers').getPublicUrl(fileName);
           var url = pub.data.publicUrl+'?t='+Date.now();
           setCoverUrl(url);
           try{localStorage.setItem('cover_'+userId, url);}catch(e){}
-          supabase.from('profiles').update({cover_url:url}).eq('id',userId).then(function(){});
+
+          // Write to both: the cover_url column AND bio.cover_url JSON. This way the cover
+          // persists across devices even if the cover_url column doesn't exist yet (the
+          // JSON merge always works because bio is a TEXT column).
+          // 1) Try column update (no-op if column missing)
+          supabase.from('profiles').update({cover_url:url}).eq('id',userId).then(function(r1){
+            if(r1.error){ console.error('cover_url column update failed:', r1.error.message); }
+          });
+          // 2) Merge into bio JSON — re-read latest bio first so we don't clobber other fields
+          supabase.from('profiles').select('bio').eq('id',userId).single().then(function(rb){
+            var existing = {};
+            try{ if(rb.data && rb.data.bio) existing = JSON.parse(rb.data.bio); }catch(e){ existing = {}; }
+            existing.cover_url = url;
+            supabase.from('profiles').update({bio: JSON.stringify(existing)}).eq('id',userId).then(function(r2){
+              if(r2.error){ console.error('bio cover_url merge failed:', r2.error.message); alert('Cover saved locally, but could not sync to your account. Please try again later.'); }
+            });
+          });
           setUploading(false);
         });
       }, 'image/jpeg', 0.92);

@@ -85,7 +85,11 @@ export default function SavedPostsScreen(props) {
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Header
     React.createElement('div', {style:{position:'sticky',top:0,zIndex:10,background:'var(--bg2)',padding:'14px 18px',display:'flex',alignItems:'center',gap:'12px',borderBottom:'1px solid var(--border)'}},
-      onBack && React.createElement('button', {onClick:onBack, style:{background:'none',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer',padding:'0 6px 0 0'}}, '<'),
+      onBack && React.createElement('button', {onClick:onBack, title:'Back', style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px 4px 4px 0',display:'flex',alignItems:'center',justifyContent:'center'}},
+        React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+          React.createElement('polyline',{points:'15 18 9 12 15 6'})
+        )
+      ),
       React.createElement('div', {style:{fontSize:'18px',fontWeight:700,color:'var(--text)',flex:1}}, '🔖 Saved Posts'),
       posts.length > 0 && React.createElement('span', {style:{padding:'3px 10px',background:'var(--acg)',color:'var(--ac)',fontSize:'11px',fontWeight:700,borderRadius:'10px'}}, posts.length)
     ),
