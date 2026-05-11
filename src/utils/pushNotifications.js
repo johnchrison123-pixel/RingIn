@@ -4,14 +4,24 @@ import {sb} from './supabase';
 
 export async function initPushNotifications(userId, onNotification){
   if(!userId) return;
-  // Request permission and get token
-  var token = await requestNotificationPermission(userId, sb);
-  if(!token) return;
-  // Listen for foreground messages (persistent — fires on every message)
-  onMessageListener(function(payload){
-    if(!payload) return;
-    if(onNotification) onNotification(payload);
-  });
+  // Feature-detect first. iOS Safari, private browsing, and many embedded webviews
+  // don't have Notification + ServiceWorker + Firebase Messaging — quietly bail rather
+  // than throwing a console error every page load.
+  try{
+    if(typeof window === 'undefined') return;
+    if(!('Notification' in window)) return;
+    if(!('serviceWorker' in navigator)) return;
+  }catch(e){ return; }
+  try{
+    var token = await requestNotificationPermission(userId, sb);
+    if(!token) return;
+    onMessageListener(function(payload){
+      if(!payload) return;
+      if(onNotification) onNotification(payload);
+    });
+  }catch(e){
+    // Don't log a noisy error — push notifications are best-effort
+  }
 }
 
 export async function sendPushNotification(toUserId, title, body, data){

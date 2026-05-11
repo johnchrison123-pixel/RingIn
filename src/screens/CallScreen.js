@@ -39,6 +39,68 @@ export default function CallScreen(props){
 
   var sessionRef = useRef(null);   // holds the Agora controller {leave, setMuted}
   var endedRef = useRef(false);    // guard against double-end
+  var wakeLockRef = useRef(null);  // navigator.wakeLock — keeps screen on (Chrome Android)
+  var silentAudioRef = useRef(null); // hidden <audio> looping silent track — keeps iOS audio session alive
+
+  // ── Keep the device awake + audio session alive while on a call.
+  // Wake Lock keeps the screen from sleeping on Chrome Android (~85% of Android users).
+  // On iOS Safari (no wake-lock), a silent looping audio element keeps the audio session
+  // active so the WebRTC call doesn't drop instantly when the screen turns off. Both
+  // are best-effort — neither prevents iOS from killing the call after a few seconds of
+  // screen-off; full background calling needs a native PWA wrapper or Web Push wake.
+  useEffect(function(){
+    var cancelled = false;
+    async function acquireWakeLock(){
+      try{
+        if(navigator && navigator.wakeLock && navigator.wakeLock.request){
+          var wl = await navigator.wakeLock.request('screen');
+          if(cancelled){ try{ wl.release(); }catch(e){} return; }
+          wakeLockRef.current = wl;
+          wl.addEventListener('release', function(){
+            // If lock dropped (e.g. tab backgrounded), try to re-acquire when visible
+          });
+        }
+      }catch(e){ /* silently ignore */ }
+    }
+    function startSilentAudio(){
+      try{
+        var el = document.createElement('audio');
+        el.setAttribute('playsinline','');
+        el.setAttribute('muted','');
+        el.loop = true;
+        // A 1-second silent WAV (base64) — keeps the iOS audio session open
+        el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        el.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none';
+        document.body.appendChild(el);
+        var p = el.play();
+        if(p && p.catch){ p.catch(function(){}); }
+        silentAudioRef.current = el;
+      }catch(e){}
+    }
+    acquireWakeLock();
+    startSilentAudio();
+
+    // Try to re-acquire wake lock when the tab regains visibility (system releases it when hidden)
+    function onVis(){
+      if(document.visibilityState === 'visible' && !wakeLockRef.current){
+        acquireWakeLock();
+      }
+    }
+    document.addEventListener('visibilitychange', onVis);
+
+    return function(){
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+      try{ if(wakeLockRef.current){ wakeLockRef.current.release(); wakeLockRef.current = null; } }catch(e){}
+      try{
+        if(silentAudioRef.current){
+          silentAudioRef.current.pause();
+          if(silentAudioRef.current.parentNode) silentAudioRef.current.parentNode.removeChild(silentAudioRef.current);
+          silentAudioRef.current = null;
+        }
+      }catch(e){}
+    };
+  }, []);
 
   // ── 1. Start the Agora session ASAP — both caller and callee need to join the channel.
   useEffect(function(){
