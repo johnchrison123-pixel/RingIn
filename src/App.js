@@ -132,19 +132,74 @@ export default function App() {
     return function(){ supabase.removeChannel(ch); };
   },[appUserId]);
 
-  // Incoming Agora call — listen for call_invites rows where callee_id = me with status='ringing'
+  // Incoming Agora call — listen for call_invites rows where callee_id = me with status='ringing'.
+  // Robustness:
+  //   - Subscribe to both INSERT and UPDATE (some Supabase setups only forward UPDATE).
+  //   - Verbose console logging so the user can debug in DevTools when calls don't ring.
+  //   - Poll the table every 8s as a safety net in case realtime is misconfigured or the
+  //     tab missed an event (battery saver, throttled tabs, network blip).
+  //   - On startup, do an immediate query so any invite created seconds before login still rings.
   useEffect(function(){
     if(!appUserId) return;
+
+    function handleInvite(inv){
+      if(!inv || inv.status !== 'ringing') return;
+      // Ignore stale invites (>60s old — caller has surely given up by then)
+      try{
+        var ageMs = Date.now() - new Date(inv.created_at).getTime();
+        if(ageMs > 60000) return;
+      }catch(e){}
+      // Suppress if we're already on a call
+      if(activeCall) return;
+      // Suppress duplicates if the modal is already showing this invite
+      setIncomingCall(function(prev){ if(prev && prev.id===inv.id) return prev; return inv; });
+    }
+
+    console.log('[ringin] subscribing to call_invites for callee_id =', appUserId);
     var ch = supabase.channel('app-call-invites-'+appUserId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'call_invites',filter:'callee_id=eq.'+appUserId},function(p){
-        var inv = p && p.new;
-        if(!inv || inv.status !== 'ringing') return;
-        // Ignore if already on a call (don't stack incoming rings)
-        if(activeCall) return;
-        setIncomingCall(inv);
+        console.log('[ringin] call_invites INSERT received', p && p.new);
+        handleInvite(p && p.new);
       })
-      .subscribe();
-    return function(){ try{ supabase.removeChannel(ch); }catch(e){} };
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'call_invites',filter:'callee_id=eq.'+appUserId},function(p){
+        console.log('[ringin] call_invites UPDATE received', p && p.new);
+        handleInvite(p && p.new);
+      })
+      .subscribe(function(status){ console.log('[ringin] subscription status:', status); });
+
+    // Initial check — anything ringing that's <30s old?
+    supabase.from('call_invites')
+      .select('*')
+      .eq('callee_id', appUserId)
+      .eq('status', 'ringing')
+      .gte('created_at', new Date(Date.now() - 30000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(function(r){
+        if(r && r.data && r.data[0]){
+          console.log('[ringin] startup found a ringing invite', r.data[0]);
+          handleInvite(r.data[0]);
+        }
+      });
+
+    // Polling fallback — every 8s, catch anything realtime missed
+    var pollIv = setInterval(function(){
+      supabase.from('call_invites')
+        .select('*')
+        .eq('callee_id', appUserId)
+        .eq('status', 'ringing')
+        .gte('created_at', new Date(Date.now() - 45000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .then(function(r){
+          if(r && r.data && r.data[0]) handleInvite(r.data[0]);
+        });
+    }, 8000);
+
+    return function(){
+      try{ supabase.removeChannel(ch); }catch(e){}
+      clearInterval(pollIv);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[appUserId]);
 
@@ -184,25 +239,32 @@ export default function App() {
     var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
     var callerAvatar = null;
     try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}
-    supabase.from('call_invites').insert({
+    var payload = {
       caller_id: appUserId,
       caller_name: callerName,
       caller_avatar: callerAvatar,
       callee_id: calleeId,
       callee_name: otherUser.name || null,
       callee_avatar: otherUser.img || otherUser.avatar_url || null,
-      channel: '', // filled in after we know the row id
+      channel: 'pending',
       status: 'ringing',
       rate_per_min: rate,
-    }).select().single().then(function(r){
+    };
+    console.log('[ringin] inserting call_invite', payload);
+    supabase.from('call_invites').insert(payload).select().single().then(function(r){
       if(r.error){
-        console.error('call_invites insert failed', r.error);
+        console.error('[ringin] call_invites insert failed:', r.error);
         alert('Could not start call: '+(r.error.message||'permission'));
         return;
       }
       var inv = r.data;
-      // Channel = invite id (unique per call)
-      supabase.from('call_invites').update({channel: inv.id}).eq('id', inv.id).then(function(){});
+      console.log('[ringin] call_invite created with id', inv.id);
+      // Update channel = invite id (unique per call). We also re-set status='ringing'
+      // so the callee's UPDATE subscription fires even if INSERT broadcast didn't reach them.
+      supabase.from('call_invites').update({channel: inv.id, status: 'ringing'}).eq('id', inv.id).then(function(u){
+        if(u.error){ console.error('[ringin] channel update failed:', u.error); }
+        else { console.log('[ringin] channel update OK — callee should ring now'); }
+      });
       setActiveCall({
         isIncoming: false,
         inviteId: inv.id,
