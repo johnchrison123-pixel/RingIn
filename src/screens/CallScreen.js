@@ -24,10 +24,11 @@ export default function CallScreen(props){
   var channel = props.channel || inviteId || ('call_'+(expert.id||'x')+'_'+(myUserId||'x'));
 
   // ── UI phases ──
-  // ringing: waiting for callee to pick up (caller-side only)
-  // connected: both peers on the call
+  // ringing:    waiting for callee to pick up (caller-side only)
+  // connecting: callee accepted, both sides joining Agora — no timer yet
+  // connected:  both peers actually exchanging audio
   // ended/declined: terminal
-  var phaseS = useState(isIncoming ? 'connected' : 'ringing');
+  var phaseS = useState(isIncoming ? 'connecting' : 'ringing');
   var phase = phaseS[0]; var setPhase = phaseS[1];
 
   var secsS = useState(0); var secs = secsS[0]; var setSecs = secsS[1];
@@ -266,20 +267,23 @@ export default function CallScreen(props){
     ),
     React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
     React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'6px'}},expert.role||'Member'),
-    React.createElement('div',{style:{fontSize:'12px',color: phase==='connected' ? 'var(--green)' : 'var(--t3)',marginBottom:'20px',display:'flex',alignItems:'center',gap:'5px'}},
-      React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background: phase==='connected' ? 'var(--green)' : 'var(--t3)',display:'inline-block'}}),
-      phase==='connected' ? 'Connected' : 'Call ended'
+    React.createElement('div',{style:{fontSize:'12px',color: phase==='connected' ? 'var(--green)' : (phase==='connecting' ? 'var(--amber)' : 'var(--t3)'),marginBottom:'20px',display:'flex',alignItems:'center',gap:'5px'}},
+      React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background: phase==='connected' ? 'var(--green)' : (phase==='connecting' ? 'var(--amber)' : 'var(--t3)'),display:'inline-block'}}),
+      phase==='connected' ? 'Connected' : (phase==='connecting' ? 'Connecting…' : 'Call ended')
     ),
     phase==='connected'
       ? React.createElement('div',{style:{fontSize:'42px',fontWeight:800,color:'var(--text)',marginBottom:'8px'}}, fmt(secs))
-      : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
+      : phase==='connecting'
+        ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
+        : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
-    phase==='connected' ? React.createElement('div',{style:{display:'flex',gap:'20px'}},
+    (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'20px'}},
       React.createElement('button',{
         onClick: toggleMute,
         title: muted ? 'Unmute' : 'Mute',
-        style:{width:'52px',height:'52px',borderRadius:'50%',background: muted ? 'var(--ac)' : 'var(--bg3)', border:'1px solid var(--border)',color: muted ? '#fff' : 'var(--t2)',fontSize:'20px',cursor:'pointer'}
+        disabled: phase!=='connected',
+        style:{width:'52px',height:'52px',borderRadius:'50%',background: muted ? 'var(--ac)' : 'var(--bg3)', border:'1px solid var(--border)',color: muted ? '#fff' : 'var(--t2)',fontSize:'20px',cursor: phase==='connected'?'pointer':'not-allowed',opacity:phase==='connected'?1:0.45}
       }, muted ? '🔇' : '🎙'),
       React.createElement('button',{
         onClick:function(){ hangup('caller_hangup'); },
@@ -287,7 +291,8 @@ export default function CallScreen(props){
       },'📵'),
       React.createElement('button',{
         title:'Speaker (browser default)',
-        style:{width:'52px',height:'52px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'20px',cursor:'pointer'}
+        disabled: phase!=='connected',
+        style:{width:'52px',height:'52px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'20px',cursor: phase==='connected'?'pointer':'not-allowed',opacity:phase==='connected'?1:0.45}
       },'🔊')
     ) : React.createElement('button',{onClick:onEnd,style:{padding:'12px 32px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Back')
   );

@@ -132,27 +132,31 @@ export default function App() {
     return function(){ supabase.removeChannel(ch); };
   },[appUserId]);
 
+  // Refs that always reflect current state (avoids stale-closure bugs in subscription callbacks)
+  var activeCallRef = useRef(null);
+  var incomingCallRef = useRef(null);
+  var dismissedInvitesRef = useRef(new Set());  // invites we've already handled — never re-show
+  useEffect(function(){ activeCallRef.current = activeCall; },[activeCall]);
+  useEffect(function(){ incomingCallRef.current = incomingCall; },[incomingCall]);
+
   // Incoming Agora call — listen for call_invites rows where callee_id = me with status='ringing'.
-  // Robustness:
-  //   - Subscribe to both INSERT and UPDATE (some Supabase setups only forward UPDATE).
-  //   - Verbose console logging so the user can debug in DevTools when calls don't ring.
-  //   - Poll the table every 8s as a safety net in case realtime is misconfigured or the
-  //     tab missed an event (battery saver, throttled tabs, network blip).
-  //   - On startup, do an immediate query so any invite created seconds before login still rings.
   useEffect(function(){
     if(!appUserId) return;
 
     function handleInvite(inv){
       if(!inv || inv.status !== 'ringing') return;
-      // Ignore stale invites (>60s old — caller has surely given up by then)
+      // Stale invites (>60s old) — caller has given up
       try{
         var ageMs = Date.now() - new Date(inv.created_at).getTime();
         if(ageMs > 60000) return;
       }catch(e){}
-      // Suppress if we're already on a call
-      if(activeCall) return;
-      // Suppress duplicates if the modal is already showing this invite
-      setIncomingCall(function(prev){ if(prev && prev.id===inv.id) return prev; return inv; });
+      // Never re-show a previously dismissed/accepted/rejected invite
+      if(dismissedInvitesRef.current.has(inv.id)) return;
+      // Don't ring during an active call
+      if(activeCallRef.current) return;
+      // Already showing THIS invite? don't re-trigger
+      if(incomingCallRef.current && incomingCallRef.current.id === inv.id) return;
+      setIncomingCall(inv);
     }
 
     console.log('[ringin] subscribing to call_invites (unfiltered)  — me =', appUserId);
@@ -230,7 +234,11 @@ export default function App() {
   },[appUserId]);
 
   function acceptIncomingCall(inv){
+    // Mark this invite as handled IMMEDIATELY so polling doesn't re-show the modal
+    dismissedInvitesRef.current.add(inv.id);
     setIncomingCall(null);
+    // Update DB so the caller knows we accepted (also stops further ringing events)
+    supabase.from('call_invites').update({status:'accepted', started_at: new Date().toISOString()}).eq('id', inv.id).then(function(){});
     setActiveCall({
       isIncoming: true,
       inviteId: inv.id,
@@ -459,7 +467,10 @@ export default function App() {
     incomingCall ? React.createElement(IncomingCallModal, {
       invite: incomingCall,
       onAccept: acceptIncomingCall,
-      onReject: function(){ setIncomingCall(null); },
+      onReject: function(){
+        if(incomingCall && incomingCall.id) dismissedInvitesRef.current.add(incomingCall.id);
+        setIncomingCall(null);
+      },
     }) : null,
 
     React.createElement('nav', {className:'bottom-nav'},
