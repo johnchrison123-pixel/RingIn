@@ -103,8 +103,10 @@ export default function CallScreen(props){
     };
   }, []);
 
-  // ── 1. Start the Agora session ASAP — both caller and callee need to join the channel.
+  // ── 1. Start the Agora session — wait for a real channel id (not the optimistic
+  //      'pending-...' placeholder we use to show the UI instantly).
   useEffect(function(){
+    if(!channel || (typeof channel==='string' && channel.indexOf('pending-')===0)) return;
     var cancelled = false;
     (async function(){
       try {
@@ -201,15 +203,28 @@ export default function CallScreen(props){
     var s = sessionRef.current;
     if(s){ try{ s.leave(); }catch(e){} sessionRef.current = null; }
     setEndReason(reason || 'caller_hangup');
-    // Update invite row
+    // Update invite row. If we hang up BEFORE the insert returns (inviteId is null),
+    // mark the most recent ringing invite WE created as cancelled — this catches
+    // the race where user taps Call then immediately taps red.
+    var newStatus = (reason==='rejected') ? 'rejected' : (reason==='no_answer'?'missed':(reason==='caller_hangup' && phase==='ringing' ? 'cancelled' : 'ended'));
     if(inviteId){
-      var newStatus = (reason==='rejected') ? 'rejected' : (reason==='no_answer'?'missed':'ended');
       sb.from('call_invites').update({
         status: newStatus,
         ended_at: new Date().toISOString(),
         duration_secs: secs,
         end_reason: reason || 'caller_hangup',
       }).eq('id', inviteId).then(function(){});
+    } else if(session && session.user){
+      // Try to find the row we created (most recent ringing where caller=me) and cancel it
+      sb.from('call_invites')
+        .update({ status:newStatus, ended_at:new Date().toISOString(), duration_secs:secs, end_reason:reason||'caller_hangup' })
+        .eq('caller_id', session.user.id)
+        .eq('status','ringing')
+        .gte('created_at', new Date(Date.now() - 30000).toISOString())
+        .then(function(r){
+          if(r && r.error){ console.error('[ringin] late-cancel failed:', r.error); }
+          else console.log('[ringin] late-cancel applied');
+        });
     }
     setPhase('ended');
     setTimeout(function(){ if(onEnd) onEnd(); }, 800);

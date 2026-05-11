@@ -136,6 +136,7 @@ export default function App() {
   var activeCallRef = useRef(null);
   var incomingCallRef = useRef(null);
   var dismissedInvitesRef = useRef(new Set());  // invites we've already handled — never re-show
+  var outgoingPendingRef = useRef(false);       // double-tap guard for outgoing call button
   useEffect(function(){ activeCallRef.current = activeCall; },[activeCall]);
   useEffect(function(){ incomingCallRef.current = incomingCall; },[incomingCall]);
 
@@ -233,6 +234,35 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[appUserId]);
 
+  // When an incoming-call modal is showing, watch its row for status changes —
+  // if the caller cancels/ends, auto-dismiss the modal.
+  useEffect(function(){
+    if(!incomingCall || !incomingCall.id) return;
+    var inviteId = incomingCall.id;
+    var ch = supabase.channel('incoming-watch-'+inviteId)
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'call_invites',filter:'id=eq.'+inviteId},function(p){
+        var nw = p && p.new;
+        if(!nw) return;
+        if(nw.status !== 'ringing'){
+          console.log('[ringin] incoming invite status changed to', nw.status, '— closing modal');
+          dismissedInvitesRef.current.add(inviteId);
+          setIncomingCall(null);
+        }
+      })
+      .subscribe();
+    // Also poll the row every 3s in case realtime drops the update
+    var pollIv = setInterval(function(){
+      supabase.from('call_invites').select('status').eq('id', inviteId).single().then(function(r){
+        if(r && r.data && r.data.status !== 'ringing'){
+          dismissedInvitesRef.current.add(inviteId);
+          setIncomingCall(null);
+        }
+      });
+    }, 3000);
+    return function(){ try{ supabase.removeChannel(ch); }catch(e){} clearInterval(pollIv); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[incomingCall && incomingCall.id]);
+
   function acceptIncomingCall(inv){
     // Mark this invite as handled IMMEDIATELY so polling doesn't re-show the modal
     dismissedInvitesRef.current.add(inv.id);
@@ -273,6 +303,22 @@ export default function App() {
     var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
     var callerAvatar = null;
     try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}
+    // Double-tap guard — don't fire two inserts for one button press
+    if(activeCallRef.current){ console.log('[ringin] startOutgoingCall ignored — already on a call'); return; }
+    if(outgoingPendingRef.current){ console.log('[ringin] startOutgoingCall ignored — already pending'); return; }
+    outgoingPendingRef.current = true;
+
+    // Optimistic UI — show the "Calling..." screen IMMEDIATELY, before the DB roundtrip.
+    // The real inviteId is patched in once the insert returns (CallScreen handles the gap).
+    var tempChannel = 'pending-'+Math.random().toString(36).slice(2);
+    setActiveCall({
+      isIncoming: false,
+      inviteId: null,           // will fill once insert returns
+      channel: tempChannel,
+      expert: Object.assign({}, otherUser, {rate: rate}),
+      pending: true,
+    });
+
     var payload = {
       caller_id: appUserId,
       caller_name: callerName,
@@ -286,24 +332,23 @@ export default function App() {
     };
     console.log('[ringin] inserting call_invite', payload);
     supabase.from('call_invites').insert(payload).select().single().then(function(r){
+      outgoingPendingRef.current = false;
       if(r.error){
         console.error('[ringin] call_invites insert failed:', r.error);
+        setActiveCall(null);
         alert('Could not start call: '+(r.error.message||'permission'));
         return;
       }
       var inv = r.data;
       console.log('[ringin] call_invite created with id', inv.id);
-      // Update channel = invite id (unique per call). We also re-set status='ringing'
-      // so the callee's UPDATE subscription fires even if INSERT broadcast didn't reach them.
       supabase.from('call_invites').update({channel: inv.id, status: 'ringing'}).eq('id', inv.id).then(function(u){
         if(u.error){ console.error('[ringin] channel update failed:', u.error); }
         else { console.log('[ringin] channel update OK — callee should ring now'); }
       });
-      setActiveCall({
-        isIncoming: false,
-        inviteId: inv.id,
-        channel: inv.id,
-        expert: Object.assign({}, otherUser, {rate: rate}),
+      // Patch the placeholder activeCall with the real invite id + channel
+      setActiveCall(function(prev){
+        if(!prev) return prev;
+        return Object.assign({}, prev, { inviteId: inv.id, channel: inv.id, pending: false });
       });
     });
   }
