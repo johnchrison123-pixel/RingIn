@@ -169,9 +169,18 @@ export default function App() {
     if(!appUserId) return;
     opts = opts || {};
     var rate = parseInt(opts.rate||otherUser.rate, 10) || 30;
-    // 1) Insert the invite row
-    var calleeId = otherUser.id || otherUser.user_id || otherUser.otherId || otherUser.receiverId;
-    if(!calleeId || calleeId===appUserId){ alert('Cannot start call: invalid user'); return; }
+    // 1) Pick the callee's REAL user UUID — NOT conversation_id. Some callers pass a convo
+    //    object whose `id` is "<uuid1>_<uuid2>" (the convo id), so we prefer user-uuid
+    //    fields first and only fall back to `id` if it actually looks like a UUID.
+    var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var candidates = [otherUser.user_id, otherUser.otherId, otherUser.receiverId, otherUser.callee_id, otherUser.id];
+    var calleeId = null;
+    for(var i=0;i<candidates.length;i++){ if(candidates[i] && UUID_RE.test(String(candidates[i]))) { calleeId = candidates[i]; break; } }
+    if(!calleeId){
+      alert('Cannot start call: the other user\'s ID is not a valid UUID.\n\nThis usually happens for mock/demo experts. Calls only work with real signed-in users.');
+      return;
+    }
+    if(calleeId===appUserId){ alert('Cannot start call: you cannot call yourself.'); return; }
     var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
     var callerAvatar = null;
     try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}

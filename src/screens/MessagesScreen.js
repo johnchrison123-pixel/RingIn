@@ -1102,9 +1102,11 @@ export default function MessagesScreen(props){
 
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){
-    // Prefer the App-level call flow (inserts call_invites + opens real Agora CallScreen).
-    // Fall back to local-state for safety if the global hook isn't ready yet.
-    var target = Object.assign({}, exp, {id: exp.id || exp.user_id || exp.otherId || exp.receiverId});
+    // CRITICAL: prefer the actual user UUID fields (otherId/receiverId/user_id) over `id`,
+    // because convo.id is the conversation_id (e.g. "userA_userB"), NOT a UUID. Using it
+    // as callee_id would fail the Supabase insert with "invalid input syntax for type uuid".
+    var realUserId = exp.user_id || exp.otherId || exp.receiverId || exp.id;
+    var target = Object.assign({}, exp, {id: realUserId});
     if(typeof window !== 'undefined' && window.__ringInStartCall) window.__ringInStartCall(target, {rate: exp.rate||30});
     else setActiveCall(exp);
   },onMessageSent:handleMessageSent});
