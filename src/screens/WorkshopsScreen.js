@@ -11,12 +11,29 @@ const UPCOMING = [
   {id:4,title:'Nutrition Myths Debunked',host:'Priya Sharma',free:true,color:'linear-gradient(135deg,#1a0a0e,#C84B8A)',time:'Today 6PM'},
 ];
 
-export default function WorkshopsScreen(){
+export default function WorkshopsScreen(props){
   var lS=useState(null); var live=lS[0]; var setLive=lS[1];
   if(live) return React.createElement(LiveWorkshopScreen,{workshop:live,onLeave:function(){setLive(null);}});
+  var uid = props && props.session && props.session.user ? props.session.user.id : null;
+  var av = uid ? (function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})() : null;
+  var init = props && props.session && props.session.user && props.session.user.email ? props.session.user.email.charAt(0).toUpperCase() : 'U';
   return(
     <div className="hc">
-      <div style={{padding:'14px 18px 6px',fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>Workshops</div>
+      <div className="topbar">
+        <div className="brand">Workshops</div>
+        <div className="tbr">
+          <div className="wchip" onClick={function(){if(props&&props.onOpenWallet)props.onOpenWallet();}} style={{cursor:'pointer'}}>
+            <div className="wc">C</div><span>1,240</span>
+          </div>
+          <button
+            onClick={function(){if(props&&props.onOpenProfile)props.onOpenProfile();}}
+            title="Profile"
+            style={{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px',marginLeft:'4px'}}
+          >
+            {av ? <img src={av} alt="profile" style={{width:'100%',height:'100%',objectFit:'cover'}}/> : init}
+          </button>
+        </div>
+      </div>
       <div style={{padding:'0 18px',overflowY:'auto'}}>
         <div className="sh" style={{marginTop:'8px'}}><div className="st">Live Now</div></div>
         {LIVE.map(function(w){return(

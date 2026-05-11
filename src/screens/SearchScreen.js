@@ -90,8 +90,24 @@ export default function SearchScreen(props){
   });
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    React.createElement('div',{style:{padding:'13px 18px 7px'}},
-      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Experts')
+    React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
+      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Experts'),
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+        React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
+          React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
+          React.createElement('span',null,'1,240')
+        ),
+        (function(){
+          var uid = props.session && props.session.user ? props.session.user.id : null;
+          var av = uid ? (function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})() : null;
+          var init = props.session && props.session.user && props.session.user.email ? props.session.user.email.charAt(0).toUpperCase() : 'U';
+          return React.createElement('button',{
+            onClick:function(){if(props.onOpenProfile)props.onOpenProfile();},
+            title:'Profile',
+            style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px'}
+          }, av ? React.createElement('img',{src:av,alt:'profile',style:{width:'100%',height:'100%',objectFit:'cover'}}) : init);
+        })()
+      )
     ),
     React.createElement('div',{style:{padding:'0 18px 8px'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'7px 11px',display:'flex',alignItems:'center',gap:'7px'}},

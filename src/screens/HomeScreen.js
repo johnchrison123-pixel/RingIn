@@ -1399,7 +1399,39 @@ export default function HomeScreen(props){
         })()
       )
     ) : null,
-    // Old in-screen top bar removed — App.js now provides global top bar (RingIn + Wallet + Bell + Avatar)
+    // Per-screen top bar: RingIn brand + coin chip + bell + avatar (Profile)
+    React.createElement('div', {className:'topbar'},
+      React.createElement('div', {className:'brand'}, 'RingIn'),
+      React.createElement('div', {className:'tbr'},
+        React.createElement('div', {className:'wchip', onClick:function(){if(onOpenWallet)onOpenWallet();}, style:{cursor:'pointer'}},
+          React.createElement('div', {className:'wc'}, 'C'),
+          React.createElement('span', null, '1,240')
+        ),
+        React.createElement('div', {className:'ibt', onClick:function(){
+          setShowNotifs(!showNotifs);
+          if(!showNotifs&&props.session&&props.session.user){
+            sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(){});
+            setUnreadNotif(0);
+          }
+        }, style:{cursor:'pointer',position:'relative'}},
+          React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'var(--t2)',strokeWidth:2,width:15,height:15},
+            React.createElement('path', {d:'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0'})
+          ),
+          unreadNotif>0 ? React.createElement('div', {className:'nd', style:{background:'#ef4444',minWidth:'14px',height:'14px',borderRadius:'7px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',top:'3px',right:'3px',padding:'0 2px'}}, unreadNotif>9?'9+':String(unreadNotif)) : null
+        ),
+        // Avatar → Profile
+        (function(){
+          var uid=props.session&&props.session.user?props.session.user.id:null;
+          var av=uid?(function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})():null;
+          var init=props.session&&props.session.user&&props.session.user.email?props.session.user.email.charAt(0).toUpperCase():'U';
+          return React.createElement('button', {
+            onClick:function(){if(props.onOpenProfile)props.onOpenProfile();else if(props.onGoToProfile)props.onGoToProfile();},
+            style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px',marginLeft:'4px'},
+            title:'Profile',
+          }, av ? React.createElement('img',{src:av,alt:'profile',style:{width:'100%',height:'100%',objectFit:'cover'}}) : init);
+        })()
+      )
+    ),
     showNotifs ? React.createElement('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999}},
       React.createElement('div', {onClick:function(){setShowNotifs(false);}, style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)'}}),
       React.createElement('div', {style:{position:'absolute',top:0,left:0,right:0,background:'var(--bg)',borderBottomLeftRadius:'16px',borderBottomRightRadius:'16px',boxShadow:'0 8px 32px rgba(0,0,0,0.4)',zIndex:1000,maxHeight:'80vh',overflowY:'auto'}},

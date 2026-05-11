@@ -818,12 +818,16 @@ export default function MessagesScreen(props){
         if(pr.data) pr.data.forEach(function(p){profileMap[p.id]=p;});
         var enriched = convList.map(function(c){
           var prof = profileMap[c.otherId]||{};
+          // Robust name fallback: full_name → email prefix → sender_name from message → 'User'
+          var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
+          var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
+          var displayName = (prof.full_name && prof.full_name.trim()) || (emailPrefix && emailPrefix.trim()) || (senderPrefix && senderPrefix.trim()) || 'User';
           return Object.assign({},c,{
-            name: prof.full_name||prof.email||c.otherName||'User',
+            name: displayName,
             img: prof.avatar_url||null,
             isOnline: prof.is_online||false,
             color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-            initials: (prof.full_name||prof.email||'U').substring(0,2).toUpperCase(),
+            initials: displayName.substring(0,2).toUpperCase(),
             receiverId: c.otherId,
           });
         });
@@ -902,7 +906,10 @@ export default function MessagesScreen(props){
         if(pr.data) pr.data.forEach(function(p){profileMap[p.id]=p;});
         var enriched=convList.map(function(c){
           var prof=profileMap[c.otherId]||{};
-          return Object.assign({},c,{name:prof.full_name||prof.email||c.otherName||'User',img:prof.avatar_url||null,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:(prof.full_name||prof.email||'U').substring(0,2).toUpperCase(),receiverId:c.otherId});
+          var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
+          var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
+          var displayName = (prof.full_name && prof.full_name.trim()) || (emailPrefix && emailPrefix.trim()) || (senderPrefix && senderPrefix.trim()) || 'User';
+          return Object.assign({},c,{name:displayName,img:prof.avatar_url||null,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:displayName.substring(0,2).toUpperCase(),receiverId:c.otherId});
         });
         setUserConvos(enriched);
         try{localStorage.setItem('convos_'+myId,JSON.stringify(enriched));}catch(e){}
@@ -973,11 +980,25 @@ export default function MessagesScreen(props){
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
   },
     // Header
-    React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px'}},
-      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-        React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Messages')
-      ),
-      React.createElement('button',{onClick:function(){setShowNew(!showNew);},style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'22px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+')
+    React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
+      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Messages'),
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+        React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
+          React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
+          React.createElement('span',null,'1,240')
+        ),
+        React.createElement('button',{onClick:function(){setShowNew(!showNew);},title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
+        (function(){
+          var uid = props.session && props.session.user ? props.session.user.id : null;
+          var av = uid ? (function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})() : null;
+          var init = props.session && props.session.user && props.session.user.email ? props.session.user.email.charAt(0).toUpperCase() : 'U';
+          return React.createElement('button',{
+            onClick:function(){if(props.onOpenProfile)props.onOpenProfile();},
+            title:'Profile',
+            style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px'}
+          }, av ? React.createElement('img',{src:av,alt:'profile',style:{width:'100%',height:'100%',objectFit:'cover'}}) : init);
+        })()
+      )
     ),
     pullDist>20||refreshing ? React.createElement('div',{style:{textAlign:'center',padding:'8px',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}},
       refreshing ? React.createElement('div',{style:{width:'16px',height:'16px',borderRadius:'50%',border:'2px solid var(--ac)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite'}}) : '↓',

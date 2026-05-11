@@ -186,10 +186,10 @@ export default function App() {
       onViewUser:pushViewUser,
       onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUserStack([]);}
     });
-    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
-    if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
-    if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
-    if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages-'+msgResetKey, session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet, onUnreadCount:setUnreadMsg});
+    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onOpenProfile:function(){setPrevTab('home');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
+    if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('search');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
+    if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('workshops');setActiveTab('profile');}});
+    if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages-'+msgResetKey, session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('messages');setActiveTab('profile');}, onUnreadCount:setUnreadMsg});
     if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUserStack([u]);}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {session:session, onBack:function(){setActiveTab(prevTab);}});
     if (activeTab === 'saved') return React.createElement(SavedPostsScreen, {session:session, onBack:function(){setActiveTab(prevTab);}, onViewUser:pushViewUser});
@@ -233,107 +233,7 @@ export default function App() {
       }
     }
   },
-    // ========== TOP BAR ==========
-    // Show top bar on all primary tabs (hidden only on Wallet + Saved which have their own back-arrow header)
-    (activeTab !== 'wallet' && activeTab !== 'saved') && React.createElement('div', {
-      className:'top-bar',
-      style:{
-        position:'sticky', top:0, zIndex:50, height:'52px',
-        background:'rgba(17,17,23,0.92)',
-        backdropFilter:'blur(14px)',
-        WebkitBackdropFilter:'blur(14px)',
-        borderBottom:'1px solid var(--border)',
-        display:'flex', alignItems:'center', justifyContent:'space-between',
-        padding:'0 14px', gap:'10px',
-      }
-    },
-      // RingIn brand
-      React.createElement('div', {
-        onClick:function(){setActiveTab('home');},
-        style:{
-          fontFamily:'Syne, sans-serif', fontSize:'20px', fontWeight:800, letterSpacing:'-0.4px',
-          background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-          WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
-          backgroundClip:'text', cursor:'pointer',
-        }
-      }, 'RingIn'),
-
-      // Right side: coin chip + bell + avatar
-      React.createElement('div', {style:{display:'flex', alignItems:'center', gap:'8px'}},
-        // Coin chip
-        React.createElement('button', {
-          onClick:function(){setPrevTab(activeTab);setActiveTab('wallet');},
-          style:{
-            display:'flex', alignItems:'center', gap:'5px',
-            background:'var(--bg3)', border:'1px solid var(--border)',
-            borderRadius:'20px', padding:'5px 10px',
-            cursor:'pointer', color:'var(--text)', fontSize:'12px', fontWeight:600,
-          },
-          title:'Wallet',
-        },
-          React.createElement('span', {
-            style:{
-              width:'16px', height:'16px', borderRadius:'50%',
-              background:'linear-gradient(135deg,#F5A623,#f97316)',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              fontSize:'8px', fontWeight:800, color:'#fff',
-            }
-          }, 'C'),
-          'Wallet'
-        ),
-
-        // Notification bell — goes to Home and opens the notifications panel
-        React.createElement('button', {
-          onClick:function(){
-            setActiveTab('home');
-            setUnreadNotif(0); // clear badge optimistically
-            // Fire a small delay so HomeScreen has mounted before listening
-            setTimeout(function(){
-              try { window.dispatchEvent(new CustomEvent('ringin-open-notifs')); } catch(e){}
-            }, 30);
-          },
-          style:{
-            position:'relative', width:'34px', height:'34px', borderRadius:'50%',
-            background:'var(--bg3)', border:'1px solid var(--border)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            cursor:'pointer', color:'var(--text)',
-          },
-          title:'Notifications',
-        },
-          React.createElement('svg', {viewBox:'0 0 24 24', width:'16', height:'16', fill:'none', stroke:'currentColor', strokeWidth:2},
-            React.createElement('path', {d:'M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9'}),
-            React.createElement('path', {d:'M13.73 21a2 2 0 01-3.46 0'})
-          ),
-          unreadNotif > 0 && React.createElement('span', {
-            style:{
-              position:'absolute', top:'-2px', right:'-2px',
-              background:'#FF4757', borderRadius:'10px',
-              minWidth:'14px', height:'14px',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              fontSize:'9px', fontWeight:700, color:'#fff', padding:'0 3px',
-            }
-          }, unreadNotif > 9 ? '9+' : String(unreadNotif))
-        ),
-
-        // Avatar → opens Profile
-        React.createElement('button', {
-          onClick:function(){setPrevTab(activeTab);setActiveTab('profile');},
-          style:{
-            width:'34px', height:'34px', borderRadius:'50%',
-            background:'var(--ac)', border:'2px solid '+(activeTab==='profile'?'var(--ac)':'var(--border)'),
-            overflow:'hidden', cursor:'pointer', padding:0,
-            display:'flex', alignItems:'center', justifyContent:'center',
-            color:'#fff', fontWeight:700, fontSize:'13px',
-          },
-          title:'Profile',
-        },
-          avatarTopUrl
-            ? React.createElement('img', {src:avatarTopUrl, alt:'profile', style:{width:'100%', height:'100%', objectFit:'cover'}})
-            : avatarInitial
-        )
-      )
-    ),
-
+    // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar
     React.createElement('div', {className:'screen-content'}, renderScreen()),
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab, idx) {
