@@ -752,7 +752,19 @@ export default function MessagesScreen(props){
   var pullStartS=useState(0); var pullStart=pullStartS[0]; var setPullStart=pullStartS[1];
   var pullDistS=useState(0); var pullDist=pullDistS[0]; var setPullDist=pullDistS[1];
   var userConvosS=useState(function(){
-    try{var cc=localStorage.getItem('convos_'+myId);if(cc)return JSON.parse(cc);}catch(e){}
+    try{
+      var cc=localStorage.getItem('convos_'+myId);
+      if(cc){
+        var parsed = JSON.parse(cc);
+        // If most entries are stale "User" placeholders, drop the cache and let the DB fetch repopulate
+        var stale = parsed.filter(function(c){return !c.name||c.name==='User';}).length;
+        if(stale > 0 && stale >= parsed.length/2){
+          try{localStorage.removeItem('convos_'+myId);}catch(e){}
+          return [];
+        }
+        return parsed;
+      }
+    }catch(e){}
     return [];
   }); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
@@ -804,6 +816,9 @@ export default function MessagesScreen(props){
             otherId: m.sender_id===myId ? m.receiver_id : m.sender_id,
             otherName: m.sender_id===myId ? '' : (m.sender_name||''),
           };
+        } else if(!convMap[m.conversation_id].otherName && m.sender_id!==myId && m.sender_name){
+          // Capture the other person's name from any of their messages (latest may be mine)
+          convMap[m.conversation_id].otherName = m.sender_name;
         }
         if(!m.read && m.sender_id!==myId) convMap[m.conversation_id].unreadCount++;
       });
@@ -894,7 +909,9 @@ export default function MessagesScreen(props){
       var convMap={};
       res.data.forEach(function(m){
         if(!convMap[m.conversation_id]){
-          convMap[m.conversation_id]={id:m.conversation_id,convId:m.conversation_id,lastMsg:m.text,lastTime:m.created_at,unreadCount:0,otherId:m.sender_id===myId?m.receiver_id:m.sender_id,otherName:m.sender_id===myId?'':m.sender_name};
+          convMap[m.conversation_id]={id:m.conversation_id,convId:m.conversation_id,lastMsg:m.text,lastTime:m.created_at,unreadCount:0,otherId:m.sender_id===myId?m.receiver_id:m.sender_id,otherName:m.sender_id===myId?'':(m.sender_name||'')};
+        } else if(!convMap[m.conversation_id].otherName && m.sender_id!==myId && m.sender_name){
+          convMap[m.conversation_id].otherName = m.sender_name;
         }
         if(!m.read&&m.sender_id!==myId) convMap[m.conversation_id].unreadCount++;
       });
