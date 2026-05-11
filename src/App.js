@@ -22,7 +22,6 @@ export default function App() {
   var initConvoS = useState(null); var initConvo = initConvoS[0]; var setInitConvo = initConvoS[1];
   var viewUserStackS = useState([]); var viewUserStack = viewUserStackS[0]; var setViewUserStack = viewUserStackS[1];
   var unreadMsgS = useState(0); var unreadMsg = unreadMsgS[0]; var setUnreadMsg = unreadMsgS[1];
-  var unreadNotifS = useState(0); var unreadNotif = unreadNotifS[0]; var setUnreadNotif = unreadNotifS[1];
   var msgResetKeyS = useState(0); var msgResetKey = msgResetKeyS[0]; var setMsgResetKey = msgResetKeyS[1];
   function pushViewUser(u){ setViewUserStack(function(prev){return prev.concat([u]);}); }
   function popViewUser(){ setViewUserStack(function(prev){return prev.slice(0,-1);}); }
@@ -99,20 +98,6 @@ export default function App() {
           }
           return currentTab;
         });
-      })
-      .subscribe();
-    return function(){ supabase.removeChannel(ch); };
-  },[appUserId]);
-
-  // Notification count for the bell badge (independent from messages)
-  useEffect(function(){
-    if(!appUserId) return;
-    supabase.from('notifications').select('id',{count:'exact',head:true})
-      .eq('user_id',appUserId).eq('read',false)
-      .then(function(r){ if(r.count!=null) setUnreadNotif(r.count); });
-    var ch = supabase.channel('app-notif-badge-'+appUserId)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+appUserId},function(){
-        setUnreadNotif(function(prev){return prev+1;});
       })
       .subscribe();
     return function(){ supabase.removeChannel(ch); };
@@ -234,8 +219,8 @@ export default function App() {
     }
   },
     // ========== TOP BAR ==========
-    // Show top bar on all primary tabs (hidden only on Wallet + Saved which have their own back-arrow header)
-    (activeTab !== 'wallet' && activeTab !== 'saved') && React.createElement('div', {
+    // Only show top bar on main tabs (hide on internal screens like profile detail, settings)
+    (activeTab !== 'wallet' && activeTab !== 'saved' && activeTab !== 'connect') && React.createElement('div', {
       className:'top-bar',
       style:{
         position:'sticky', top:0, zIndex:50, height:'52px',
@@ -282,15 +267,11 @@ export default function App() {
           'Wallet'
         ),
 
-        // Notification bell — goes to Home and opens the notifications panel
+        // Notification bell
         React.createElement('button', {
           onClick:function(){
+            // Show inline notifications panel via HomeScreen, or scroll to top
             setActiveTab('home');
-            setUnreadNotif(0); // clear badge optimistically
-            // Fire a small delay so HomeScreen has mounted before listening
-            setTimeout(function(){
-              try { window.dispatchEvent(new CustomEvent('ringin-open-notifs')); } catch(e){}
-            }, 30);
           },
           style:{
             position:'relative', width:'34px', height:'34px', borderRadius:'50%',
@@ -304,7 +285,7 @@ export default function App() {
             React.createElement('path', {d:'M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9'}),
             React.createElement('path', {d:'M13.73 21a2 2 0 01-3.46 0'})
           ),
-          unreadNotif > 0 && React.createElement('span', {
+          unreadMsg > 0 && React.createElement('span', {
             style:{
               position:'absolute', top:'-2px', right:'-2px',
               background:'#FF4757', borderRadius:'10px',
@@ -312,7 +293,7 @@ export default function App() {
               display:'flex', alignItems:'center', justifyContent:'center',
               fontSize:'9px', fontWeight:700, color:'#fff', padding:'0 3px',
             }
-          }, unreadNotif > 9 ? '9+' : String(unreadNotif))
+          }, unreadMsg > 9 ? '9+' : String(unreadMsg))
         ),
 
         // Avatar → opens Profile

@@ -16,7 +16,12 @@ export default function WorkshopsScreen(){
   if(live) return React.createElement(LiveWorkshopScreen,{workshop:live,onLeave:function(){setLive(null);}});
   return(
     <div className="hc">
-      <div style={{padding:'14px 18px 6px',fontFamily:'Syne,sans-serif',fontSize:'21px',fontWeight:800,background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>Workshops</div>
+      <div className="topbar">
+        <div className="brand">Workshops</div>
+        <div className="tbr">
+          <div className="wchip"><div className="wc">C</div><span>1,240</span></div>
+        </div>
+      </div>
       <div style={{padding:'0 18px',overflowY:'auto'}}>
         <div className="sh" style={{marginTop:'8px'}}><div className="st">Live Now</div></div>
         {LIVE.map(function(w){return(
