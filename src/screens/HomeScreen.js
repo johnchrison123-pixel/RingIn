@@ -6,6 +6,8 @@ import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
 import {playSound,playUnlikeSound} from '../utils/soundEngine';
+import {toastSuccess,toastError,toastWarn} from '../utils/toast';
+import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
@@ -361,8 +363,16 @@ export function UserProfileView(props){
             {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.content});setShowEditPost(true);setPostMenuU(null);}},
             {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenuU(null);}}
           ]:[
-            {icon:'🔖',label:'Save Post',fn:function(){try{var s=JSON.parse(localStorage.getItem('saved_posts')||'[]');s.push(p.id);localStorage.setItem('saved_posts',JSON.stringify(s));}catch(e){}alert('Post saved!');setPostMenuU(null);}},
-            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuU(null);}},
+            {icon:'🔖',label:'Save Post',fn:function(){
+              setPostMenuU(null);
+              if(!currentUserId){toastError('Please log in');return;}
+              sbHome.from('saved_posts').upsert({user_id:currentUserId,post_id:p.id},{onConflict:'user_id,post_id'}).then(function(r){
+                if(r.error){toastError('Failed to save');return;}
+                try{var s=JSON.parse(localStorage.getItem('saved_posts_'+currentUserId)||'[]');if(s.indexOf(p.id)<0){s.push(p.id);localStorage.setItem('saved_posts_'+currentUserId,JSON.stringify(s));}}catch(e){}
+                toastSuccess('🔖 Saved to your bookmarks');
+              }).catch(function(){toastError('Failed to save');});
+            }},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}toastSuccess('🔗 Link copied!');setPostMenuU(null);}},
             {icon:'➕',label:(props.following&&props.following[p.userId]?'✓ Unfollow ':'Follow ')+displayName,fn:function(){props.toggleFollow(p.userId,displayName,avatarUrl,'RingIn Member');setPostMenuU(null);}},
             {icon:'😶',label:'Not interested',fn:function(){setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenuU(null);}},
             {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenuU(null);}}
@@ -1069,26 +1079,59 @@ export default function HomeScreen(props){
   var onlineExperts = fe.filter(function(e){return e.online===true;});
 
   function submitPost(){
-    if(!compText.trim()&&compImgs.length===0&&!compVideo){alert('Write something or add a photo/video!');return;}
-    if(compVideo&&compVideo.uploading){alert('Video is still uploading, please wait...');return;}
-    if(uploadingMedia){alert('Media is still uploading, please wait...');return;}
+    if(!compText.trim()&&compImgs.length===0&&!compVideo){toastWarn('Write something or add a photo/video!');return;}
+    if(compVideo&&compVideo.uploading){toastWarn('Video is still uploading, please wait...');return;}
+    if(uploadingMedia){toastWarn('Media is still uploading, please wait...');return;}
     playPostSound();
     var session = props.session;
-    if(!session||!session.user){alert('Please log in to post');return;}
+    if(!session||!session.user){toastError('Please log in to post');return;}
     setPosting(true);
-    var tags = compText.match(/#[a-zA-Z0-9]+/g)||[];
-    var postData = {
-      user_id: session.user.id,
-      user_name: session.user.email.split('@')[0],
-      user_avatar: localStorage.getItem('avatar_'+session.user.id)||null,
-      text: compText,
-      images: compImgs,
-      video_url: compVideo&&compVideo.supaUrl?compVideo.supaUrl:null,
-      tags: tags.map(function(t){return t.replace('#','');}),
-      likes: [],
-      comments_count: 0
-    };
-    sbHome.from('posts').insert([postData]).select().then(function(res){
+
+    // ML content moderation + auto-tag pipeline
+    var moderationPromise = compText.trim().length > 0
+      ? detectContent(compText, 'post').catch(function(){return null;})
+      : Promise.resolve(null);
+
+    moderationPromise.then(function(detection){
+      // Block harmful content
+      if (detection && detection.action === 'block') {
+        toastError('Post blocked: ' + (detection.flags||[]).join(', ') + '. Please rewrite.');
+        setPosting(false);
+        return;
+      }
+      // Warn user on borderline content
+      if (detection && detection.action === 'review') {
+        if (!window.confirm('Heads up: your post may contain ' + (detection.flags||[]).join(', ') + '. Post anyway?')) {
+          setPosting(false);
+          return;
+        }
+      }
+
+      // Auto-tag posts
+      var manualTags = (compText.match(/#[a-zA-Z0-9]+/g)||[]).map(function(t){return t.replace('#','');});
+      var autoTagPromise = compText.trim().length > 20
+        ? autoTagPost(compText, 3).catch(function(){return null;})
+        : Promise.resolve(null);
+
+      autoTagPromise.then(function(tagResult){
+        var autoTags = [];
+        if (tagResult && tagResult.tags) {
+          autoTags = tagResult.tags.filter(function(t){return t.confidence >= 0.5;}).map(function(t){return t.topic;});
+        }
+        var allTags = manualTags.concat(autoTags.filter(function(t){return manualTags.indexOf(t)<0;}));
+
+        var postData = {
+          user_id: session.user.id,
+          user_name: session.user.email.split('@')[0],
+          user_avatar: localStorage.getItem('avatar_'+session.user.id)||null,
+          text: compText,
+          images: compImgs,
+          video_url: compVideo&&compVideo.supaUrl?compVideo.supaUrl:null,
+          tags: allTags,
+          likes: [],
+          comments_count: 0
+        };
+        sbHome.from('posts').insert([postData]).select().then(function(res){
       if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');alert('Something went wrong. Please try again.');setPosting(false);return;}
       if(res.data&&res.data[0]){
         sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
@@ -1143,6 +1186,8 @@ export default function HomeScreen(props){
       setCompMediaType('photo');
       setShowComp(false);
       setPosting(false);
+        });
+      });
     });
   }
 
@@ -1319,8 +1364,16 @@ export default function HomeScreen(props){
             {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.content});setShowEditPost(true);setPostMenu(null);}},
             {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenu(null);}}
           ]:[
-            {icon:'🔖',label:'Save Post',fn:function(){try{var s=JSON.parse(localStorage.getItem('saved_posts')||'[]');s.push(p.id);localStorage.setItem('saved_posts',JSON.stringify(s));}catch(e){}alert('Post saved!');setPostMenu(null);}},
-            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenu(null);}},
+            {icon:'🔖',label:'Save Post',fn:function(){
+              setPostMenu(null);
+              if(!currentUserId){toastError('Please log in');return;}
+              sbHome.from('saved_posts').upsert({user_id:currentUserId,post_id:p.id},{onConflict:'user_id,post_id'}).then(function(r){
+                if(r.error){toastError('Failed to save');return;}
+                try{var s=JSON.parse(localStorage.getItem('saved_posts_'+currentUserId)||'[]');if(s.indexOf(p.id)<0){s.push(p.id);localStorage.setItem('saved_posts_'+currentUserId,JSON.stringify(s));}}catch(e){}
+                toastSuccess('🔖 Saved to your bookmarks');
+              }).catch(function(){toastError('Failed to save');});
+            }},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}toastSuccess('🔗 Link copied!');setPostMenu(null);}},
             {icon:'➕',label:(following[p.userId]?'✓ Unfollow ':'Follow ')+p.name,fn:function(){toggleFollow(p.userId,p.name,p.img,'RingIn Member');setPostMenu(null);}},
             {icon:'😶',label:'Not interested',fn:function(){setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenu(null);}},
             {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenu(null);}}
