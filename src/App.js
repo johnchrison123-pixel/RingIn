@@ -160,20 +160,21 @@ export default function App() {
       setIncomingCall(inv);
     }
 
-    console.log('[ringin] subscribing to call_invites (unfiltered)  — me =', appUserId);
-    // Subscribe WITHOUT the callee_id filter — Phase-1 workaround for UUID mismatch.
-    // We filter in JS (status='ringing' AND caller_id !== me). RLS is open so we can see all.
+    console.log('[ringin] subscribing to call_invites for callee_id =', appUserId);
+    // STRICT FILTER — only deliver rows where I'm the callee. This is the correct
+    // behavior. (The earlier Phase-1 hack of unfiltered broadcast caused calls to
+    // ring EVERY signed-in user, not just the intended recipient.)
     var ch = supabase.channel('app-call-invites-'+appUserId)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'call_invites'},function(p){
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'call_invites',filter:'callee_id=eq.'+appUserId},function(p){
         var inv = p && p.new;
-        if(!inv || inv.status !== 'ringing' || inv.caller_id === appUserId) return;
-        console.log('[ringin] call_invites INSERT (unfiltered, accepted):', inv);
+        if(!inv || inv.status !== 'ringing') return;
+        console.log('[ringin] call_invites INSERT (filtered):', inv.id);
         handleInvite(inv);
       })
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'call_invites'},function(p){
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'call_invites',filter:'callee_id=eq.'+appUserId},function(p){
         var inv = p && p.new;
-        if(!inv || inv.status !== 'ringing' || inv.caller_id === appUserId) return;
-        console.log('[ringin] call_invites UPDATE (unfiltered, accepted):', inv);
+        if(!inv || inv.status !== 'ringing') return;
+        console.log('[ringin] call_invites UPDATE (filtered):', inv.id);
         handleInvite(inv);
       })
       .subscribe(function(status){ console.log('[ringin] subscription status:', status); });
@@ -194,24 +195,19 @@ export default function App() {
       });
 
     function pollOnce(){
-      // Phase-1 workaround: poll for ANY ringing invite in last 60s where I'm NOT the caller.
-      // This catches the case where the caller's local data points to a stale/wrong UUID for
-      // me, so callee_id doesn't equal my auth.uid(). Since RLS is open, this works. We
-      // still prefer rows that explicitly match callee_id=me, but accept stranger rings
-      // when we're the only plausible callee (caller_id != me).
+      // Skip polling while in an active call or showing a ring — saves bandwidth and
+      // avoids racing the modal-watcher (which has its own 3s poll).
+      if(activeCallRef.current || incomingCallRef.current) return;
+      // STRICT FILTER — only rows where I'm the callee.
       supabase.from('call_invites')
         .select('*')
+        .eq('callee_id', appUserId)
         .eq('status', 'ringing')
-        .neq('caller_id', appUserId)
         .gte('created_at', new Date(Date.now() - 60000).toISOString())
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(1)
         .then(function(r){
-          if(!r || !r.data || r.data.length === 0) return;
-          // Prefer the most recent one targeted at me; fall back to any
-          var mine = r.data.find(function(x){ return x.callee_id === appUserId; });
-          var picked = mine || r.data[0];
-          handleInvite(picked);
+          if(r && r.data && r.data[0]) handleInvite(r.data[0]);
         });
     }
     // Polling fallback — every 4s, catch anything realtime missed

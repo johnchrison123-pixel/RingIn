@@ -128,34 +128,42 @@ export async function startCallSession(opts) {
     existing.forEach(function (u) { notifyJoinedOnce(u); });
   } catch (e) {}
 
+  // Reuse a cached mic track across calls to avoid re-prompting permission.
+  // Use Agora's real `enabled` getter (the previous `_enabled` was a made-up property).
+  function isCachedTrackUsable(t){
+    if(!t) return false;
+    try{
+      // Track must still be live (underlying MediaStreamTrack not stopped).
+      var ms = t.getMediaStreamTrack && t.getMediaStreamTrack();
+      if(ms && ms.readyState !== 'live') return false;
+      return true;
+    }catch(e){ return false; }
+  }
   try {
-    // Reuse a cached mic track across calls to avoid re-prompting permission every call.
-    // The browser DOES remember permission per origin, but creating a fresh mic track can
-    // re-trigger the prompt on some browsers (notably iOS Safari with strict settings).
-    if (!window.__ringInMicTrack || !window.__ringInMicTrack._enabled) {
+    if (isCachedTrackUsable(window.__ringInMicTrack)) {
+      // Re-enable in case the previous leave() set it disabled.
+      try { await window.__ringInMicTrack.setEnabled(true); } catch(e){}
+    } else {
+      // Cached track is missing or dead — make sure we fully close the old one so the
+      // underlying MediaStreamTrack is released (otherwise we get a stale track leak).
+      if (window.__ringInMicTrack) {
+        try { window.__ringInMicTrack.close(); } catch(e){}
+        window.__ringInMicTrack = null;
+      }
       window.__ringInMicTrack = await AgoraRTC.createMicrophoneAudioTrack({
         encoderConfig: 'music_standard',
         ANS: true,
         AEC: true,
         AGC: true,
       });
-      // Mark so we can reuse it next call
-      window.__ringInMicTrack._enabled = true;
-    } else {
-      // Re-enable in case it was muted at the end of the last call
-      try { window.__ringInMicTrack.setEnabled(true); } catch(e){}
     }
     localAudioTrack = window.__ringInMicTrack;
     await client.publish([localAudioTrack]);
   } catch (e) {
-    // Fresh mic creation may have failed (cached one stale) — fall back to a new track
+    // Publish or createTrack failed — surface the error, don't silently retry (would
+    // re-prompt mic permission and confuse the user).
     if (opts.onError) opts.onError(new Error('Microphone unavailable: ' + e.message));
-    try {
-      localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-      window.__ringInMicTrack = localAudioTrack;
-      window.__ringInMicTrack._enabled = true;
-      await client.publish([localAudioTrack]);
-    } catch (e2) { /* listen-only mode */ }
+    // Listen-only mode.
   }
 
   return {

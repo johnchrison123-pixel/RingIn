@@ -145,18 +145,34 @@ export default function CallScreen(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[channel, myUserId]);
 
-  // ── 2. Subscribe to invite status changes so a remote reject/cancel ends the call here too
+  // ── 2. Subscribe to invite status changes — REJECT/CANCEL/END close us here too,
+  //      and crucially ACCEPTED flips us out of 'ringing' immediately even if Agora's
+  //      onRemoteJoined hasn't fired yet (e.g. callee's mic-permission prompt is open).
   useEffect(function(){
     if(!inviteId) return;
+    function applyStatus(st){
+      if(!st) return;
+      if(st==='accepted'){
+        // Callee accepted but audio may not have started flowing yet — show 'Connecting…'.
+        // We flip to 'connected' as soon as Agora's user-joined event fires.
+        setPhase(function(prev){ return prev==='ringing' ? 'connecting' : prev; });
+      }
+      else if(st==='rejected'){ setPhase('declined'); hangup('rejected'); }
+      else if(st==='cancelled'){ hangup('cancelled'); }
+      else if(st==='ended'){ hangup('remote_hangup'); }
+    }
     var ch = sb.channel('call-invite-'+inviteId)
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'call_invites',filter:'id=eq.'+inviteId},function(p){
-        var st = p && p.new && p.new.status;
-        if(st==='rejected'){ setPhase('declined'); hangup('rejected'); }
-        else if(st==='cancelled'){ hangup('cancelled'); }
-        else if(st==='ended'){ hangup('remote_hangup'); }
+        applyStatus(p && p.new && p.new.status);
       })
       .subscribe();
-    return function(){ try{ sb.removeChannel(ch); }catch(e){} };
+    // Backup poll every 3s in case realtime drops the UPDATE
+    var pollIv = setInterval(function(){
+      sb.from('call_invites').select('status').eq('id', inviteId).single().then(function(r){
+        if(r && r.data) applyStatus(r.data.status);
+      });
+    }, 3000);
+    return function(){ try{ sb.removeChannel(ch); }catch(e){} clearInterval(pollIv); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[inviteId]);
 
@@ -216,15 +232,25 @@ export default function CallScreen(props){
         end_reason: reason || 'caller_hangup',
       }).eq('id', inviteId).then(function(){});
     } else if(session && session.user){
-      // Try to find the row we created (most recent ringing where caller=me) and cancel it
+      // Find the SPECIFIC row we created (most recent ringing by me, last 30s) and cancel
+      // only that one. Don't mass-update — would clobber any concurrent ringing call.
       sb.from('call_invites')
-        .update({ status:newStatus, ended_at:new Date().toISOString(), duration_secs:secs, end_reason:reason||'caller_hangup' })
+        .select('id')
         .eq('caller_id', session.user.id)
         .eq('status','ringing')
         .gte('created_at', new Date(Date.now() - 30000).toISOString())
-        .then(function(r){
-          if(r && r.error){ console.error('[ringin] late-cancel failed:', r.error); }
-          else console.log('[ringin] late-cancel applied');
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .then(function(sel){
+          if(!sel || !sel.data || !sel.data[0]) { console.log('[ringin] no ringing row to late-cancel'); return; }
+          var rid = sel.data[0].id;
+          sb.from('call_invites')
+            .update({ status:newStatus, ended_at:new Date().toISOString(), duration_secs:secs, end_reason:reason||'caller_hangup' })
+            .eq('id', rid)
+            .then(function(u){
+              if(u && u.error){ console.error('[ringin] late-cancel failed:', u.error); }
+              else console.log('[ringin] late-cancel applied to', rid);
+            });
         });
     }
     // Write an in-chat call log message. Only the CALLER writes (to avoid duplicates).
