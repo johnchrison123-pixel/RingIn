@@ -6,9 +6,11 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 .app-container{width:100%;max-width:100%;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:fixed;left:0;right:0;display:flex;flex-direction:column;overflow:hidden;}
 .screen-content{flex:1;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none;min-height:0;}
 .screen-content::-webkit-scrollbar{display:none;}
-.bottom-nav{display:flex;align-items:center;background:var(--bg2);border-top:1px solid var(--border);padding:5px 2px 12px;flex-shrink:0;}
-.nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 1px;border-radius:8px;border:none;background:none;cursor:pointer;transition:background .15s;}
-.nav-tab.active{background:var(--acg);}
+.bottom-nav{display:flex;align-items:center;background:var(--bg2);border-top:1px solid var(--border);padding:5px 6px 12px;flex-shrink:0;gap:2px;}
+.nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 1px;border:none;background:none;cursor:pointer;transition:background .15s;position:relative;}
+/* Active "pill" — fixed narrow width so it doesn't crowd the center orb */
+.nav-tab.active::before{content:'';position:absolute;top:3px;bottom:3px;left:50%;transform:translateX(-50%);width:46px;background:var(--acg);border-radius:10px;z-index:0;pointer-events:none;}
+.nav-tab > *{position:relative;z-index:1;}
 .nav-tab svg{width:18px;height:18px;stroke:var(--t3);transition:stroke .15s;}
 .nav-tab.active svg{stroke:var(--ac);}
 .nav-tab span{font-size:9px;color:var(--t3);font-family:'DM Sans',sans-serif;}
