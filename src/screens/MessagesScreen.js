@@ -119,6 +119,32 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var lastHapticTierRef=useRef(0);
 
   var bottomRef=useRef(null);
+  var headerRef=useRef(null);
+  var chatBoxRef=useRef(null);
+
+  // Keep the ChatBox header pinned to the visual viewport top, even when the mobile
+  // keyboard opens. position:fixed alone isn't enough on iOS Safari — its visual
+  // viewport offset shifts when the keyboard appears. We track that and apply a
+  // matching translateY so the header always rides at the visible top.
+  useEffect(function(){
+    if(typeof window === 'undefined') return;
+    var vv = window.visualViewport;
+    if(!vv) return; // older browsers — position:fixed alone will handle most cases
+    function syncHeader(){
+      if(!headerRef.current) return;
+      // offsetTop is positive when the keyboard pushes the visual viewport down (iOS Safari)
+      var y = Math.max(0, vv.offsetTop);
+      headerRef.current.style.transform = 'translateY(' + y + 'px)';
+    }
+    syncHeader();
+    vv.addEventListener('resize', syncHeader);
+    vv.addEventListener('scroll', syncHeader);
+    return function(){
+      vv.removeEventListener('resize', syncHeader);
+      vv.removeEventListener('scroll', syncHeader);
+      if(headerRef.current) headerRef.current.style.transform='';
+    };
+  },[]);
 
   // Fresh-avatar state for the OTHER person in this chat — kept in local state so we can
   // refresh from DB and fall back to localStorage when convo.img is null.
@@ -400,10 +426,14 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var glowRadius = 10 + levHoldPct * 30;
 
   return React.createElement('div',{
-    style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
+    ref:chatBoxRef,
+    // Reserve top space so messages don't slide under the FIXED header (56px ≈ header height)
+    style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',paddingTop:'56px',position:'relative'},
   },
-    // ── Header — STICKY so it stays pinned when mobile keyboard opens and the scroll container shifts.
-    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'sticky',top:0,zIndex:20,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}},
+    // ── Header — position:FIXED so it pins to the viewport regardless of nested scroll
+    // containers, and a visualViewport listener (above) keeps it glued to the visible top
+    // even when iOS Safari shifts the layout for the keyboard.
+    React.createElement('div',{ref:headerRef,style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'fixed',top:0,left:0,right:0,zIndex:50,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',willChange:'transform'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
         React.createElement('button',{onClick:onBack,title:'Back',style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},
           React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
@@ -419,7 +449,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
             React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
           ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
         ),
-        convo.rate?React.createElement('button',{onClick:function(){if(onCall)onCall(convo);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call'):null
+        // Always show Call — works for both experts (using their rate) and regular users (free-tier rate)
+        React.createElement('button',{onClick:function(){if(onCall)onCall(Object.assign({},convo,{rate:convo.rate||30,name:otherName,img:otherAvatar||convo.img}));},title:'Call',style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'4px'}},
+          React.createElement('svg',{viewBox:'0 0 24 24',width:'12',height:'12',fill:'none',stroke:'currentColor',strokeWidth:'2.4',strokeLinecap:'round',strokeLinejoin:'round'},
+            React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
+          ),
+          'Call'
+        )
       ),
       React.createElement('button',{
         onClick:function(e){e.stopPropagation();setChatMenuOpen(function(v){return !v;});},
@@ -1146,7 +1182,17 @@ export default function MessagesScreen(props){
               ),
               React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.lastMsg||'Start a conversation')
             ),
-            c.unreadCount>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unreadCount>9?'9+':c.unreadCount) : null
+            c.unreadCount>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unreadCount>9?'9+':c.unreadCount) : null,
+            // Call button on each row — stop propagation so it doesn't open the chat
+            React.createElement('button',{
+              onClick:function(e){e.stopPropagation();setActiveCall(Object.assign({},c,{rate:c.rate||30}));},
+              title:'Call',
+              style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginLeft:'4px'}
+            },
+              React.createElement('svg',{viewBox:'0 0 24 24',width:'14',height:'14',fill:'none',stroke:'currentColor',strokeWidth:'2.4',strokeLinecap:'round',strokeLinejoin:'round'},
+                React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
+              )
+            )
           );
         })
       ) : null,
@@ -1167,7 +1213,17 @@ export default function MessagesScreen(props){
             ),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:'2px'}},c.last||'Tap to start chatting')
           ),
-          c.unread>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unread) : null
+          c.unread>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unread) : null,
+          // Call button on each expert row
+          React.createElement('button',{
+            onClick:function(e){e.stopPropagation();setActiveCall(c);},
+            title:'Call',
+            style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginLeft:'4px'}
+          },
+            React.createElement('svg',{viewBox:'0 0 24 24',width:'14',height:'14',fill:'none',stroke:'currentColor',strokeWidth:'2.4',strokeLinecap:'round',strokeLinejoin:'round'},
+              React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
+            )
+          )
         );
       })
     )
