@@ -27,24 +27,14 @@ export function usePostsRealtime(sb, channelName, currentUserId, setPosts, setCo
       // ── Likes + comment count when any post row is updated ──
       .on('postgres_changes', {event:'UPDATE', schema:'public', table:'posts'}, function(p) {
         var likesArr = Array.isArray(p.new.likes) ? p.new.likes : [];
-        var newCommentsCount = p.new.comments_count;
         setPosts(function(prev) {
           return prev.map(function(post) {
             if (post.id !== p.new.id) return post;
-            // Echo-skip: if local state matches incoming, skip (prevents 2→3→1 flicker)
-            var currentLikesCount = likesAsArray
-              ? (Array.isArray(post.likes) ? post.likes.length : 0)
-              : post.likes;
-            var sameLikes = currentLikesCount === likesArr.length &&
-              (post.likedByIds || []).length === likesArr.length &&
-              (post.likedByIds || []).every(function(id){ return likesArr.indexOf(id) >= 0; });
-            var sameComments = newCommentsCount == null || post.comments === newCommentsCount;
-            if (sameLikes && sameComments) return post;
             return Object.assign({}, post, {
               likes:       likesAsArray ? likesArr : likesArr.length,
               liked:       currentUserId ? likesArr.includes(currentUserId) : post.liked,
               likedByIds:  likesArr,
-              comments:    newCommentsCount != null ? newCommentsCount : post.comments
+              comments:    p.new.comments_count != null ? p.new.comments_count : post.comments
             });
           });
         });

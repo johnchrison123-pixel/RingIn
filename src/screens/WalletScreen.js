@@ -1,7 +1,5 @@
 /* eslint-disable */
-import React,{useState,useEffect} from 'react';
-import {sb} from '../utils/supabase';
-import {toastSuccess,toastError} from '../utils/toast';
+import React,{useState} from 'react';
 
 var PACKAGES=[
   {id:1,coins:100,price:100,label:'Starter',bonus:0,popular:false},
@@ -9,70 +7,23 @@ var PACKAGES=[
   {id:3,coins:500,price:500,label:'Popular',bonus:0,popular:true},
   {id:4,coins:1000,price:900,label:'Best Value',bonus:100,popular:false},
   {id:5,coins:2000,price:1700,label:'Power',bonus:300,popular:false},
-  {id:6,coins:5000,price:4000,label:'Pro',bonus:1000,popular:false},
+];
+
+var TRANSACTIONS=[
+  {id:1,type:'call',label:'Call with Dr. Priya Nair',coins:-24,date:'Today, 2:15 PM'},
+  {id:2,type:'purchase',label:'Purchased 500 coins',coins:500,date:'Today, 1:00 PM'},
+  {id:3,type:'call',label:'Call with Ravi Menon',coins:-36,date:'Yesterday'},
+  {id:4,type:'purchase',label:'Purchased 100 coins',coins:100,date:'Apr 27'},
 ];
 
 export default function WalletScreen(props){
   var onBack = props.onBack;
-  var session = props.session;
-  var userId = session && session.user ? session.user.id : null;
-
-  var balS=useState(0); var balance=balS[0]; var setBalance=balS[1];
+  var balS=useState(1240); var balance=balS[0];
   var selS=useState(null); var selected=selS[0]; var setSelected=selS[1];
   var payS=useState('card'); var payMethod=payS[0]; var setPayMethod=payS[1];
   var upiS=useState(''); var upiId=upiS[0]; var setUpiId=upiS[1];
   var cardS=useState({number:'',expiry:'',cvv:'',name:''}); var card=cardS[0]; var setCard=cardS[1];
   var doneS=useState(false); var done=doneS[0]; var setDone=doneS[1];
-  var txS=useState([]); var transactions=txS[0]; var setTransactions=txS[1];
-  var payingS=useState(false); var paying=payingS[0]; var setPaying=payingS[1];
-
-  // Load balance + transactions from Supabase
-  useEffect(function(){
-    if(!userId) return;
-    sb.from('profiles').select('coins').eq('id',userId).single().then(function(r){
-      if(r.data && r.data.coins != null) setBalance(Number(r.data.coins) || 0);
-    }).catch(function(){toastError('Failed to load balance');});
-    sb.from('transactions').select('*').eq('user_id',userId).order('created_at',{ascending:false}).limit(20).then(function(r){
-      if(r.data) setTransactions(r.data);
-    }).catch(function(){});
-  },[userId]);
-
-  function processPayment(){
-    if(!userId){toastError('Please log in');return;}
-    if(payMethod==='card'){
-      if(card.number.length<16||!card.expiry||card.cvv.length<3||!card.name){toastError('Please fill all card details.');setPaying(false);return;}
-    } else {
-      if(!upiId||!upiId.includes('@')){toastError('Please enter a valid UPI ID.');setPaying(false);return;}
-    }
-    setPaying(true);
-
-    // Simulate payment processing
-    setTimeout(function(){
-      var addedCoins = selected.coins + (selected.bonus || 0);
-      var newBalance = balance + addedCoins;
-      setBalance(newBalance);
-
-      // Update profile in DB
-      sb.from('profiles').update({coins:newBalance}).eq('id',userId).then(function(){});
-
-      // Insert transaction
-      sb.from('transactions').insert([{
-        user_id:userId,
-        type:'purchase',
-        label:'Purchased '+selected.coins+(selected.bonus?'+'+selected.bonus+' bonus':'')+' coins',
-        coins:addedCoins,
-        amount:selected.price,
-      }]).select().then(function(r){
-        if(r.data && r.data[0]){
-          setTransactions(function(prev){return [r.data[0]].concat(prev);});
-        }
-      });
-
-      setDone(true);
-      setPaying(false);
-      toastSuccess('🎉 Payment successful! +'+addedCoins+' coins');
-    },1200);
-  }
 
   function updateCard(field,val){setCard(function(p){return Object.assign({},p,{[field]:val});});}
 
@@ -121,11 +72,15 @@ export default function WalletScreen(props){
     React.createElement('div',{style:{padding:'0 18px 24px',marginTop:'8px'}},
       React.createElement('button',{
         onClick:function(){
-          if(paying) return;
-          processPayment();
+          if(payMethod==='card'){
+            if(card.number.length<16||!card.expiry||card.cvv.length<3||!card.name){alert('Please fill all card details.');return;}
+          } else {
+            if(!upiId||!upiId.includes('@')){alert('Please enter a valid UPI ID.');return;}
+          }
+          setDone(true);
         },
-        style:{width:'100%',padding:'14px',background:paying?'var(--bg3)':'var(--ac)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:paying?'default':'pointer',opacity:paying?0.6:1}
-      },paying?'Processing...':'Pay ₹'+selected.price+' →')
+        style:{width:'100%',padding:'14px',background:'var(--ac)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer'}
+      },'Pay ₹'+selected.price+' →')
     )
   );
 
@@ -137,7 +92,7 @@ export default function WalletScreen(props){
     React.createElement('div',{style:{margin:'0 18px 16px',background:'linear-gradient(135deg,#1a1040,#2d1b6e)',border:'1px solid rgba(123,110,255,.3)',borderRadius:'16px',padding:'20px',textAlign:'center'}},
       React.createElement('div',{style:{fontSize:'12px',color:'rgba(255,255,255,.6)',marginBottom:'6px'}},'Coin Balance'),
       React.createElement('div',{style:{fontSize:'36px',fontWeight:800,color:'#fff',marginBottom:'4px'}},'🪙 '+balance),
-      React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,.5)'}},'≈ ₹'+(Number(balance)||0).toFixed(0)+' value')
+      React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,.5)'}},'≈ ₹'+(balance).toFixed(0)+' value')
     ),
     React.createElement('div',{style:{padding:'0 18px 6px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'10px'}},'Buy Coins'),
@@ -162,14 +117,12 @@ export default function WalletScreen(props){
     ),
     React.createElement('div',{style:{padding:'0 18px 24px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'10px'}},'Recent Activity'),
-      transactions.length===0 && React.createElement('div',{style:{padding:'20px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}},'No transactions yet'),
-      transactions.map(function(tx){
-        var dateStr = tx.created_at ? new Date(tx.created_at).toLocaleDateString() : '';
+      TRANSACTIONS.map(function(tx){
         return React.createElement('div',{key:tx.id,style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
-          React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',flexShrink:0}},tx.type==='call'?'📞':tx.type==='workshop'?'🎙':'💳'),
+          React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',flexShrink:0}},tx.type==='call'?'📞':'💳'),
           React.createElement('div',{style:{flex:1}},
             React.createElement('div',{style:{fontSize:'12px',fontWeight:500,color:'var(--text)',marginBottom:'2px'}},tx.label),
-            React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},dateStr)
+            React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},tx.date)
           ),
           React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:tx.coins>0?'var(--green)':'var(--red)'}},(tx.coins>0?'+':'')+tx.coins+'🪙')
         );
