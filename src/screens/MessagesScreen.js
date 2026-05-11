@@ -120,6 +120,33 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
 
   var bottomRef=useRef(null);
 
+  // Fresh-avatar state for the OTHER person in this chat — kept in local state so we can
+  // refresh from DB and fall back to localStorage when convo.img is null.
+  var _initialOtherAvatar = convo && convo.img ? convo.img : (function(){
+    try { return convo && convo.receiverId ? localStorage.getItem('avatar_'+convo.receiverId) : null; } catch(e){ return null; }
+  })();
+  var _initialOtherName = (convo && convo.name) || 'User';
+  var otherAvatarS = useState(_initialOtherAvatar); var otherAvatar = otherAvatarS[0]; var setOtherAvatar = otherAvatarS[1];
+  var otherNameS = useState(_initialOtherName); var otherName = otherNameS[0]; var setOtherName = otherNameS[1];
+
+  // Fetch fresh profile for the other user — covers cases where convo was passed in
+  // stale (e.g., entering chat from a notification or a UserProfileView message button).
+  useEffect(function(){
+    var otherId = convo && (convo.receiverId || convo.other_user_id || convo.id);
+    if (!otherId || (typeof otherId === 'string' && otherId.indexOf('_') >= 0)) return; // not a UUID
+    sb.from('profiles').select('id,full_name,email,avatar_url,is_online').eq('id', otherId).single().then(function(r){
+      if (!r || !r.data) return;
+      if (r.data.avatar_url) {
+        setOtherAvatar(r.data.avatar_url);
+        try { localStorage.setItem('avatar_'+otherId, r.data.avatar_url); } catch(e){}
+      }
+      var fresh = (r.data.full_name && r.data.full_name.trim()) ||
+                  (r.data.email && r.data.email.indexOf('@')>=0 ? r.data.email.split('@')[0] : r.data.email) ||
+                  null;
+      if (fresh) setOtherName(fresh);
+    });
+  }, [convo && convo.receiverId, convo && convo.id]);
+
   useEffect(function(){
     // Load messages
     sb.from('messages').select('*').eq('conversation_id',convId).order('created_at').then(function(r){
@@ -384,10 +411,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           )
         ),
         React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
-          convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
+          otherAvatar?React.createElement('img',{src:otherAvatar,alt:otherName,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
         ),
         React.createElement('div',{style:{flex:1,minWidth:0}},
-          React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},convo.name),
+          React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
           convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
             React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
           ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
@@ -442,7 +469,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
           var isMe=m.sender_id===myId;
           return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:isMe?'flex-end':'flex-start',alignItems:'flex-end',gap:'6px'}},
             !isMe?React.createElement('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-              convo.img?React.createElement('img',{src:convo.img,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||'?')
+              otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
             ):null,
             React.createElement('div',null,
               React.createElement('div',{
@@ -767,12 +794,27 @@ export default function MessagesScreen(props){
       var cc=localStorage.getItem('convos_'+myId);
       if(cc){
         var parsed = JSON.parse(cc);
-        // If most entries are stale "User" placeholders, drop the cache and let the DB fetch repopulate
-        var stale = parsed.filter(function(c){return !c.name||c.name==='User';}).length;
-        if(stale > 0 && stale >= parsed.length/2){
+        // Drop the cache if (a) most entries are stale "User" placeholders, OR
+        // (b) most entries are missing avatars but localStorage has them — that means
+        // the cache was written before we started cross-caching other users' avatars.
+        var staleName = parsed.filter(function(c){return !c.name||c.name==='User';}).length;
+        var missingAvatar = 0;
+        parsed.forEach(function(c){
+          if(!c.img && c.otherId){
+            try { if (localStorage.getItem('avatar_'+c.otherId)) missingAvatar++; } catch(e){}
+          }
+        });
+        if((staleName > 0 && staleName >= parsed.length/2) || (missingAvatar > 0 && missingAvatar >= parsed.length/2)){
           try{localStorage.removeItem('convos_'+myId);}catch(e){}
           return [];
         }
+        // Hydrate missing avatars from per-user localStorage cache
+        parsed = parsed.map(function(c){
+          if(!c.img && c.otherId){
+            try { var av = localStorage.getItem('avatar_'+c.otherId); if(av) c.img = av; } catch(e){}
+          }
+          return c;
+        });
         return parsed;
       }
     }catch(e){}
@@ -844,15 +886,22 @@ export default function MessagesScreen(props){
         if(pr.data) pr.data.forEach(function(p){profileMap[p.id]=p;});
         var enriched = convList.map(function(c){
           var prof = profileMap[c.otherId]||{};
-          // Robust name fallback: full_name → email prefix → sender_name from message → 'User'
-          // RLS often blocks profiles.email for other users, but sender_name is always
-          // available from our own messages table. So prefer full_name → sender_name → email.
+          // Name fallback: full_name → sender_name (from messages) → email → 'User'
           var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
           var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
           var displayName = (prof.full_name && prof.full_name.trim()) || (senderPrefix && senderPrefix.trim()) || (emailPrefix && emailPrefix.trim()) || 'User';
+          // Avatar fallback: DB avatar_url → previously-cached avatar for this user in localStorage.
+          // We cache other users' avatars under `avatar_<userId>` so subsequent loads still show
+          // their photo even if RLS blocks avatar_url or the column comes back null.
+          var dbAvatar = prof.avatar_url || null;
+          var cachedAvatar = null;
+          try { cachedAvatar = localStorage.getItem('avatar_'+c.otherId); } catch(e){}
+          var finalAvatar = dbAvatar || cachedAvatar || null;
+          // Refresh the cache when DB has a newer URL
+          if (dbAvatar) { try { localStorage.setItem('avatar_'+c.otherId, dbAvatar); } catch(e){} }
           return Object.assign({},c,{
             name: displayName,
-            img: prof.avatar_url||null,
+            img: finalAvatar,
             isOnline: prof.is_online||false,
             color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
             initials: displayName.substring(0,2).toUpperCase(),
@@ -936,12 +985,16 @@ export default function MessagesScreen(props){
         if(pr.data) pr.data.forEach(function(p){profileMap[p.id]=p;});
         var enriched=convList.map(function(c){
           var prof=profileMap[c.otherId]||{};
-          // RLS often blocks profiles.email for other users, but sender_name is always
-          // available from our own messages table. So prefer full_name → sender_name → email.
           var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
           var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
           var displayName = (prof.full_name && prof.full_name.trim()) || (senderPrefix && senderPrefix.trim()) || (emailPrefix && emailPrefix.trim()) || 'User';
-          return Object.assign({},c,{name:displayName,img:prof.avatar_url||null,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:displayName.substring(0,2).toUpperCase(),receiverId:c.otherId});
+          // Avatar fallback to localStorage cache; refresh cache when DB has the URL
+          var dbAvatar = prof.avatar_url || null;
+          var cachedAvatar = null;
+          try { cachedAvatar = localStorage.getItem('avatar_'+c.otherId); } catch(e){}
+          var finalAvatar = dbAvatar || cachedAvatar || null;
+          if (dbAvatar) { try { localStorage.setItem('avatar_'+c.otherId, dbAvatar); } catch(e){} }
+          return Object.assign({},c,{name:displayName,img:finalAvatar,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:displayName.substring(0,2).toUpperCase(),receiverId:c.otherId});
         });
         setUserConvos(enriched);
         try{localStorage.setItem('convos_'+myId,JSON.stringify(enriched));}catch(e){}
@@ -956,13 +1009,18 @@ export default function MessagesScreen(props){
   function startConvo(user){
     var convId = [myId,user.id].sort().join('_');
     var _userEmailPrefix = user.email && user.email.indexOf('@')>=0 ? user.email.split('@')[0] : (user.email||'User');
+    // Avatar: prefer fresh, fall back to localStorage cache, persist when fresh
+    var _dbAvatar = user.avatar_url || null;
+    var _cachedAvatar = null;
+    try { _cachedAvatar = localStorage.getItem('avatar_'+user.id); } catch(e){}
+    if (_dbAvatar) { try { localStorage.setItem('avatar_'+user.id, _dbAvatar); } catch(e){} }
     var convo = {
       id:convId, convId:convId,
       name:user.full_name||_userEmailPrefix||'User',
       role:user.is_online?'Online':'Member',
       isOnline:user.is_online,
       color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-      img:user.avatar_url||null,
+      img:_dbAvatar || _cachedAvatar || null,
       initials:(user.full_name||user.email||'?').substring(0,2).toUpperCase(),
       receiverId:user.id,
     };
