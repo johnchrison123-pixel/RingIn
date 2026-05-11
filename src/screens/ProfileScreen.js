@@ -467,6 +467,34 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       });
     }
     if(savedCover) setCoverUrl(savedCover);
+
+    // Sync notif/sound prefs from profile.bio.notif_prefs (cross-device)
+    sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r){
+      if(!r.data||!r.data.bio) return;
+      var bioJson={};
+      try{bioJson=JSON.parse(r.data.bio);}catch(e){}
+      if(bioJson.notif_prefs){
+        var p=bioJson.notif_prefs;
+        // Support both unified (website) and legacy (mobile) key names
+        function pick(unified, legacy){
+          if(p[unified]!==undefined) return p[unified];
+          if(p[legacy]!==undefined) return p[legacy];
+          return undefined;
+        }
+        var v;
+        v=pick('likes','notif_likes'); if(v!==undefined){setNotifLikes(v); try{localStorage.setItem('notif_likes',v?'1':'0');}catch(e){}}
+        v=pick('comments','notif_comments'); if(v!==undefined){setNotifComments(v); try{localStorage.setItem('notif_comments',v?'1':'0');}catch(e){}}
+        v=pick('follows','notif_follows'); if(v!==undefined){setNotifFollows(v); try{localStorage.setItem('notif_follows',v?'1':'0');}catch(e){}}
+        v=pick('calls','notif_calls'); if(v!==undefined){setNotifCalls(v); try{localStorage.setItem('notif_calls',v?'1':'0');}catch(e){}}
+        v=pick('messages','notif_msgs'); if(v!==undefined){setNotifMsgs(v); try{localStorage.setItem('notif_msgs',v?'1':'0');}catch(e){}}
+        v=pick('workshops','notif_workshops'); if(v!==undefined){setNotifWorkshops(v); try{localStorage.setItem('notif_workshops',v?'1':'0');}catch(e){}}
+        v=pick('promotions','notif_promo'); if(v!==undefined){setNotifPromo(v); try{localStorage.setItem('notif_promo',v?'1':'0');}catch(e){}}
+      }
+      if(bioJson.sound_prefs){
+        setSoundPrefs(bioJson.sound_prefs);
+        try{localStorage.setItem('ringin_sound_prefs',JSON.stringify(bioJson.sound_prefs));}catch(e){}
+      }
+    });
   },[userId]);
 
   // Activity log: fetch + realtime
@@ -935,8 +963,25 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         onClick:function(){
           try{localStorage.setItem('acct_name',acctName);localStorage.setItem('acct_tag',acctTag);localStorage.setItem('acct_country',acctCountry);localStorage.setItem('acct_phone_code',acctPhoneCode);localStorage.setItem('acct_phone',acctPhone);}catch(e){}
           if(userId){
-            var newBio=JSON.stringify({about:profileInfo.about||'',tag:acctTag,website_name:profileInfo.website_name||'',website_url:profileInfo.website_url||''});
-            sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [saveAll]:', r.error);});
+            // Re-fetch latest bio first, MERGE, then write — prevents clobbering other settings
+            sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r){
+              var bioJson={};
+              try{bioJson=JSON.parse((r.data&&r.data.bio)||'{}');}catch(e){}
+              // Merge existing fields with new account settings
+              bioJson.about = profileInfo.about || bioJson.about || '';
+              bioJson.tag = acctTag;
+              bioJson.website_name = profileInfo.website_name || bioJson.website_name || '';
+              bioJson.website_url = profileInfo.website_url || bioJson.website_url || '';
+              // ALSO persist country / phone to location JSON (cross-device sync)
+              bioJson.location = Object.assign({}, bioJson.location || {}, {
+                country_name: acctCountry,
+                dial: acctPhoneCode,
+                phone: acctPhone,
+              });
+              sbProfile.from('profiles').update({full_name:acctName,bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(r2){
+                if(r2.error)console.error('RingIn Error [saveAll]:', r2.error);
+              });
+            });
           }
           setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
         },
@@ -1014,7 +1059,25 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},row.sub)
             ),
             React.createElement('button',{
-              onClick:function(){var n=!row.val;row.set(n);try{localStorage.setItem(row.key,n?'1':'0');}catch(e){}},
+              onClick:function(){
+                var n=!row.val;
+                row.set(n);
+                try{localStorage.setItem(row.key,n?'1':'0');}catch(e){}
+                // Persist to profiles.bio.notif_prefs JSON — MERGE not replace, and use unified key naming
+                if(userId){
+                  // Map mobile keys (notif_likes) to unified key (likes) to match website
+                  var unifiedKey = row.key.replace(/^notif_/,'');
+                  sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r){
+                    var bioJson={};
+                    try{bioJson=JSON.parse((r.data&&r.data.bio)||'{}');}catch(e){}
+                    if(!bioJson.notif_prefs) bioJson.notif_prefs={};
+                    // Write both unified and legacy keys for backward compatibility
+                    bioJson.notif_prefs[unifiedKey]=n;
+                    bioJson.notif_prefs[row.key]=n;
+                    sbProfile.from('profiles').update({bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(){});
+                  });
+                }
+              },
               style:{width:'46px',height:'26px',borderRadius:'13px',background:row.val?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
             },
               React.createElement('div',{style:{position:'absolute',top:'3px',left:row.val?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
@@ -1218,6 +1281,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         var next=Object.assign({},prev);
         next[type]=Object.assign({},prev[type],{[key]:val});
         saveSoundPrefs(next);
+        // Also persist to profiles.bio.sound_prefs for cross-device sync (merge, not replace)
+        if(userId){
+          sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r){
+            var bioJson={};
+            try{bioJson=JSON.parse((r.data&&r.data.bio)||'{}');}catch(e){}
+            bioJson.sound_prefs = next;
+            sbProfile.from('profiles').update({bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(){});
+          });
+        }
         return next;
       });
     }

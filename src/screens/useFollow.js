@@ -2,6 +2,8 @@
 import {useState, useEffect} from 'react';
 import {sb as _sb} from '../utils/supabase';
 
+var FOLLOWS_EVENT = 'ringin-follows-changed';
+
 export function useFollow(supabase, currentUserId){
   var sb = supabase || _sb;
   // Load from localStorage instantly - no flash
@@ -11,8 +13,8 @@ export function useFollow(supabase, currentUserId){
     if(cached) initial = JSON.parse(cached);
   }catch(e){}
 
-  var followingS = useState(initial); 
-  var following = followingS[0]; 
+  var followingS = useState(initial);
+  var following = followingS[0];
   var setFollowing = followingS[1];
   var loadedS = useState(Object.keys(initial).length > 0);
   var loaded = loadedS[0];
@@ -31,7 +33,30 @@ export function useFollow(supabase, currentUserId){
         try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(map));}catch(e){}
       }
     });
+
+    // Listen to cross-instance follow events (sync between multiple useFollow consumers)
+    function handler(e){
+      if(!e.detail || e.detail.userId !== currentUserId) return;
+      setFollowing(function(prev){
+        var next = Object.assign({}, prev);
+        if(e.detail.isFollowing) next[e.detail.targetId] = true;
+        else delete next[e.detail.targetId];
+        try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(next));}catch(err){}
+        return next;
+      });
+    }
+    if(typeof window !== 'undefined') window.addEventListener(FOLLOWS_EVENT, handler);
+    return function(){
+      if(typeof window !== 'undefined') window.removeEventListener(FOLLOWS_EVENT, handler);
+    };
   },[currentUserId]);
+
+  function broadcast(targetId, isFollowing){
+    if(typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent(FOLLOWS_EVENT, {
+      detail: {userId: currentUserId, targetId: targetId, isFollowing: isFollowing},
+    }));
+  }
 
   function toggleFollow(targetId, targetName, targetAvatar, targetRole){
     if(!currentUserId){alert('Please log in to follow');return;}
@@ -43,12 +68,14 @@ export function useFollow(supabase, currentUserId){
       delete newMap[tid];
       setFollowing(newMap);
       try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap));}catch(e){}
+      broadcast(tid, false);
       sb.from('follows').delete().eq('follower_id',currentUserId).eq('following_id',tid).then(function(r){
         if(r.error){
           console.error('RingIn Error [unfollow]:', r.error);
           // Rollback
           setFollowing(snapUnfollow);
           try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapUnfollow));}catch(e){}
+          broadcast(tid, true); // re-broadcast revert
         }
       });
     } else {
@@ -57,6 +84,7 @@ export function useFollow(supabase, currentUserId){
       var newMap2 = Object.assign({},following,{[tid]:true});
       setFollowing(newMap2);
       try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap2));}catch(e){}
+      broadcast(tid, true);
       sb.from('follows').insert({
         follower_id: currentUserId,
         following_id: tid,
@@ -69,6 +97,7 @@ export function useFollow(supabase, currentUserId){
           // Rollback
           setFollowing(snapFollow);
           try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapFollow));}catch(e){}
+          broadcast(tid, false); // re-broadcast revert
         }
       });
     }

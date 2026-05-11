@@ -8,6 +8,8 @@ import WalletScreen from './screens/WalletScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import WorkshopsScreen from './screens/WorkshopsScreen';
 import MessagesScreen from './screens/MessagesScreen';
+import SavedPostsScreen from './screens/SavedPostsScreen';
+import AnonymousConnect from './screens/AnonymousConnect';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
@@ -37,13 +39,15 @@ export default function App() {
 
   useEffect(function() {
     supabase.auth.getSession().then(function(res) { setSession(res.data.session); });
-    supabase.auth.onAuthStateChange(function(_event, session) {
+    var sub = supabase.auth.onAuthStateChange(function(_event, session) {
       setSession(session);
       if(session && session.user){
+        var email = session.user.email || '';
+        var emailPrefix = email.indexOf('@') > 0 ? email.split('@')[0] : 'user';
         supabase.from('profiles').upsert({
           id: session.user.id,
-          email: session.user.email,
-          full_name: session.user.email.split('@')[0],
+          email: email,
+          full_name: emailPrefix,
           is_online: true,
           last_seen: new Date().toISOString()
         },{onConflict:'id'}).then(function(){});
@@ -53,14 +57,26 @@ export default function App() {
             try{ playSound('notification'); }catch(e){}
           }
         });
-        // Set offline when window closes
-        window.onbeforeunload = function(){
-          supabase.from('profiles').update({is_online:false,last_seen:new Date().toISOString()}).eq('id',session.user.id).then(function(){});
-        };
-      } else {
-        window.onbeforeunload = null;
       }
     });
+    // Use visibilitychange + pagehide instead of onbeforeunload (mobile-friendly)
+    function markOffline(){
+      var s = sub && sub.data && sub.data.session;
+      try{
+        var sess = supabase.auth.getSession();
+        if(sess && sess.then){ sess.then(function(r){
+          if(r.data && r.data.session && r.data.session.user){
+            supabase.from('profiles').update({is_online:false,last_seen:new Date().toISOString()}).eq('id',r.data.session.user.id).then(function(){});
+          }
+        });}
+      }catch(e){}
+    }
+    window.addEventListener('pagehide', markOffline);
+    window.addEventListener('visibilitychange', function(){if(document.visibilityState==='hidden')markOffline();});
+    return function() {
+      if(sub && sub.data && sub.data.subscription) sub.data.subscription.unsubscribe();
+      window.removeEventListener('pagehide', markOffline);
+    };
   }, []);
 
   // ── Global message badge listener — always active regardless of tab ──
@@ -155,12 +171,14 @@ export default function App() {
       onViewUser:pushViewUser,
       onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUserStack([]);}
     });
-    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
+    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {onOpenWallet:openWallet});
     if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages-'+msgResetKey, session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onOpenWallet:openWallet, onUnreadCount:setUnreadMsg});
     if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUserStack([u]);}});
-    if (activeTab === 'wallet') return React.createElement(WalletScreen, {onBack:function(){setActiveTab(prevTab);}});
+    if (activeTab === 'wallet') return React.createElement(WalletScreen, {session:session, onBack:function(){setActiveTab(prevTab);}});
+    if (activeTab === 'saved') return React.createElement(SavedPostsScreen, {session:session, onBack:function(){setActiveTab(prevTab);}, onViewUser:pushViewUser});
+    if (activeTab === 'connect') return React.createElement(AnonymousConnect, {session:session, onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
   }
 
@@ -169,8 +187,11 @@ export default function App() {
     {id:'search', label:'Experts', svg:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'},
     {id:'workshops', label:'Workshops', svg:'M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'},
     {id:'messages', label:'Messages', svg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
-    {id:'profile', label:'Profile', svg:'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z'},
   ];
+
+  // Avatar for top bar (cached from localStorage)
+  var avatarTopUrl = appUserId ? (localStorage.getItem('avatar_'+appUserId) || null) : null;
+  var avatarInitial = session && session.user && session.user.email ? session.user.email.charAt(0).toUpperCase() : 'U';
 
   return React.createElement('div', {
     className:'app-container',
@@ -192,13 +213,112 @@ export default function App() {
         else if(activeTab==='messages'){setActiveTab('home');}
         else if(activeTab==='workshops'){setActiveTab('home');}
         else if(activeTab==='profile'){setActiveTab('home');}
+        else if(activeTab==='saved'){setActiveTab(prevTab);}
+        else if(activeTab==='connect'){setActiveTab(prevTab);}
       }
     }
   },
+    // ========== TOP BAR ==========
+    // Only show top bar on main tabs (hide on internal screens like profile detail, settings)
+    (activeTab !== 'wallet' && activeTab !== 'saved' && activeTab !== 'connect') && React.createElement('div', {
+      className:'top-bar',
+      style:{
+        position:'sticky', top:0, zIndex:50, height:'52px',
+        background:'rgba(17,17,23,0.92)',
+        backdropFilter:'blur(14px)',
+        WebkitBackdropFilter:'blur(14px)',
+        borderBottom:'1px solid var(--border)',
+        display:'flex', alignItems:'center', justifyContent:'space-between',
+        padding:'0 14px', gap:'10px',
+      }
+    },
+      // RingIn brand
+      React.createElement('div', {
+        onClick:function(){setActiveTab('home');},
+        style:{
+          fontFamily:'Syne, sans-serif', fontSize:'20px', fontWeight:800, letterSpacing:'-0.4px',
+          background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+          WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
+          backgroundClip:'text', cursor:'pointer',
+        }
+      }, 'RingIn'),
+
+      // Right side: coin chip + bell + avatar
+      React.createElement('div', {style:{display:'flex', alignItems:'center', gap:'8px'}},
+        // Coin chip
+        React.createElement('button', {
+          onClick:function(){setPrevTab(activeTab);setActiveTab('wallet');},
+          style:{
+            display:'flex', alignItems:'center', gap:'5px',
+            background:'var(--bg3)', border:'1px solid var(--border)',
+            borderRadius:'20px', padding:'5px 10px',
+            cursor:'pointer', color:'var(--text)', fontSize:'12px', fontWeight:600,
+          },
+          title:'Wallet',
+        },
+          React.createElement('span', {
+            style:{
+              width:'16px', height:'16px', borderRadius:'50%',
+              background:'linear-gradient(135deg,#F5A623,#f97316)',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:'8px', fontWeight:800, color:'#fff',
+            }
+          }, 'C'),
+          'Wallet'
+        ),
+
+        // Notification bell
+        React.createElement('button', {
+          onClick:function(){
+            // Show inline notifications panel via HomeScreen, or scroll to top
+            setActiveTab('home');
+          },
+          style:{
+            position:'relative', width:'34px', height:'34px', borderRadius:'50%',
+            background:'var(--bg3)', border:'1px solid var(--border)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            cursor:'pointer', color:'var(--text)',
+          },
+          title:'Notifications',
+        },
+          React.createElement('svg', {viewBox:'0 0 24 24', width:'16', height:'16', fill:'none', stroke:'currentColor', strokeWidth:2},
+            React.createElement('path', {d:'M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9'}),
+            React.createElement('path', {d:'M13.73 21a2 2 0 01-3.46 0'})
+          ),
+          unreadMsg > 0 && React.createElement('span', {
+            style:{
+              position:'absolute', top:'-2px', right:'-2px',
+              background:'#FF4757', borderRadius:'10px',
+              minWidth:'14px', height:'14px',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:'9px', fontWeight:700, color:'#fff', padding:'0 3px',
+            }
+          }, unreadMsg > 9 ? '9+' : String(unreadMsg))
+        ),
+
+        // Avatar → opens Profile
+        React.createElement('button', {
+          onClick:function(){setPrevTab(activeTab);setActiveTab('profile');},
+          style:{
+            width:'34px', height:'34px', borderRadius:'50%',
+            background:'var(--ac)', border:'2px solid '+(activeTab==='profile'?'var(--ac)':'var(--border)'),
+            overflow:'hidden', cursor:'pointer', padding:0,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            color:'#fff', fontWeight:700, fontSize:'13px',
+          },
+          title:'Profile',
+        },
+          avatarTopUrl
+            ? React.createElement('img', {src:avatarTopUrl, alt:'profile', style:{width:'100%', height:'100%', objectFit:'cover'}})
+            : avatarInitial
+        )
+      )
+    ),
+
     React.createElement('div', {className:'screen-content'}, renderScreen()),
     React.createElement('nav', {className:'bottom-nav'},
-      tabs.map(function(tab) {
-        return React.createElement('button', {
+      tabs.map(function(tab, idx) {
+        var btn = React.createElement('button', {
           key:tab.id,
           className:'nav-tab '+(activeTab===tab.id?'active':''),
           onClick:function(){
@@ -206,7 +326,6 @@ export default function App() {
               setMsgResetKey(function(k){return k+1;});
             }
             if(tab.id==='messages'){
-              // Clear badge when opening Messages tab
               setUnreadMsg(0);
             }
             setActiveTab(tab.id);
@@ -226,6 +345,29 @@ export default function App() {
           ),
           React.createElement('span', null, tab.label)
         );
+        // Insert anonymous connect orb after Experts (search)
+        if (tab.id === 'search') {
+          var orb = React.createElement('button', {
+            key:'connect-orb',
+            onClick:function(){setPrevTab(activeTab);setActiveTab('connect');},
+            style:{
+              width:'40px',height:'40px',borderRadius:'50%',
+              background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+              border:'none',cursor:'pointer',position:'relative',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              boxShadow:activeTab==='connect'?'0 0 0 3px rgba(123,110,255,0.4),0 4px 14px rgba(232,77,154,0.5)':'0 3px 10px rgba(232,77,154,0.4)',
+              flexShrink:0,margin:'0 2px',
+            },
+            title:'Anonymous Connect',
+          },
+            React.createElement('svg',{viewBox:'0 0 24 24',width:18,height:18,fill:'none',stroke:'#fff',strokeWidth:2.4},
+              React.createElement('path',{d:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z'})
+            ),
+            React.createElement('span',{style:{position:'absolute',top:'2px',right:'2px',width:'8px',height:'8px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
+          );
+          return [btn, orb];
+        }
+        return btn;
       })
     )
   );
