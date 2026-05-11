@@ -3,6 +3,7 @@ import React,{useState,useEffect,useRef} from 'react';
 import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
+import TopBarAvatar from '../components/TopBarAvatar';
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -83,7 +84,13 @@ function HeartSvg(props){
 
 function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   var myId = session&&session.user ? session.user.id : 'guest';
-  var myName = session&&session.user ? session.user.email.split('@')[0] : 'You';
+  // Prefer the user's chosen full_name (from profile cache) over the email prefix.
+  // This is the sender_name stamped onto every outgoing message — it's what the
+  // other person will see in their inbox preview.
+  var _cachedProfileName = null;
+  try { if(myId && myId !== 'guest'){ var _pi = localStorage.getItem('profile_info_'+myId); if(_pi){ var _pj = JSON.parse(_pi); if(_pj && _pj.name) _cachedProfileName = _pj.name; } } } catch(e){}
+  var _safeEmailPrefix = session&&session.user&&session.user.email ? (session.user.email.split('@')[0] || 'user') : 'user';
+  var myName = _cachedProfileName || (session&&session.user ? _safeEmailPrefix : 'You');
   var convId = convo.convId || convo.id;
   var initMsgs = [];
   try{ var cm=localStorage.getItem('msgs_'+convId); if(cm) initMsgs=JSON.parse(cm); }catch(e){}
@@ -371,7 +378,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
     // ── Header ──
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
-        React.createElement('button',{onClick:onBack,style:{background:'none',border:'none',color:'var(--ac)',fontSize:'20px',cursor:'pointer'}},'←'),
+        React.createElement('button',{onClick:onBack,title:'Back',style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},
+          React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+            React.createElement('polyline',{points:'15 18 9 12 15 6'})
+          )
+        ),
         React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
           convo.img?React.createElement('img',{src:convo.img,alt:convo.name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(convo.name||'?').substring(0,2).toUpperCase())
         ),
@@ -834,9 +845,11 @@ export default function MessagesScreen(props){
         var enriched = convList.map(function(c){
           var prof = profileMap[c.otherId]||{};
           // Robust name fallback: full_name → email prefix → sender_name from message → 'User'
-          var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
+          // RLS often blocks profiles.email for other users, but sender_name is always
+          // available from our own messages table. So prefer full_name → sender_name → email.
           var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
-          var displayName = (prof.full_name && prof.full_name.trim()) || (emailPrefix && emailPrefix.trim()) || (senderPrefix && senderPrefix.trim()) || 'User';
+          var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
+          var displayName = (prof.full_name && prof.full_name.trim()) || (senderPrefix && senderPrefix.trim()) || (emailPrefix && emailPrefix.trim()) || 'User';
           return Object.assign({},c,{
             name: displayName,
             img: prof.avatar_url||null,
@@ -923,9 +936,11 @@ export default function MessagesScreen(props){
         if(pr.data) pr.data.forEach(function(p){profileMap[p.id]=p;});
         var enriched=convList.map(function(c){
           var prof=profileMap[c.otherId]||{};
-          var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
+          // RLS often blocks profiles.email for other users, but sender_name is always
+          // available from our own messages table. So prefer full_name → sender_name → email.
           var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
-          var displayName = (prof.full_name && prof.full_name.trim()) || (emailPrefix && emailPrefix.trim()) || (senderPrefix && senderPrefix.trim()) || 'User';
+          var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
+          var displayName = (prof.full_name && prof.full_name.trim()) || (senderPrefix && senderPrefix.trim()) || (emailPrefix && emailPrefix.trim()) || 'User';
           return Object.assign({},c,{name:displayName,img:prof.avatar_url||null,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:displayName.substring(0,2).toUpperCase(),receiverId:c.otherId});
         });
         setUserConvos(enriched);
@@ -940,9 +955,10 @@ export default function MessagesScreen(props){
 
   function startConvo(user){
     var convId = [myId,user.id].sort().join('_');
+    var _userEmailPrefix = user.email && user.email.indexOf('@')>=0 ? user.email.split('@')[0] : (user.email||'User');
     var convo = {
       id:convId, convId:convId,
-      name:user.full_name||user.email.split('@')[0],
+      name:user.full_name||_userEmailPrefix||'User',
       role:user.is_online?'Online':'Member',
       isOnline:user.is_online,
       color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
@@ -1005,16 +1021,10 @@ export default function MessagesScreen(props){
           React.createElement('span',null,'1,240')
         ),
         React.createElement('button',{onClick:function(){setShowNew(!showNew);},title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
-        (function(){
-          var uid = props.session && props.session.user ? props.session.user.id : null;
-          var av = uid ? (function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})() : null;
-          var init = props.session && props.session.user && props.session.user.email ? props.session.user.email.charAt(0).toUpperCase() : 'U';
-          return React.createElement('button',{
-            onClick:function(){if(props.onOpenProfile)props.onOpenProfile();},
-            title:'Profile',
-            style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px'}
-          }, av ? React.createElement('img',{src:av,alt:'profile',style:{width:'100%',height:'100%',objectFit:'cover'}}) : init);
-        })()
+        React.createElement(TopBarAvatar, {
+          session: props.session,
+          onClick: function(){ if(props.onOpenProfile) props.onOpenProfile(); },
+        })
       )
     ),
     pullDist>20||refreshing ? React.createElement('div',{style:{textAlign:'center',padding:'8px',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}},

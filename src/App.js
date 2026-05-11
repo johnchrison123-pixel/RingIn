@@ -45,13 +45,21 @@ export default function App() {
       if(session && session.user){
         var email = session.user.email || '';
         var emailPrefix = email.indexOf('@') > 0 ? email.split('@')[0] : 'user';
-        supabase.from('profiles').upsert({
-          id: session.user.id,
-          email: email,
-          full_name: emailPrefix,
-          is_online: true,
-          last_seen: new Date().toISOString()
-        },{onConflict:'id'}).then(function(){});
+        // CRITICAL: do NOT overwrite full_name on every session. Check if profile exists
+        // first; only set full_name on initial insert. This protects custom names users
+        // set via Edit Profile from being wiped on every login.
+        supabase.from('profiles').select('full_name').eq('id',session.user.id).single().then(function(r){
+          var exists = !!(r && r.data);
+          var payload = {
+            id: session.user.id,
+            email: email,
+            is_online: true,
+            last_seen: new Date().toISOString(),
+          };
+          // Only seed full_name if no row yet OR existing row has no name
+          if(!exists || !r.data.full_name){ payload.full_name = emailPrefix; }
+          supabase.from('profiles').upsert(payload,{onConflict:'id'}).then(function(){});
+        });
         // Initialize push notifications
         initPushNotifications(session.user.id, function(payload){
           if(payload && payload.notification){

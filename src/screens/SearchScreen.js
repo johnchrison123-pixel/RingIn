@@ -4,6 +4,7 @@ import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {useFollow} from './useFollow';
 import {playSound} from '../utils/soundEngine';
+import TopBarAvatar from '../components/TopBarAvatar';
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
@@ -101,16 +102,10 @@ export default function SearchScreen(props){
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
           React.createElement('span',null,'1,240')
         ),
-        (function(){
-          var uid = props.session && props.session.user ? props.session.user.id : null;
-          var av = uid ? (function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})() : null;
-          var init = props.session && props.session.user && props.session.user.email ? props.session.user.email.charAt(0).toUpperCase() : 'U';
-          return React.createElement('button',{
-            onClick:function(){if(props.onOpenProfile)props.onOpenProfile();},
-            title:'Profile',
-            style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px'}
-          }, av ? React.createElement('img',{src:av,alt:'profile',style:{width:'100%',height:'100%',objectFit:'cover'}}) : init);
-        })()
+        React.createElement(TopBarAvatar, {
+          session: props.session,
+          onClick: function(){ if(props.onOpenProfile) props.onOpenProfile(); },
+        })
       )
     ),
     React.createElement('div',{style:{padding:'0 18px 8px'}},

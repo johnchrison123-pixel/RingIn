@@ -6,6 +6,7 @@ import '../styles/HomeScreen.css';
 import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
 import {playSound,playUnlikeSound} from '../utils/soundEngine';
+import TopBarAvatar from '../components/TopBarAvatar';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -155,7 +156,7 @@ export function UserProfileView(props){
 
   function submitCommentU(postId,text){
     if(!text.trim()||!currentUserId) return;
-    var userName=session&&session.user?session.user.email.split('@')[0]:'User';
+    var userName=session&&session.user?((session.user.email||'user').split('@')[0]||'user'):'User';
     var userAvatar=currentUserId?localStorage.getItem('avatar_'+currentUserId):null;
     var newComment={
       id:Date.now()+'_local',
@@ -530,7 +531,7 @@ export function UserProfileView(props){
             ),
             React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
               React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user?session.user.email.substring(0,2).toUpperCase():'?')
+                currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user&&session.user.email?session.user.email.substring(0,2).toUpperCase():'?')
               ),
               React.createElement('input',{
                 value:commentInputU,
@@ -553,7 +554,22 @@ export function UserProfileView(props){
 
 export default function HomeScreen(props){
   var acState = useState('all');
-  var _cachedPosts=[];try{var _c=localStorage.getItem('feed_posts_cache');if(_c)_cachedPosts=JSON.parse(_c);}catch(e){}
+  // Load cached feed but drop it if names look stale ("User"/empty) — those entries
+  // were written before the name fix and would persist forever otherwise.
+  var _cachedPosts=[];
+  try{
+    var _c=localStorage.getItem('feed_posts_cache');
+    if(_c){
+      var _parsed = JSON.parse(_c);
+      var _stale = _parsed.filter(function(p){return !p.name||p.name==='User'||p.name==='';}).length;
+      if(_stale > 0 && _stale >= _parsed.length/2){
+        try{localStorage.removeItem('feed_posts_cache');}catch(e){}
+        _cachedPosts = [];
+      } else {
+        _cachedPosts = _parsed;
+      }
+    }
+  }catch(e){}
   var postsS=useState(_cachedPosts.length>0?_cachedPosts:[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',time:'2m ago',text:'Fever above 38.5C for more than 3 days needs medical attention. Stay hydrated and consult a doctor.',tags:['Health','Medical'],likes:47,comments:12,rate:120,expertId:1,img:'https://i.pravatar.cc/150?img=47',postImg:'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',time:'15m ago',text:'The best code is code you do not write. Simplicity is the ultimate sophistication in engineering.',tags:['Tech','Engineering'],likes:93,comments:28,rate:80,expertId:2,img:'https://i.pravatar.cc/150?img=12',postImg:'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&q=80'}]);
   var posts=postsS[0]; var setPosts=postsS[1];
 
@@ -571,7 +587,7 @@ export default function HomeScreen(props){
   var mutedPosts=mutedPostsS[0]; var setMutedPosts=mutedPostsS[1];
 
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
-  var currentUserName = props.session&&props.session.user ? props.session.user.email.split('@')[0] : null;
+  var currentUserName = props.session&&props.session.user ? ((props.session.user.email||'').split('@')[0] || null) : null;
   var currentUserAvatar = currentUserId ? localStorage.getItem('avatar_'+currentUserId) : null;
 
   function loadComments(postId){
@@ -660,7 +676,7 @@ export default function HomeScreen(props){
   function toggleLike(pid){
     var session = props.session;
     var userId = session&&session.user ? session.user.id : null;
-    var userName = session&&session.user ? session.user.email.split("@")[0] : "Someone";
+    var userName = session&&session.user ? ((session.user.email||'someone').split("@")[0]||'someone') : "Someone";
     var userAvatar = userId ? localStorage.getItem("avatar_"+userId) : null;
     if(!userId) return;
     if(typeof pid !== "string") return;
@@ -1137,9 +1153,17 @@ export default function HomeScreen(props){
         }
         var allTags = manualTags.concat(autoTags.filter(function(t){return manualTags.indexOf(t)<0;}));
 
+        // Use the user's chosen full_name from profile, NOT the email prefix.
+        // Fall back to email prefix only when no full_name is set.
+        var myProfileName = null;
+        try {
+          var pi = localStorage.getItem('profile_info_'+session.user.id);
+          if(pi){ var pj=JSON.parse(pi); if(pj && pj.name) myProfileName = pj.name; }
+        } catch(e){}
+        var safeEmail = (session.user.email||'user').split('@')[0] || 'user';
         var postData = {
           user_id: session.user.id,
-          user_name: session.user.email.split('@')[0],
+          user_name: myProfileName || safeEmail,
           user_avatar: localStorage.getItem('avatar_'+session.user.id)||null,
           text: compText,
           images: compImgs,
@@ -1423,17 +1447,11 @@ export default function HomeScreen(props){
           ),
           unreadNotif>0 ? React.createElement('div', {className:'nd', style:{background:'#ef4444',minWidth:'14px',height:'14px',borderRadius:'7px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',top:'3px',right:'3px',padding:'0 2px'}}, unreadNotif>9?'9+':String(unreadNotif)) : null
         ),
-        // Avatar → Profile
-        (function(){
-          var uid=props.session&&props.session.user?props.session.user.id:null;
-          var av=uid?(function(){try{return localStorage.getItem('avatar_'+uid);}catch(e){return null;}})():null;
-          var init=props.session&&props.session.user&&props.session.user.email?props.session.user.email.charAt(0).toUpperCase():'U';
-          return React.createElement('button', {
-            onClick:function(){if(props.onOpenProfile)props.onOpenProfile();else if(props.onGoToProfile)props.onGoToProfile();},
-            style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'1px solid var(--border)',padding:0,overflow:'hidden',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px',marginLeft:'4px'},
-            title:'Profile',
-          }, av ? React.createElement('img',{src:av,alt:'profile',style:{width:'100%',height:'100%',objectFit:'cover'}}) : init);
-        })()
+        // Avatar → Profile (centralized component with DB fallback + cross-screen sync)
+        React.createElement(TopBarAvatar, {
+          session: props.session,
+          onClick: function(){ if(props.onOpenProfile) props.onOpenProfile(); else if(props.onGoToProfile) props.onGoToProfile(); },
+        })
       )
     ),
     showNotifs ? React.createElement('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999}},
@@ -1601,7 +1619,7 @@ export default function HomeScreen(props){
         },
           props.session&&props.session.user&&localStorage.getItem('avatar_'+props.session.user.id) ?
             React.createElement('img',{src:localStorage.getItem('avatar_'+props.session.user.id),style:{width:'100%',height:'100%',objectFit:'cover'}}) :
-            (props.session&&props.session.user ? props.session.user.email.substring(0,2).toUpperCase() : 'Y')
+            (props.session&&props.session.user&&props.session.user.email ? props.session.user.email.substring(0,2).toUpperCase() : 'Y')
         ),
         showComp ?
           React.createElement('textarea', {

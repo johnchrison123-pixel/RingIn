@@ -623,7 +623,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           setAvatarUrl(url);
           localStorage.setItem('avatar_'+userId,url);
           var userEmail = (session&&session.user)?session.user.email:email;
-          supabase.from('profiles').upsert({id:userId,avatar_url:url,email:userEmail,full_name:userEmail.split('@')[0]},{onConflict:'id'}).then(function(r){console.log('avatar saved to profiles',r);});
+          // CRITICAL: do NOT include full_name here — that would clobber the user's chosen name
+          // whenever they update their avatar. Use UPDATE so we don't accidentally create a row
+          // with missing fields; the row was already created by App.js auth listener.
+          supabase.from('profiles').update({avatar_url:url}).eq('id',userId).then(function(r){
+            if(r && r.error){ console.error('avatar save failed:', r.error.message); }
+          });
+          // Broadcast so other screens (topbars) refresh their avatar from localStorage
+          try{ window.dispatchEvent(new CustomEvent('ringin-avatar-changed', {detail:{userId:userId, url:url}})); }catch(e){}
           setUploading(false);
         });
       },'image/jpeg',0.9);
@@ -809,7 +816,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     var typeBorder={login:'#27C96A',post:'#7B6EFF',comment:'#E84D9A',follow:'#F5A623',message:'#5B4FD4'};
     return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-        React.createElement('button',{onClick:function(){setShowActivityLog(false);setActivityItems([]);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+        React.createElement('button',{onClick:function(){setShowActivityLog(false);setActivityItems([]);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
         React.createElement('div',{style:{flex:1}},
           React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Activity Log'),
           React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},'Your recent actions in real time')
@@ -846,7 +853,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   // ── SUPPORT SCREEN ──
   if(showSupport) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowSupport(false);setSupportSent(false);setSupportMsg('');},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowSupport(false);setSupportSent(false);setSupportMsg('');},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Help & Support')
     ),
     supportSent
@@ -902,7 +909,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   if(showAcct) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     // Header
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowAcct(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowAcct(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Account Settings')
     ),
     React.createElement('div',{style:{padding:'16px 18px',flex:1,overflowY:'auto'}},
@@ -1069,7 +1076,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   // ── NOTIFICATION SETTINGS SCREEN ──
   if(showNotif) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowNotif(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowNotif(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notification Settings')
     ),
     React.createElement('div',{style:{padding:'16px 18px'}},
@@ -1137,7 +1144,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   // ── PRIVACY SCREEN ──
   if(showPrivacy) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowPrivacy(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowPrivacy(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Privacy & Security')
     ),
     React.createElement('div',{style:{padding:'16px 18px'}},
@@ -1326,7 +1333,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     }
     return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-        React.createElement('button',{onClick:function(){setShowSound(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+        React.createElement('button',{onClick:function(){setShowSound(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
         React.createElement('div',null,
           React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Sound & Haptics'),
           React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Customize sounds for every action')
@@ -1414,7 +1421,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   if(showBlocked) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowBlocked(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowBlocked(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Blocked Users'),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'People you have blocked')
@@ -1451,7 +1458,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   if(showMuted) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowMuted(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowMuted(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Muted Words'),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Hide posts containing these words')
@@ -1517,7 +1524,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   if(showExpertApp) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
-      React.createElement('button',{onClick:function(){setShowExpertApp(false);setExpertAppSubmitted(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowExpertApp(false);setExpertAppSubmitted(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Apply to be an Expert'),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Share your knowledge and earn')
@@ -1595,7 +1602,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
 
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
-      React.createElement('button',{onClick:function(){setShowSettings(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'22px',cursor:'pointer'}},'←'),
+      React.createElement('button',{onClick:function(){setShowSettings(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
       React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Settings')
     ),
     React.createElement('div',{style:{padding:'14px 18px'}},
@@ -1868,7 +1875,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       },
         React.createElement('div',{style:{padding:'18px 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
           React.createElement('span',{style:{fontSize:'17px',fontWeight:700,color:'#fff'}},'Edit Profile'),
-          React.createElement('button',{onClick:function(){setShowEditProfile(false);},style:{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:'30px',height:'30px',color:'#fff',cursor:'pointer',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')
+          React.createElement('button',{onClick:function(){setShowEditProfile(false);},title:'Close',style:{background:'rgba(255,255,255,0.1)',border:'none',borderRadius:'50%',width:'30px',height:'30px',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}},
+            React.createElement('svg',{viewBox:'0 0 24 24',width:'16',height:'16',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+              React.createElement('polyline',{points:'15 18 9 12 15 6'})
+            )
+          )
         ),
         React.createElement('div',{style:{padding:'18px'}},
           // Display Name
