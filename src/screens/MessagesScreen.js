@@ -402,8 +402,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
   },
-    // ── Header ──
-    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between'}},
+    // ── Header — STICKY so it stays pinned when mobile keyboard opens and the scroll container shifts.
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'sticky',top:0,zIndex:20,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
         React.createElement('button',{onClick:onBack,title:'Back',style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},
           React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
