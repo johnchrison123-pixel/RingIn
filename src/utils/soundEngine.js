@@ -16,9 +16,24 @@ var DEFAULT_PREFS={
   notification:{variant:0,volume:0.55,enabled:true},
 };
 
+// Deep-merge stored prefs with DEFAULT_PREFS per-key so a partial save like
+// {like:{enabled:false}} doesn't accidentally wipe volume/variant for other keys
+// and doesn't strip the `enabled:true` defaults from untouched keys.
 export function getSoundPrefs(){
-  try{var s=localStorage.getItem('ringin_sound_prefs');if(s)return Object.assign({},DEFAULT_PREFS,JSON.parse(s));}catch(e){}
-  return Object.assign({},DEFAULT_PREFS);
+  var out = {};
+  try{
+    Object.keys(DEFAULT_PREFS).forEach(function(k){ out[k] = Object.assign({}, DEFAULT_PREFS[k]); });
+    var s = localStorage.getItem('ringin_sound_prefs');
+    if(s){
+      var parsed = JSON.parse(s) || {};
+      Object.keys(parsed).forEach(function(k){
+        if(parsed[k] && typeof parsed[k] === 'object'){
+          out[k] = Object.assign({}, out[k] || DEFAULT_PREFS[k] || {}, parsed[k]);
+        }
+      });
+    }
+  }catch(e){}
+  return out;
 }
 export function saveSoundPrefs(prefs){
   try{localStorage.setItem('ringin_sound_prefs',JSON.stringify(prefs));}catch(e){}
@@ -34,7 +49,20 @@ export function setHapticsEnabled(val){
 // Vibrate only if haptics pref is on and device supports it
 export function hapticPulse(pattern){
   if(!getHapticsEnabled())return;
-  try{if(navigator.vibrate)navigator.vibrate(pattern);}catch(e){}
+  try{if(typeof navigator!=='undefined' && navigator.vibrate)navigator.vibrate(pattern);}catch(e){}
+}
+// Force-vibrate (used by Settings "Test Haptic" button — ignores pref so user can verify hardware).
+// Returns true if the vibrate call was attempted, false if API unsupported (e.g. iOS Safari).
+export function forceHaptic(pattern){
+  try{
+    if(typeof navigator==='undefined' || !navigator.vibrate) return false;
+    navigator.vibrate(pattern || [40]);
+    return true;
+  }catch(e){ return false; }
+}
+// Detector for UI hint — true on Android Chrome / most non-iOS; false on iOS Safari / desktop browsers.
+export function isHapticSupported(){
+  try{ return !!(typeof navigator!=='undefined' && navigator.vibrate); }catch(e){ return false; }
 }
 
 // ─── TYPING ────────────────────────────────────────────────────────────────
@@ -311,9 +339,24 @@ export var SOUND_META={
 };
 
 export function previewSound(type,variant,vol){
+  // Ensure context is created AND resumed (resume() is idempotent and required after user-gesture)
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
   var ctx=getSCtx();if(!ctx)return;
   var fns=_TYPE_MAP[type];
   if(fns&&fns[variant]){try{fns[variant](ctx,vol!=null?vol:0.6);}catch(e){}}
+}
+
+// Always-play helper for the Settings "Test Sound" button — bypasses prefs entirely so the
+// user can verify their device actually plays audio even if their prefs have everything muted.
+// Returns true on attempt, false if AudioContext could not be acquired (e.g. browser blocked it).
+export function forceSound(type, variant){
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
+  var ctx=getSCtx();
+  if(!ctx) return false;
+  var fns=_TYPE_MAP[type||'notification'];
+  if(!fns) return false;
+  var v = (typeof variant==='number') ? variant : 0;
+  try{ fns[v](ctx, 0.7); return true; }catch(e){ return false; }
 }
 
 export function playSound(type){

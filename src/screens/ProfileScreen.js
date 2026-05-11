@@ -3,7 +3,7 @@ import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {sb as sbProfile} from '../utils/supabase';
 import {usePostsRealtime} from '../utils/usePostsRealtime';
-import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled} from '../utils/soundEngine';
+import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
 
 var COUNTRIES=[
   ['AF','Afghanistan','+93'],['AL','Albania','+355'],['DZ','Algeria','+213'],['AD','Andorra','+376'],['AO','Angola','+244'],
@@ -505,9 +505,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         v=pick('workshops','notif_workshops'); if(v!==undefined){setNotifWorkshops(v); try{localStorage.setItem('notif_workshops',v?'1':'0');}catch(e){}}
         v=pick('promotions','notif_promo'); if(v!==undefined){setNotifPromo(v); try{localStorage.setItem('notif_promo',v?'1':'0');}catch(e){}}
       }
-      if(bioJson.sound_prefs){
-        setSoundPrefs(bioJson.sound_prefs);
-        try{localStorage.setItem('ringin_sound_prefs',JSON.stringify(bioJson.sound_prefs));}catch(e){}
+      if(bioJson.sound_prefs && typeof bioJson.sound_prefs === 'object'){
+        // DEEP-MERGE: don't wholesale replace. If the server has partial data (e.g. only
+        // {like:{enabled:false}}), shallow-replace would lose all other keys' defaults and
+        // disable every sound. Merge per-key on top of current local prefs.
+        setSoundPrefs(function(prev){
+          var merged = Object.assign({}, prev || {});
+          Object.keys(bioJson.sound_prefs).forEach(function(k){
+            var v = bioJson.sound_prefs[k];
+            if(v && typeof v === 'object'){
+              merged[k] = Object.assign({}, merged[k] || {}, v);
+            }
+          });
+          try{localStorage.setItem('ringin_sound_prefs', JSON.stringify(merged));}catch(e){}
+          return merged;
+        });
       }
     });
   },[userId]);
@@ -1361,6 +1373,29 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           },
             React.createElement('div',{style:{position:'absolute',top:'3px',left:hapticsOn?'24px':'3px',width:'22px',height:'22px',borderRadius:'50%',background:'#fff',transition:'left 0.25s',boxShadow:'0 2px 6px rgba(0,0,0,0.35)'}})
           )
+        ),
+        // ── Test row (always-fire, bypasses prefs so user can verify hardware) ───
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}},
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'Test'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}}, isHapticSupported() ? 'Tap to verify your device' : 'Vibration is not supported on iOS browsers — sound only')
+          ),
+          React.createElement('button',{
+            onClick:function(){ forceSound('notification', 0); },
+            style:{padding:'9px 14px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
+          },'🔊 Sound'),
+          React.createElement('button',{
+            onClick:function(){
+              var ok = forceHaptic([40, 30, 80]);
+              if(!ok){
+                // Fall back to a quick visual nudge — alert is acceptable here since the
+                // user explicitly asked to test and we have no other channel to report.
+                try { alert('Vibration is not supported on this browser (iOS Safari and most desktop browsers).'); } catch(e){}
+              }
+            },
+            disabled: !isHapticSupported(),
+            style:{padding:'9px 14px',background: isHapticSupported() ? 'var(--bg4)' : 'var(--bg2)',border:'1px solid '+(isHapticSupported()?'var(--border)':'var(--bg4)'),borderRadius:'10px',color: isHapticSupported() ? 'var(--text)' : 'var(--t3)',fontSize:'12px',fontWeight:700,cursor: isHapticSupported() ? 'pointer' : 'not-allowed',flexShrink:0,opacity: isHapticSupported() ? 1 : 0.55}
+          },'📳 Haptic')
         ),
         // ── Per-sound cards ─────────────────────────────────────────────────
         SOUND_ORDER.map(function(type){
