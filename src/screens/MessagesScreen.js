@@ -1101,7 +1101,13 @@ export default function MessagesScreen(props){
   }
 
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
-  if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){setActiveCall(exp);},onMessageSent:handleMessageSent});
+  if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){
+    // Prefer the App-level call flow (inserts call_invites + opens real Agora CallScreen).
+    // Fall back to local-state for safety if the global hook isn't ready yet.
+    var target = Object.assign({}, exp, {id: exp.id || exp.user_id || exp.otherId || exp.receiverId});
+    if(typeof window !== 'undefined' && window.__ringInStartCall) window.__ringInStartCall(target, {rate: exp.rate||30});
+    else setActiveCall(exp);
+  },onMessageSent:handleMessageSent});
 
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
@@ -1185,7 +1191,11 @@ export default function MessagesScreen(props){
             c.unreadCount>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unreadCount>9?'9+':c.unreadCount) : null,
             // Call button on each row — stop propagation so it doesn't open the chat
             React.createElement('button',{
-              onClick:function(e){e.stopPropagation();setActiveCall(Object.assign({},c,{rate:c.rate||30}));},
+              onClick:function(e){e.stopPropagation();
+                var target = Object.assign({},c,{id: c.otherId||c.receiverId||c.id, rate:c.rate||30});
+                if(typeof window!=='undefined' && window.__ringInStartCall) window.__ringInStartCall(target,{rate:c.rate||30});
+                else setActiveCall(target);
+              },
               title:'Call',
               style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginLeft:'4px'}
             },
@@ -1216,7 +1226,13 @@ export default function MessagesScreen(props){
           c.unread>0 ? React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',background:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff',flexShrink:0}},c.unread) : null,
           // Call button on each expert row
           React.createElement('button',{
-            onClick:function(e){e.stopPropagation();setActiveCall(c);},
+            onClick:function(e){e.stopPropagation();
+              // Expert-row call. NOTE: expert mock IDs (e1, e2, e3) are NOT real Supabase user ids,
+              // so window.__ringInStartCall would fail RLS on the insert. Keep local fallback for experts.
+              var isMockExpert = typeof c.id==='string' && c.id.indexOf('e')===0;
+              if(!isMockExpert && typeof window!=='undefined' && window.__ringInStartCall) window.__ringInStartCall(c,{rate:c.rate||30});
+              else setActiveCall(c);
+            },
             title:'Call',
             style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginLeft:'4px'}
           },

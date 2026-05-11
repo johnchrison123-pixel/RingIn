@@ -10,6 +10,8 @@ import WorkshopsScreen from './screens/WorkshopsScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import SavedPostsScreen from './screens/SavedPostsScreen';
 import AnonymousConnect from './screens/AnonymousConnect';
+import CallScreen from './screens/CallScreen';
+import IncomingCallModal from './components/IncomingCallModal';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
@@ -24,6 +26,10 @@ export default function App() {
   var unreadMsgS = useState(0); var unreadMsg = unreadMsgS[0]; var setUnreadMsg = unreadMsgS[1];
   var unreadNotifS = useState(0); var unreadNotif = unreadNotifS[0]; var setUnreadNotif = unreadNotifS[1];
   var msgResetKeyS = useState(0); var msgResetKey = msgResetKeyS[0]; var setMsgResetKey = msgResetKeyS[1];
+  // Incoming call: a row inserted into call_invites where callee_id = me
+  var incomingCallS = useState(null); var incomingCall = incomingCallS[0]; var setIncomingCall = incomingCallS[1];
+  // Active call (rendered above everything): set when user starts an outgoing call OR accepts an incoming one
+  var activeCallS = useState(null); var activeCall = activeCallS[0]; var setActiveCall = activeCallS[1];
   function pushViewUser(u){ setViewUserStack(function(prev){return prev.concat([u]);}); }
   function popViewUser(){ setViewUserStack(function(prev){return prev.slice(0,-1);}); }
   var swXS = useState(0); var swX = swXS[0]; var setSwX = swXS[1];
@@ -125,6 +131,83 @@ export default function App() {
       .subscribe();
     return function(){ supabase.removeChannel(ch); };
   },[appUserId]);
+
+  // Incoming Agora call — listen for call_invites rows where callee_id = me with status='ringing'
+  useEffect(function(){
+    if(!appUserId) return;
+    var ch = supabase.channel('app-call-invites-'+appUserId)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'call_invites',filter:'callee_id=eq.'+appUserId},function(p){
+        var inv = p && p.new;
+        if(!inv || inv.status !== 'ringing') return;
+        // Ignore if already on a call (don't stack incoming rings)
+        if(activeCall) return;
+        setIncomingCall(inv);
+      })
+      .subscribe();
+    return function(){ try{ supabase.removeChannel(ch); }catch(e){} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[appUserId]);
+
+  function acceptIncomingCall(inv){
+    setIncomingCall(null);
+    setActiveCall({
+      isIncoming: true,
+      inviteId: inv.id,
+      channel: inv.channel,
+      expert: {
+        id: inv.caller_id,
+        name: inv.caller_name || 'User',
+        img: inv.caller_avatar,
+        initials: (inv.caller_name||'?').substring(0,2).toUpperCase(),
+        color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+        role: 'Member',
+        rate: inv.rate_per_min || 30,
+      },
+    });
+  }
+  function startOutgoingCall(otherUser, opts){
+    if(!appUserId) return;
+    opts = opts || {};
+    var rate = parseInt(opts.rate||otherUser.rate, 10) || 30;
+    // 1) Insert the invite row
+    var calleeId = otherUser.id || otherUser.user_id || otherUser.otherId || otherUser.receiverId;
+    if(!calleeId || calleeId===appUserId){ alert('Cannot start call: invalid user'); return; }
+    var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
+    var callerAvatar = null;
+    try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}
+    supabase.from('call_invites').insert({
+      caller_id: appUserId,
+      caller_name: callerName,
+      caller_avatar: callerAvatar,
+      callee_id: calleeId,
+      callee_name: otherUser.name || null,
+      callee_avatar: otherUser.img || otherUser.avatar_url || null,
+      channel: '', // filled in after we know the row id
+      status: 'ringing',
+      rate_per_min: rate,
+    }).select().single().then(function(r){
+      if(r.error){
+        console.error('call_invites insert failed', r.error);
+        alert('Could not start call: '+(r.error.message||'permission'));
+        return;
+      }
+      var inv = r.data;
+      // Channel = invite id (unique per call)
+      supabase.from('call_invites').update({channel: inv.id}).eq('id', inv.id).then(function(){});
+      setActiveCall({
+        isIncoming: false,
+        inviteId: inv.id,
+        channel: inv.id,
+        expert: Object.assign({}, otherUser, {rate: rate}),
+      });
+    });
+  }
+  // Expose to window so any nested component can call it without prop-drilling
+  useEffect(function(){
+    window.__ringInStartCall = function(u, opts){ startOutgoingCall(u, opts||{}); };
+    return function(){ try{ delete window.__ringInStartCall; }catch(e){} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appUserId, session]);
 
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }
 
@@ -243,6 +326,28 @@ export default function App() {
   },
     // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar
     React.createElement('div', {className:'screen-content'}, renderScreen()),
+
+    // ── Active call overlay (above bottom nav) ──
+    activeCall ? React.createElement('div',{style:{position:'fixed',inset:0,zIndex:900,background:'var(--bg)'}},
+      React.createElement(CallScreen, {
+        expert: activeCall.expert,
+        session: session,
+        inviteId: activeCall.inviteId,
+        channel: activeCall.channel,
+        isIncoming: !!activeCall.isIncoming,
+        coins: 1240, // TODO: pull live coin balance via wallet hook
+        onCoinsChange: function(){},
+        onEnd: function(){ setActiveCall(null); },
+      })
+    ) : null,
+
+    // ── Incoming call ring overlay (above the active-call overlay shouldn't happen because we suppress incoming when activeCall) ──
+    incomingCall ? React.createElement(IncomingCallModal, {
+      invite: incomingCall,
+      onAccept: acceptIncomingCall,
+      onReject: function(){ setIncomingCall(null); },
+    }) : null,
+
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab, idx) {
         var btn = React.createElement('button', {
