@@ -287,7 +287,24 @@ export default function App() {
   // Expose to window so any nested component can call it without prop-drilling
   useEffect(function(){
     window.__ringInStartCall = function(u, opts){ startOutgoingCall(u, opts||{}); };
-    return function(){ try{ delete window.__ringInStartCall; }catch(e){} };
+    // Debug helper — paste `__ringInDebug()` in the Eruda console to see everything
+    window.__ringInDebug = function(){
+      console.log('========= RINGIN DEBUG =========');
+      console.log('My user id (appUserId):', appUserId);
+      console.log('My email:', session && session.user ? session.user.email : '(no session)');
+      supabase.from('call_invites').select('*').eq('callee_id', appUserId).order('created_at',{ascending:false}).limit(5).then(function(r){
+        console.log('Last 5 invites WHERE callee_id = me:', r.data, 'error:', r.error);
+      });
+      supabase.from('call_invites').select('*').eq('caller_id', appUserId).order('created_at',{ascending:false}).limit(5).then(function(r){
+        console.log('Last 5 invites WHERE caller_id = me:', r.data, 'error:', r.error);
+      });
+      supabase.from('call_invites').select('id,caller_id,callee_id,status,created_at').order('created_at',{ascending:false}).limit(5).then(function(r){
+        console.log('GLOBAL Last 5 invites (whatever RLS lets me see):', r.data, 'error:', r.error);
+      });
+      console.log('================================');
+    };
+    if(appUserId){ console.log('[ringin] my user id =', appUserId, '  (run __ringInDebug() to diagnose)'); }
+    return function(){ try{ delete window.__ringInStartCall; delete window.__ringInDebug; }catch(e){} };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appUserId, session]);
 
