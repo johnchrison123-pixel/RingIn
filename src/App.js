@@ -182,23 +182,34 @@ export default function App() {
         }
       });
 
-    // Polling fallback — every 8s, catch anything realtime missed
-    var pollIv = setInterval(function(){
+    function pollOnce(){
       supabase.from('call_invites')
         .select('*')
         .eq('callee_id', appUserId)
         .eq('status', 'ringing')
-        .gte('created_at', new Date(Date.now() - 45000).toISOString())
+        .gte('created_at', new Date(Date.now() - 60000).toISOString())
         .order('created_at', { ascending: false })
         .limit(1)
         .then(function(r){
           if(r && r.data && r.data[0]) handleInvite(r.data[0]);
         });
-    }, 8000);
+    }
+    // Polling fallback — every 4s, catch anything realtime missed
+    var pollIv = setInterval(pollOnce, 4000);
+
+    // Immediate poll on visibility regain (unlocked phone, re-focused tab) — fires within 1s
+    function onVisibility(){ if(document.visibilityState==='visible') pollOnce(); }
+    function onFocus(){ pollOnce(); }
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('pageshow', onFocus);
 
     return function(){
       try{ supabase.removeChannel(ch); }catch(e){}
       clearInterval(pollIv);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pageshow', onFocus);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[appUserId]);
