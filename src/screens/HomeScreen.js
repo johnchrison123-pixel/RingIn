@@ -1638,10 +1638,10 @@ export default function HomeScreen(props){
       React.createElement('div', {className:'sa'}, ' ')
     ),
     React.createElement(Moments, {
-      ownAvatar: (session && session.user && (localStorage.getItem('avatar_'+session.user.id) || null)) || null,
+      ownAvatar: (props.session && props.session.user && (function(){ try{ return localStorage.getItem('avatar_'+props.session.user.id) || null; }catch(_){ return null; } })()) || null,
       ownName: 'Your Moment',
       showAdd: true,
-      moments: onlineExperts.slice(0, 8).map(function(e){
+      moments: (onlineExperts || []).slice(0, 8).map(function(e){
         return { id: e.id, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
       }),
     }),
