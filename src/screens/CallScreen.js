@@ -145,18 +145,33 @@ export default function CallScreen(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[channel, myUserId]);
 
-  // ── 2. Subscribe to invite status changes so a remote reject/cancel ends the call here too
+  // ── 2. Subscribe to invite status changes: handle accepted/rejected/cancelled/ended.
+  //      Crucially, 'accepted' flips caller out of 'ringing' the moment the callee taps
+  //      Accept — even if Agora's onRemoteJoined hasn't fired yet (callee may still be
+  //      on the mic-permission prompt). We move to 'connecting' until audio arrives.
   useEffect(function(){
     if(!inviteId) return;
+    function applyStatus(st){
+      if(!st) return;
+      if(st==='accepted'){
+        setPhase(function(prev){ return prev==='ringing' ? 'connecting' : prev; });
+      }
+      else if(st==='rejected'){ setPhase('declined'); hangup('rejected'); }
+      else if(st==='cancelled'){ hangup('cancelled'); }
+      else if(st==='ended'){ hangup('remote_hangup'); }
+    }
     var ch = sb.channel('call-invite-'+inviteId)
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'call_invites',filter:'id=eq.'+inviteId},function(p){
-        var st = p && p.new && p.new.status;
-        if(st==='rejected'){ setPhase('declined'); hangup('rejected'); }
-        else if(st==='cancelled'){ hangup('cancelled'); }
-        else if(st==='ended'){ hangup('remote_hangup'); }
+        applyStatus(p && p.new && p.new.status);
       })
       .subscribe();
-    return function(){ try{ sb.removeChannel(ch); }catch(e){} };
+    // 3-second poll backup in case realtime drops the UPDATE
+    var pollIv = setInterval(function(){
+      sb.from('call_invites').select('status').eq('id', inviteId).single().then(function(r){
+        if(r && r.data) applyStatus(r.data.status);
+      });
+    }, 3000);
+    return function(){ try{ sb.removeChannel(ch); }catch(e){} clearInterval(pollIv); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[inviteId]);
 

@@ -428,7 +428,11 @@ export function UserProfileView(props){
           onClick:function(){
             if(!props.currentUserId){return;}
             var convId=[props.currentUserId,user.id].sort().join('_');
-            var convo={id:convId,convId:convId,name:displayName,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:avatarUrl,initials:initials};
+            // CRITICAL: include otherId/receiverId (the user's UUID) so the chat header's
+            // Call button can find a valid callee_id. Without these fields the Call button
+            // falls back to convo.id (= conversation_id like "uuid_uuid") which fails UUID
+            // validation in App.js startOutgoingCall.
+            var convo={id:convId,convId:convId,otherId:user.id,receiverId:user.id,user_id:user.id,name:displayName,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:avatarUrl,initials:initials};
             if(props.onGoToMessages) props.onGoToMessages(convo);
           },
           style:{padding:'8px 16px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer'}

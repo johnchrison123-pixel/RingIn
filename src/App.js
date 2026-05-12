@@ -278,7 +278,9 @@ export default function App() {
     setActiveCall({
       isIncoming: true,
       inviteId: inv.id,
-      channel: inv.channel,
+      // Fall back to inv.id if channel is missing or still 'pending' (old caller stuck mid-update).
+      // After the UUID pre-gen fix, channel always equals inv.id anyway.
+      channel: (inv.channel && inv.channel !== 'pending') ? inv.channel : inv.id,
       expert: {
         id: inv.caller_id,
         name: inv.caller_name || 'User',
@@ -314,30 +316,42 @@ export default function App() {
     if(outgoingPendingRef.current){ console.log('[ringin] startOutgoingCall ignored — already pending'); return; }
     outgoingPendingRef.current = true;
 
-    // Optimistic UI — show the "Calling..." screen IMMEDIATELY, before the DB roundtrip.
-    // The real inviteId is patched in once the insert returns (CallScreen handles the gap).
-    var tempChannel = 'pending-'+Math.random().toString(36).slice(2);
+    // CRITICAL: pre-generate the invite UUID client-side and use it as BOTH the row id
+    // AND the Agora channel name. This eliminates the channel='pending' → channel=inv.id
+    // race condition that left caller and callee on different Agora channels (caller
+    // stuck on 'Ringing', callee stuck on 'Connecting' forever).
+    var inviteUuid;
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      inviteUuid = crypto.randomUUID();
+    } else {
+      inviteUuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){
+        var r = Math.random()*16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    // Optimistic UI — show "Calling..." instantly with the REAL channel ready.
     setActiveCall({
       isIncoming: false,
-      inviteId: null,           // will fill once insert returns
-      channel: tempChannel,
+      inviteId: inviteUuid,
+      channel: inviteUuid,
       expert: Object.assign({}, otherUser, {rate: rate}),
-      pending: true,
     });
 
     var payload = {
+      id: inviteUuid,            // explicit UUID so Postgres uses it as PK
       caller_id: appUserId,
       caller_name: callerName,
       caller_avatar: callerAvatar,
       callee_id: calleeId,
       callee_name: otherUser.name || null,
       callee_avatar: otherUser.img || otherUser.avatar_url || null,
-      channel: 'pending',
+      channel: inviteUuid,       // same UUID — both sides agree, no race
       status: 'ringing',
       rate_per_min: rate,
     };
     console.log('[ringin] inserting call_invite', payload);
-    supabase.from('call_invites').insert(payload).select().single().then(function(r){
+    supabase.from('call_invites').insert(payload).then(function(r){
       outgoingPendingRef.current = false;
       if(r.error){
         console.error('[ringin] call_invites insert failed:', r.error);
@@ -345,17 +359,7 @@ export default function App() {
         alert('Could not start call: '+(r.error.message||'permission'));
         return;
       }
-      var inv = r.data;
-      console.log('[ringin] call_invite created with id', inv.id);
-      supabase.from('call_invites').update({channel: inv.id, status: 'ringing'}).eq('id', inv.id).then(function(u){
-        if(u.error){ console.error('[ringin] channel update failed:', u.error); }
-        else { console.log('[ringin] channel update OK — callee should ring now'); }
-      });
-      // Patch the placeholder activeCall with the real invite id + channel
-      setActiveCall(function(prev){
-        if(!prev) return prev;
-        return Object.assign({}, prev, { inviteId: inv.id, channel: inv.id, pending: false });
-      });
+      console.log('[ringin] call_invite inserted', inviteUuid);
     });
   }
   // Expose to window so any nested component can call it without prop-drilling
