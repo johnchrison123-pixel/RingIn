@@ -63,7 +63,7 @@ export default function IncomingCallModal(props){
         React.createElement('button',{
           onClick:reject,
           title:'Decline',
-          style:{width:'68px',height:'68px',borderRadius:'50%',background:'#ef4444',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(239,68,68,0.55)'}
+          style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)'}
         }),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}},'Decline')
       ),

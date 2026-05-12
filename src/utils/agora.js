@@ -96,8 +96,9 @@ export async function startCallSession(opts) {
   });
 
   client.on('user-unpublished', function (user) {
-    delete remoteUsers[user.uid];
-    if (opts.onRemoteLeft) opts.onRemoteLeft(user);
+    // Don't end the call on user-unpublished — peers may just be muting (Agora can
+    // fire this when a local track is disabled/unpublished mid-call). Only treat
+    // user-left (peer actually leaving the channel) as a hangup signal.
   });
 
   client.on('user-left', function (user) {
@@ -134,7 +135,19 @@ export async function startCallSession(opts) {
     client: client,
     localAudioTrack: localAudioTrack,
     setMuted: function (muted) {
-      try { if (localAudioTrack) localAudioTrack.setEnabled(!muted); } catch (e) {}
+      // CRITICAL: use Agora's setMuted (not setEnabled). setEnabled stops/unpublishes
+      // the track and the peer sees user-unpublished — which previously ended the
+      // call entirely. setMuted just silences audio data while keeping the track
+      // published, so the other side stays connected.
+      try {
+        if (!localAudioTrack) return;
+        if (typeof localAudioTrack.setMuted === 'function') {
+          localAudioTrack.setMuted(muted);
+        } else {
+          // Older SDK fallback — but DO publish back immediately so peer doesn't drop us
+          localAudioTrack.setEnabled(!muted);
+        }
+      } catch (e) {}
     },
     // Apply a volume (0-100) to ALL remote audio tracks. Used by CallScreen's
     // Speaker button — "speaker on" = 100, "earpiece" = 55.
@@ -147,15 +160,8 @@ export async function startCallSession(opts) {
         }
       });
     },
-    // Switch playback to a specific output device (Chrome desktop/Android only).
-    // Pass null/undefined to reset to default. Quietly no-ops on browsers without support.
-    setPlaybackDevice: function (deviceId) {
-      try {
-        if (typeof AgoraRTC.setPlaybackDevice === 'function') {
-          AgoraRTC.setPlaybackDevice(deviceId);
-        }
-      } catch (e) {}
-    },
+    // setPlaybackDevice removed — was routing audio to invalid outputs on some devices,
+    // causing one-way audio. Loudspeaker is now achieved purely via setRemoteVolume.
     leave: async function () {
       try {
         if (localAudioTrack) {

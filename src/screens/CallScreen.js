@@ -36,7 +36,9 @@ export default function CallScreen(props){
   var ringSecsS = useState(0); var ringSecs = ringSecsS[0]; var setRingSecs = ringSecsS[1];
   var localCoinsS = useState(coins); var localCoins = localCoinsS[0]; var setLocalCoins = localCoinsS[1];
   var mutedS = useState(false); var muted = mutedS[0]; var setMuted = mutedS[1];
-  var speakerOnS = useState(true); var speakerOn = speakerOnS[0]; var setSpeakerOn = speakerOnS[1];
+  // Speaker off = normal call volume (100). Speaker on = loudspeaker boost (250).
+  // Browser can't actually route to earpiece — this is volume-based "loudspeaker" mode.
+  var speakerOnS = useState(false); var speakerOn = speakerOnS[0]; var setSpeakerOn = speakerOnS[1];
   var errorS = useState(null); var error = errorS[0]; var setError = errorS[1];
   var endReasonS = useState(null); var endReason = endReasonS[0]; var setEndReason = endReasonS[1];
 
@@ -285,18 +287,14 @@ export default function CallScreen(props){
     });
   }
 
-  // Toggle loudspeaker. Boosts Agora's remote-audio volume (Agora scale 0–100).
-  // On Android Chrome we also try to switch the playback device to the default
-  // speaker (vs headset/earpiece). iOS Safari ignores this — phone-side audio
-  // routing is handled by the OS proximity sensor.
+  // Loudspeaker toggle. Boosts remote-audio volume on the playback side
+  // (Agora's setVolume scale: 100 = normal, 250 = boosted for hands-free).
+  // Browsers can't actually route to earpiece — this is a volume-based boost.
   function toggleSpeaker(){
     setSpeakerOn(function(on){
       var next = !on;
       var s = sessionRef.current;
-      if(s){
-        try{ s.setRemoteVolume(next ? 100 : 55); }catch(e){}
-        try{ s.setPlaybackDevice && s.setPlaybackDevice('default'); }catch(e){}
-      }
+      if(s){ try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){} }
       return next;
     });
   }
@@ -333,7 +331,7 @@ export default function CallScreen(props){
       React.createElement('button',{
         onClick:function(){ hangup('caller_hangup'); },
         title:'End call',
-        style:{width:'68px',height:'68px',borderRadius:'50%',background:'#ef4444',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(239,68,68,0.55)'}
+        style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)'}
       })
     );
   }
@@ -356,45 +354,75 @@ export default function CallScreen(props){
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
-    (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'20px',alignItems:'center'}},
-      // Mute
+    (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
+      // ── MIC / MUTE ─────────────────────────────────────────
+      // Default: brand gradient bg, white mic icon.
+      // Muted: white bg, brand-color mic-slash icon (= "I'm muted" indicator).
       React.createElement('button',{
         onClick: toggleMute,
         title: muted ? 'Unmute' : 'Mute',
         disabled: phase!=='connected',
-        style:{width:'52px',height:'52px',borderRadius:'50%',background: muted ? 'var(--ac)' : 'var(--bg3)', border:'1px solid '+(muted?'var(--ac)':'var(--border)'),color: muted ? '#fff' : 'var(--t2)',fontSize:'20px',cursor: phase==='connected'?'pointer':'not-allowed',opacity:phase==='connected'?1:0.45,display:'flex',alignItems:'center',justifyContent:'center'}
+        style:{
+          width:'54px',height:'54px',borderRadius:'50%',
+          background: muted ? '#ffffff' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+          border:'none',
+          color: muted ? '#7B6EFF' : '#ffffff',
+          cursor: phase==='connected'?'pointer':'not-allowed',
+          opacity: phase==='connected'?1:0.45,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          padding:0,
+          transition:'background 0.18s, transform 0.12s',
+          boxShadow: muted ? '0 4px 14px rgba(255,255,255,0.15)' : '0 4px 14px rgba(123,110,255,0.4)',
+        }
       },
-        React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2',strokeLinecap:'round',strokeLinejoin:'round'},
-          muted
-            ? [React.createElement('line',{key:'l1',x1:'1',y1:'1',x2:'23',y2:'23'}),
-               React.createElement('path',{key:'p1',d:'M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6'}),
-               React.createElement('path',{key:'p2',d:'M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23'}),
-               React.createElement('line',{key:'l2',x1:'12',y1:'19',x2:'12',y2:'23'})]
-            : [React.createElement('path',{key:'p3',d:'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'}),
-               React.createElement('path',{key:'p4',d:'M19 10v2a7 7 0 0 1-14 0v-2'}),
-               React.createElement('line',{key:'l3',x1:'12',y1:'19',x2:'12',y2:'23'})]
+        React.createElement('svg',{viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'},
+          // Mic body + base — always rendered
+          React.createElement('rect',{key:'b',x:'9',y:'2',width:'6',height:'12',rx:'3'}),
+          React.createElement('path',{key:'s',d:'M5 10v2a7 7 0 0 0 14 0v-2'}),
+          React.createElement('line',{key:'st',x1:'12',y1:'19',x2:'12',y2:'23'}),
+          // Slash overlay when muted
+          muted ? React.createElement('line',{key:'x',x1:'4',y1:'4',x2:'20',y2:'20',strokeWidth:'2.6'}) : null
         )
       ),
-      // END CALL — clean red circle, no phone emoji
+      // ── HANGUP — darker plain red, no icon ─────────────────
       React.createElement('button',{
         onClick:function(){ hangup('caller_hangup'); },
         title:'End call',
-        style:{width:'68px',height:'68px',borderRadius:'50%',background:'#ef4444',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(239,68,68,0.55)'}
+        style:{
+          width:'70px',height:'70px',borderRadius:'50%',
+          background:'#c0392b', // darker red than #ef4444
+          border:'none',
+          cursor:'pointer',
+          boxShadow:'0 6px 22px rgba(192,57,43,0.65)',
+          transition:'transform 0.12s',
+        }
       }),
-      // Speaker — actually toggles loudspeaker (boosts remote-audio volume)
+      // ── SPEAKER (loudspeaker boost) ────────────────────────
+      // Default: brand gradient bg, white speaker icon.
+      // Loud on: white bg, brand-color speaker icon (= "speaker enabled").
       React.createElement('button',{
         onClick: toggleSpeaker,
-        title: speakerOn ? 'Switch to earpiece' : 'Switch to loudspeaker',
+        title: speakerOn ? 'Switch off loudspeaker' : 'Switch on loudspeaker',
         disabled: phase!=='connected',
-        style:{width:'52px',height:'52px',borderRadius:'50%',background: speakerOn ? 'var(--ac)' : 'var(--bg3)', border:'1px solid '+(speakerOn?'var(--ac)':'var(--border)'),color: speakerOn ? '#fff' : 'var(--t2)',fontSize:'20px',cursor: phase==='connected'?'pointer':'not-allowed',opacity:phase==='connected'?1:0.45,display:'flex',alignItems:'center',justifyContent:'center'}
+        style:{
+          width:'54px',height:'54px',borderRadius:'50%',
+          background: speakerOn ? '#ffffff' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+          border:'none',
+          color: speakerOn ? '#7B6EFF' : '#ffffff',
+          cursor: phase==='connected'?'pointer':'not-allowed',
+          opacity: phase==='connected'?1:0.45,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          padding:0,
+          transition:'background 0.18s, transform 0.12s',
+          boxShadow: speakerOn ? '0 4px 14px rgba(255,255,255,0.15)' : '0 4px 14px rgba(123,110,255,0.4)',
+        }
       },
-        React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2',strokeLinecap:'round',strokeLinejoin:'round'},
-          React.createElement('polygon',{points:'11 5 6 9 2 9 2 15 6 15 11 19 11 5'}),
-          speakerOn
-            ? [React.createElement('path',{key:'sw1',d:'M15.54 8.46a5 5 0 0 1 0 7.07'}),
-               React.createElement('path',{key:'sw2',d:'M19.07 4.93a10 10 0 0 1 0 14.14'})]
-            : [React.createElement('line',{key:'so1',x1:'23',y1:'9',x2:'17',y2:'15'}),
-               React.createElement('line',{key:'so2',x1:'17',y1:'9',x2:'23',y2:'15'})]
+        React.createElement('svg',{viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'},
+          // Speaker body (always rendered)
+          React.createElement('polygon',{key:'sp',points:'11 5 6 9 2 9 2 15 6 15 11 19 11 5'}),
+          // Sound waves always shown — loudspeaker icon both states (semantics in bg color)
+          React.createElement('path',{key:'w1',d:'M15.54 8.46a5 5 0 0 1 0 7.07'}),
+          React.createElement('path',{key:'w2',d:'M19.07 4.93a10 10 0 0 1 0 14.14'})
         )
       )
     ) : React.createElement('button',{onClick:onEnd,style:{padding:'12px 32px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Back')
