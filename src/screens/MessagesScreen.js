@@ -443,16 +443,21 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
 
   return React.createElement('div',{
     ref:chatBoxRef,
-    // Reserve top space so messages don't slide under the FIXED header (56px ≈ header height)
+    // Reserve top space so messages don't slide under the FIXED header (56px ≈
+    // header height in browser mode). The .ringin-chat-wrap class lets
+    // App.css bump this reserve by env(safe-area-inset-top) ONLY when the app
+    // is installed as a PWA — so the messages don't slide under the iOS
+    // status bar overlay there.
+    className:'ringin-chat-wrap',
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',paddingTop:'56px',position:'relative'},
   },
     // ── Header — position:FIXED so it pins to the viewport regardless of nested scroll
     // containers, and a visualViewport listener (above) keeps it glued to the visible top
     // even when iOS Safari shifts the layout for the keyboard.
-    // ── Header — position:FIXED so it pins to the viewport regardless of nested scroll
-    // containers, and a visualViewport listener (above) keeps it glued to the visible top
-    // even when iOS Safari shifts the layout for the keyboard.
-    React.createElement('div',{ref:headerRef,style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'fixed',top:0,left:0,right:0,zIndex:50,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',willChange:'transform'}},
+    // .ringin-chat-header className lets App.css push the back / name / call
+    // content below the iOS status bar in PWA mode — Safari browser tab is
+    // untouched.
+    React.createElement('div',{ref:headerRef,className:'ringin-chat-header',style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'fixed',top:0,left:0,right:0,zIndex:50,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',willChange:'transform'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
         React.createElement('button',{onClick:onBack,title:'Back',style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},
           React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},

@@ -55,6 +55,20 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
   .screen-content {
     padding-bottom: 80px;
   }
+  /* MessagesScreen chat back-header is position:fixed; top:0 against the
+     VIEWPORT (not inside .app-container's safe-area padding), so it needs
+     its own inset to push the back button / recipient name / call button
+     below the iOS status bar overlay. The matching ChatBox top reserve
+     gets bumped by the same amount so the first message doesn't slide
+     under the now-taller header. !important is needed because the inline
+     padding/paddingTop on those elements has higher CSS specificity than
+     a normal class rule. */
+  .ringin-chat-header {
+    padding-top: calc(12px + env(safe-area-inset-top)) !important;
+  }
+  .ringin-chat-wrap {
+    padding-top: calc(56px + env(safe-area-inset-top)) !important;
+  }
 }
 .nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 6px;border-radius:10px;border:none;background:none;cursor:pointer;transition:background .15s;margin:0 3px;}
 .nav-tab.active{background:var(--acg);}
