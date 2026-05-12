@@ -11,27 +11,36 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 /* ── Installed-PWA safe-area handling (iOS, mainly) ──────────────────────
    Gated to display-mode: standalone so Safari browser tabs are unaffected.
 
-   TOP: padding-top on the container pushes the screen's content (the
-   "RingIn" / "Experts" / "Workshops" / etc. headers) below the iOS
-   status bar. The container's background (var(--bg)) still extends to
-   the very top of the screen, so the iOS clock/battery sits on the app's
-   own dark background — no visible "letterbox" gap, exactly like
-   Instagram. The visible effect is: clock at top, header right below it.
+   TOP: padding-top on the container pushes the screen's content (header)
+   below the iOS status bar. Container's background still extends to y=0
+   so the iOS clock sits on the app's own dark bg — no letterbox gap.
 
-   BOTTOM: padding-bottom on the .bottom-nav itself (NOT on the container)
-   extends the nav's bg into the home-indicator zone so the home indicator
-   pill sits ON the nav, not in a separate gap below it — again, Instagram
-   pattern. Icons get pushed up by the same amount so they stay clear of
-   the home indicator.
+   BOTTOM: the .bottom-nav becomes position:fixed; bottom:0 in PWA mode.
+   This is the Instagram pattern that the flex-layout + padding-only
+   approach failed to reproduce: with the nav anchored to bottom:0 of
+   the VIEWPORT (not .app-container), it physically reaches the bottom
+   edge of the screen. The nav's background fills all the way down to
+   the home indicator. The icons sit close to the bottom (12px above
+   the screen edge) — the thin home indicator pill overlays the bottom
+   sliver of the nav rather than sitting in a separate blank band below
+   it. .screen-content gets a matching padding-bottom so scrollable
+   content doesn't slide under the fixed nav.
 
    Zero impact on Android PWA (env resolves to 0) and Safari browser
-   (display-mode media query doesn't match). */
+   (display-mode media query doesn't match — flex nav layout stays). */
 @media (display-mode: standalone) {
   .app-container {
     padding-top: env(safe-area-inset-top);
   }
   .bottom-nav {
-    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+  }
+  .screen-content {
+    padding-bottom: 80px;
   }
 }
 .nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 6px;border-radius:10px;border:none;background:none;cursor:pointer;transition:background .15s;margin:0 3px;}
