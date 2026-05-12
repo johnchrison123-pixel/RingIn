@@ -92,11 +92,14 @@ export default function App() {
         });}
       }catch(e){}
     }
+    // Named handler so the cleanup actually unbinds it (anonymous fn leaks per remount).
+    function onVisibilityHidden(){ if(document.visibilityState==='hidden') markOffline(); }
     window.addEventListener('pagehide', markOffline);
-    window.addEventListener('visibilitychange', function(){if(document.visibilityState==='hidden')markOffline();});
+    window.addEventListener('visibilitychange', onVisibilityHidden);
     return function() {
       if(sub && sub.data && sub.data.subscription) sub.data.subscription.unsubscribe();
       window.removeEventListener('pagehide', markOffline);
+      window.removeEventListener('visibilitychange', onVisibilityHidden);
     };
   }, []);
 

@@ -271,10 +271,19 @@ export function UserProfileView(props){
         setUserPosts(mapped);
         prefetchLikersU(mapped,{});
         try{localStorage.setItem('user_posts_'+user.id,JSON.stringify(mapped));}catch(e){}
-        // Preload comment counts from localStorage cache
-        var cmap={};
-        mapped.forEach(function(p){try{var c=localStorage.getItem('comments_'+p.id);if(c)cmap[p.id]=JSON.parse(c);}catch(e){} });
-        if(Object.keys(cmap).length) setCommentsCacheU(cmap);
+        // Defer the N-post comment-cache parse to idle time. Synchronously parsing 20+
+        // localStorage blobs blocks the UI thread for 100-500ms on Samsung Internet,
+        // causing the feed-tab freeze the user reported.
+        var runIdle = (typeof window !== 'undefined' && window.requestIdleCallback)
+          ? function(fn){ window.requestIdleCallback(fn, { timeout: 1500 }); }
+          : function(fn){ setTimeout(fn, 0); };
+        runIdle(function(){
+          var cmap={};
+          for(var i=0;i<mapped.length;i++){
+            try{ var c = localStorage.getItem('comments_'+mapped[i].id); if(c) cmap[mapped[i].id] = JSON.parse(c); }catch(e){}
+          }
+          if(Object.keys(cmap).length) setCommentsCacheU(cmap);
+        });
       }
     });
   },[user.id]);
@@ -907,10 +916,19 @@ export default function HomeScreen(props){
         setHasMoreH(res.data.length===12);
         try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
         prefetchLikerNames(dbPosts, {});
-        // Preload comment counts from localStorage cache
-        var cmap={};
-        dbPosts.forEach(function(p){try{var c=localStorage.getItem('comments_'+p.id);if(c)cmap[p.id]=JSON.parse(c);}catch(e){} });
-        if(Object.keys(cmap).length) setCommentsCache(cmap);
+        // Defer the N-post comment-cache parse to idle time — synchronous parse of
+        // 20+ localStorage blobs blocks the UI thread for 100-500ms on Samsung
+        // Internet, freezing the feed tab. Same fix as the other forEach above.
+        var runIdle = (typeof window !== 'undefined' && window.requestIdleCallback)
+          ? function(fn){ window.requestIdleCallback(fn, { timeout: 1500 }); }
+          : function(fn){ setTimeout(fn, 0); };
+        runIdle(function(){
+          var cmap={};
+          for(var i=0;i<dbPosts.length;i++){
+            try{ var c = localStorage.getItem('comments_'+dbPosts[i].id); if(c) cmap[dbPosts[i].id] = JSON.parse(c); }catch(e){}
+          }
+          if(Object.keys(cmap).length) setCommentsCache(cmap);
+        });
       }
     });
   },[]);

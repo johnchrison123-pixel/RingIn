@@ -119,6 +119,21 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var lastHapticRef=useRef(0);
   var lastHapticTierRef=useRef(0);
 
+  // ── CRITICAL: clear all intervals/timers when ChatBox unmounts ──
+  // If user starts holding the send-lever then tab-switches or navigates, these
+  // intervals would fire forever — calling navigator.vibrate() every 100ms and
+  // setLevHoldPct on a torn-down component. Samsung Internet specifically
+  // throttles/queues vibrate calls and freezes the UI thread under accumulation.
+  // Same pattern protects the long-press timer + the chat typing debouncer.
+  useEffect(function(){
+    return function(){
+      try { if(levHoldIntervalRef.current) { clearInterval(levHoldIntervalRef.current); levHoldIntervalRef.current = null; } } catch(e){}
+      try { if(levHapticIntervalRef.current) { clearInterval(levHapticIntervalRef.current); levHapticIntervalRef.current = null; } } catch(e){}
+      try { if(pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; } } catch(e){}
+      try { if(chatTypingTimerRef.current) { clearTimeout(chatTypingTimerRef.current); chatTypingTimerRef.current = null; } } catch(e){}
+    };
+  }, []);
+
   var bottomRef=useRef(null);
   var headerRef=useRef(null);
   var chatBoxRef=useRef(null);

@@ -3,16 +3,46 @@
 // RingIn Agora wrapper — joins a channel, publishes microphone, plays remote
 // audio. Tokens are fetched from /api/agora-token (which keeps the App
 // Certificate server-side). The App ID is public (loaded from REACT_APP env).
+//
+// LAZY-LOADED: the agora-rtc-sdk-ng package is ~250KB. We dynamic-import it via
+// `import()` so webpack splits it into its own chunk — the main bundle ships
+// without it. To minimize "first-call lag" we kick off the import on idle time
+// (requestIdleCallback fallback to setTimeout) AND whenever a chat is opened.
+// By the time the user taps Call, the SDK is usually already cached.
 // ────────────────────────────────────────────────────────────────────────────
-import AgoraRTC from 'agora-rtc-sdk-ng';
 
 var APP_ID = process.env.REACT_APP_AGORA_APP_ID || 'a0d22a99058142b2af0d18e3e570b880';
 
 // Allow override of the token endpoint when running locally
 var TOKEN_URL = process.env.REACT_APP_AGORA_TOKEN_URL || '/api/agora-token';
 
-// Quiet down Agora's verbose logs in production
-try { AgoraRTC.setLogLevel(3); } catch (e) {}
+// ── Lazy-load gate ─────────────────────────────────────────────────────────
+var _agoraPromise = null;
+export function getAgoraRTC() {
+  if (!_agoraPromise) {
+    _agoraPromise = import(/* webpackChunkName: "agora-sdk" */ 'agora-rtc-sdk-ng').then(function (m) {
+      var rtc = m.default || m;
+      try { rtc.setLogLevel(3); } catch (e) {}
+      return rtc;
+    });
+  }
+  return _agoraPromise;
+}
+
+// Kick off the import in idle time so the SDK is cached by the time the user
+// taps Call. Cheap on devices that support requestIdleCallback; safe fallback.
+if (typeof window !== 'undefined') {
+  var _prefetchAgora = function () { try { getAgoraRTC(); } catch (e) {} };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(_prefetchAgora, { timeout: 3000 });
+  } else {
+    setTimeout(_prefetchAgora, 2500);
+  }
+}
+
+// Exposed so any screen (e.g., MessagesScreen ChatBox) can warm the SDK when
+// the user is likely about to call.
+export function prefetchAgora() { try { getAgoraRTC(); } catch (e) {} }
 
 // Build a uint32 numeric Agora UID from a Supabase user-id (UUID string) so we
 // can dedupe across reconnects. Agora UIDs must be 0–4_294_967_295 integers.
@@ -54,6 +84,10 @@ export async function startCallSession(opts) {
   if (!opts || !opts.channel || !opts.uidString) {
     throw new Error('startCallSession: channel and uidString required');
   }
+  // Resolve the (lazy-loaded) SDK first. Almost always already cached because of
+  // the idle prefetch above + the prefetchAgora() call from ChatBox mount.
+  var AgoraRTC = await getAgoraRTC();
+
   var uid = hashUidToInt(opts.uidString);
   var tokenData;
   try {

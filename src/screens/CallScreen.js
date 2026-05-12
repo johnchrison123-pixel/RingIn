@@ -46,6 +46,12 @@ export default function CallScreen(props){
   var endedRef = useRef(false);    // guard against double-end
   var wakeLockRef = useRef(null);  // navigator.wakeLock — keeps screen on (Chrome Android)
   var silentAudioRef = useRef(null); // hidden <audio> looping silent track — keeps iOS audio session alive
+  // Track orphan timeouts so they can be cancelled on unmount. Otherwise they
+  // fire hangup() / onEnd() on a torn-down component long after the user navigates away.
+  var startFailedTimerRef = useRef(null);
+  var endTimerRef = useRef(null);
+  // Wake-lock release handler held in a ref so we can removeEventListener on cleanup.
+  var wakeLockReleaseHandlerRef = useRef(null);
 
   // ── Keep the device awake + audio session alive while on a call.
   // Wake Lock keeps the screen from sleeping on Chrome Android (~85% of Android users).
@@ -61,9 +67,12 @@ export default function CallScreen(props){
           var wl = await navigator.wakeLock.request('screen');
           if(cancelled){ try{ wl.release(); }catch(e){} return; }
           wakeLockRef.current = wl;
-          wl.addEventListener('release', function(){
-            // If lock dropped (e.g. tab backgrounded), try to re-acquire when visible
-          });
+          // Stash the handler in a ref so we can remove it on cleanup. Anonymous
+          // listeners leak across call/end cycles, each holding a closure over
+          // its prior CallScreen state.
+          var handler = function(){ /* lock dropped — re-acquire on visibility */ };
+          wakeLockReleaseHandlerRef.current = handler;
+          wl.addEventListener('release', handler);
         }
       }catch(e){ /* silently ignore */ }
     }
@@ -96,7 +105,16 @@ export default function CallScreen(props){
     return function(){
       cancelled = true;
       document.removeEventListener('visibilitychange', onVis);
-      try{ if(wakeLockRef.current){ wakeLockRef.current.release(); wakeLockRef.current = null; } }catch(e){}
+      try{
+        if(wakeLockRef.current){
+          if(wakeLockReleaseHandlerRef.current){
+            try { wakeLockRef.current.removeEventListener('release', wakeLockReleaseHandlerRef.current); } catch(e){}
+            wakeLockReleaseHandlerRef.current = null;
+          }
+          wakeLockRef.current.release();
+          wakeLockRef.current = null;
+        }
+      }catch(e){}
       try{
         if(silentAudioRef.current){
           silentAudioRef.current.pause();
@@ -136,12 +154,17 @@ export default function CallScreen(props){
         sessionRef.current = s;
       } catch (e){
         setError('Couldn\'t start call: ' + (e.message || e));
-        // Fall back gracefully — close after showing the error briefly
-        setTimeout(function(){ if(!endedRef.current) hangup('start_failed'); }, 3500);
+        // Fall back gracefully — close after showing the error briefly.
+        // Track in a ref so we cancel on unmount (avoids hangup firing on a torn-down component).
+        startFailedTimerRef.current = setTimeout(function(){
+          startFailedTimerRef.current = null;
+          if(!endedRef.current) hangup('start_failed');
+        }, 3500);
       }
     })();
     return function(){
       cancelled = true;
+      if(startFailedTimerRef.current){ clearTimeout(startFailedTimerRef.current); startFailedTimerRef.current = null; }
       var s = sessionRef.current;
       if (s) { try { s.leave(); } catch(e){} sessionRef.current = null; }
     };
@@ -275,8 +298,19 @@ export default function CallScreen(props){
     }
 
     setPhase('ended');
-    setTimeout(function(){ if(onEnd) onEnd(); }, 800);
+    endTimerRef.current = setTimeout(function(){
+      endTimerRef.current = null;
+      if(onEnd) onEnd();
+    }, 800);
   }
+
+  // Final unmount safety net — clear any remaining orphan timers.
+  useEffect(function(){
+    return function(){
+      try { if(startFailedTimerRef.current){ clearTimeout(startFailedTimerRef.current); startFailedTimerRef.current = null; } } catch(e){}
+      try { if(endTimerRef.current){ clearTimeout(endTimerRef.current); endTimerRef.current = null; } } catch(e){}
+    };
+  }, []);
 
   function toggleMute(){
     setMuted(function(m){
