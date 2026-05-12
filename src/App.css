@@ -55,12 +55,11 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
        area, not float in the middle with empty space above them. */
     padding-top: 4px;
     /* padding-bottom keeps icons clear of the home indicator pill.
-       env - 24 puts icons ~10px above the bottom edge on iPhone X+
-       (env ≈ 34), giving the pill its 5–10px breathing room while
-       keeping icons as low as visually possible. max(8px, ...) ensures
-       at least 8px of bottom margin on devices where env is 0 (Android,
-       older iPhones) so icons don't touch the screen edge. */
-    padding-bottom: max(8px, calc(env(safe-area-inset-bottom) - 24px));
+       env - 28 puts icons ~6px above the bottom edge on iPhone X+
+       (env ≈ 34) — 4px (≈1mm) lower than the previous value. max(4px, ...)
+       gives at least 4px clearance on Android / older devices where env
+       is 0, so icons don't touch the very screen edge. */
+    padding-bottom: max(4px, calc(env(safe-area-inset-bottom) - 28px));
   }
   .screen-content {
     padding-bottom: 80px;
