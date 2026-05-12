@@ -66,8 +66,26 @@ export async function startCallSession(opts) {
   var client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
   var localAudioTrack = null;
   var remoteUsers = {};
-  // Speaker volume (0-100). Boost to 100 = speakerphone mode, 55 = earpiece. Initially 100.
+  // Speaker volume on Agora's 0–400 scale (100 = original, 250 = loudspeaker boost).
   var currentRemoteVolume = 100;
+
+  // CRITICAL: create the microphone track FIRST, before the network roundtrip for the
+  // token + the websocket-y client.join. iOS Safari requires getUserMedia to be called
+  // within the same user-activation window as the tap that initiated the call — if we
+  // wait until after fetchToken (slow), the activation expires and mic creation
+  // silently fails, leaving the user unable to be heard while still hearing the peer.
+  try {
+    localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+      encoderConfig: 'music_standard',
+      ANS: true, AEC: true, AGC: true,
+    });
+  } catch (e) {
+    // Make this VISIBLE — silently going to listen-only is what caused the "one-way audio" bug
+    var errMsg = 'Microphone unavailable: ' + (e && e.message ? e.message : 'permission denied') + '. Tap Call again, or check site permissions.';
+    if (opts.onError) opts.onError(new Error(errMsg));
+    try { alert(errMsg); } catch (e2) {}
+    throw e;
+  }
 
   function attachRemoteAudio(user) {
     try {
@@ -114,21 +132,30 @@ export async function startCallSession(opts) {
     await client.join(tokenData.appId || APP_ID, opts.channel, tokenData.token, uid);
   } catch (e) {
     if (opts.onError) opts.onError(new Error('Join failed: ' + e.message));
+    // Clean up the mic track we created so we don't leak it
+    try { if (localAudioTrack) localAudioTrack.close(); } catch (e2) {}
     throw e;
   }
 
-  try {
-    localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-      encoderConfig: 'music_standard',
-      ANS: true,  // ambient-noise suppression
-      AEC: true,  // acoustic-echo cancellation
-      AGC: true,  // automatic-gain control
-    });
-    await client.publish([localAudioTrack]);
-  } catch (e) {
-    // If mic permission denied, the user can still HEAR but not speak.
-    if (opts.onError) opts.onError(new Error('Microphone unavailable: ' + e.message));
-    // Don't throw — being able to listen is still useful.
+  // Publish the mic with one retry. If publish fails, the peer can't hear us — make
+  // it visible rather than silently degrading to listen-only.
+  var publishAttempt = 0;
+  var publishOk = false;
+  while (publishAttempt < 2 && !publishOk) {
+    publishAttempt++;
+    try {
+      await client.publish([localAudioTrack]);
+      publishOk = true;
+    } catch (e) {
+      if (publishAttempt >= 2) {
+        var pubErr = 'Could not send mic audio to the other side: ' + (e && e.message ? e.message : 'publish failed');
+        if (opts.onError) opts.onError(new Error(pubErr));
+        try { alert(pubErr); } catch (e2) {}
+      } else {
+        // Brief pause before retry
+        await new Promise(function (r) { setTimeout(r, 250); });
+      }
+    }
   }
 
   return {
@@ -149,10 +176,11 @@ export async function startCallSession(opts) {
         }
       } catch (e) {}
     },
-    // Apply a volume (0-100) to ALL remote audio tracks. Used by CallScreen's
-    // Speaker button — "speaker on" = 100, "earpiece" = 55.
+    // Apply a volume to ALL remote audio tracks. Agora's range is 0–400 (100 = original).
+    // CallScreen passes 100 (normal) or 250 (loudspeaker boost). Was previously clamped
+    // to 100 which broke loudspeaker mode.
     setRemoteVolume: function (volume) {
-      currentRemoteVolume = Math.max(0, Math.min(100, volume));
+      currentRemoteVolume = Math.max(0, Math.min(400, volume));
       Object.keys(remoteUsers).forEach(function (uidKey) {
         var u = remoteUsers[uidKey];
         if (u && u.audioTrack && u.audioTrack.setVolume) {
