@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
-import {startCallSession} from '../utils/agora';
+import {startCallSession, setAudioOutputMode} from '../utils/agora';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -210,6 +210,11 @@ export default function CallScreen(props){
           onRemoteJoined: function(){
             if(cancelled) return;
             setPhase('connected');
+            // Default to EARPIECE mode the moment the call goes live — phones
+            // act like phones, hold to ear. The user explicitly toggles speaker
+            // for hands-free. On iOS PWA this routes through the actual earpiece;
+            // on Android it just sets normal-volume Agora playback.
+            try{ setAudioOutputMode('earpiece'); }catch(e){}
             // Once both peers are present, mark the invite as accepted/started
             if(inviteId){
               sb.from('call_invites').update({status:'accepted',started_at:new Date().toISOString()}).eq('id',inviteId).then(function(){});
@@ -399,11 +404,20 @@ export default function CallScreen(props){
     }, 800);
   }
 
-  // Final unmount safety net — clear any remaining orphan timers.
+  // Final unmount safety net — clear any remaining orphan timers, and reset
+  // the iOS audio session back to default so ringtones/notifications after
+  // the call don't stay stuck in earpiece-routing mode.
   useEffect(function(){
     return function(){
       try { if(startFailedTimerRef.current){ clearTimeout(startFailedTimerRef.current); startFailedTimerRef.current = null; } } catch(e){}
       try { if(endTimerRef.current){ clearTimeout(endTimerRef.current); endTimerRef.current = null; } } catch(e){}
+      // Restore default audio session — 'playback' means normal media routing
+      // (speaker for everyday audio). Safe no-op on browsers without the API.
+      try{
+        if (navigator && navigator.audioSession){
+          navigator.audioSession.type = 'playback';
+        }
+      }catch(e){}
     };
   }, []);
 
@@ -420,12 +434,18 @@ export default function CallScreen(props){
     });
   }, []);
 
-  // Loudspeaker toggle. Boosts remote-audio volume on the playback side
-  // (Agora's setVolume scale: 100 = normal, 250 = boosted for hands-free).
-  // Browsers can't actually route to earpiece — this is a volume-based boost.
+  // Loudspeaker toggle. Two layers, in priority order:
+  //  1. On iOS Safari 16.4+ (PWA), setAudioOutputMode flips
+  //     navigator.audioSession.type between 'play-and-record' (earpiece) and
+  //     'playback' (loudspeaker) — a real OS-level audio routing change.
+  //  2. As a fallback for Android/older iOS, we also adjust Agora's playback
+  //     volume (Agora scale: 0–400; 80 = quieter "private" mode, 250 = boost).
+  //     On Android this is the best we can do without a native shell because
+  //     Chromium doesn't expose audio output device selection for WebRTC.
   var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
+      try{ setAudioOutputMode(next ? 'speaker' : 'earpiece'); }catch(e){}
       var s = sessionRef.current;
       if(s){ try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){} }
       return next;

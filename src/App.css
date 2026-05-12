@@ -3,7 +3,13 @@ html, body { overscroll-behavior-x: none; }
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#09090E;--bg2:#111117;--bg3:#17171F;--bg4:#1E1E28;--border:#28283A;--border2:#343448;--text:#EEEEF8;--t2:#8F8FAA;--t3:#52526A;--ac:#7B6EFF;--acg:rgba(123,110,255,.14);--green:#27C96A;--amber:#F5A623;--red:#EF4747;--pink:#E84D9A;}
 body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
-.app-container{width:100%;max-width:100%;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:fixed;left:0;right:0;display:flex;flex-direction:column;overflow:hidden;}
+/* env(safe-area-inset-*) is 0 on Android and in a regular browser tab; only
+   non-zero when installed as a PWA on iOS (where the status bar + home
+   indicator would otherwise overlap the app). Adding it to .app-container
+   pushes the entire app's content (screen headers, content, bottom-nav)
+   below the iOS status bar so the RingIn title stops getting overlapped
+   by the iOS clock/battery icons. */
+.app-container{width:100%;max-width:100%;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:fixed;left:0;right:0;display:flex;flex-direction:column;overflow:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);}
 .screen-content{flex:1;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none;min-height:0;}
 .screen-content::-webkit-scrollbar{display:none;}
 .bottom-nav{display:flex;align-items:center;background:var(--bg2);border-top:1px solid var(--border);padding:5px 8px 12px;flex-shrink:0;gap:4px;}

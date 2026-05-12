@@ -502,27 +502,48 @@ export default function App() {
 
   return React.createElement('div', {
     className:'app-container',
+    // ── Swipe-back gesture ────────────────────────────────────────────────
+    // Standard iOS / Android pattern: touch starts within ~28px of the LEFT
+    // edge of the screen, then swipes RIGHT. We deliberately require the
+    // start to be near the left edge so inner horizontal swipes (carousels,
+    // photo galleries, message swipe-actions) keep working without conflict.
+    // Disabled during active or incoming calls so a stray swipe can't
+    // accidentally tear down a live call.
     onTouchStart:function(e){
-      window._swX=e.touches[0].clientX;
-      window._swY=e.touches[0].clientY;
+      if(activeCall || incomingCall){ window._swX = -1; return; }
+      window._swX = e.touches[0].clientX;
+      window._swY = e.touches[0].clientY;
     },
     onTouchEnd:function(e){
-      var startX=window._swX||0;
-      var endX=e.changedTouches[0].clientX;
-      var dy=Math.abs(e.changedTouches[0].clientY-(window._swY||0));
-      var screenW=window.innerWidth;
-      var dx=startX-endX;
-      // Right to left swipe covering 70% of screen starting from right 30% area
-      if(startX>screenW*0.7 && dx>screenW*0.5 && dy<120){
-        if(activeTab==='wallet'){setActiveTab(prevTab);}
-        else if(activeTab==='search'&&selectedExpert){setSelectedExpert(null);}
-        else if(activeTab==='search'){setActiveTab('home');}
-        else if(activeTab==='messages'){setActiveTab('home');}
-        else if(activeTab==='workshops'){setActiveTab('home');}
-        else if(activeTab==='profile'){setActiveTab('home');}
-        else if(activeTab==='saved'){setActiveTab(prevTab);}
-        else if(activeTab==='connect'){setActiveTab(prevTab);}
-      }
+      var startX = window._swX;
+      if(typeof startX !== 'number' || startX < 0) return;
+      var endX = e.changedTouches[0].clientX;
+      var endY = e.changedTouches[0].clientY;
+      var dy = Math.abs(endY - (window._swY||0));
+      var screenW = window.innerWidth;
+      var EDGE = 28;        // start zone (px from left edge)
+      var MIN_DX = Math.max(80, screenW*0.22); // min rightward travel
+      var dx = endX - startX;
+      // Reset for safety so a stale value doesn't trigger next time
+      window._swX = -1;
+
+      if(startX > EDGE) return;       // didn't start near the left edge
+      if(dx < MIN_DX) return;          // didn't swipe far enough right
+      if(dy > 80) return;              // too vertical — was probably a scroll
+
+      // Back navigation order (most specific → least):
+      //   1. If we're viewing a user profile (viewUserStack has items) → pop it
+      //   2. If we're on Search and have an expert selected → clear expert
+      //   3. Modal-ish tabs (wallet/saved/connect) → return to prevTab
+      //   4. Top-level tabs (search/workshops/messages/profile) → home
+      if (viewUserStack && viewUserStack.length > 0){
+        popViewUser();
+      } else if (activeTab === 'search' && selectedExpert){
+        setSelectedExpert(null);
+      } else if (activeTab === 'wallet'){ setActiveTab(prevTab); }
+      else if (activeTab === 'saved'){ setActiveTab(prevTab); }
+      else if (activeTab === 'connect'){ setActiveTab(prevTab); }
+      else if (activeTab !== 'home'){ setActiveTab('home'); }
     }
   },
     // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar

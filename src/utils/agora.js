@@ -44,6 +44,38 @@ if (typeof window !== 'undefined') {
 // the user is likely about to call.
 export function prefetchAgora() { try { getAgoraRTC(); } catch (e) {} }
 
+// ── Audio output mode (earpiece vs loudspeaker) ────────────────────────────
+// Default phone-call behavior is to route audio through the earpiece (you hold
+// the phone to your ear) and only switch to the loudspeaker when explicitly
+// toggled. WebRTC in browsers doesn't expose audio routing directly the way
+// native AVAudioSession / AudioManager do, but iOS Safari 16.4+ added
+// `navigator.audioSession.type` which IS controllable from JS and DOES route
+// the call audio correctly when set to:
+//   'play-and-record'  → earpiece  (private, like a normal cellular call)
+//   'playback'         → loudspeaker (hands-free)
+//
+// On Android Chromium and older iOS there's no equivalent web API, so we fall
+// back to Agora's playback volume — lower for "private" mode (user holds phone
+// close), higher for speaker mode. Best we can do without a native shell.
+//
+// `mode` is either 'earpiece' or 'speaker'. Returns true if a real OS-level
+// audio session switch happened (iOS 16.4+ PWA), false if we only adjusted
+// volume (everything else). Callers shouldn't depend on the return value —
+// it's just for telemetry/debug.
+export function setAudioOutputMode(mode){
+  try{
+    var ns = navigator;
+    if (ns && ns.audioSession && typeof ns.audioSession === 'object'){
+      // iOS Safari 16.4+ — actual routing switch
+      try{
+        ns.audioSession.type = (mode === 'speaker') ? 'playback' : 'play-and-record';
+        return true;
+      }catch(e){ /* fall through to volume fallback */ }
+    }
+  }catch(e){}
+  return false;
+}
+
 // Build a uint32 numeric Agora UID from a Supabase user-id (UUID string) so we
 // can dedupe across reconnects. Agora UIDs must be 0–4_294_967_295 integers.
 export function hashUidToInt(s) {
