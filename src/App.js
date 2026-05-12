@@ -34,8 +34,6 @@ export default function App() {
   var activeCallS = useState(null); var activeCall = activeCallS[0]; var setActiveCall = activeCallS[1];
   function pushViewUser(u){ setViewUserStack(function(prev){return prev.concat([u]);}); }
   function popViewUser(){ setViewUserStack(function(prev){return prev.slice(0,-1);}); }
-  var swXS = useState(0); var swX = swXS[0]; var setSwX = swXS[1];
-  var swYS = useState(0); var swY = swYS[0]; var setSwY = swYS[1];
   var emailS = useState(''); var email = emailS[0]; var setEmail = emailS[1];
   var passS = useState(''); var password = passS[0]; var setPassword = passS[1];
   var loginS = useState(true); var isLogin = loginS[0]; var setIsLogin = loginS[1];
@@ -412,22 +410,6 @@ export default function App() {
 
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }
 
-  function handleSwipeStart(e){ setSwX(e.touches[0].clientX); setSwY(e.touches[0].clientY); }
-  function handleSwipeMove(e){
-    var dx = e.touches[0].clientX - swX;
-    var dy = Math.abs(e.touches[0].clientY - swY);
-    if(swX < 40 && dx > 0 && dy < 60){
-      e.preventDefault();
-    }
-  }
-  function handleSwipeEnd(e){
-    var dx = e.changedTouches[0].clientX - swX;
-    var dy = Math.abs(e.changedTouches[0].clientY - swY);
-    if(swX < 40 && dx > 80 && dy < 60){
-      if(activeTab==='wallet') setActiveTab(prevTab);
-      else if(activeTab==='search' && selectedExpert) setSelectedExpert(null);
-    }
-  }
   function goToTab(tab) { setActiveTab(tab); }
 
   var handleAuth = async function(e) {
@@ -511,6 +493,22 @@ export default function App() {
     // accidentally tear down a live call.
     onTouchStart:function(e){
       if(activeCall || incomingCall){ window._swX = -1; return; }
+      // Bail out when the touch starts inside any horizontally-scrollable
+      // ancestor — carousels (.frow, .cats, expert pills) need to be able
+      // to handle a rightward drag from their left edge without us hijacking
+      // it for back-navigation.
+      try{
+        var node = e.target;
+        while(node && node !== document.body){
+          var cs = window.getComputedStyle(node);
+          if(cs && (cs.overflowX === 'auto' || cs.overflowX === 'scroll')
+              && node.scrollWidth > node.clientWidth){
+            window._swX = -1;
+            return;
+          }
+          node = node.parentElement;
+        }
+      }catch(_){}
       window._swX = e.touches[0].clientX;
       window._swY = e.touches[0].clientY;
     },

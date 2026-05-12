@@ -164,7 +164,10 @@ export default function InstallPrompt(){
     position:'fixed',
     left:'50%',
     transform:'translateX(-50%)',
-    bottom:'76px',
+    // Sit above the bottom-nav. Add safe-area-inset-bottom so on iOS PWA
+    // (where the nav itself moves up to clear the home indicator) the pill
+    // doesn't overlap the nav.
+    bottom:'calc(76px + env(safe-area-inset-bottom))',
     zIndex:850,
     width:'calc(100% - 24px)',
     maxWidth:'420px',
