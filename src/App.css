@@ -50,13 +50,11 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
     left: 0;
     right: 0;
     z-index: 100;
-    padding-top: 22px;
-    /* padding-bottom = env - 4px. The previous value (env - 10px) was
-       clipping the icons by ~10px because their bottom edge ended below
-       the screen. Going to env - 4 means at most ~4px of icon may be in
-       the home-indicator zone (≈1mm lower than the safe baseline) and
-       still visible. On Android / non-iPhone-X devices env is 0 so the
-       max(0, ...) clamps padding-bottom to 0 — no clipping risk there. */
+    /* padding-top reduced from 22px → 14px to crop ~2mm of empty space
+       above the icons. The nav becomes ~8px shorter overall in PWA mode. */
+    padding-top: 14px;
+    /* padding-bottom = env - 4px keeps the bottom in place: icons end
+       ~4px (≈1mm) into the home-indicator zone, still visible. */
     padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 4px));
   }
   .screen-content {
