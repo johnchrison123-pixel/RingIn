@@ -19,8 +19,9 @@ var HEART_CLIP_PATH =
   'polygon(50% 95%, 20% 80%, 3% 50%, 3% 25%, 20% 5%, 35% 5%, 50% 22%, 65% 5%, 80% 5%, 97% 25%, 97% 50%, 80% 80%)';
 
 // One heart tile. Renders the avatar (or initials) inside a heart-shaped
-// clip, optionally wrapped in a gradient "unread" ring. The whole tile
-// is clickable.
+// clip, optionally wrapped in a gradient "unread" ring. For the "add"
+// tile (isAdd=true), overlays a small + badge in the bottom-right corner
+// so the affordance stays visible even when the user has an avatar.
 function HeartTile(props){
   var size = props.size || 68;
   var ring = !!props.ring;
@@ -30,21 +31,29 @@ function HeartTile(props){
   var onClick = props.onClick;
   var isAdd = !!props.isAdd;
 
-  // Outer wrapper handles the "unread" gradient ring by being a slightly
-  // larger heart with the brand gradient as its background. Inner heart
-  // sits 3px inset, creating a 3px gradient border.
-  var outerStyle = {
+  // OUTER button is unclipped so the + badge can sit ON TOP of the heart
+  // without being chopped by the heart's clip-path. We use a nested
+  // <div> with the clip-path for the actual heart silhouette.
+  var buttonStyle = {
+    position: 'relative',
     width: size, height: size,
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    flexShrink: 0,
+    display: 'block',
+  };
+  // The heart silhouette wrapper (handles the optional gradient ring)
+  var heartWrapStyle = {
+    position: 'absolute',
+    inset: 0,
     clipPath: HEART_CLIP_PATH,
     background: ring ? 'linear-gradient(135deg,#FF6B6B,#E84D9A,#7B6EFF)' : 'transparent',
     padding: ring ? 3 : 0,
     boxSizing: 'border-box',
-    cursor: 'pointer',
-    flexShrink: 0,
-    border: 'none',
-    display: 'block',
   };
-  var innerStyle = {
+  var heartInnerStyle = {
     width: '100%', height: '100%',
     clipPath: HEART_CLIP_PATH,
     background: bg,
@@ -52,26 +61,51 @@ function HeartTile(props){
     alignItems: 'center',
     justifyContent: 'center',
     color: '#fff',
-    fontSize: isAdd ? '24px' : '16px',
+    fontSize: (isAdd && !src) ? '24px' : '16px',
     fontWeight: 700,
     overflow: 'hidden',
     position: 'relative',
+  };
+  // + badge for "add" tiles. Sits outside the clip so it's always visible
+  // even when an avatar is shown.
+  var badgeStyle = {
+    position: 'absolute',
+    bottom: '-2px',
+    right: '6px',
+    width: '22px', height: '22px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+    border: '2px solid var(--bg)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '16px',
+    fontWeight: 700,
+    lineHeight: 1,
+    boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
+    pointerEvents: 'none',  /* click goes to the button, not the badge */
   };
 
   return React.createElement('button', {
     onClick: onClick,
     title: isAdd ? 'Add a Moment' : (props.label || 'View Moment'),
-    style: outerStyle,
+    style: buttonStyle,
   },
-    React.createElement('div', {style: innerStyle},
-      src
-        ? React.createElement('img', {
-            src: src, alt: '',
-            style:{width:'100%',height:'100%',objectFit:'cover'},
-            onError:function(e){ try{ e.target.style.display='none'; }catch(_){ } },
-          })
-        : (isAdd ? '+' : initials)
-    )
+    React.createElement('div', {style: heartWrapStyle},
+      React.createElement('div', {style: heartInnerStyle},
+        src
+          ? React.createElement('img', {
+              src: src, alt: '',
+              style:{width:'100%',height:'100%',objectFit:'cover'},
+              onError:function(e){ try{ e.target.style.display='none'; }catch(_){ } },
+            })
+          : (isAdd ? '+' : initials)
+      )
+    ),
+    // + badge — only on the user's own "add" tile, only when they have an
+    // avatar in the heart (otherwise the big "+" in the center is the cue).
+    (isAdd && src) ? React.createElement('div', {style: badgeStyle}, '+') : null
   );
 }
 
