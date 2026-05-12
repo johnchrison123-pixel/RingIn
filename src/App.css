@@ -42,20 +42,22 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
   }
   .bottom-nav {
     position: fixed;
-    /* Shift the WHOLE nav down by env(safe-area-inset-bottom) so it extends
-       into the home-indicator zone iOS would otherwise leave blank.
-       padding-bottom compensates so the icons stay visible — but with a
-       smaller compensation than the shift, the icons end up sitting
-       env(safe-area-inset-bottom) - 24px LOWER on screen than before
-       (roughly another 2mm on iPhone X+, where the inset is ~34px). */
+    /* Shift the whole nav DOWN by env(safe-area-inset-bottom) so the nav
+       BACKGROUND extends fully into the home-indicator zone iOS would
+       otherwise render as a blank black band. The nav now overlays that
+       zone with its own color. */
     bottom: calc(0px - env(safe-area-inset-bottom));
     left: 0;
     right: 0;
     z-index: 100;
     padding-top: 22px;
-    /* Was: 0. Now ≈ 24px on iPhone X+. Keeps icons clear of the home
-       indicator pill while sitting noticeably lower than before. */
-    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 10px));
+    /* padding-bottom = env - 4px. The previous value (env - 10px) was
+       clipping the icons by ~10px because their bottom edge ended below
+       the screen. Going to env - 4 means at most ~4px of icon may be in
+       the home-indicator zone (≈1mm lower than the safe baseline) and
+       still visible. On Android / non-iPhone-X devices env is 0 so the
+       max(0, ...) clamps padding-bottom to 0 — no clipping risk there. */
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 4px));
   }
   .screen-content {
     padding-bottom: 80px;
