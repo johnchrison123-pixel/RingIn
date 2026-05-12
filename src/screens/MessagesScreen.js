@@ -443,19 +443,21 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
 
   return React.createElement('div',{
     ref:chatBoxRef,
-    // Reserve top space so messages don't slide under the FIXED header (56px base
-    // height + env(safe-area-inset-top) for the iOS PWA status bar / notch the
-    // header was just extended to cover).
-    style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',paddingTop:'calc(56px + env(safe-area-inset-top))',position:'relative'},
+    // Reserve top space so messages don't slide under the FIXED header (56px ≈
+    // header height in browser mode). When installed as a PWA, App.css bumps
+    // this to calc(56px + env(safe-area-inset-top)) via the .ringin-chat-wrap
+    // class so the messages don't slide under the iOS status bar overlay.
+    className:'ringin-chat-wrap',
+    style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',paddingTop:'56px',position:'relative'},
   },
     // ── Header — position:FIXED so it pins to the viewport regardless of nested scroll
     // containers, and a visualViewport listener (above) keeps it glued to the visible top
     // even when iOS Safari shifts the layout for the keyboard.
-    // padding-top includes env(safe-area-inset-top) so the chat header content
-    // sits BELOW the iOS status bar / notch when RingIn is installed as a PWA.
-    // Without this, the back button + recipient name render under the iOS clock.
-    // Zero impact on Android (env() resolves to 0).
-    React.createElement('div',{ref:headerRef,style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',paddingTop:'calc(12px + env(safe-area-inset-top))',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'fixed',top:0,left:0,right:0,zIndex:50,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',willChange:'transform'}},
+    // .ringin-chat-header class lets App.css extend padding-top by
+    // env(safe-area-inset-top) ONLY when running as a standalone PWA — in a
+    // regular browser tab Safari already separates the webview from the
+    // status bar, so no extra padding needed there.
+    React.createElement('div',{ref:headerRef,className:'ringin-chat-header',style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,justifyContent:'space-between',position:'fixed',top:0,left:0,right:0,zIndex:50,background:'var(--bg)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',willChange:'transform'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
         React.createElement('button',{onClick:onBack,title:'Back',style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},
           React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},

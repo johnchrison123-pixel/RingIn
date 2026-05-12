@@ -160,14 +160,15 @@ export default function InstallPrompt(){
     ? 'Add to home screen for instant access.'
     : instructionsFor(platform);
 
+  // The .ringin-install-pill class lets App.css bump `bottom` by
+  // env(safe-area-inset-bottom) ONLY in standalone PWA mode — where the
+  // bottom-nav itself is pushed up by the home-indicator inset. In a regular
+  // browser tab the nav sits at the viewport bottom and 76px is exactly right.
   var pillStyle = {
     position:'fixed',
     left:'50%',
     transform:'translateX(-50%)',
-    // Sit above the bottom-nav. Add safe-area-inset-bottom so on iOS PWA
-    // (where the nav itself moves up to clear the home indicator) the pill
-    // doesn't overlap the nav.
-    bottom:'calc(76px + env(safe-area-inset-bottom))',
+    bottom:'76px',
     zIndex:850,
     width:'calc(100% - 24px)',
     maxWidth:'420px',
@@ -183,7 +184,7 @@ export default function InstallPrompt(){
     animation:'ringinSlideUp 240ms ease-out',
   };
 
-  return React.createElement('div', { style: pillStyle, role:'dialog', 'aria-label':'Install RingIn' },
+  return React.createElement('div', { className:'ringin-install-pill', style: pillStyle, role:'dialog', 'aria-label':'Install RingIn' },
     React.createElement('div', {
       style:{
         width:'34px', height:'34px', borderRadius:'10px',
