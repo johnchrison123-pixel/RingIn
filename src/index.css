@@ -40,6 +40,11 @@ code {
   0%   { transform: translate(-50%, 24px); opacity: 0; }
   100% { transform: translate(-50%, 0);    opacity: 1; }
 }
+/* MomentViewer per-slide progress bar fill */
+@keyframes momentBarFill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
 
 /* ── Call-control buttons: native-feel tap response ──────────────────────
    Samsung Internet imposes the legacy 300ms double-tap-to-zoom delay on
