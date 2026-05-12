@@ -377,8 +377,17 @@ export function playRingtone(){
     });
   }
   ringOnce();
-  // Loop every 2.4s — matches a comfortable ring cadence
-  var iv = setInterval(ringOnce, 2400);
+  // Cap at 6 cycles (~15s of ringing). Beyond that the AudioContext starts to
+  // accumulate scheduled oscillators on low-end Android browsers (esp. Samsung
+  // Internet) which contributes to "page unresponsive" warnings when the call
+  // is finally accepted. The IncomingCallModal stays visible — only the audio
+  // stops.
+  var count = 1;
+  var iv = setInterval(function(){
+    count++;
+    if (count > 6) { try{ clearInterval(iv); }catch(e){} return; }
+    ringOnce();
+  }, 2400);
   _ringtoneCtxRef.stop = function(){ try{ clearInterval(iv); }catch(e){} _ringtoneCtxRef.stop=null; };
 }
 export function stopRingtone(){

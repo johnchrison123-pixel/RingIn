@@ -12,13 +12,20 @@ export default function IncomingCallModal(props){
   var invite = props.invite || {};
   var hapticRef = useRef(null);
 
-  // Real ringtone (warm two-stroke bell, loops every 2.4s). Also pulse haptics
-  // in a phone-ring cadence (~1s on / 1s off) for devices that support vibration.
+  // Real ringtone (warm two-stroke bell, loops every 2.4s, capped at 6 cycles).
+  // Shorter haptic pattern (single ~250ms buzz per cycle) to avoid Samsung Internet
+  // queuing long vibrate patterns — accumulated vibrate calls there can freeze
+  // the JS thread when the call is finally accepted. Haptic also caps at 6 cycles.
   useEffect(function(){
     try{ playRingtone(); }catch(e){}
-    function pulse(){ try{ hapticPulse([400, 200, 400, 1400]); }catch(e){} }
+    var hapticCount = 0;
+    function pulse(){ try{ hapticPulse([250]); }catch(e){} }
     pulse();
-    hapticRef.current = setInterval(pulse, 2400);
+    hapticRef.current = setInterval(function(){
+      hapticCount++;
+      if(hapticCount >= 6){ if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; } return; }
+      pulse();
+    }, 2400);
     return function(){
       try{ stopRingtone(); }catch(e){}
       if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }

@@ -91,8 +91,14 @@ export default function CallScreen(props){
         silentAudioRef.current = el;
       }catch(e){}
     }
-    acquireWakeLock();
-    startSilentAudio();
+    // Yield to the main thread BEFORE doing wake-lock + silent-audio + listener
+    // registration. The call accept happens in the same tick that this CallScreen
+    // mounts, while the IncomingCallModal is still unmounting + cleaning up. Doing
+    // everything synchronously stalls the JS thread long enough on Samsung
+    // Internet to trigger the "page unresponsive" dialog. By deferring with
+    // setTimeout 0 we let the browser paint the call screen first, then init.
+    var wakeLockTimer = setTimeout(function(){ if(!cancelled) acquireWakeLock(); }, 0);
+    var silentAudioTimer = setTimeout(function(){ if(!cancelled) startSilentAudio(); }, 30);
 
     // Try to re-acquire wake lock when the tab regains visibility (system releases it when hidden)
     function onVis(){
@@ -104,6 +110,8 @@ export default function CallScreen(props){
 
     return function(){
       cancelled = true;
+      try { clearTimeout(wakeLockTimer); } catch(e){}
+      try { clearTimeout(silentAudioTimer); } catch(e){}
       document.removeEventListener('visibilitychange', onVis);
       try{
         if(wakeLockRef.current){
@@ -132,6 +140,16 @@ export default function CallScreen(props){
     var cancelled = false;
     (async function(){
       try {
+        // Yield one tick BEFORE startCallSession runs so the call-screen UI gets a
+        // chance to paint. startCallSession does the user-activation getUserMedia
+        // dance — yielding here doesn't break iOS Safari because Promise microtasks
+        // preserve the activation context, but setTimeout 0 does NOT. Use
+        // requestAnimationFrame instead — it preserves activation AND lets one paint.
+        await new Promise(function(resolve){
+          if(typeof requestAnimationFrame === 'function') requestAnimationFrame(function(){ resolve(); });
+          else resolve();
+        });
+        if(cancelled) return;
         var s = await startCallSession({
           channel: channel,
           uidString: myUserId || ('anon-'+Math.random().toString(36).slice(2)),

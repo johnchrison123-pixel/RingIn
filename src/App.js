@@ -15,6 +15,7 @@ import IncomingCallModal from './components/IncomingCallModal';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
+import {prefetchAgora} from './utils/agora';
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -45,6 +46,12 @@ export default function App() {
   var appToggleFollow = appFollowHook.toggleFollow;
 
   useEffect(function() {
+    // Eagerly start fetching the Agora SDK chunk on app mount. The idle-callback
+    // prefetch in agora.js may never fire on a busy page; this guarantees the
+    // SDK is downloaded + parsed long before the user accepts a call, so call
+    // accept doesn't trigger a 200-1500ms synchronous parse hang on Samsung Internet.
+    try { prefetchAgora(); } catch(e){}
+
     supabase.auth.getSession().then(function(res) { setSession(res.data.session); });
     var sub = supabase.auth.onAuthStateChange(function(_event, session) {
       setSession(session);
