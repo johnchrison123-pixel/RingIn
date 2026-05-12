@@ -46,6 +46,32 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <!-- ── Early PWA install-prompt capture ─────────────────────────────
+         Chromium can fire `beforeinstallprompt` BEFORE React mounts (the
+         event fires the moment the SW activates + engagement heuristics
+         trigger, which on a fast device can beat React's hydration). If
+         our React listener isn't attached yet, the event is lost forever
+         and we never get a chance to show the install pill. This tiny
+         script attaches a listener at HTML parse time so we can't miss
+         it, then stashes the event on window for the React component
+         to pick up. -->
+    <script>
+      (function () {
+        try {
+          window.__ringinDeferredInstall = null;
+          window.addEventListener('beforeinstallprompt', function (e) {
+            try { e.preventDefault(); } catch (_) {}
+            window.__ringinDeferredInstall = e;
+            // Notify React in case the component is already mounted
+            try { window.dispatchEvent(new Event('ringin-install-ready')); } catch (_) {}
+          });
+          window.addEventListener('appinstalled', function () {
+            window.__ringinDeferredInstall = null;
+            try { window.dispatchEvent(new Event('ringin-install-done')); } catch (_) {}
+          });
+        } catch (e) { /* never break the page */ }
+      })();
+    </script>
     <!-- Mobile debug console (Eruda). Loads only when URL has ?debug=1
          Open ring-in.vercel.app/?debug=1 to enable.  Tap the floating button on screen,
          then go to the Console tab — you'll see all [ringin] logs right on your phone. -->

@@ -3,21 +3,23 @@ import React, { useEffect, useState, useRef } from 'react';
 
 // ──────────────────────────────────────────────────────────────────────────
 // InstallPrompt — small bottom-anchored banner offering to install RingIn
-// to the home screen. Purely additive: if the user dismisses or installs,
-// it never shows again (persisted in localStorage). Listens for
-// `beforeinstallprompt` on Android/Chromium; on iOS Safari shows brief
-// "Tap Share → Add to Home Screen" instructions since iOS doesn't expose
-// the prompt API.
+// to the home screen.
 //
-// Mounted at the top of <App> and renders a fixed-position pill above the
-// bottom-nav so it never interferes with screen content. Auto-hides when
-// the app is already running standalone (display-mode: standalone).
+// Three install paths, in priority order:
+//   1. Native install API (Chromium fires `beforeinstallprompt`) — we
+//      capture this event super early in index.html so it's never lost
+//      to a React mount race. Tapping "Install" calls prompt() directly.
+//   2. iOS Safari — no event API; we show "Tap Share → Add to Home Screen"
+//      instructions, since iOS only allows install via the Safari Share menu.
+//   3. Fallback — for browsers that meet PWA criteria but don't fire the
+//      event (Samsung Internet's own install flow, Firefox Android, etc.),
+//      we still show a pill after 7s with browser-menu instructions.
+//
+// Always-on dismiss + 14-day re-ask window. Hides if running standalone.
 // ──────────────────────────────────────────────────────────────────────────
 
 var STORAGE_KEY = 'ringin_install_dismissed';
 var STORAGE_TS_KEY = 'ringin_install_dismissed_at';
-// Re-show 14 days after dismissal so we don't nag, but don't disappear
-// forever — useful for users who tap "Not now" without thinking.
 var RESHOW_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 
 function isStandalone(){
@@ -28,61 +30,73 @@ function isStandalone(){
   }catch(e){ return false; }
 }
 
-function isIOS(){
+function detectPlatform(){
   try{
     var ua = window.navigator.userAgent || '';
-    if (/iP(hone|ad|od)/.test(ua)) return true;
-    // iPad Pro running iOS 13+ reports as Mac with touch
-    if (/Mac/.test(ua) && window.navigator.maxTouchPoints > 1) return true;
-    return false;
-  }catch(e){ return false; }
+    if (/iP(hone|ad|od)/.test(ua) || (/Mac/.test(ua) && window.navigator.maxTouchPoints > 1)) return 'ios';
+    if (/SamsungBrowser/i.test(ua)) return 'samsung';
+    if (/Firefox/i.test(ua)) return 'firefox';
+    if (/Edg\//.test(ua)) return 'edge';
+    if (/Chrome|Chromium|CriOS/.test(ua)) return 'chrome';
+    return 'other';
+  }catch(e){ return 'other'; }
 }
 
 function wasRecentlyDismissed(){
   try{
     if (!localStorage.getItem(STORAGE_KEY)) return false;
     var ts = parseInt(localStorage.getItem(STORAGE_TS_KEY) || '0', 10);
-    if (!ts) return true; // dismissed but no timestamp — keep dismissed
+    if (!ts) return true;
     return (Date.now() - ts) < RESHOW_AFTER_MS;
   }catch(e){ return false; }
+}
+
+// Per-platform install instructions for the fallback mode (when the
+// native beforeinstallprompt event doesn't fire — true for iOS Safari
+// always, and for Samsung Internet / Firefox in many configurations).
+function instructionsFor(platform){
+  if (platform === 'ios')     return 'Tap Share, then "Add to Home Screen".';
+  if (platform === 'samsung') return 'Tap menu (☰), then "Add page to → Home screen".';
+  if (platform === 'firefox') return 'Tap menu (⋮), then "Install" or "Add to Home Screen".';
+  if (platform === 'edge')    return 'Tap menu (…), then "Add to phone".';
+  // chrome + everything else
+  return 'Tap menu (⋮), then "Install app" or "Add to Home Screen".';
 }
 
 export default function InstallPrompt(){
   var visibleS = useState(false);
   var visible = visibleS[0]; var setVisible = visibleS[1];
-  var iosS = useState(false);
-  var ios = iosS[0]; var setIos = iosS[1];
+  // 'native' = use beforeinstallprompt prompt(), 'manual' = show menu instructions
+  var modeS = useState('native');
+  var mode = modeS[0]; var setMode = modeS[1];
   var promptEventRef = useRef(null);
+  var platformRef = useRef('other');
 
   useEffect(function(){
-    if (isStandalone()) return;            // Already installed — never show
-    if (wasRecentlyDismissed()) return;    // User said no recently — respect it
+    if (isStandalone()) return;          // Already installed
+    if (wasRecentlyDismissed()) return;  // User said no recently
 
-    // Android / Chromium: capture the install prompt so we can trigger it later
-    function onBeforeInstall(e){
-      try{ e.preventDefault(); }catch(_){}
-      promptEventRef.current = e;
-      // Delay showing so we don't blast the user the instant they land.
-      // Three seconds is enough that they've seen the app.
+    platformRef.current = detectPlatform();
+
+    // (1) Grab any beforeinstallprompt event that fired before React mounted
+    // (captured by the early script in public/index.html).
+    if (window.__ringinDeferredInstall){
+      promptEventRef.current = window.__ringinDeferredInstall;
+      setMode('native');
+      // Tiny delay so the pill animates in cleanly after first paint
       setTimeout(function(){
         if (!isStandalone() && !wasRecentlyDismissed()) setVisible(true);
-      }, 3000);
-    }
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
-
-    // iOS Safari: no event. Show instructions instead, but only if NOT already
-    // running standalone. Delay a little longer so we don't pop up mid-onboarding.
-    var iosTimer = null;
-    if (isIOS() && !isStandalone()){
-      iosTimer = setTimeout(function(){
-        if (!isStandalone() && !wasRecentlyDismissed()){
-          setIos(true);
-          setVisible(true);
-        }
-      }, 6000);
+      }, 800);
     }
 
-    // If the user installs from the browser menu, hide ourselves
+    // (2) Listen for the event in case it fires AFTER mount (typical on
+    // first-ever visit, where SW takes a moment to install + activate).
+    function onReady(){
+      promptEventRef.current = window.__ringinDeferredInstall;
+      if (!promptEventRef.current) return;
+      setMode('native');
+      if (!isStandalone() && !wasRecentlyDismissed()) setVisible(true);
+    }
     function onInstalled(){
       setVisible(false);
       try{
@@ -90,12 +104,27 @@ export default function InstallPrompt(){
         localStorage.setItem(STORAGE_TS_KEY, String(Date.now()));
       }catch(_){}
     }
-    window.addEventListener('appinstalled', onInstalled);
+    window.addEventListener('ringin-install-ready', onReady);
+    window.addEventListener('ringin-install-done', onInstalled);
+
+    // (3) Fallback path. If after 7s no native prompt event fired AND we
+    // haven't already shown the pill, show it anyway in "manual" mode with
+    // browser-specific menu instructions. Covers:
+    //   - iOS Safari (no API at all)
+    //   - Samsung Internet (uses its own menu)
+    //   - Firefox Android (uses its own menu)
+    //   - First-ever visit where SW hasn't activated yet
+    var fallbackTimer = setTimeout(function(){
+      if (isStandalone() || wasRecentlyDismissed()) return;
+      if (promptEventRef.current) return; // native path already showing
+      setMode('manual');
+      setVisible(true);
+    }, 7000);
 
     return function(){
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
-      window.removeEventListener('appinstalled', onInstalled);
-      if (iosTimer) clearTimeout(iosTimer);
+      window.removeEventListener('ringin-install-ready', onReady);
+      window.removeEventListener('ringin-install-done', onInstalled);
+      clearTimeout(fallbackTimer);
     };
   }, []);
 
@@ -109,11 +138,14 @@ export default function InstallPrompt(){
 
   function install(){
     var ev = promptEventRef.current;
-    if (!ev || !ev.prompt){ dismiss(); return; }
+    if (!ev || !ev.prompt){
+      // No native event — flip to manual instructions instead of dismissing
+      setMode('manual');
+      return;
+    }
     try{
       ev.prompt();
       ev.userChoice.then(function(){
-        // Whether they accepted or dismissed the native prompt, hide ours
         promptEventRef.current = null;
         dismiss();
       }).catch(function(){ dismiss(); });
@@ -122,15 +154,17 @@ export default function InstallPrompt(){
 
   if (!visible) return null;
 
-  // Pill banner sits ABOVE the bottom-nav (which has class .bottom-nav).
-  // Using position:fixed with bottom offset so it never affects layout flow.
-  // Z-index 850 = above content, below the call overlay (zIndex 900) so a
-  // ringing call always takes priority.
+  var platform = platformRef.current;
+  var isIosManual = (mode === 'manual' && platform === 'ios');
+  var bodyText = mode === 'native'
+    ? 'Add to home screen for instant access.'
+    : instructionsFor(platform);
+
   var pillStyle = {
     position:'fixed',
     left:'50%',
     transform:'translateX(-50%)',
-    bottom:'76px',     // sits just above the bottom-nav
+    bottom:'76px',
     zIndex:850,
     width:'calc(100% - 24px)',
     maxWidth:'420px',
@@ -147,7 +181,6 @@ export default function InstallPrompt(){
   };
 
   return React.createElement('div', { style: pillStyle, role:'dialog', 'aria-label':'Install RingIn' },
-    // RingIn pill mini-icon
     React.createElement('div', {
       style:{
         width:'34px', height:'34px', borderRadius:'10px',
@@ -162,23 +195,11 @@ export default function InstallPrompt(){
     ),
     React.createElement('div', { style:{flex:1, minWidth:0} },
       React.createElement('div', { style:{fontSize:'13px', fontWeight:700, lineHeight:1.15} }, 'Install RingIn'),
-      React.createElement('div', { style:{fontSize:'11px', opacity:0.85, marginTop:'2px', lineHeight:1.25} },
-        ios ? 'Tap Share, then "Add to Home Screen".' : 'Add to home screen for instant access.'
-      )
+      React.createElement('div', { style:{fontSize:'11px', opacity:0.88, marginTop:'2px', lineHeight:1.3} }, bodyText)
     ),
-    // Action button
-    ios
+    // Action button: native prompt if we have one, otherwise "Got it"
+    mode === 'native'
       ? React.createElement('button', {
-          onClick: dismiss,
-          className: 'ringin-tap',
-          style:{
-            background:'rgba(255,255,255,0.18)', color:'#fff',
-            border:'none', borderRadius:'10px',
-            padding:'8px 12px', fontSize:'12px', fontWeight:700,
-            cursor:'pointer',
-          }
-        }, 'Got it')
-      : React.createElement('button', {
           onClick: install,
           className: 'ringin-tap',
           style:{
@@ -187,7 +208,17 @@ export default function InstallPrompt(){
             padding:'8px 14px', fontSize:'12px', fontWeight:800,
             cursor:'pointer',
           }
-        }, 'Install'),
+        }, 'Install')
+      : React.createElement('button', {
+          onClick: dismiss,
+          className: 'ringin-tap',
+          style:{
+            background:'rgba(255,255,255,0.18)', color:'#fff',
+            border:'none', borderRadius:'10px',
+            padding:'8px 12px', fontSize:'12px', fontWeight:700,
+            cursor:'pointer',
+          }
+        }, 'Got it'),
     React.createElement('button', {
       onClick: dismiss,
       className: 'ringin-tap',
