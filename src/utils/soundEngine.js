@@ -394,6 +394,44 @@ export function stopRingtone(){
   if(_ringtoneCtxRef.stop){ _ringtoneCtxRef.stop(); }
 }
 
+// ─── CALLER-SIDE RINGBACK TONE ────────────────────────────────────────────
+// Standard phone "ringback" — softer than the incoming ringtone, plays for the
+// CALLER while they wait for the callee to pick up. Mimics WhatsApp's outgoing-call
+// audio feedback so the caller knows the call is actually going through.
+// 1-second "brr" tone every 3s, capped at 12 cycles (~36s of patience).
+var _ringbackRef = { stop: null };
+export function playRingback(){
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
+  var ctx = getSCtx();
+  if(!ctx) return;
+  stopRingback();
+  function brrOnce(){
+    // A single long ~1s tone at 440Hz/480Hz mixed (the classic phone ring frequency)
+    [[0, 440], [0, 480]].forEach(function(p){
+      var o=ctx.createOscillator(); var g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type='sine';
+      o.frequency.setValueAtTime(p[1], ctx.currentTime+p[0]);
+      g.gain.setValueAtTime(0, ctx.currentTime+p[0]);
+      g.gain.linearRampToValueAtTime(0.07, ctx.currentTime+p[0]+0.05);
+      g.gain.setValueAtTime(0.07, ctx.currentTime+p[0]+0.95);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+p[0]+1.0);
+      o.start(ctx.currentTime+p[0]); o.stop(ctx.currentTime+p[0]+1.02);
+    });
+  }
+  brrOnce();
+  var count = 1;
+  var iv = setInterval(function(){
+    count++;
+    if (count > 12) { try{ clearInterval(iv); }catch(e){} return; }
+    brrOnce();
+  }, 3000);
+  _ringbackRef.stop = function(){ try{ clearInterval(iv); }catch(e){} _ringbackRef.stop = null; };
+}
+export function stopRingback(){
+  if(_ringbackRef.stop){ _ringbackRef.stop(); }
+}
+
 export function previewSound(type,variant,vol){
   // Ensure context is created AND resumed (resume() is idempotent and required after user-gesture)
   try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}

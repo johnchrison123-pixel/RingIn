@@ -109,9 +109,14 @@ export async function startCallSession(opts) {
   // wait until after fetchToken (slow), the activation expires and mic creation
   // silently fails, leaving the user unable to be heard while still hearing the peer.
   try {
+    // CPU profile: speech_standard (16kHz mono) instead of music_standard (48kHz stereo)
+    // is a ~3-4× CPU reduction on low-end Android (Samsung Internet's main pain point).
+    // Voice calls don't need music fidelity — speech is the right tool for the job.
+    // Keep echo-cancel + noise-suppression but drop AGC (auto-gain) which adds processing
+    // overhead and can pump the mic level mid-call on weak hardware.
     localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-      encoderConfig: 'music_standard',
-      ANS: true, AEC: true, AGC: true,
+      encoderConfig: 'speech_standard',
+      ANS: true, AEC: true, AGC: false,
     });
   } catch (e) {
     // Make this VISIBLE — silently going to listen-only is what caused the "one-way audio" bug

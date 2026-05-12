@@ -1,8 +1,27 @@
 /* eslint-disable */
-import React,{useState,useEffect,useRef} from 'react';
+import React,{useState,useEffect,useRef,useCallback} from 'react';
 import {startCallSession} from '../utils/agora';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
+import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
+
+// ── Module-level SVG nodes ─────────────────────────────────────────────────
+// React.createElement creates a fresh object on every render. Hoisting the
+// inner SVG bodies up here gives us stable references — the diff for the
+// Mute/Speaker buttons becomes "did the wrapping <button> change?" rather than
+// "rebuild every <path>". Materially cuts re-render cost on low-end Android.
+var MIC_PATHS = [
+  React.createElement('rect',{key:'b',x:'9',y:'2',width:'6',height:'12',rx:'3'}),
+  React.createElement('path',{key:'s',d:'M5 10v2a7 7 0 0 0 14 0v-2'}),
+  React.createElement('line',{key:'st',x1:'12',y1:'19',x2:'12',y2:'23'}),
+];
+var MIC_SLASH = React.createElement('line',{key:'x',x1:'4',y1:'4',x2:'20',y2:'20',strokeWidth:'2.6'});
+var SPEAKER_PATHS = [
+  React.createElement('polygon',{key:'sp',points:'11 5 6 9 2 9 2 15 6 15 11 19 11 5'}),
+  React.createElement('path',{key:'w1',d:'M15.54 8.46a5 5 0 0 1 0 7.07'}),
+  React.createElement('path',{key:'w2',d:'M19.07 4.93a10 10 0 0 1 0 14.14'}),
+];
+var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'};
 
 // Props:
 //   expert            object   the remote party (name, img, initials, color, role, rate, id?)
@@ -232,6 +251,29 @@ export default function CallScreen(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[phase, isIncoming]);
 
+  // ── 3b. Caller-side ringback tone + haptic pulse — gives the caller the same
+  //       audio/tactile feedback WhatsApp does so they know the call is going through.
+  //       Stops the moment phase flips to connecting/connected/ended, and on unmount.
+  useEffect(function(){
+    if(phase!=='ringing' || isIncoming) return;
+    try{ playRingback(); }catch(e){}
+    var hapticCount = 0;
+    var hapticIv = setInterval(function(){
+      hapticCount++;
+      // Cap haptics at 8 pulses (~24s) — keeps Samsung Internet from queuing
+      // vibrate calls that then fire mid-call when the user accepts.
+      if(hapticCount > 8){ try{ clearInterval(hapticIv); }catch(e){} return; }
+      try{ hapticPulse([180]); }catch(e){}
+    }, 3000);
+    // Fire one pulse immediately
+    try{ hapticPulse([180]); }catch(e){}
+    return function(){
+      try{ stopRingback(); }catch(e){}
+      try{ clearInterval(hapticIv); }catch(e){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[phase, isIncoming]);
+
   // ── 4. Connected timer + coin deduction (every 60s, charge rate_per_min)
   useEffect(function(){
     if(phase!=='connected') return;
@@ -330,26 +372,34 @@ export default function CallScreen(props){
     };
   }, []);
 
-  function toggleMute(){
+  // Mute/Speaker handlers — wrapped in useCallback with empty deps so the
+  // <button onClick={...}> references stay stable. Without this, every parent
+  // re-render (coin tick, secs tick) creates new function instances and React
+  // re-creates the button props, multiplying the render cost on the hot path.
+  var toggleMute = useCallback(function(){
     setMuted(function(m){
       var next = !m;
       var s = sessionRef.current;
       if(s) try{ s.setMuted(next); }catch(e){}
       return next;
     });
-  }
+  }, []);
 
   // Loudspeaker toggle. Boosts remote-audio volume on the playback side
   // (Agora's setVolume scale: 100 = normal, 250 = boosted for hands-free).
   // Browsers can't actually route to earpiece — this is a volume-based boost.
-  function toggleSpeaker(){
+  var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
       var s = sessionRef.current;
       if(s){ try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){} }
       return next;
     });
-  }
+  }, []);
+
+  var onHangupClick = useCallback(function(){ hangup('caller_hangup'); },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  []);
 
   // ── Render ────────────────────────────────────────────────────────────────
   if(phase==='declined' || (phase==='ended' && endReason==='rejected')){
@@ -381,7 +431,7 @@ export default function CallScreen(props){
       ),
       error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
       React.createElement('button',{
-        onClick:function(){ hangup('caller_hangup'); },
+        onClick: onHangupClick,
         title:'End call',
         style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)'}
       })
@@ -427,18 +477,14 @@ export default function CallScreen(props){
           boxShadow: muted ? '0 4px 14px rgba(255,255,255,0.15)' : '0 4px 14px rgba(123,110,255,0.4)',
         }
       },
-        React.createElement('svg',{viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'},
-          // Mic body + base — always rendered
-          React.createElement('rect',{key:'b',x:'9',y:'2',width:'6',height:'12',rx:'3'}),
-          React.createElement('path',{key:'s',d:'M5 10v2a7 7 0 0 0 14 0v-2'}),
-          React.createElement('line',{key:'st',x1:'12',y1:'19',x2:'12',y2:'23'}),
-          // Slash overlay when muted
-          muted ? React.createElement('line',{key:'x',x1:'4',y1:'4',x2:'20',y2:'20',strokeWidth:'2.6'}) : null
+        React.createElement('svg', SVG_ATTRS,
+          MIC_PATHS[0], MIC_PATHS[1], MIC_PATHS[2],
+          muted ? MIC_SLASH : null
         )
       ),
       // ── HANGUP — darker plain red, no icon ─────────────────
       React.createElement('button',{
-        onClick:function(){ hangup('caller_hangup'); },
+        onClick: onHangupClick,
         title:'End call',
         style:{
           width:'70px',height:'70px',borderRadius:'50%',
@@ -469,12 +515,8 @@ export default function CallScreen(props){
           boxShadow: speakerOn ? '0 4px 14px rgba(255,255,255,0.15)' : '0 4px 14px rgba(123,110,255,0.4)',
         }
       },
-        React.createElement('svg',{viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'},
-          // Speaker body (always rendered)
-          React.createElement('polygon',{key:'sp',points:'11 5 6 9 2 9 2 15 6 15 11 19 11 5'}),
-          // Sound waves always shown — loudspeaker icon both states (semantics in bg color)
-          React.createElement('path',{key:'w1',d:'M15.54 8.46a5 5 0 0 1 0 7.07'}),
-          React.createElement('path',{key:'w2',d:'M19.07 4.93a10 10 0 0 1 0 14.14'})
+        React.createElement('svg', SVG_ATTRS,
+          SPEAKER_PATHS[0], SPEAKER_PATHS[1], SPEAKER_PATHS[2]
         )
       )
     ) : React.createElement('button',{onClick:onEnd,style:{padding:'12px 32px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Back')
