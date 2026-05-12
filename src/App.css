@@ -42,17 +42,20 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
   }
   .bottom-nav {
     position: fixed;
-    bottom: 0;
+    /* Shift the WHOLE nav down by env(safe-area-inset-bottom) so it extends
+       into the home-indicator zone iOS would otherwise leave blank.
+       padding-bottom compensates so the icons stay visible — but with a
+       smaller compensation than the shift, the icons end up sitting
+       env(safe-area-inset-bottom) - 24px LOWER on screen than before
+       (roughly another 2mm on iPhone X+, where the inset is ~34px). */
+    bottom: calc(0px - env(safe-area-inset-bottom));
     left: 0;
     right: 0;
     z-index: 100;
-    /* Push icons DOWN within the nav so they sit at the very bottom edge,
-       right at the home indicator level. Larger top padding + zero bottom
-       padding shifts the icons ~6-8px (≈2mm) lower than before. The home
-       indicator pill overlays the icons' lower margin rather than sitting
-       in a separate band below them. */
     padding-top: 22px;
-    padding-bottom: 0;
+    /* Was: 0. Now ≈ 24px on iPhone X+. Keeps icons clear of the home
+       indicator pill while sitting noticeably lower than before. */
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 10px));
   }
   .screen-content {
     padding-bottom: 80px;
