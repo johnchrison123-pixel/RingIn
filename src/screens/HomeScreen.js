@@ -1618,18 +1618,6 @@ export default function HomeScreen(props){
       ) : null
     ) : null,
     React.createElement('div', {className:'sh'},
-      React.createElement('div', {className:'st'}, 'Categories'),
-      React.createElement('div', {className:'sa'}, 'See all')
-    ),
-    React.createElement('div', {className:'cats'},
-      CATS.map(function(c){
-        return React.createElement('div', {key:c.id, className:'cp'+(ac===c.id?' on':''), onClick:function(){setAc(c.id);}},
-          React.createElement('div', {className:'ci'}, c.icon),
-          React.createElement('div', {className:'cl'}, c.label)
-        );
-      })
-    ),
-    React.createElement('div', {className:'sh'},
       React.createElement('div', {className:'st'}, 'Online Now'),
       React.createElement('div', {className:'sa'}, 'See all')
     ),
