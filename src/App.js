@@ -46,6 +46,22 @@ export default function App() {
   var appFollowing = appFollowHook.following;
   var appToggleFollow = appFollowHook.toggleFollow;
 
+  // PWA shortcut deep-link — manifest.json advertises `/?tab=messages` and
+  // `/?tab=search` as home-screen long-press shortcuts. Read the query once on
+  // mount and jump to the requested tab. Pure additive: if there's no `?tab=`
+  // param, behavior is identical to before (default to 'home').
+  useEffect(function(){
+    try{
+      var params = new URLSearchParams(window.location.search);
+      var requestedTab = params.get('tab');
+      var allowed = {home:1, messages:1, search:1, workshops:1, profile:1};
+      if(requestedTab && allowed[requestedTab]){
+        setActiveTab(requestedTab);
+      }
+    }catch(e){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(function() {
     // Eagerly start fetching the Agora SDK chunk on app mount. The idle-callback
     // prefetch in agora.js may never fire on a busy page; this guarantees the
