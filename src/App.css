@@ -42,20 +42,25 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
   }
   .bottom-nav {
     position: fixed;
-    /* Shift the whole nav DOWN by env(safe-area-inset-bottom) so the nav
-       BACKGROUND extends fully into the home-indicator zone iOS would
-       otherwise render as a blank black band. The nav now overlays that
-       zone with its own color. */
-    bottom: calc(0px - env(safe-area-inset-bottom));
+    /* bottom: 0 — single, clean anchor. Earlier attempts used a negative
+       bottom value PLUS large padding-bottom (the "double padding" anti-
+       pattern). That was causing the visible gap above the icons AND
+       the clipping at the bottom. This single-bottom approach is what
+       Apple's native tab bar uses internally and what well-built PWAs use. */
+    bottom: 0;
     left: 0;
     right: 0;
     z-index: 100;
-    /* padding-top reduced from 22px → 14px to crop ~2mm of empty space
-       above the icons. The nav becomes ~8px shorter overall in PWA mode. */
-    padding-top: 14px;
-    /* padding-bottom = env - 4px keeps the bottom in place: icons end
-       ~4px (≈1mm) into the home-indicator zone, still visible. */
-    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 4px));
+    /* Minimal top padding — icons should hug the top of the visible nav
+       area, not float in the middle with empty space above them. */
+    padding-top: 4px;
+    /* padding-bottom keeps icons clear of the home indicator pill.
+       env - 24 puts icons ~10px above the bottom edge on iPhone X+
+       (env ≈ 34), giving the pill its 5–10px breathing room while
+       keeping icons as low as visually possible. max(8px, ...) ensures
+       at least 8px of bottom margin on devices where env is 0 (Android,
+       older iPhones) so icons don't touch the screen edge. */
+    padding-bottom: max(8px, calc(env(safe-area-inset-bottom) - 24px));
   }
   .screen-content {
     padding-bottom: 80px;
