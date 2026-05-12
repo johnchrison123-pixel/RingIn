@@ -8,16 +8,28 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 .screen-content::-webkit-scrollbar{display:none;}
 .bottom-nav{display:flex;align-items:center;background:var(--bg2);border-top:1px solid var(--border);padding:5px 8px 12px;flex-shrink:0;gap:4px;}
 
-/* ── Bottom nav extends to the home-indicator zone (installed-PWA only) ──
-   On iOS PWA, the webview goes edge-to-edge — including the area where the
-   home indicator pill sits. We want the nav's BACKGROUND to fill that area
-   (so it looks like one continuous nav bar all the way to the bottom edge,
-   just like Instagram / WhatsApp), but the icons themselves need to clear
-   the home indicator so they stay tappable. Adding safe-area-inset-bottom
-   INSIDE the nav as padding-bottom does both: bg fills, icons pushed up.
-   Zero impact on Android PWA (env resolves to 0) and on Safari browser
-   (rule is gated to display-mode: standalone). */
+/* ── Installed-PWA safe-area handling (iOS, mainly) ──────────────────────
+   Gated to display-mode: standalone so Safari browser tabs are unaffected.
+
+   TOP: padding-top on the container pushes the screen's content (the
+   "RingIn" / "Experts" / "Workshops" / etc. headers) below the iOS
+   status bar. The container's background (var(--bg)) still extends to
+   the very top of the screen, so the iOS clock/battery sits on the app's
+   own dark background — no visible "letterbox" gap, exactly like
+   Instagram. The visible effect is: clock at top, header right below it.
+
+   BOTTOM: padding-bottom on the .bottom-nav itself (NOT on the container)
+   extends the nav's bg into the home-indicator zone so the home indicator
+   pill sits ON the nav, not in a separate gap below it — again, Instagram
+   pattern. Icons get pushed up by the same amount so they stay clear of
+   the home indicator.
+
+   Zero impact on Android PWA (env resolves to 0) and Safari browser
+   (display-mode media query doesn't match). */
 @media (display-mode: standalone) {
+  .app-container {
+    padding-top: env(safe-area-inset-top);
+  }
   .bottom-nav {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
