@@ -81,7 +81,7 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 }
 .nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 6px;border-radius:10px;border:none;background:none;cursor:pointer;transition:background .15s;margin:0 3px;}
 .nav-tab.active{background:var(--acg);}
-.nav-tab svg{width:20px;height:20px;stroke:var(--t3);transition:stroke .15s;}
+.nav-tab svg{width:22px;height:22px;stroke:var(--t3);transition:stroke .15s;}
 .nav-tab.active svg{stroke:var(--ac);}
 .nav-tab span{font-size:9px;color:var(--t3);font-family:'DM Sans',sans-serif;}
 .nav-tab.active span{color:var(--ac);}
