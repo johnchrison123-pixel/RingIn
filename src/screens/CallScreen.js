@@ -23,6 +23,34 @@ var SPEAKER_PATHS = [
 ];
 var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'};
 
+// ── Module-level style constants ───────────────────────────────────────────
+// Every secs/coin tick re-renders the connected-call view. Hoisting the style
+// objects means React doesn't allocate new objects on the hot path — and
+// dropping the `transition:'background ...'` from gradient buttons kills the
+// per-frame CPU repaint that Samsung Internet performs (it doesn't promote
+// gradient transitions to the compositor like Chrome desktop does).
+var BTN_BASE = {
+  width:'54px', height:'54px', borderRadius:'50%',
+  border:'none', padding:0,
+  display:'flex', alignItems:'center', justifyContent:'center',
+  // Only `transform` is transitioned — the press feedback comes from the
+  // .ringin-tap:active class which scales the button. Background stays
+  // static on purpose: gradient↔solid transitions are the worst case for
+  // Samsung Internet's paint pipeline.
+  willChange:'transform',
+};
+var BTN_GRADIENT = 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
+var BTN_SHADOW_BRAND = '0 4px 14px rgba(123,110,255,0.4)';
+var BTN_SHADOW_WHITE = '0 4px 14px rgba(255,255,255,0.18)';
+var HANGUP_BTN_STYLE = {
+  width:'70px', height:'70px', borderRadius:'50%',
+  background:'#c0392b', border:'none', cursor:'pointer',
+  boxShadow:'0 6px 22px rgba(192,57,43,0.65)',
+  willChange:'transform',
+};
+var RIPPLE_1 = {position:'absolute',width:'120px',height:'120px',borderRadius:'50%',background:'rgba(123,110,255,0.15)',top:'-15px',left:'-15px',animation:'ripple 1.2s ease-out infinite'};
+var RIPPLE_2 = {position:'absolute',width:'140px',height:'140px',borderRadius:'50%',background:'rgba(123,110,255,0.08)',top:'-25px',left:'-25px',animation:'ripple 1.2s ease-out infinite 0.4s'};
+
 // Props:
 //   expert            object   the remote party (name, img, initials, color, role, rate, id?)
 //   coins             number   caller's current coin balance
@@ -96,7 +124,14 @@ export default function CallScreen(props){
       }catch(e){ /* silently ignore */ }
     }
     function startSilentAudio(){
+      // iOS-ONLY. On Samsung Internet, a second <audio> element competes with
+      // Agora's AudioContext for the device's audio focus path and runs el.play()'s
+      // promise resolution on the main thread — slowing every subsequent button
+      // tap by tens of ms. Skip entirely outside iOS.
       try{
+        var ua = (navigator && navigator.userAgent) || '';
+        var isIOS = /iP(hone|ad|od)/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1);
+        if(!isIOS) return;
         var el = document.createElement('audio');
         el.setAttribute('playsinline','');
         el.setAttribute('muted','');
@@ -416,13 +451,12 @@ export default function CallScreen(props){
   if(phase==='ringing'){
     return React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',background:'var(--bg)',padding:'24px'}},
       React.createElement('div',{style:{position:'relative',marginBottom:'24px'}},
-        React.createElement('div',{style:{position:'absolute',width:'120px',height:'120px',borderRadius:'50%',background:'rgba(123,110,255,0.15)',top:'-15px',left:'-15px',animation:'ripple 1.2s ease-out infinite'}}),
-        React.createElement('div',{style:{position:'absolute',width:'140px',height:'140px',borderRadius:'50%',background:'rgba(123,110,255,0.08)',top:'-25px',left:'-25px',animation:'ripple 1.2s ease-out infinite 0.4s'}}),
+        React.createElement('div',{style:RIPPLE_1}),
+        React.createElement('div',{style:RIPPLE_2}),
         React.createElement('div',{style:{width:'90px',height:'90px',borderRadius:'50%',background:expert.color||'var(--ac)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:700,color:'#fff',position:'relative',zIndex:1}},
           expert.img ? React.createElement('img',{src:expert.img,alt:expert.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (expert.initials||'?')
         )
       ),
-      React.createElement('style',null,'@keyframes ripple{0%{transform:scale(0.8);opacity:1}100%{transform:scale(1.4);opacity:0}}'),
       React.createElement('div',{style:{fontSize:'20px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
       React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'8px'}},expert.role||'Member'),
       React.createElement('div',{style:{fontSize:'13px',color:'var(--t3)',marginBottom:'40px',display:'flex',alignItems:'center',gap:'6px'}},
@@ -432,8 +466,9 @@ export default function CallScreen(props){
       error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
       React.createElement('button',{
         onClick: onHangupClick,
+        className: 'ringin-tap',
         title:'End call',
-        style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)'}
+        style: HANGUP_BTN_STYLE
       })
     );
   }
@@ -458,24 +493,21 @@ export default function CallScreen(props){
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────
-      // Default: brand gradient bg, white mic icon.
-      // Muted: white bg, brand-color mic-slash icon (= "I'm muted" indicator).
+      // The .ringin-tap class provides the press feedback via :active scale —
+      // we deliberately do NOT transition the background or box-shadow because
+      // Samsung Internet repaints the full gradient each frame during transition.
       React.createElement('button',{
         onClick: toggleMute,
+        className: 'ringin-tap',
         title: muted ? 'Unmute' : 'Mute',
         disabled: phase!=='connected',
-        style:{
-          width:'54px',height:'54px',borderRadius:'50%',
-          background: muted ? '#ffffff' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-          border:'none',
+        style: Object.assign({}, BTN_BASE, {
+          background: muted ? '#ffffff' : BTN_GRADIENT,
           color: muted ? '#7B6EFF' : '#ffffff',
-          cursor: phase==='connected'?'pointer':'not-allowed',
-          opacity: phase==='connected'?1:0.45,
-          display:'flex',alignItems:'center',justifyContent:'center',
-          padding:0,
-          transition:'background 0.18s, transform 0.12s',
-          boxShadow: muted ? '0 4px 14px rgba(255,255,255,0.15)' : '0 4px 14px rgba(123,110,255,0.4)',
-        }
+          cursor: phase==='connected' ? 'pointer' : 'not-allowed',
+          opacity: phase==='connected' ? 1 : 0.45,
+          boxShadow: muted ? BTN_SHADOW_WHITE : BTN_SHADOW_BRAND,
+        })
       },
         React.createElement('svg', SVG_ATTRS,
           MIC_PATHS[0], MIC_PATHS[1], MIC_PATHS[2],
@@ -485,40 +517,28 @@ export default function CallScreen(props){
       // ── HANGUP — darker plain red, no icon ─────────────────
       React.createElement('button',{
         onClick: onHangupClick,
+        className: 'ringin-tap',
         title:'End call',
-        style:{
-          width:'70px',height:'70px',borderRadius:'50%',
-          background:'#c0392b', // darker red than #ef4444
-          border:'none',
-          cursor:'pointer',
-          boxShadow:'0 6px 22px rgba(192,57,43,0.65)',
-          transition:'transform 0.12s',
-        }
+        style: HANGUP_BTN_STYLE,
       }),
       // ── SPEAKER (loudspeaker boost) ────────────────────────
-      // Default: brand gradient bg, white speaker icon.
-      // Loud on: white bg, brand-color speaker icon (= "speaker enabled").
       React.createElement('button',{
         onClick: toggleSpeaker,
+        className: 'ringin-tap',
         title: speakerOn ? 'Switch off loudspeaker' : 'Switch on loudspeaker',
         disabled: phase!=='connected',
-        style:{
-          width:'54px',height:'54px',borderRadius:'50%',
-          background: speakerOn ? '#ffffff' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-          border:'none',
+        style: Object.assign({}, BTN_BASE, {
+          background: speakerOn ? '#ffffff' : BTN_GRADIENT,
           color: speakerOn ? '#7B6EFF' : '#ffffff',
-          cursor: phase==='connected'?'pointer':'not-allowed',
-          opacity: phase==='connected'?1:0.45,
-          display:'flex',alignItems:'center',justifyContent:'center',
-          padding:0,
-          transition:'background 0.18s, transform 0.12s',
-          boxShadow: speakerOn ? '0 4px 14px rgba(255,255,255,0.15)' : '0 4px 14px rgba(123,110,255,0.4)',
-        }
+          cursor: phase==='connected' ? 'pointer' : 'not-allowed',
+          opacity: phase==='connected' ? 1 : 0.45,
+          boxShadow: speakerOn ? BTN_SHADOW_WHITE : BTN_SHADOW_BRAND,
+        })
       },
         React.createElement('svg', SVG_ATTRS,
           SPEAKER_PATHS[0], SPEAKER_PATHS[1], SPEAKER_PATHS[2]
         )
       )
-    ) : React.createElement('button',{onClick:onEnd,style:{padding:'12px 32px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Back')
+    ) : React.createElement('button',{onClick:onEnd,className:'ringin-tap',style:{padding:'12px 32px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}},'Back')
   );
 }

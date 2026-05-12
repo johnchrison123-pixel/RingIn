@@ -50,8 +50,11 @@ export default function IncomingCallModal(props){
   var avatar = invite.caller_avatar || null;
   var initials = (name || '?').substring(0,2).toUpperCase();
 
+  // Note: NO backdrop-filter — Samsung Internet/Galaxy GPUs run backdrop-filter
+  // on the CPU which pegs a core during the ripple animations. Solid alpha bg
+  // looks nearly identical and costs ~0 CPU. Keyframes live in src/index.css.
   return React.createElement('div',{
-    style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(9,9,14,0.96)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px'}
+    style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(9,9,14,0.98)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px'}
   },
     React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'18px',textTransform:'uppercase',letterSpacing:'2px',fontWeight:700}},'Incoming Call'),
     React.createElement('div',{style:{position:'relative',marginBottom:'24px'}},
@@ -61,7 +64,6 @@ export default function IncomingCallModal(props){
         avatar ? React.createElement('img',{src:avatar,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
       )
     ),
-    React.createElement('style',null,'@keyframes ripple{0%{transform:scale(0.8);opacity:1}100%{transform:scale(1.6);opacity:0}}'),
     React.createElement('div',{style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,color:'var(--text)',marginBottom:'6px'}}, name),
     React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'40px'}}, 'is calling you'),
 
@@ -69,16 +71,18 @@ export default function IncomingCallModal(props){
       React.createElement('div',{style:{textAlign:'center'}},
         React.createElement('button',{
           onClick:reject,
+          className:'ringin-tap',
           title:'Decline',
-          style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)'}
+          style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)',willChange:'transform'}
         }),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}},'Decline')
       ),
       React.createElement('div',{style:{textAlign:'center'}},
         React.createElement('button',{
           onClick:accept,
+          className:'ringin-tap',
           title:'Accept',
-          style:{width:'68px',height:'68px',borderRadius:'50%',background:'var(--green)',border:'none',color:'#fff',fontSize:'26px',cursor:'pointer',boxShadow:'0 6px 22px rgba(39,201,106,0.55)',animation:'pulse 1.5s ease-in-out infinite',display:'flex',alignItems:'center',justifyContent:'center'}
+          style:{width:'68px',height:'68px',borderRadius:'50%',background:'var(--green)',border:'none',color:'#fff',fontSize:'26px',cursor:'pointer',boxShadow:'0 6px 22px rgba(39,201,106,0.55)',animation:'ringinPulse 1.5s ease-in-out infinite',display:'flex',alignItems:'center',justifyContent:'center',willChange:'transform'}
         },
           React.createElement('svg',{viewBox:'0 0 24 24',width:'26',height:'26',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'},
             React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
@@ -86,7 +90,6 @@ export default function IncomingCallModal(props){
         ),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}},'Accept')
       )
-    ),
-    React.createElement('style',null,'@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}')
+    )
   );
 }

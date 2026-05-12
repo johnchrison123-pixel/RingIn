@@ -22,3 +22,34 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* ── Call UI keyframes ───────────────────────────────────────────────────
+   Previously inlined inside CallScreen / IncomingCallModal renders. On
+   Samsung Internet the Blink engine re-parses inline @keyframes on every
+   render — this hoisting kills the per-tick CSS re-parse overhead during
+   a live call (every secs tick was triggering it). */
+@keyframes ripple {
+  0%   { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+@keyframes ringinPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+
+/* ── Call-control buttons: native-feel tap response ──────────────────────
+   Samsung Internet imposes the legacy 300ms double-tap-to-zoom delay on
+   plain <button>s without touch-action:manipulation. Adding the class
+   below kills that delay AND adds a CSS :active state so the button
+   visually responds the instant the finger lands — even if the JS handler
+   is briefly delayed by Agora's audio encoding on the main thread. */
+.ringin-tap {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ringin-tap:active {
+  transform: scale(0.92);
+  opacity: 0.85;
+}
