@@ -46,11 +46,13 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
     left: 0;
     right: 0;
     z-index: 100;
-    /* Push icons DOWN within the nav so they sit close to the bottom edge,
-       right where the home indicator pill is. The nav grows taller from
-       the top side, not the bottom. */
-    padding-top: 16px;
-    padding-bottom: 4px;
+    /* Push icons DOWN within the nav so they sit at the very bottom edge,
+       right at the home indicator level. Larger top padding + zero bottom
+       padding shifts the icons ~6-8px (≈2mm) lower than before. The home
+       indicator pill overlays the icons' lower margin rather than sitting
+       in a separate band below them. */
+    padding-top: 22px;
+    padding-bottom: 0;
   }
   .screen-content {
     padding-bottom: 80px;
