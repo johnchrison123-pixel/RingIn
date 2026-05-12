@@ -83,7 +83,7 @@ function HeartSvg(props){
   );
 }
 
-function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
+function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageSent}){
   var myId = session&&session.user ? session.user.id : 'guest';
   // Prefer the user's chosen full_name (from profile cache) over the email prefix.
   // This is the sender_name stamped onto every outgoing message — it's what the
@@ -441,15 +441,25 @@ function ChatBox({convo,session,onBack,onViewExpert,onCall,onMessageSent}){
             React.createElement('polyline',{points:'15 18 9 12 15 6'})
           )
         ),
-        React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0}},
-          otherAvatar?React.createElement('img',{src:otherAvatar,alt:otherName,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
-        ),
-        React.createElement('div',{style:{flex:1,minWidth:0}},
-          React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
-          convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
-            React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
-          ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
-        ),
+        // Avatar + name both open the other user's profile (whole left cluster is clickable)
+        (function(){
+          var otherUid = convo.otherId || convo.receiverId || convo.user_id;
+          function openProfile(){
+            if(!otherUid || !onViewUser) return;
+            onViewUser({ id: otherUid, full_name: otherName, avatar_url: otherAvatar||convo.img||null, is_online: !!convo.isOnline });
+          }
+          return [
+            React.createElement('div',{key:'av',onClick:openProfile,style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0,cursor:otherUid?'pointer':'default'}},
+              otherAvatar?React.createElement('img',{src:otherAvatar,alt:otherName,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+            ),
+            React.createElement('div',{key:'nm',onClick:openProfile,style:{flex:1,minWidth:0,cursor:otherUid?'pointer':'default'}},
+              React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
+              convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
+                React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
+              ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
+            )
+          ];
+        })(),
         // Always show Call — works for both experts (using their rate) and regular users (free-tier rate)
         React.createElement('button',{onClick:function(){if(onCall)onCall(Object.assign({},convo,{rate:convo.rate||30,name:otherName,img:otherAvatar||convo.img}));},title:'Call',style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'4px'}},
           React.createElement('svg',{viewBox:'0 0 24 24',width:'12',height:'12',fill:'none',stroke:'currentColor',strokeWidth:'2.4',strokeLinecap:'round',strokeLinejoin:'round'},
@@ -1121,7 +1131,7 @@ export default function MessagesScreen(props){
   }
 
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
-  if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onCall:function(exp){
+  if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onViewUser:props.onViewUser,onCall:function(exp){
     // CRITICAL: prefer the actual user UUID fields (otherId/receiverId/user_id) over `id`,
     // because convo.id is the conversation_id (e.g. "userA_userB"), NOT a UUID. Using it
     // as callee_id would fail the Supabase insert with "invalid input syntax for type uuid".
@@ -1191,13 +1201,26 @@ export default function MessagesScreen(props){
       !loadingConvos && userConvos.length>0 ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
         userConvos.map(function(c){
+          // Helper to open the other user's profile from avatar/name clicks
+          function openTheirProfile(ev){
+            if(ev) ev.stopPropagation();
+            var otherUid = c.otherId || c.receiverId || c.user_id;
+            if(!otherUid || !props.onViewUser) return;
+            props.onViewUser({
+              id: otherUid,
+              full_name: c.name,
+              avatar_url: c.img,
+              email: c.email || null,
+              is_online: !!c.isOnline,
+            });
+          }
           return React.createElement('div',{key:c.id,onClick:function(){
             setActive(c);
             setUserConvos(function(prev){return prev.map(function(p){return p.id===c.id?Object.assign({},p,{unreadCount:0}):p;});});
             setTotalUnread(function(t){return Math.max(0,t-(c.unreadCount||0));});
             if(props.onUnreadCount) props.onUnreadCount(function(prev){return Math.max(0,prev-(c.unreadCount||0));});
           },style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
-            React.createElement('div',{style:{position:'relative',flexShrink:0}},
+            React.createElement('div',{onClick:openTheirProfile,style:{position:'relative',flexShrink:0,cursor:'pointer'}},
               React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
                 c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
               ),
@@ -1205,7 +1228,7 @@ export default function MessagesScreen(props){
             ),
             React.createElement('div',{style:{flex:1,minWidth:0}},
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px'}},
-                React.createElement('span',{style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)'}},c.name),
+                React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer'}},c.name),
                 React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?timeAgo(c.lastTime):'')
               ),
               React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
