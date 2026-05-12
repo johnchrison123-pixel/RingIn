@@ -56,12 +56,16 @@ export default function App() {
         // set via Edit Profile from being wiped on every login.
         supabase.from('profiles').select('full_name').eq('id',session.user.id).single().then(function(r){
           var exists = !!(r && r.data);
+          // Respect the user's "Show Online Status" privacy toggle. If they've turned it
+          // off, don't force is_online=true on every auth state change.
+          var showOnline = true;
+          try { showOnline = localStorage.getItem('show_online') !== '0'; } catch(e) {}
           var payload = {
             id: session.user.id,
             email: email,
-            is_online: true,
             last_seen: new Date().toISOString(),
           };
+          if(showOnline) payload.is_online = true;
           // Only seed full_name if no row yet OR existing row has no name
           if(!exists || !r.data.full_name){ payload.full_name = emailPrefix; }
           supabase.from('profiles').upsert(payload,{onConflict:'id'}).then(function(){});
@@ -74,10 +78,12 @@ export default function App() {
         });
       }
     });
-    // Use visibilitychange + pagehide instead of onbeforeunload (mobile-friendly)
+    // Use visibilitychange + pagehide instead of onbeforeunload (mobile-friendly).
+    // Respect the "Show Online Status" privacy toggle — if off, leave is_online untouched.
     function markOffline(){
-      var s = sub && sub.data && sub.data.session;
       try{
+        var showOnline = localStorage.getItem('show_online') !== '0';
+        if(!showOnline) return; // privacy toggle off — user opted out of presence
         var sess = supabase.auth.getSession();
         if(sess && sess.then){ sess.then(function(r){
           if(r.data && r.data.session && r.data.session.user){

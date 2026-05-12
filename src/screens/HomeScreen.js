@@ -1512,7 +1512,47 @@ export default function HomeScreen(props){
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},(u.full_name||u.email||'').split('@')[0]),
                 React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'RingIn Member')
               ),
-              React.createElement('button',{onClick:function(ev){ev.stopPropagation();if(props.session&&props.session.user&&u.id===props.session.user.id){setSearchQ('');if(props.onGoToProfile)props.onGoToProfile();}else{toggleFollow(String(u.id),u.full_name||u.email,u.avatar_url,'Member');}},style:{padding:'5px 12px',background:following[String(u.id)]?'var(--acg)':'var(--ac)',border:following[String(u.id)]?'1px solid var(--ac)':'none',borderRadius:'20px',color:following[String(u.id)]?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, props.session&&props.session.user&&u.id===props.session.user.id ? 'View Profile' : (following[String(u.id)]?'Following':'+Follow'))
+              (props.session&&props.session.user&&u.id===props.session.user.id) ? React.createElement('button',{
+                onClick:function(ev){ev.stopPropagation();setSearchQ('');if(props.onGoToProfile)props.onGoToProfile();},
+                style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}
+              }, 'View Profile')
+              : React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+                // Message button
+                React.createElement('button',{
+                  onClick:function(ev){ev.stopPropagation();setSearchQ('');
+                    if(props.onGoToMessages){
+                      var myId=props.session&&props.session.user?props.session.user.id:null;
+                      if(!myId) return;
+                      var convId=[myId,u.id].sort().join('_');
+                      props.onGoToMessages({id:convId,convId:convId,otherId:u.id,receiverId:u.id,name:(u.full_name||u.email||'User').split('@')[0],img:u.avatar_url||null});
+                    }
+                  },
+                  title:'Message',
+                  style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,padding:0}
+                },
+                  React.createElement('svg',{viewBox:'0 0 24 24',width:'14',height:'14',fill:'none',stroke:'currentColor',strokeWidth:'2',strokeLinecap:'round',strokeLinejoin:'round'},
+                    React.createElement('path',{d:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'})
+                  )
+                ),
+                // Call button
+                React.createElement('button',{
+                  onClick:function(ev){ev.stopPropagation();setSearchQ('');
+                    var target={id:u.id,user_id:u.id,name:(u.full_name||u.email||'User').split('@')[0],img:u.avatar_url||null,role:'Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',rate:30};
+                    if(typeof window!=='undefined'&&window.__ringInStartCall) window.__ringInStartCall(target,{rate:30});
+                  },
+                  title:'Call',
+                  style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,padding:0}
+                },
+                  React.createElement('svg',{viewBox:'0 0 24 24',width:'14',height:'14',fill:'none',stroke:'currentColor',strokeWidth:'2.4',strokeLinecap:'round',strokeLinejoin:'round'},
+                    React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
+                  )
+                ),
+                // Follow button
+                React.createElement('button',{
+                  onClick:function(ev){ev.stopPropagation();toggleFollow(String(u.id),u.full_name||u.email,u.avatar_url,'Member');},
+                  style:{padding:'5px 12px',background:following[String(u.id)]?'var(--acg)':'var(--bg4)',border:'1px solid '+(following[String(u.id)]?'var(--ac)':'var(--border)'),borderRadius:'20px',color:following[String(u.id)]?'var(--ac)':'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}
+                }, following[String(u.id)]?'✓':'+')
+              )
             );
           })
         ) : null,

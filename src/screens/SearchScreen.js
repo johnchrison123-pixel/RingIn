@@ -73,6 +73,7 @@ export default function SearchScreen(props){
   var callS = useState(null); var activeCall = callS[0]; var setActiveCall = callS[1];
   var coinsS = useState(50); var coins = coinsS[0]; var setCoins = coinsS[1];
   var acS = useState('all'); var activecat = acS[0]; var setAc = acS[1];
+  var searchQS = useState(''); var searchQ = searchQS[0]; var setSearchQ = searchQS[1];
   var typingTimerRef = useRef(null);
   // CUSTOM HOOKS AFTER useState
   var session = props.session;
@@ -110,12 +111,36 @@ export default function SearchScreen(props){
     ),
     React.createElement('div',{style:{padding:'0 18px 8px'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'7px 11px',display:'flex',alignItems:'center',gap:'7px'}},
-        React.createElement('input',{placeholder:'Search experts...',style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'},onChange:function(){clearTimeout(typingTimerRef.current);typingTimerRef.current=setTimeout(function(){playSound('typing');},80);}})
+        React.createElement('input',{
+          value: searchQ,
+          placeholder:'Search experts by name, role, or tag...',
+          onChange:function(e){
+            setSearchQ(e.target.value);
+            clearTimeout(typingTimerRef.current);
+            typingTimerRef.current = setTimeout(function(){ playSound('typing'); }, 80);
+          },
+          style:{background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',flex:1,fontFamily:'DM Sans,sans-serif'}
+        }),
+        searchQ ? React.createElement('span', {
+          onClick: function(){ setSearchQ(''); },
+          style: {color:'var(--t3)', fontSize:'14px', cursor:'pointer', padding:'0 4px'}
+        }, '✕') : null
       )
     ),
-    React.createElement('div',{style:{padding:'0 18px 14px'}},
-      React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'8px'}},'All Experts'),
-      EXPERTS.map(function(e){
+    (function(){
+      var q = (searchQ||'').trim().toLowerCase();
+      var filtered = !q ? EXPERTS : EXPERTS.filter(function(e){
+        if((e.name||'').toLowerCase().indexOf(q) >= 0) return true;
+        if((e.role||'').toLowerCase().indexOf(q) >= 0) return true;
+        if((e.loc||'').toLowerCase().indexOf(q) >= 0) return true;
+        if(Array.isArray(e.tags) && e.tags.some(function(t){return (t||'').toLowerCase().indexOf(q) >= 0;})) return true;
+        return false;
+      });
+      return React.createElement('div',{style:{padding:'0 18px 14px'}},
+        React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'8px'}}, q ? ('Results for "'+searchQ+'" ('+filtered.length+')') : 'All Experts'),
+        filtered.length === 0
+          ? React.createElement('div',{style:{padding:'24px 0',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No experts match "'+searchQ+'"')
+          : filtered.map(function(e){
         return React.createElement('div',{
           key:e.id,
           onClick:function(){setSelected(e);},
@@ -148,6 +173,7 @@ export default function SearchScreen(props){
           )
         );
       })
-    )
+      );
+    })()
   );
 }
