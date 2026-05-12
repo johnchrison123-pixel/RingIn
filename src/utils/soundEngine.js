@@ -285,16 +285,18 @@ var LIKETHUMB_VARIANTS=[
 
 // ─── NOTIFICATION ──────────────────────────────────────────────────────────
 var NOTIF_VARIANTS=[
-  function gentleBell(ctx,vol){
-    [[0,880,0.18],[0.13,1100,0.14]].forEach(function(p){
+  // WhatsApp-style two-tone boop — short, warm, low-pitched. Default variant.
+  function whatsappBoop(ctx,vol){
+    [[0, 660, 0.16, 0.12], [0.07, 880, 0.20, 0.18]].forEach(function(p){
       var o=ctx.createOscillator();var g=ctx.createGain();
       o.connect(g);g.connect(ctx.destination);
-      o.type='sine';o.frequency.setValueAtTime(p[1],ctx.currentTime+p[0]);
-      o.frequency.exponentialRampToValueAtTime(p[1]*0.96,ctx.currentTime+p[0]+0.38);
+      o.type='sine';
+      o.frequency.setValueAtTime(p[1],ctx.currentTime+p[0]);
+      o.frequency.exponentialRampToValueAtTime(p[1]*1.04,ctx.currentTime+p[0]+p[3]);
       g.gain.setValueAtTime(0,ctx.currentTime+p[0]);
-      g.gain.linearRampToValueAtTime(vol*p[2],ctx.currentTime+p[0]+0.02);
-      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+p[0]+0.42);
-      o.start(ctx.currentTime+p[0]);o.stop(ctx.currentTime+p[0]+0.44);
+      g.gain.linearRampToValueAtTime(vol*p[2],ctx.currentTime+p[0]+0.015);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+p[0]+p[3]);
+      o.start(ctx.currentTime+p[0]);o.stop(ctx.currentTime+p[0]+p[3]+0.02);
     });
   },
   function socialPing(ctx,vol){
@@ -335,8 +337,53 @@ export var SOUND_META={
   send:        {label:'Send / Post',   icon:'✉️',variants:['Swoosh','Launch','Shimmer']},
   like:        {label:'Heart Like',    icon:'❤️',variants:['Heartbeat','Bloom','Flutter']},
   likeThumb:   {label:'Thumbs Like',   icon:'👍',variants:['Pop Chord','Tap Up','Bounce']},
-  notification:{label:'Notification', icon:'🔔',variants:['Gentle Bell','Social Ping','Crystal Bell']},
+  notification:{label:'Notification', icon:'🔔',variants:['WhatsApp Boop','Social Ping','Crystal Bell']},
 };
+
+// ─── INCOMING CALL RINGTONE ────────────────────────────────────────────────
+// Warm, classic "ring ring" pattern (~2s long). Designed to be looped while a
+// call is ringing. Bypasses sound prefs so muted users still hear the ringer.
+var _ringtoneCtxRef = { stop: null };
+export function playRingtone(){
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
+  var ctx = getSCtx();
+  if(!ctx) return;
+  stopRingtone(); // clear any prior loop
+  function ringOnce(){
+    // Two warm bell strikes — fundamental + harmonic — separated by a short gap
+    var strikes = [
+      [0.00, 850],
+      [0.50, 850],
+    ];
+    strikes.forEach(function(p){
+      // Main fundamental
+      var o1=ctx.createOscillator(); var g1=ctx.createGain();
+      o1.connect(g1); g1.connect(ctx.destination);
+      o1.type='sine';
+      o1.frequency.setValueAtTime(p[1], ctx.currentTime+p[0]);
+      g1.gain.setValueAtTime(0, ctx.currentTime+p[0]);
+      g1.gain.linearRampToValueAtTime(0.18, ctx.currentTime+p[0]+0.02);
+      g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+p[0]+0.42);
+      o1.start(ctx.currentTime+p[0]); o1.stop(ctx.currentTime+p[0]+0.45);
+      // Harmonic shimmer
+      var o2=ctx.createOscillator(); var g2=ctx.createGain();
+      o2.connect(g2); g2.connect(ctx.destination);
+      o2.type='sine';
+      o2.frequency.setValueAtTime(p[1]*2.0, ctx.currentTime+p[0]);
+      g2.gain.setValueAtTime(0, ctx.currentTime+p[0]);
+      g2.gain.linearRampToValueAtTime(0.06, ctx.currentTime+p[0]+0.02);
+      g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+p[0]+0.35);
+      o2.start(ctx.currentTime+p[0]); o2.stop(ctx.currentTime+p[0]+0.38);
+    });
+  }
+  ringOnce();
+  // Loop every 2.4s — matches a comfortable ring cadence
+  var iv = setInterval(ringOnce, 2400);
+  _ringtoneCtxRef.stop = function(){ try{ clearInterval(iv); }catch(e){} _ringtoneCtxRef.stop=null; };
+}
+export function stopRingtone(){
+  if(_ringtoneCtxRef.stop){ _ringtoneCtxRef.stop(); }
+}
 
 export function previewSound(type,variant,vol){
   // Ensure context is created AND resumed (resume() is idempotent and required after user-gesture)

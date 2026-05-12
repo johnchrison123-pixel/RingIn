@@ -66,10 +66,19 @@ export async function startCallSession(opts) {
   var client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
   var localAudioTrack = null;
   var remoteUsers = {};
+  // Speaker volume (0-100). Boost to 100 = speakerphone mode, 55 = earpiece. Initially 100.
+  var currentRemoteVolume = 100;
 
   function attachRemoteAudio(user) {
     try {
-      if (user && user.audioTrack) user.audioTrack.play();
+      if (user && user.audioTrack) {
+        user.audioTrack.play();
+        // Apply current speaker volume so peers that join after a Speaker toggle
+        // inherit the same loudness.
+        if (typeof user.audioTrack.setVolume === 'function') {
+          try { user.audioTrack.setVolume(currentRemoteVolume); } catch (e) {}
+        }
+      }
     } catch (e) { /* ignore */ }
   }
 
@@ -126,6 +135,26 @@ export async function startCallSession(opts) {
     localAudioTrack: localAudioTrack,
     setMuted: function (muted) {
       try { if (localAudioTrack) localAudioTrack.setEnabled(!muted); } catch (e) {}
+    },
+    // Apply a volume (0-100) to ALL remote audio tracks. Used by CallScreen's
+    // Speaker button — "speaker on" = 100, "earpiece" = 55.
+    setRemoteVolume: function (volume) {
+      currentRemoteVolume = Math.max(0, Math.min(100, volume));
+      Object.keys(remoteUsers).forEach(function (uidKey) {
+        var u = remoteUsers[uidKey];
+        if (u && u.audioTrack && u.audioTrack.setVolume) {
+          try { u.audioTrack.setVolume(currentRemoteVolume); } catch (e) {}
+        }
+      });
+    },
+    // Switch playback to a specific output device (Chrome desktop/Android only).
+    // Pass null/undefined to reset to default. Quietly no-ops on browsers without support.
+    setPlaybackDevice: function (deviceId) {
+      try {
+        if (typeof AgoraRTC.setPlaybackDevice === 'function') {
+          AgoraRTC.setPlaybackDevice(deviceId);
+        }
+      } catch (e) {}
     },
     leave: async function () {
       try {

@@ -1,7 +1,7 @@
 /* eslint-disable */
 import React, {useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
-import {playSound} from '../utils/soundEngine';
+import {playRingtone, stopRingtone, hapticPulse} from '../utils/soundEngine';
 
 // Full-screen overlay shown when someone calls this user.
 // Props:
@@ -10,22 +10,29 @@ import {playSound} from '../utils/soundEngine';
 //   onReject  fn       called after the invite is marked rejected
 export default function IncomingCallModal(props){
   var invite = props.invite || {};
-  var ringTimerRef = useRef(null);
+  var hapticRef = useRef(null);
 
-  // Loop a notification chime until accepted/rejected
+  // Real ringtone (warm two-stroke bell, loops every 2.4s). Also pulse haptics
+  // in a phone-ring cadence (~1s on / 1s off) for devices that support vibration.
   useEffect(function(){
-    function ring(){ try{ playSound('notification'); }catch(e){} }
-    ring();
-    ringTimerRef.current = setInterval(ring, 2500);
-    return function(){ if(ringTimerRef.current) clearInterval(ringTimerRef.current); };
+    try{ playRingtone(); }catch(e){}
+    function pulse(){ try{ hapticPulse([400, 200, 400, 1400]); }catch(e){} }
+    pulse();
+    hapticRef.current = setInterval(pulse, 2400);
+    return function(){
+      try{ stopRingtone(); }catch(e){}
+      if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
+    };
   },[]);
 
   function accept(){
-    if(ringTimerRef.current) clearInterval(ringTimerRef.current);
+    try{ stopRingtone(); }catch(e){}
+    if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
     if(props.onAccept) props.onAccept(invite);
   }
   function reject(){
-    if(ringTimerRef.current) clearInterval(ringTimerRef.current);
+    try{ stopRingtone(); }catch(e){}
+    if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
     if(invite.id){
       sb.from('call_invites').update({status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected'}).eq('id', invite.id).then(function(){});
     }
@@ -55,15 +62,21 @@ export default function IncomingCallModal(props){
       React.createElement('div',{style:{textAlign:'center'}},
         React.createElement('button',{
           onClick:reject,
-          style:{width:'68px',height:'68px',borderRadius:'50%',background:'#ef4444',border:'none',color:'#fff',fontSize:'26px',cursor:'pointer',boxShadow:'0 6px 22px rgba(239,68,68,0.5)'}
-        },'📵'),
+          title:'Decline',
+          style:{width:'68px',height:'68px',borderRadius:'50%',background:'#ef4444',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(239,68,68,0.55)'}
+        }),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}},'Decline')
       ),
       React.createElement('div',{style:{textAlign:'center'}},
         React.createElement('button',{
           onClick:accept,
-          style:{width:'68px',height:'68px',borderRadius:'50%',background:'var(--green)',border:'none',color:'#fff',fontSize:'26px',cursor:'pointer',boxShadow:'0 6px 22px rgba(39,201,106,0.5)',animation:'pulse 1.5s ease-in-out infinite'}
-        },'📞'),
+          title:'Accept',
+          style:{width:'68px',height:'68px',borderRadius:'50%',background:'var(--green)',border:'none',color:'#fff',fontSize:'26px',cursor:'pointer',boxShadow:'0 6px 22px rgba(39,201,106,0.55)',animation:'pulse 1.5s ease-in-out infinite',display:'flex',alignItems:'center',justifyContent:'center'}
+        },
+          React.createElement('svg',{viewBox:'0 0 24 24',width:'26',height:'26',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'},
+            React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
+          )
+        ),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}},'Accept')
       )
     ),
