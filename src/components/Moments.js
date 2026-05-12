@@ -90,6 +90,12 @@ export default function Moments(props){
   var compact = !!props.compact;
   var size = compact ? 60 : 68;
 
+  // Defensive: total nav strip height is heart (size) + label gap (5px) +
+  // label height (~12px) + top padding (12px) + bottom padding (16px) =
+  // size + 45 px. Setting an explicit min-height stops any flex parent
+  // from squashing the strip into a 15px sliver.
+  var stripMinHeight = size + 45;
+
   return React.createElement('div', {
     className:'moments-strip',
     style:{
@@ -97,18 +103,17 @@ export default function Moments(props){
       gap:'14px',
       padding:'12px 16px 16px',
       overflowX:'auto',
-      // overflow-y must NOT be hidden — it clips labels when the heart
-      // shape's bottom point sits close to the container edge.
-      overflowY:'visible',
+      overflowY:'hidden',
       scrollbarWidth:'none',
       msOverflowStyle:'none',
       WebkitOverflowScrolling:'touch',
-      // Clear bottom border keeps the strip visually separate from the next
-      // section (e.g. "Online Now") so it doesn't look overlaid.
       borderBottom:'1px solid var(--border)',
       marginBottom:'4px',
+      // Defenses against flex / grid parents trying to shrink the strip:
+      flexShrink:0,
+      minHeight: stripMinHeight + 'px',
+      boxSizing:'border-box',
     },
-    // Stop the back-swipe gesture from triggering when scrolling moments
     onTouchStart:function(ev){ ev.stopPropagation && ev.stopPropagation(); },
   },
     showAdd ? React.createElement('div', {
