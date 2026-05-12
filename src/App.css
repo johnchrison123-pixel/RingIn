@@ -54,11 +54,11 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
     /* Minimal top padding — icons should hug the top of the visible nav
        area, not float in the middle with empty space above them. */
     padding-top: 4px;
-    /* padding-bottom 0.1px = icons effectively touching the screen edge.
-       env - 33.9 = 0.1px on iPhone X+ (env ≈ 34). Floor 0.1px on Android.
-       NOTE: home-indicator pill (~5px tall, system-drawn) will fully
-       overlap the bottom of icons — user explicitly chose the extreme. */
-    padding-bottom: max(0.1px, calc(env(safe-area-inset-bottom) - 33.9px));
+    /* padding-bottom keeps icons just above the screen edge.
+       env - 32 puts icons 2px above the bottom on iPhone X+ (env ≈ 34).
+       Floor 2px so Android / older devices match. The home-indicator pill
+       will graze the very bottom edge of icons but not heavily obscure. */
+    padding-bottom: max(2px, calc(env(safe-area-inset-bottom) - 32px));
   }
   .screen-content {
     padding-bottom: 80px;
