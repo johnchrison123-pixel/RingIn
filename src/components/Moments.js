@@ -95,12 +95,18 @@ export default function Moments(props){
     style:{
       display:'flex',
       gap:'14px',
-      padding:'10px 16px 12px',
+      padding:'12px 16px 16px',
       overflowX:'auto',
-      overflowY:'hidden',
+      // overflow-y must NOT be hidden — it clips labels when the heart
+      // shape's bottom point sits close to the container edge.
+      overflowY:'visible',
       scrollbarWidth:'none',
       msOverflowStyle:'none',
       WebkitOverflowScrolling:'touch',
+      // Clear bottom border keeps the strip visually separate from the next
+      // section (e.g. "Online Now") so it doesn't look overlaid.
+      borderBottom:'1px solid var(--border)',
+      marginBottom:'4px',
     },
     // Stop the back-swipe gesture from triggering when scrolling moments
     onTouchStart:function(ev){ ev.stopPropagation && ev.stopPropagation(); },

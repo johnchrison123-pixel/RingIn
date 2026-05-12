@@ -1629,17 +1629,12 @@ export default function HomeScreen(props){
       ) : null
     ) : null,
 
-    // ── Moments — RingIn's heart-shaped Stories. Sits at the top of the
-    // feed, above "Online Now". For now uses online experts as the mock
-    // moments list (so there's something to render); will be wired to a
-    // real `moments` table later.
-    React.createElement('div', {className:'sh'},
-      React.createElement('div', {className:'st'}, 'Moments'),
-      React.createElement('div', {className:'sa'}, ' ')
-    ),
+    // ── Moments — RingIn's heart-shaped Stories, Instagram-style.
+    // No section header — the first tile (user's own avatar) is labelled
+    // "Moments" so it doubles as the section indicator.
     React.createElement(Moments, {
       ownAvatar: (props.session && props.session.user && (function(){ try{ return localStorage.getItem('avatar_'+props.session.user.id) || null; }catch(_){ return null; } })()) || null,
-      ownName: 'Your Moment',
+      ownName: 'Moments',
       showAdd: true,
       moments: (onlineExperts || []).slice(0, 8).map(function(e){
         return { id: e.id, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
