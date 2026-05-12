@@ -37,41 +37,32 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
   html, body {
     background: var(--bg2);
   }
-  /* Force the container to fill the entire viewport — including the safe
-     area zones at top and bottom. `height: 100dvh` alone is unreliable on
-     some iOS PWA configurations (sometimes returns visible-area height,
-     not full screen). Explicit top:0 + bottom:0 guarantees edge-to-edge. */
   .app-container {
-    top: 0;
-    bottom: 0;
-    height: auto;
     padding-top: env(safe-area-inset-top);
   }
-  /* Canonical bottom-nav pattern used by Twitter/X, Reddit, Pinterest PWAs.
-     This is the version known to render correctly across iOS 16.4 → iOS 26
-     in standalone mode. */
   .bottom-nav {
     position: fixed;
+    /* bottom: 0 — single, clean anchor. Earlier attempts used a negative
+       bottom value PLUS large padding-bottom (the "double padding" anti-
+       pattern). That was causing the visible gap above the icons AND
+       the clipping at the bottom. This single-bottom approach is what
+       Apple's native tab bar uses internally and what well-built PWAs use. */
     bottom: 0;
     left: 0;
     right: 0;
     z-index: 100;
-    /* Nav element height includes the safe-area zone; padding-bottom
-       reserves it so the icons live in the upper portion. Background
-       fills the FULL height (incl. safe-area) down to the screen edge. */
-    height: calc(54px + env(safe-area-inset-bottom, 0px));
-    padding-top: 0;
-    /* Reserve LESS than full env so icons sit closer to the home indicator
-       than the conservative Twitter/Reddit defaults (which use full env).
-       max(4px, ...) guarantees ≥4px bottom clearance on Android. */
-    padding-bottom: max(4px, calc(env(safe-area-inset-bottom) - 26px));
-    /* Pin icons to the BOTTOM of the content area (between padding-top and
-       padding-bottom) so they sit as low as possible above the home
-       indicator zone. Overrides the base .bottom-nav `align-items: center`. */
-    align-items: flex-end;
+    /* Minimal top padding — icons should hug the top of the visible nav
+       area, not float in the middle with empty space above them. */
+    padding-top: 4px;
+    /* padding-bottom: 0 → icons sit flush at the screen bottom edge.
+       env - 34 = 0px on iPhone X+ (env ≈ 34). Floor 0 on Android.
+       This is the physical limit — going further would clip the icons
+       below the visible screen. The home-indicator pill (~5px tall)
+       will sit on the bottom of icons; no clipping. */
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 34px));
   }
   .screen-content {
-    padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 80px;
   }
   /* MessagesScreen chat back-header is position:fixed; top:0 against the
      VIEWPORT (not inside .app-container's safe-area padding), so it needs
