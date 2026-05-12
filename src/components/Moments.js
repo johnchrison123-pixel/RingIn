@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, {useState, useEffect, useRef} from 'react';
+import {createPortal} from 'react-dom';
 
 // ── Mock moment slides used when no real data is wired up ─────────────────
 // Each "expert" gets a deterministic set of 3–4 gradient cards with captions
@@ -76,10 +77,21 @@ function MomentViewer(props){
   if (!slides.length) return null;
   var cur = slides[idx];
 
-  return React.createElement('div', {
+  // Portal to document.body — a `position:fixed` element inside .moments-strip
+  // gets trapped by the .app-container / .screen-content stacking context on
+  // some browsers (iOS Safari especially), which renders the viewer at the
+  // strip's bounds instead of the full viewport. Portalling sidesteps all of
+  // that by mounting the overlay at document.body.
+  var overlay = React.createElement('div', {
     onClick: handleTap,
+    // Block parent's swipe-back and scroll while the viewer is open.
+    onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+    onTouchMove: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
     style: {
-      position:'fixed', inset:0, zIndex:9999,
+      position:'fixed',
+      top:0, left:0, right:0, bottom:0,
+      width:'100vw', height:'100vh',
+      zIndex:9999,
       background: cur.bg,
       color:'#fff',
       display:'flex', flexDirection:'column',
@@ -144,6 +156,11 @@ function MomentViewer(props){
       }
     }, cur.text)
   );
+
+  // SSR guard — document is undefined during server render; we only need
+  // the portal on the client anyway.
+  if (typeof document === 'undefined' || !document.body) return overlay;
+  return createPortal(overlay, document.body);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -233,6 +250,7 @@ function HeartTile(props){
   };
 
   return React.createElement('button', {
+    type: 'button',
     onClick: onClick,
     title: isAdd ? 'Add a Moment' : (props.label || 'View Moment'),
     style: buttonStyle,
