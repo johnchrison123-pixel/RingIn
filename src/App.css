@@ -4,49 +4,24 @@ html, body { overscroll-behavior-x: none; }
 :root{--bg:#09090E;--bg2:#111117;--bg3:#17171F;--bg4:#1E1E28;--border:#28283A;--border2:#343448;--text:#EEEEF8;--t2:#8F8FAA;--t3:#52526A;--ac:#7B6EFF;--acg:rgba(123,110,255,.14);--green:#27C96A;--amber:#F5A623;--red:#EF4747;--pink:#E84D9A;}
 body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
 .app-container{width:100%;max-width:100%;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:fixed;left:0;right:0;display:flex;flex-direction:column;overflow:hidden;}
-
-/* ── PWA-only safe-area handling ─────────────────────────────────────────
-   We deliberately apply env(safe-area-inset-*) ONLY when the app is launched
-   from a home-screen icon (installed PWA). In a regular browser tab Safari
-   already separates the webview from the iOS status bar and its own URL bar,
-   so adding our own padding there creates visible "letterbox" gaps at the
-   top and bottom — the user sees big blank black bands.
-
-   In standalone PWA mode, iOS uses apple-mobile-web-app-status-bar-style
-   black-translucent and overlays the clock/battery ON TOP of the webview;
-   that's when we DO need the inset to push content out from under those.
-
-   This is exactly how Instagram, WhatsApp, etc. handle the difference. */
-@media (display-mode: standalone) {
-  .app-container {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-  }
-  /* In PWA mode the chat header (position:fixed) is NOT inside the padded
-     container — it sits against the viewport. Push its content below the
-     status bar with its own padding-top. The matching ChatBox top reserve
-     gets bumped to match so messages don't slide under the taller header. */
-  .ringin-chat-header {
-    padding-top: calc(12px + env(safe-area-inset-top)) !important;
-  }
-  .ringin-chat-wrap {
-    padding-top: calc(56px + env(safe-area-inset-top)) !important;
-  }
-  /* Install-prompt pill sits above the bottom-nav. In PWA mode the nav got
-     pushed up by the container's bottom inset, so the pill needs to match. */
-  .ringin-install-pill {
-    bottom: calc(76px + env(safe-area-inset-bottom)) !important;
-  }
-}
-/* iOS legacy fallback — older iOS Safari uses `-webkit-` prefixed display-mode. */
-@media (-webkit-min-device-pixel-ratio: 0) and (display-mode: standalone) {
-  /* (Covered above — listed only for clarity that we also catch WebKit's quirks.) */
-}
 .screen-content{flex:1;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:none;min-height:0;}
 .screen-content::-webkit-scrollbar{display:none;}
 .bottom-nav{display:flex;align-items:center;background:var(--bg2);border-top:1px solid var(--border);padding:5px 8px 12px;flex-shrink:0;gap:4px;}
+
+/* ── Bottom nav extends to the home-indicator zone (installed-PWA only) ──
+   On iOS PWA, the webview goes edge-to-edge — including the area where the
+   home indicator pill sits. We want the nav's BACKGROUND to fill that area
+   (so it looks like one continuous nav bar all the way to the bottom edge,
+   just like Instagram / WhatsApp), but the icons themselves need to clear
+   the home indicator so they stay tappable. Adding safe-area-inset-bottom
+   INSIDE the nav as padding-bottom does both: bg fills, icons pushed up.
+   Zero impact on Android PWA (env resolves to 0) and on Safari browser
+   (rule is gated to display-mode: standalone). */
+@media (display-mode: standalone) {
+  .bottom-nav {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
 .nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 6px;border-radius:10px;border:none;background:none;cursor:pointer;transition:background .15s;margin:0 3px;}
 .nav-tab.active{background:var(--acg);}
 .nav-tab svg{width:18px;height:18px;stroke:var(--t3);transition:stroke .15s;}
