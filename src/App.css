@@ -29,6 +29,14 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
    Zero impact on Android PWA (env resolves to 0) and Safari browser
    (display-mode media query doesn't match — flex nav layout stays). */
 @media (display-mode: standalone) {
+  /* Body bg becomes nav-color (var(--bg2)) in PWA mode so any pixel below
+     the nav element — including the home-indicator zone iOS may reserve
+     for itself — blends seamlessly with the nav. No more visible black
+     band at the bottom; instead the nav appears to flow continuously into
+     the home-indicator area, exactly like Instagram. */
+  html, body {
+    background: var(--bg2);
+  }
   .app-container {
     padding-top: env(safe-area-inset-top);
   }
@@ -38,6 +46,11 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
     left: 0;
     right: 0;
     z-index: 100;
+    /* Push icons DOWN within the nav so they sit close to the bottom edge,
+       right where the home indicator pill is. The nav grows taller from
+       the top side, not the bottom. */
+    padding-top: 16px;
+    padding-bottom: 4px;
   }
   .screen-content {
     padding-bottom: 80px;
