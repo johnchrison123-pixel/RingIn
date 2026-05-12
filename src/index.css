@@ -36,6 +36,10 @@ code {
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.08); }
 }
+@keyframes ringinSlideUp {
+  0%   { transform: translate(-50%, 24px); opacity: 0; }
+  100% { transform: translate(-50%, 0);    opacity: 1; }
+}
 
 /* ── Call-control buttons: native-feel tap response ──────────────────────
    Samsung Internet imposes the legacy 300ms double-tap-to-zoom delay on

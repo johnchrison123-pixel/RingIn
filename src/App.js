@@ -12,6 +12,7 @@ import SavedPostsScreen from './screens/SavedPostsScreen';
 import AnonymousConnect from './screens/AnonymousConnect';
 import CallScreen from './screens/CallScreen';
 import IncomingCallModal from './components/IncomingCallModal';
+import InstallPrompt from './components/InstallPrompt';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
@@ -534,6 +535,10 @@ export default function App() {
         setIncomingCall(null);
       },
     }) : null,
+
+    // ── PWA install prompt — non-intrusive bottom pill, dismissible, hidden when
+    //    already running standalone, hidden during an active or incoming call.
+    !activeCall && !incomingCall ? React.createElement(InstallPrompt, null) : null,
 
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab, idx) {
