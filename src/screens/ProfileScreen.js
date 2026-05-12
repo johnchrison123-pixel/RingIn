@@ -3,6 +3,7 @@ import React,{useState,useEffect} from 'react';
 import {useFollow} from './useFollow';
 import {sb as sbProfile} from '../utils/supabase';
 import {usePostsRealtime} from '../utils/usePostsRealtime';
+import Moments from '../components/Moments';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
 
 var COUNTRIES=[
@@ -1990,6 +1991,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     React.createElement('div',{style:{padding:'0 18px 80px'}},
       // POSTS TAB
       activeTab==='posts' ? React.createElement('div',null,
+        // Moments — own profile, "+" slot for adding (UI-only for now)
+        React.createElement('div',{style:{margin:'-2px -18px 8px'}},
+          React.createElement(Moments,{
+            ownAvatar: avatarUrl || null,
+            ownName: 'Your Moment',
+            showAdd: true,
+            moments: [],
+          })
+        ),
         // Composer
         React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px',marginBottom:'14px'}},
           React.createElement('div',{style:{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'10px'}},

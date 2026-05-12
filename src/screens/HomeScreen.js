@@ -7,6 +7,7 @@ import CallScreen from './CallScreen';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
 import {playSound,playUnlikeSound,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
+import Moments from '../components/Moments';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -448,8 +449,18 @@ export function UserProfileView(props){
         },'Message')
       )
     ),
+    // Moments — this user's heart-shaped Stories. Currently UI-only; the
+    // viewing user can't add to someone else's moments, so showAdd is false.
+    React.createElement('div',{style:{padding:'2px 16px 0',borderTop:'1px solid var(--border)',marginTop:'8px'}},
+      React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'10px'}},'Moments')
+    ),
+    React.createElement(Moments, {
+      compact: true,
+      showAdd: false,
+      moments: [],
+    }),
     // Posts heading
-    React.createElement('div',{style:{padding:'4px 18px 10px',borderTop:'1px solid var(--border)',marginTop:'8px'}},
+    React.createElement('div',{style:{padding:'4px 18px 10px',borderTop:'1px solid var(--border)',marginTop:'4px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'12px'}},userPosts.length+' Post'+(userPosts.length!==1?'s':''))
     ),
     // Posts list
@@ -1617,6 +1628,24 @@ export default function HomeScreen(props){
           React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t2)',fontSize:'13px'}},'No results for "'+searchQ+'"') : null
       ) : null
     ) : null,
+
+    // ── Moments — RingIn's heart-shaped Stories. Sits at the top of the
+    // feed, above "Online Now". For now uses online experts as the mock
+    // moments list (so there's something to render); will be wired to a
+    // real `moments` table later.
+    React.createElement('div', {className:'sh'},
+      React.createElement('div', {className:'st'}, 'Moments'),
+      React.createElement('div', {className:'sa'}, ' ')
+    ),
+    React.createElement(Moments, {
+      ownAvatar: (session && session.user && (localStorage.getItem('avatar_'+session.user.id) || null)) || null,
+      ownName: 'Your Moment',
+      showAdd: true,
+      moments: onlineExperts.slice(0, 8).map(function(e){
+        return { id: e.id, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
+      }),
+    }),
+
     React.createElement('div', {className:'sh'},
       React.createElement('div', {className:'st'}, 'Online Now'),
       React.createElement('div', {className:'sa'}, 'See all')
