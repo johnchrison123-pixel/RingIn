@@ -1330,6 +1330,60 @@ export default function HomeScreen(props){
     if(exp && onViewExpert) onViewExpert(exp);
   }
 
+  // ── Moments → chat bridge ────────────────────────────────────────────────
+  // Writes a chat message (like or reply) into the localStorage thread for a
+  // mock expert. The message text uses two prefixes that MessagesScreen
+  // recognises:
+  //   [mlike]<caption>             — renders as "Liked your status" + quote
+  //   [mreply]<caption>|<reply>    — renders as "Replied to status" + quote
+  // Both are persisted via the same `msgs_<convId>` localStorage key
+  // ChatBox already reads from, and the expert is added to
+  // `ringin_expert_convos_<myId>` so it shows in the inbox.
+  function writeMomentChat(m, slide, text){
+    if(!currentUserId || !m) return;
+    var convId = 'expert_' + m.expertId;
+    var nowIso = new Date().toISOString();
+    var msg = {
+      id: 'local-mreply-' + Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      conversation_id: convId,
+      sender_id: currentUserId,
+      sender_name: currentUserName || 'You',
+      receiver_id: convId,
+      text: text,
+      read: true,
+      created_at: nowIso,
+    };
+    try{
+      var msgsKey = 'msgs_' + convId;
+      var prev = []; try{ var raw = localStorage.getItem(msgsKey); if(raw) prev = JSON.parse(raw); }catch(_){ }
+      prev.push(msg);
+      localStorage.setItem(msgsKey, JSON.stringify(prev));
+    }catch(_){}
+    try{
+      var ecKey = 'ringin_expert_convos_' + currentUserId;
+      var ec = []; try{ var ecRaw = localStorage.getItem(ecKey); if(ecRaw) ec = JSON.parse(ecRaw); }catch(_){ }
+      var idx = -1; for(var i=0; i<ec.length; i++){ if(ec[i] && ec[i].convId === convId){ idx = i; break; } }
+      var entry = {
+        id: convId,
+        convId: convId,
+        otherId: convId,
+        receiverId: convId,
+        name: m.userName || 'Expert',
+        img: m.userAvatar || null,
+        role: m.expertRole || '',
+        color: m.color || 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+        initials: (m.userName || '??').substring(0,2).toUpperCase(),
+        isOnline: true,
+        lastMsg: text,
+        lastTime: nowIso,
+        unreadCount: 0,
+        isExpertMock: true,
+      };
+      if(idx >= 0) ec[idx] = Object.assign({}, ec[idx], entry); else ec.unshift(entry);
+      localStorage.setItem(ecKey, JSON.stringify(ec));
+    }catch(_){}
+  }
+
   function goToUserProfile(userId, cachedInfo){
     if(!userId) return;
     if(userId === currentUserId){
@@ -1637,8 +1691,17 @@ export default function HomeScreen(props){
       ownName: 'Moments',
       showAdd: true,
       moments: (onlineExperts || []).slice(0, 8).map(function(e){
-        return { id: e.id, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
+        // expertId + role carried through so the reply/like callbacks can
+        // build the right chat target (mock experts use 'expert_<id>' conv IDs)
+        return { id: e.id, expertId: e.id, expertRole: e.role, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
       }),
+      // Like → drops a tiny "Liked your status" message into the chat with
+      // that expert. Reply → drops "Replied to status: <quote>" + the typed
+      // reply. Both write to localStorage only (mock experts aren't real
+      // Supabase users); MessagesScreen merges these conversations into the
+      // inbox via `ringin_expert_convos_<myId>`.
+      onLike: function(m, slide){ writeMomentChat(m, slide, '[mlike]'+(slide && slide.text ? slide.text : '')); },
+      onReply: function(m, slide, text){ writeMomentChat(m, slide, '[mreply]'+(slide && slide.text ? slide.text : '')+'|'+text); },
     }),
 
     React.createElement('div', {className:'sh'},

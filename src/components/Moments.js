@@ -42,24 +42,63 @@ function setForId(id){
 function MomentViewer(props){
   var user = props.user || {};
   var slides = props.slides || [];
+  var moment = props.moment || {};
   var onClose = props.onClose;
+  var onLike = props.onLike;
+  var onReply = props.onReply;
   var idxS = useState(0);
   var idx = idxS[0]; var setIdx = idxS[1];
   var timerRef = useRef(null);
   var SLIDE_MS = 4500;
 
-  // Auto-advance
+  // Reply state
+  var replyTextS = useState('');
+  var replyText = replyTextS[0]; var setReplyText = replyTextS[1];
+  var pausedS = useState(false);
+  var paused = pausedS[0]; var setPaused = pausedS[1];
+  var sentToastS = useState('');
+  var sentToast = sentToastS[0]; var setSentToast = sentToastS[1];
+
+  // Like state per slide. Persisted in localStorage keyed by
+  // momentId-slideId, so reopening shows the same heart fill state.
+  function likesKey(){ try{ return 'ringin_moment_likes'; }catch(_){ return 'ringin_moment_likes'; } }
+  function likedSet(){
+    try{ var raw = localStorage.getItem(likesKey()); return raw ? JSON.parse(raw) : {}; }catch(_){ return {}; }
+  }
+  function isLikedFor(slideId){
+    var k = (moment.id != null ? moment.id : 'na') + ':' + slideId;
+    var s = likedSet();
+    return !!s[k];
+  }
+  function setLikedFor(slideId, val){
+    var k = (moment.id != null ? moment.id : 'na') + ':' + slideId;
+    var s = likedSet();
+    if(val) s[k] = true; else delete s[k];
+    try{ localStorage.setItem(likesKey(), JSON.stringify(s)); }catch(_){}
+  }
+  var likedNowS = useState(false);
+  var likedNow = likedNowS[0]; var setLikedNow = likedNowS[1];
+  useEffect(function(){
+    var cur = slides[idx]; if(!cur) return;
+    setLikedNow(isLikedFor(cur.id));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, slides.length]);
+
+  // Auto-advance — pauses while the user is composing a reply so they don't
+  // lose their place mid-typing.
   useEffect(function(){
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (paused) return;
     timerRef.current = setTimeout(function(){
       if (idx < slides.length - 1) setIdx(idx + 1);
       else if (onClose) onClose();
     }, SLIDE_MS);
     return function(){ if (timerRef.current) clearTimeout(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, slides.length]);
+  }, [idx, slides.length, paused]);
 
-  // Tap left third = back, tap right two-thirds = next
+  // Tap left third = back, tap right two-thirds = next. Taps on the
+  // composer / like row are stopPropagation'd so they don't navigate.
   function handleTap(e){
     try{
       var rect = e.currentTarget.getBoundingClientRect();
@@ -72,6 +111,40 @@ function MomentViewer(props){
         else if (onClose) onClose();
       }
     }catch(_){}
+  }
+
+  function showToast(text){
+    setSentToast(text);
+    setTimeout(function(){ setSentToast(''); }, 1400);
+  }
+
+  function toggleLike(e){
+    if(e && e.stopPropagation) e.stopPropagation();
+    var cur = slides[idx]; if(!cur) return;
+    var nowLiked = !likedNow;
+    setLikedFor(cur.id, nowLiked);
+    setLikedNow(nowLiked);
+    // Only drop a chat message on the transition from unliked → liked, so
+    // toggling on/off doesn't spam the recipient's chat.
+    if(nowLiked && typeof onLike === 'function'){
+      try{ onLike(moment, cur); }catch(_){}
+      showToast('Liked ❤️');
+    }
+  }
+
+  function sendReply(e){
+    if(e && e.stopPropagation) e.stopPropagation();
+    var t = (replyText || '').trim();
+    if(!t) return;
+    var cur = slides[idx]; if(!cur) return;
+    if(typeof onReply === 'function'){
+      try{ onReply(moment, cur, t); }catch(_){}
+    }
+    setReplyText('');
+    setPaused(false);
+    showToast('Sent ✓');
+    // Close shortly after so the toast is visible.
+    setTimeout(function(){ if(onClose) onClose(); }, 900);
   }
 
   if (!slides.length) return null;
@@ -154,7 +227,82 @@ function MomentViewer(props){
         textShadow:'0 2px 16px rgba(0,0,0,0.35)',
         fontFamily:'Syne, DM Sans, sans-serif',
       }
-    }, cur.text)
+    }, cur.text),
+    // ── Reply composer + Like row (bottom) ────────────────────────────────
+    // Sits above the home-indicator safe area. Tapping anywhere here MUST
+    // NOT trigger the tap-navigate handler on the parent, so every event
+    // is stopPropagation'd. Pauses the auto-advance while focused.
+    React.createElement('div', {
+      onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style:{
+        position:'absolute',
+        left:'14px', right:'14px',
+        bottom:'calc(16px + env(safe-area-inset-bottom, 0px))',
+        display:'flex', alignItems:'center', gap:'8px',
+        zIndex:3,
+      }
+    },
+      React.createElement('input', {
+        type:'text',
+        value: replyText,
+        placeholder: 'Reply to '+ (user.name ? user.name.split(' ')[0] : 'this moment') + '…',
+        onFocus: function(){ setPaused(true); },
+        onBlur: function(){ setPaused(false); },
+        onChange: function(e){ setReplyText(e.target.value); },
+        onKeyDown: function(e){ if(e.key === 'Enter'){ sendReply(e); } },
+        style:{
+          flex:1,
+          background:'rgba(0,0,0,0.32)',
+          border:'1px solid rgba(255,255,255,0.35)',
+          borderRadius:'22px',
+          padding:'10px 14px',
+          fontSize:'14px',
+          color:'#fff',
+          outline:'none',
+          fontFamily:'DM Sans, sans-serif',
+          WebkitAppearance:'none',
+        }
+      }),
+      (replyText && replyText.trim()) ? React.createElement('button', {
+        onClick: sendReply,
+        className:'ringin-tap',
+        style:{
+          background:'#fff', border:'none',
+          color:'#222', fontWeight:700, fontSize:'13px',
+          padding:'9px 14px', borderRadius:'22px',
+          cursor:'pointer',
+        }
+      }, 'Send') : React.createElement('button', {
+        onClick: toggleLike,
+        className:'ringin-tap',
+        title: likedNow ? 'Unlike' : 'Like',
+        style:{
+          background:'rgba(0,0,0,0.32)',
+          border:'1px solid rgba(255,255,255,0.35)',
+          color:'#fff',
+          width:'40px', height:'40px',
+          borderRadius:'50%',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:'20px', lineHeight:1,
+          cursor:'pointer',
+        }
+      }, likedNow ? '❤️' : '🤍')
+    ),
+    // Brief "Sent ✓" / "Liked ❤️" toast — auto-hides after ~1.4s
+    sentToast ? React.createElement('div', {
+      style:{
+        position:'absolute',
+        bottom:'calc(78px + env(safe-area-inset-bottom, 0px))',
+        left:'50%', transform:'translateX(-50%)',
+        background:'rgba(0,0,0,0.55)',
+        color:'#fff',
+        padding:'7px 14px',
+        borderRadius:'20px',
+        fontSize:'12px', fontWeight:600,
+        zIndex:4,
+        pointerEvents:'none',
+      }
+    }, sentToast) : null
   );
 
   // SSR guard — document is undefined during server render; we only need
@@ -296,6 +444,7 @@ export default function Moments(props){
     setViewer({
       user: { name: m.userName || '', avatar: m.userAvatar || null },
       slides: slides,
+      moment: m,
     });
   }
   function closeViewer(){ setViewer(null); }
@@ -372,7 +521,10 @@ export default function Moments(props){
     viewer ? React.createElement(MomentViewer, {
       user: viewer.user,
       slides: viewer.slides,
+      moment: viewer.moment,
       onClose: closeViewer,
+      onLike: props.onLike,
+      onReply: props.onReply,
     }) : null
   );
 }
