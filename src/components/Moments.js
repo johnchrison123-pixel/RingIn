@@ -196,7 +196,7 @@ function MomentViewer(props){
         );
       })
     ),
-    // Header
+    // Header — avatar + name are tappable to open the expert's profile
     React.createElement('div', {
       style:{
         position:'absolute',
@@ -206,13 +206,18 @@ function MomentViewer(props){
         zIndex:2,
       }
     },
-      user.avatar ? React.createElement('img', {
-        src: user.avatar, alt:'',
-        style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)'}
-      }) : React.createElement('div', {
-        style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}
-      }, (user.name||'?').charAt(0).toUpperCase()),
-      React.createElement('div', {style:{flex:1,fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)'}}, user.name || ''),
+      React.createElement('div', {
+        onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(props.onViewProfile) props.onViewProfile(props.moment); },
+        style:{display:'flex', alignItems:'center', gap:'10px', flex:1, cursor:'pointer'},
+      },
+        user.avatar ? React.createElement('img', {
+          src: user.avatar, alt:'',
+          style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)'}
+        }) : React.createElement('div', {
+          style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}
+        }, (user.name||'?').charAt(0).toUpperCase()),
+        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)'}}, user.name || '')
+      ),
       React.createElement('button', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(onClose) onClose(); },
         className:'ringin-tap',
@@ -237,7 +242,8 @@ function MomentViewer(props){
       style:{
         position:'absolute',
         left:'14px', right:'14px',
-        bottom:'calc(16px + env(safe-area-inset-bottom, 0px))',
+        // +2px above the previous 16px so it clears the home-indicator bar
+        bottom:'calc(18px + env(safe-area-inset-bottom, 0px))',
         display:'flex', alignItems:'center', gap:'8px',
         zIndex:3,
       }
@@ -254,9 +260,9 @@ function MomentViewer(props){
           flex:1,
           background:'rgba(0,0,0,0.32)',
           border:'1px solid rgba(255,255,255,0.35)',
-          borderRadius:'22px',
-          padding:'10px 14px',
-          fontSize:'14px',
+          borderRadius:'24px',        // +10% from 22px
+          padding:'11px 15px',        // +10% from 10px/14px
+          fontSize:'15.4px',          // +10% from 14px
           color:'#fff',
           outline:'none',
           fontFamily:'DM Sans, sans-serif',
@@ -268,8 +274,10 @@ function MomentViewer(props){
         className:'ringin-tap',
         style:{
           background:'#fff', border:'none',
-          color:'#222', fontWeight:700, fontSize:'13px',
-          padding:'9px 14px', borderRadius:'22px',
+          color:'#222', fontWeight:700,
+          fontSize:'14.3px',          // +10% from 13px
+          padding:'10px 15px',        // +10% from 9px/14px
+          borderRadius:'24px',
           cursor:'pointer',
         }
       }, 'Send') : React.createElement('button', {
@@ -280,10 +288,10 @@ function MomentViewer(props){
           background:'rgba(0,0,0,0.32)',
           border:'1px solid rgba(255,255,255,0.35)',
           color:'#fff',
-          width:'40px', height:'40px',
+          width:'44px', height:'44px', // +10% from 40px
           borderRadius:'50%',
           display:'flex', alignItems:'center', justifyContent:'center',
-          fontSize:'20px', lineHeight:1,
+          fontSize:'22px', lineHeight:1, // +10% from 20px
           cursor:'pointer',
         }
       }, likedNow ? '❤️' : '🤍')
@@ -292,7 +300,7 @@ function MomentViewer(props){
     sentToast ? React.createElement('div', {
       style:{
         position:'absolute',
-        bottom:'calc(78px + env(safe-area-inset-bottom, 0px))',
+        bottom:'calc(82px + env(safe-area-inset-bottom, 0px))',
         left:'50%', transform:'translateX(-50%)',
         background:'rgba(0,0,0,0.55)',
         color:'#fff',
@@ -525,6 +533,7 @@ export default function Moments(props){
       onClose: closeViewer,
       onLike: props.onLike,
       onReply: props.onReply,
+      onViewProfile: props.onViewProfile,
     }) : null
   );
 }
