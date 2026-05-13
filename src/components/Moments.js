@@ -78,24 +78,31 @@ function MomentViewer(props){
   }
   var likedNowS = useState(false);
   var likedNow = likedNowS[0]; var setLikedNow = likedNowS[1];
+  // Once the user interacts with a slide (like or reply), auto-advance
+  // stops and the viewer "stays still" — only an explicit tap moves on.
+  // Reset back to false when the user manually navigates to a different
+  // slide, so each new slide gets its own dwell timer until interacted with.
+  var interactedS = useState(false);
+  var interacted = interactedS[0]; var setInteracted = interactedS[1];
   useEffect(function(){
     var cur = slides[idx]; if(!cur) return;
     setLikedNow(isLikedFor(cur.id));
+    setInteracted(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, slides.length]);
 
-  // Auto-advance — pauses while the user is composing a reply so they don't
-  // lose their place mid-typing.
+  // Auto-advance — pauses while the user is composing a reply, and STOPS
+  // entirely once they've liked or replied to this slide.
   useEffect(function(){
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    if (paused) return;
+    if (paused || interacted) return;
     timerRef.current = setTimeout(function(){
       if (idx < slides.length - 1) setIdx(idx + 1);
       else if (onClose) onClose();
     }, SLIDE_MS);
     return function(){ if (timerRef.current) clearTimeout(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, slides.length, paused]);
+  }, [idx, slides.length, paused, interacted]);
 
   // Tap left third = back, tap right two-thirds = next. Taps on the
   // composer / like row are stopPropagation'd so they don't navigate.
@@ -124,6 +131,8 @@ function MomentViewer(props){
     var nowLiked = !likedNow;
     setLikedFor(cur.id, nowLiked);
     setLikedNow(nowLiked);
+    // Liking pins the slide — viewer stays still and auto-advance halts.
+    setInteracted(true);
     // Only drop a chat message on the transition from unliked → liked, so
     // toggling on/off doesn't spam the recipient's chat.
     if(nowLiked && typeof onLike === 'function'){
@@ -142,9 +151,10 @@ function MomentViewer(props){
     }
     setReplyText('');
     setPaused(false);
+    // Pin the slide after sending — don't auto-advance, don't auto-close.
+    // The user taps to move on when they're ready.
+    setInteracted(true);
     showToast('Sent ✓');
-    // Close shortly after so the toast is visible.
-    setTimeout(function(){ if(onClose) onClose(); }, 900);
   }
 
   if (!slides.length) return null;
@@ -213,6 +223,9 @@ function MomentViewer(props){
               height:'100%', background:'#fff',
               width: i < idx ? '100%' : (i === idx ? '0%' : '0%'),
               animation: i === idx ? 'momentBarFill ' + SLIDE_MS + 'ms linear forwards' : 'none',
+              // Freeze the bar mid-fill when the user is composing a reply
+              // or has just liked / replied — matches the timer behaviour.
+              animationPlayState: (i === idx && (paused || interacted)) ? 'paused' : 'running',
             }
           })
         );
