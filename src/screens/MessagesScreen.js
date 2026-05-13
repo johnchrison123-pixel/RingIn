@@ -574,7 +574,47 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               },
                 m.text&&m.text.startsWith('[img]')
                   ?React.createElement('img',{src:m.text.slice(5),alt:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
-                  :React.createElement('span',null,m.text)
+                  :(m.text&&(m.text.startsWith('[mreply]')||m.text.startsWith('[mlike]')))
+                    ?(function(){
+                        var isLike=m.text.startsWith('[mlike]');
+                        var body=isLike?m.text.slice(7):m.text.slice(8);
+                        var caption=body, replyText='';
+                        if(!isLike){
+                          var sep=body.indexOf('|');
+                          if(sep>=0){caption=body.slice(0,sep);replyText=body.slice(sep+1);} else replyText=body;
+                        }
+                        // Quote block above the (optional) reply body. The
+                        // colour palette is muted for both sides of the chat
+                        // so it reads as a referenced status rather than the
+                        // primary message.
+                        return React.createElement('div',{style:{minWidth:'140px'}},
+                          React.createElement('div',{style:{
+                            fontSize:'10px',
+                            opacity:0.8,
+                            marginBottom:'4px',
+                            fontWeight:600,
+                          }}, isLike?'Liked your status ❤️':'Replied to your status'),
+                          React.createElement('div',{style:{
+                            background:isMe?'rgba(255,255,255,0.18)':'rgba(255,255,255,0.05)',
+                            border:isMe?'1px solid rgba(255,255,255,0.25)':'1px solid var(--border)',
+                            borderRadius:'10px',
+                            padding:'6px 10px',
+                            fontSize:'12px',
+                            lineHeight:1.35,
+                            color:isMe?'rgba(255,255,255,0.92)':'var(--t2)',
+                            fontStyle:'italic',
+                            maxWidth:'240px',
+                            wordBreak:'break-word',
+                          }}, caption || '(status)'),
+                          replyText?React.createElement('div',{style:{
+                            marginTop:'6px',
+                            fontSize:'13px',
+                            lineHeight:1.4,
+                            wordBreak:'break-word',
+                          }}, replyText):null
+                        );
+                      })()
+                    :React.createElement('span',null,m.text)
               ),
               React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
                 m.created_at?React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})):null,
@@ -881,6 +921,34 @@ export default function MessagesScreen(props){
   var refreshingS=useState(false); var refreshing=refreshingS[0]; var setRefreshing=refreshingS[1];
   var pullStartS=useState(0); var pullStart=pullStartS[0]; var setPullStart=pullStartS[1];
   var pullDistS=useState(0); var pullDist=pullDistS[0]; var setPullDist=pullDistS[1];
+  // Mock-expert conversations stored locally (driven by Moments likes /
+  // replies). Merged into userConvos alongside Supabase-loaded convos.
+  function loadExpertConvos(){
+    if(!myId) return [];
+    try{
+      var raw = localStorage.getItem('ringin_expert_convos_'+myId);
+      if(!raw) return [];
+      var arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    }catch(_){ return []; }
+  }
+  function mergeExpertConvos(list){
+    var experts = loadExpertConvos();
+    if(!experts.length) return list;
+    // De-dupe: prefer the localStorage expert entries (they own the lastMsg
+    // / lastTime fields for mock-expert threads).
+    var byId = {};
+    list.forEach(function(c){ if(c && c.convId) byId[c.convId] = c; });
+    experts.forEach(function(e){ if(e && e.convId) byId[e.convId] = e; });
+    var merged = Object.keys(byId).map(function(k){ return byId[k]; });
+    merged.sort(function(a,b){
+      var ta = a.lastTime ? new Date(a.lastTime).getTime() : 0;
+      var tb = b.lastTime ? new Date(b.lastTime).getTime() : 0;
+      return tb - ta;
+    });
+    return merged;
+  }
+
   var userConvosS=useState(function(){
     try{
       var cc=localStorage.getItem('convos_'+myId);
@@ -907,10 +975,10 @@ export default function MessagesScreen(props){
           }
           return c;
         });
-        return parsed;
+        return mergeExpertConvos(parsed);
       }
     }catch(e){}
-    return [];
+    return mergeExpertConvos([]);
   }); var userConvos=userConvosS[0]; var setUserConvos=userConvosS[1];
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
   var _hasCachedConvos=(function(){try{var cc=localStorage.getItem('convos_'+myId);return !!(cc&&JSON.parse(cc).length);}catch(e){return false;}})();
@@ -1000,8 +1068,11 @@ export default function MessagesScreen(props){
             receiverId: c.otherId,
           });
         });
-        setUserConvos(enriched);
         try{localStorage.setItem('convos_'+myId, JSON.stringify(enriched));}catch(e){}
+        // Merge in mock-expert conversations driven by Moments likes/replies
+        // — these are localStorage-only and would otherwise be wiped out by
+        // this Supabase-derived setter.
+        setUserConvos(mergeExpertConvos(enriched));
         // Count total unread
         var total = enriched.reduce(function(sum,c){return sum+(c.unreadCount||0);},0);
         setTotalUnread(total);
@@ -1088,8 +1159,8 @@ export default function MessagesScreen(props){
           if (dbAvatar) { try { localStorage.setItem('avatar_'+c.otherId, dbAvatar); } catch(e){} }
           return Object.assign({},c,{name:displayName,img:finalAvatar,isOnline:prof.is_online||false,color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',initials:displayName.substring(0,2).toUpperCase(),receiverId:c.otherId});
         });
-        setUserConvos(enriched);
         try{localStorage.setItem('convos_'+myId,JSON.stringify(enriched));}catch(e){}
+        setUserConvos(mergeExpertConvos(enriched));
         var total=enriched.reduce(function(sum,c){return sum+(c.unreadCount||0);},0);
         setTotalUnread(total);
         if(props.onUnreadCount) props.onUnreadCount(total);
@@ -1263,6 +1334,11 @@ export default function MessagesScreen(props){
                   if(!lm) return 'Start a conversation';
                   if(isCallLog(lm)) return previewCallLog(parseCallLog(lm), myId);
                   if(typeof lm==='string' && lm.indexOf('[img]')===0) return '📷 Photo';
+                  if(typeof lm==='string' && lm.indexOf('[mlike]')===0) return '❤️ Liked your status';
+                  if(typeof lm==='string' && lm.indexOf('[mreply]')===0){
+                    var body=lm.slice(8); var sep=body.indexOf('|');
+                    return '↩️ ' + (sep>=0?body.slice(sep+1):body);
+                  }
                   return lm;
                 })()
               )
