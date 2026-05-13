@@ -1702,6 +1702,12 @@ export default function HomeScreen(props){
       // inbox via `ringin_expert_convos_<myId>`.
       onLike: function(m, slide){ writeMomentChat(m, slide, '[mlike]'+(slide && slide.text ? slide.text : '')); },
       onReply: function(m, slide, text){ writeMomentChat(m, slide, '[mreply]'+(slide && slide.text ? slide.text : '')+'|'+text); },
+      onViewProfile: function(m){
+        // Tapping avatar / name in the viewer opens that expert's profile via
+        // the Search tab — same path as the "Call Now" cards use.
+        var exp = m && EXPERTS.find(function(e){ return e.id === m.expertId; });
+        if(exp && onViewExpert) onViewExpert(exp);
+      },
     }),
 
     React.createElement('div', {className:'sh'},
