@@ -246,11 +246,11 @@ function MomentViewer(props){
       style:{
         position:'absolute',
         left:'14px', right:'14px',
-        // Sits comfortably above iOS home indicator. With the overlay sized
-        // in `100dvh` (above), `bottom:0` of the overlay is the dynamic
-        // viewport bottom — so this 24px + safe-area inset gives a
-        // consistent gap in both Safari and standalone PWA.
-        bottom:'calc(24px + env(safe-area-inset-bottom, 0px))',
+        // 10px above the safe-area inset puts the composer right above the
+        // home-indicator blank zone — like Instagram. env() handles both
+        // PWA (≈34px home-indicator inset) and Safari (URL bar already
+        // excluded by the 100dvh overlay above).
+        bottom:'calc(10px + env(safe-area-inset-bottom, 0px))',
         display:'flex', alignItems:'center', gap:'8px',
         zIndex:3,
       }
@@ -307,7 +307,7 @@ function MomentViewer(props){
     sentToast ? React.createElement('div', {
       style:{
         position:'absolute',
-        bottom:'calc(88px + env(safe-area-inset-bottom, 0px))',
+        bottom:'calc(74px + env(safe-area-inset-bottom, 0px))',
         left:'50%', transform:'translateX(-50%)',
         background:'rgba(0,0,0,0.55)',
         color:'#fff',
