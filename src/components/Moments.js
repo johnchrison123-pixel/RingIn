@@ -162,8 +162,12 @@ function MomentViewer(props){
     onTouchMove: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
     style: {
       position:'fixed',
-      top:0, left:0, right:0, bottom:0,
-      width:'100vw', height:'100vh',
+      // top/left + height in dvh — this makes the overlay's bottom edge end
+      // at the DYNAMIC viewport bottom (i.e. just above Safari's URL bar
+      // when it's visible). With plain `100vh` the overlay extends behind
+      // the URL bar and the composer at bottom:18px gets clipped.
+      top:0, left:0,
+      width:'100vw', height:'100dvh',
       zIndex:9999,
       background: cur.bg,
       color:'#fff',
@@ -242,8 +246,11 @@ function MomentViewer(props){
       style:{
         position:'absolute',
         left:'14px', right:'14px',
-        // +2px above the previous 16px so it clears the home-indicator bar
-        bottom:'calc(18px + env(safe-area-inset-bottom, 0px))',
+        // Sits comfortably above iOS home indicator. With the overlay sized
+        // in `100dvh` (above), `bottom:0` of the overlay is the dynamic
+        // viewport bottom — so this 24px + safe-area inset gives a
+        // consistent gap in both Safari and standalone PWA.
+        bottom:'calc(24px + env(safe-area-inset-bottom, 0px))',
         display:'flex', alignItems:'center', gap:'8px',
         zIndex:3,
       }
@@ -300,7 +307,7 @@ function MomentViewer(props){
     sentToast ? React.createElement('div', {
       style:{
         position:'absolute',
-        bottom:'calc(82px + env(safe-area-inset-bottom, 0px))',
+        bottom:'calc(88px + env(safe-area-inset-bottom, 0px))',
         left:'50%', transform:'translateX(-50%)',
         background:'rgba(0,0,0,0.55)',
         color:'#fff',
