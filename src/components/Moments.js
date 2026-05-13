@@ -149,6 +149,10 @@ function MomentViewer(props){
 
   if (!slides.length) return null;
   var cur = slides[idx];
+  // Image moment vs gradient/text moment — real user-posted moments carry
+  // an imageUrl and (optional) caption; mock expert moments use cur.bg + cur.text.
+  var hasImage = !!cur.imageUrl;
+  var captionText = cur.caption != null ? cur.caption : (cur.text || '');
 
   // Portal to document.body — a `position:fixed` element inside .moments-strip
   // gets trapped by the .app-container / .screen-content stacking context on
@@ -169,15 +173,29 @@ function MomentViewer(props){
       top:0, left:0,
       width:'100vw', height:'100dvh',
       zIndex:9999,
-      background: cur.bg,
+      background: hasImage ? '#000' : cur.bg,
       color:'#fff',
       display:'flex', flexDirection:'column',
       alignItems:'center', justifyContent:'center',
       padding:'24px',
       userSelect:'none', WebkitUserSelect:'none',
       cursor:'pointer',
+      overflow:'hidden',
     }
   },
+    // Image layer (real moments) — sits below the chrome (progress bars,
+    // header, composer). object-fit:contain so portraits/landscapes both
+    // render without cropping; black letterbox via the parent bg.
+    hasImage ? React.createElement('img', {
+      src: cur.imageUrl, alt:'',
+      onError: function(e){ try{ e.target.style.display='none'; }catch(_){} },
+      style:{
+        position:'absolute',
+        top:0, left:0, width:'100%', height:'100%',
+        objectFit:'contain',
+        zIndex:0,
+      }
+    }) : null,
     // Progress bars
     React.createElement('div', {
       style:{
@@ -228,15 +246,35 @@ function MomentViewer(props){
         style:{background:'transparent',border:'none',color:'#fff',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'4px 6px',fontWeight:300}
       }, '×')
     ),
-    // Caption
-    React.createElement('div', {
+    // Caption — gradient slides: big centred text. Image slides: smaller
+    // text sitting above the composer with a subtle dark backdrop so it
+    // stays legible over any photo.
+    captionText ? (hasImage ? React.createElement('div', {
+      style:{
+        position:'absolute',
+        left:'14px', right:'14px',
+        bottom:'calc(74px + env(safe-area-inset-bottom, 0px))',
+        background:'rgba(0,0,0,0.42)',
+        backdropFilter:'blur(4px)',
+        WebkitBackdropFilter:'blur(4px)',
+        borderRadius:'14px',
+        padding:'10px 14px',
+        fontSize:'14px',
+        fontWeight:600,
+        lineHeight:1.35,
+        textAlign:'center',
+        zIndex:2,
+        textShadow:'0 1px 6px rgba(0,0,0,0.4)',
+      }
+    }, captionText) : React.createElement('div', {
       style:{
         fontSize:'26px', fontWeight:800, lineHeight:1.3,
         textAlign:'center', maxWidth:'82%',
         textShadow:'0 2px 16px rgba(0,0,0,0.35)',
         fontFamily:'Syne, DM Sans, sans-serif',
+        position:'relative', zIndex:1,
       }
-    }, cur.text),
+    }, captionText)) : null,
     // ── Reply composer + Like row (bottom) ────────────────────────────────
     // Sits above the home-indicator safe area. Tapping anywhere here MUST
     // NOT trigger the tap-navigate handler on the parent, so every event
@@ -455,7 +493,9 @@ export default function Moments(props){
   var viewer = viewerS[0]; var setViewer = viewerS[1];
 
   function openViewerFor(m){
-    var slides = setForId(m.id);
+    // Real moments come with their own slides (image + caption); mock
+    // expert moments fall back to deterministic gradient sample sets.
+    var slides = (m.slides && m.slides.length > 0) ? m.slides : setForId(m.id);
     setViewer({
       user: { name: m.userName || '', avatar: m.userAvatar || null },
       slides: slides,
