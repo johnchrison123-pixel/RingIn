@@ -44,6 +44,42 @@ if (typeof window !== 'undefined') {
 // the user is likely about to call.
 export function prefetchAgora() { try { getAgoraRTC(); } catch (e) {} }
 
+// ── Android earpiece-routing experiment ───────────────────────────────────
+// PWA on Android can't use AudioManager.setMode(MODE_IN_COMMUNICATION) like
+// native apps do, but SOME devices expose the earpiece as a separate audio
+// output device via mediaDevices.enumerateDevices(). When that's the case
+// we can use Agora's RemoteAudioTrack.setPlaybackDevice(deviceId) to route
+// the call through it — giving the user the "hold phone to ear, speak
+// privately" experience instead of the loud media-speaker default.
+//
+// Best-effort: returns the deviceId of an earpiece-like output if found,
+// otherwise null. Detection is by label heuristic — Chrome on Android labels
+// the earpiece variously as "Earpiece" / "Phone" / "Receiver" / "Voice
+// recognition mic" depending on OEM, so we match a few common substrings.
+//
+// Calling this requires that getUserMedia has already succeeded (otherwise
+// device labels come back empty per the W3C privacy rules).
+export function isAndroid() {
+  try {
+    var ua = (navigator && navigator.userAgent) || '';
+    return /Android/i.test(ua);
+  } catch (e) { return false; }
+}
+export async function detectAndroidEarpieceDeviceId() {
+  try {
+    if (!isAndroid()) return null;
+    if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return null;
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var outputs = devices.filter(function (d) { return d.kind === 'audiooutput'; });
+    // Heuristic match — Chrome Android exposes earpiece labels variably
+    var EARPIECE_HINTS = /(earpiece|earpieces|handset|receiver|phone|telephone)/i;
+    for (var i = 0; i < outputs.length; i++) {
+      if (EARPIECE_HINTS.test(outputs[i].label || '')) return outputs[i].deviceId;
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
 // ── Audio output mode (call-time audio session pinning) ───────────────────
 // IMPORTANT iOS PWA limitation: we cannot truly switch between earpiece and
 // loudspeaker in a browser the way native apps do. iOS Safari only exposes
@@ -289,8 +325,20 @@ export async function startCallSession(opts) {
         }
       });
     },
-    // setPlaybackDevice removed — was routing audio to invalid outputs on some devices,
-    // causing one-way audio. Loudspeaker is now achieved purely via setRemoteVolume.
+    // Route remote audio playback to a specific output device (Android earpiece
+    // experiment — see detectAndroidEarpieceDeviceId below). Pass an empty string
+    // to fall back to system default. Silently no-ops on browsers that don't
+    // implement Agora's setPlaybackDevice (most iOS Safari builds).
+    setRemotePlaybackDevice: function (deviceId) {
+      var promises = Object.keys(remoteUsers).map(function (uidKey) {
+        var u = remoteUsers[uidKey];
+        if (u && u.audioTrack && typeof u.audioTrack.setPlaybackDevice === 'function') {
+          return u.audioTrack.setPlaybackDevice(deviceId).catch(function () { return null; });
+        }
+        return null;
+      });
+      return Promise.all(promises).catch(function () { return null; });
+    },
     leave: async function () {
       try {
         if (localAudioTrack) {

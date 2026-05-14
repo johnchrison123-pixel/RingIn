@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
-import {startCallSession, setAudioOutputMode} from '../utils/agora';
+import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid} from '../utils/agora';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -90,6 +90,12 @@ export default function CallScreen(props){
   var endReasonS = useState(null); var endReason = endReasonS[0]; var setEndReason = endReasonS[1];
 
   var sessionRef = useRef(null);   // holds the Agora controller {leave, setMuted}
+  // Android-only: deviceId of an earpiece audio output if one is detected
+  // by the heuristic in agora.detectAndroidEarpieceDeviceId. When non-null,
+  // toggleSpeaker uses it to route the remote audio to the earpiece (private
+  // mode) and falls back to the system default (loud media speaker) when
+  // speaker is on. iOS leaves this null — it never has it.
+  var androidEarpieceIdRef = useRef(null);
   var endedRef = useRef(false);    // guard against double-end
   var wakeLockRef = useRef(null);  // navigator.wakeLock — keeps screen on (Chrome Android)
   var silentAudioRef = useRef(null); // hidden <audio> looping silent track — keeps iOS audio session alive
@@ -215,6 +221,20 @@ export default function CallScreen(props){
             // for hands-free. On iOS PWA this routes through the actual earpiece;
             // on Android it just sets normal-volume Agora playback.
             try{ setAudioOutputMode('earpiece'); }catch(e){}
+            // Android earpiece routing experiment: detect an earpiece audio
+            // output device, and if found, route Agora's remote audio to it.
+            // No-op on iOS and on Androids that don't expose the earpiece
+            // separately. Async, fire-and-forget.
+            if (isAndroid()) {
+              detectAndroidEarpieceDeviceId().then(function(devId){
+                if (cancelled || !devId) return;
+                androidEarpieceIdRef.current = devId;
+                var s = sessionRef.current;
+                if (s && s.setRemotePlaybackDevice) {
+                  try { s.setRemotePlaybackDevice(devId); } catch(_) {}
+                }
+              }).catch(function(){});
+            }
             // Once both peers are present, mark the invite as accepted/started
             if(inviteId){
               sb.from('call_invites').update({status:'accepted',started_at:new Date().toISOString()}).eq('id',inviteId).then(function(){});
@@ -439,22 +459,37 @@ export default function CallScreen(props){
   }, []);
 
   // Loudspeaker toggle.
-  // We can't change the audio session type in-call without breaking the mic
-  // (see comment in agora.js setAudioOutputMode). So the toggle simply boosts
-  // Agora's remote playback volume:
-  //   off (earpiece feel): 100 — normal
-  //   on  (speaker feel):  250 — boosted
-  // On iOS PWA this is "louder earpiece" (routing stays earpiece). On Android
-  // PWA audio routes through Android's chosen output (usually the loud media
-  // speaker) so the boost effectively gives a true loudspeaker feel.
+  // Behavior, per platform:
+  //
+  //  iOS PWA — audioSession is pinned to play-and-record (mic alive). We
+  //  can't physically switch routing on iOS Web (no defaultToSpeaker option),
+  //  so the "speaker" toggle just boosts Agora's playback volume from 100
+  //  to 250 — louder earpiece, not true loudspeaker.
+  //
+  //  Android PWA — IF an earpiece audio output device was detected (see
+  //  androidEarpieceIdRef set in onRemoteJoined), we route Agora's remote
+  //  audio THERE for "earpiece mode" (off) and back to system default (loud
+  //  media speaker) for "speaker mode" (on). This is the closest a PWA can
+  //  get to native call-style audio routing without a Capacitor wrapper.
+  //  IF the earpiece wasn't detected (older Android Chrome / OEM that hides
+  //  it), we fall back to the same volume-only behavior as iOS.
   var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
-      // Keep the session pinned to play-and-record (mic alive). Safe no-op
-      // on browsers without the API.
       try{ setAudioOutputMode('earpiece'); }catch(e){}
       var s = sessionRef.current;
-      if(s){ try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){} }
+      if(s){
+        try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){}
+        // Android-only earpiece/speaker routing
+        if (isAndroid() && s.setRemotePlaybackDevice) {
+          try {
+            // next=true → user wants speaker → '' = system default (loud)
+            // next=false → user wants earpiece → use detected earpiece deviceId if any
+            var target = next ? '' : (androidEarpieceIdRef.current || '');
+            s.setRemotePlaybackDevice(target);
+          } catch(_) {}
+        }
+      }
       return next;
     });
   }, []);
