@@ -91,61 +91,40 @@ export async function detectAndroidEarpieceDeviceId() {
   } catch (e) { return null; }
 }
 
-// ── Web Audio amplification ───────────────────────────────────────────────
-// Agora SDK v4's IRemoteAudioTrack.setVolume is capped at 0-100 — it CANNOT
-// boost playback above the original volume. To make a "loudspeaker" toggle
-// actually louder, we route the remote audio through a Web Audio GainNode
-// with a custom gain factor (1.0 = normal, 2.5+ = audibly boosted).
+// ── Remote audio volume control ───────────────────────────────────────────
+// VERY IMPORTANT — researched + verified:
 //
-// Implementation: we find the <audio> element Agora created when track.play()
-// was called, mute it (so we don't double-play), and re-route its MediaStream
-// through AudioContext → GainNode → destination. Gain can then go above 1.0.
+// Web browsers CANNOT amplify WebRTC remote audio above 1.0 (unity gain).
+// Discord Web, Slack, Meet all have the same limit. The Web Audio API
+// approach (createMediaElementSource → GainNode) DOES NOT WORK reliably
+// on Agora's audio element, AND on iOS PWA it causes a confirmed bug
+// where audio plays out of BOTH the earpiece (the element's native route)
+// AND the loudspeaker (the AudioContext destination's route). We removed
+// that approach because it's what was causing the user's iOS dual-speaker
+// complaint.
 //
-// Cached per-page in window.__ringinGainNode so we don't double-wire.
-export function setRemoteGain(gainValue) {
+// What we use instead: direct HTMLMediaElement.volume on Agora's audio
+// element. This is exactly what Agora's own setVolume(0-100) does
+// internally. Range is 0.0 to 1.0 — no boost above original possible,
+// but we get a perceptible 2× difference between speaker-off (0.5) and
+// speaker-on (1.0). For TRUE louder-than-original audio we'd need a
+// native wrapper (Capacitor) where AVAudioSession can do speakerphone
+// boost.
+export function setRemoteAudioVolume(volume01) {
   try {
-    if (typeof window === 'undefined') return false;
-    var clamped = Math.max(0, Math.min(8, Number(gainValue) || 1));
-    if (window.__ringinGainNode) {
-      try {
-        window.__ringinGainNode.gain.setTargetAtTime(
-          clamped,
-          window.__ringinAudioCtx.currentTime,
-          0.05
-        );
-        return true;
-      } catch (e) { return false; }
+    if (typeof document === 'undefined') return false;
+    var v = Math.max(0, Math.min(1, Number(volume01)));
+    if (Number.isNaN(v)) v = 1;
+    var els = document.querySelectorAll('audio');
+    var changed = 0;
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      // Skip data-URL audio elements (legacy silent-audio iOS hacks if any)
+      if (el.src && el.src.indexOf('data:') === 0) continue;
+      try { el.volume = v; changed++; } catch (e) {}
     }
-    return false;
-  } catch (e) { return false; }
-}
-
-// Wire the gain pipeline for the active call. Called once per call when
-// remote audio first arrives. Returns true if successful.
-export async function attachRemoteGain(audioElement, initialGain) {
-  try {
-    if (!audioElement) return false;
-    if (typeof window === 'undefined') return false;
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return false;
-    if (!window.__ringinAudioCtx) {
-      try { window.__ringinAudioCtx = new AC(); } catch (e) { return false; }
-    }
-    var ctx = window.__ringinAudioCtx;
-    if (ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch (_) {}
-    }
-    // Build the graph: <audio> → MediaElementSource → Gain → destination
-    var source;
-    try { source = ctx.createMediaElementSource(audioElement); }
-    catch (e) { return false; } // already wired or restricted
-    var gain = ctx.createGain();
-    gain.gain.value = Math.max(0, Math.min(8, Number(initialGain) || 1));
-    source.connect(gain);
-    gain.connect(ctx.destination);
-    window.__ringinGainNode = gain;
-    window.__ringinGainSource = source;
-    return true;
+    try { console.log('[ringin] setRemoteAudioVolume volume=' + v + ' applied to ' + changed + ' element(s)'); } catch(_){}
+    return changed > 0;
   } catch (e) { return false; }
 }
 
@@ -319,31 +298,11 @@ export async function startCallSession(opts) {
       if (user && user.audioTrack) {
         user.audioTrack.play();
         // Apply current speaker volume so peers that join after a Speaker toggle
-        // inherit the same loudness.
+        // inherit the same loudness. Agora's setVolume is the same as setting
+        // audioElement.volume internally — capped at unity gain.
         if (typeof user.audioTrack.setVolume === 'function') {
           try { user.audioTrack.setVolume(currentRemoteVolume); } catch (e) {}
         }
-        // Web Audio amplification: Agora caps setVolume at 100 (no boost).
-        // Find the <audio> element Agora just created and route it through
-        // a GainNode so we can amplify above 100% (loudspeaker mode).
-        // Best-effort — if anything fails, audio still plays normally.
-        setTimeout(function () {
-          try {
-            var els = document.querySelectorAll('audio');
-            // The Agora element we want is typically the most recently added.
-            // Walk in reverse and pick the first one that's NOT already wired
-            // to our gain pipeline.
-            for (var i = els.length - 1; i >= 0; i--) {
-              var el = els[i];
-              if (el && !el.__ringinGainAttached) {
-                attachRemoteGain(el, 1.0).then(function (ok) {
-                  try { el.__ringinGainAttached = !!ok; } catch (_) {}
-                });
-                break;
-              }
-            }
-          } catch (e) { /* ignore */ }
-        }, 100);
       }
     } catch (e) { /* ignore */ }
   }

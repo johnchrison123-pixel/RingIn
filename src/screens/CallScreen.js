@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
-import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid, trySetSinkIdEverywhere, setRemoteGain} from '../utils/agora';
+import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid, trySetSinkIdEverywhere, setRemoteAudioVolume} from '../utils/agora';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -217,11 +217,17 @@ export default function CallScreen(props){
           onRemoteJoined: function(){
             if(cancelled) return;
             setPhase('connected');
-            // Default to EARPIECE mode the moment the call goes live — phones
-            // act like phones, hold to ear. The user explicitly toggles speaker
-            // for hands-free. On iOS PWA this routes through the actual earpiece;
-            // on Android it just sets normal-volume Agora playback.
+            // Default to EARPIECE-style audio when the call goes live:
+            //  - audioSession pinned to play-and-record (mic alive)
+            //  - audio element volume at 0.5 (half — feels "private")
+            //  - Agora's setVolume cap at 50 (same half-volume)
+            // toggleSpeaker can take it to 1.0 / 100 for hands-free mode.
+            // Apply with a 200ms delay to ensure Agora's <audio> elements
+            // are in the DOM after track.play().
             try{ setAudioOutputMode('earpiece'); }catch(e){}
+            setTimeout(function(){
+              try{ setRemoteAudioVolume(0.5); }catch(e){}
+            }, 200);
             // Android earpiece routing experiment: detect an earpiece audio
             // output device, and if found, route Agora's remote audio to it.
             // No-op on iOS and on Androids that don't expose the earpiece
@@ -487,10 +493,13 @@ export default function CallScreen(props){
       try{ setAudioOutputMode('earpiece'); }catch(e){}
       var s = sessionRef.current;
       if(s){
-        // REAL volume boost via Web Audio GainNode (bypasses Agora's 100 cap).
-        // 1.0 = original volume, 3.0 = 3× louder for "loudspeaker" mode.
-        try{ setRemoteGain(next ? 3.0 : 1.0); }catch(e){}
-        try{ s.setRemoteVolume(100); }catch(e){}  // ensure Agora is at 100% baseline
+        // Direct HTMLMediaElement.volume control — universal, works on every
+        // browser, audibly different. Speaker on = max (1.0), speaker off =
+        // half (0.5) for a perceptible 2× contrast. We CAN'T go above 1.0
+        // for WebRTC remote audio in any browser — that's the Web platform
+        // limit. Capacitor wrapper would unlock true above-100% boost.
+        try{ setRemoteAudioVolume(next ? 1.0 : 0.5); }catch(e){}
+        try{ s.setRemoteVolume(next ? 100 : 50); }catch(e){}
         // Android-only earpiece/speaker routing
         if (isAndroid()) {
           // Two attempts in sequence:
