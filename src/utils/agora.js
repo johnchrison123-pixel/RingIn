@@ -44,111 +44,6 @@ if (typeof window !== 'undefined') {
 // the user is likely about to call.
 export function prefetchAgora() { try { getAgoraRTC(); } catch (e) {} }
 
-// ── Android earpiece-routing experiment ───────────────────────────────────
-// PWA on Android can't use AudioManager.setMode(MODE_IN_COMMUNICATION) like
-// native apps do, but SOME devices expose the earpiece as a separate audio
-// output device via mediaDevices.enumerateDevices(). When that's the case
-// we can use Agora's RemoteAudioTrack.setPlaybackDevice(deviceId) to route
-// the call through it — giving the user the "hold phone to ear, speak
-// privately" experience instead of the loud media-speaker default.
-//
-// Best-effort: returns the deviceId of an earpiece-like output if found,
-// otherwise null. Detection is by label heuristic — Chrome on Android labels
-// the earpiece variously as "Earpiece" / "Phone" / "Receiver" / "Voice
-// recognition mic" depending on OEM, so we match a few common substrings.
-//
-// Calling this requires that getUserMedia has already succeeded (otherwise
-// device labels come back empty per the W3C privacy rules).
-export function isAndroid() {
-  try {
-    var ua = (navigator && navigator.userAgent) || '';
-    return /Android/i.test(ua);
-  } catch (e) { return false; }
-}
-export async function detectAndroidEarpieceDeviceId() {
-  try {
-    if (!isAndroid()) return null;
-    if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return null;
-    var devices = await navigator.mediaDevices.enumerateDevices();
-    var outputs = devices.filter(function (d) { return d.kind === 'audiooutput'; });
-    // DEBUG: log the device list so the user can see what's available on their device.
-    // Open Eruda (?debug=1) on Android to see this in the console.
-    try {
-      console.log('[ringin] audio outputs:', outputs.map(function (d) {
-        return { deviceId: d.deviceId, label: d.label, groupId: d.groupId };
-      }));
-    } catch (_) {}
-    // Heuristic match — Chrome Android exposes earpiece labels variably
-    var EARPIECE_HINTS = /(earpiece|earpieces|handset|receiver|phone|telephone|in-call)/i;
-    for (var i = 0; i < outputs.length; i++) {
-      if (EARPIECE_HINTS.test(outputs[i].label || '')) {
-        try { console.log('[ringin] earpiece detected:', outputs[i].label); } catch(_) {}
-        return outputs[i].deviceId;
-      }
-    }
-    try { console.log('[ringin] no earpiece device matched. Falling back to volume-only.'); } catch(_) {}
-    return null;
-  } catch (e) { return null; }
-}
-
-// ── Remote audio volume control ───────────────────────────────────────────
-// VERY IMPORTANT — researched + verified:
-//
-// Web browsers CANNOT amplify WebRTC remote audio above 1.0 (unity gain).
-// Discord Web, Slack, Meet all have the same limit. The Web Audio API
-// approach (createMediaElementSource → GainNode) DOES NOT WORK reliably
-// on Agora's audio element, AND on iOS PWA it causes a confirmed bug
-// where audio plays out of BOTH the earpiece (the element's native route)
-// AND the loudspeaker (the AudioContext destination's route). We removed
-// that approach because it's what was causing the user's iOS dual-speaker
-// complaint.
-//
-// What we use instead: direct HTMLMediaElement.volume on Agora's audio
-// element. This is exactly what Agora's own setVolume(0-100) does
-// internally. Range is 0.0 to 1.0 — no boost above original possible,
-// but we get a perceptible 2× difference between speaker-off (0.5) and
-// speaker-on (1.0). For TRUE louder-than-original audio we'd need a
-// native wrapper (Capacitor) where AVAudioSession can do speakerphone
-// boost.
-export function setRemoteAudioVolume(volume01) {
-  try {
-    if (typeof document === 'undefined') return false;
-    var v = Math.max(0, Math.min(1, Number(volume01)));
-    if (Number.isNaN(v)) v = 1;
-    var els = document.querySelectorAll('audio');
-    var changed = 0;
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      // Skip data-URL audio elements (legacy silent-audio iOS hacks if any)
-      if (el.src && el.src.indexOf('data:') === 0) continue;
-      try { el.volume = v; changed++; } catch (e) {}
-    }
-    try { console.log('[ringin] setRemoteAudioVolume volume=' + v + ' applied to ' + changed + ' element(s)'); } catch(_){}
-    return changed > 0;
-  } catch (e) { return false; }
-}
-
-// Fallback for Android: try setSinkId on every <audio> element on the page,
-// using a special device ID. Some Android Chromium builds accept 'communications'
-// as a routing hint to the earpiece — others ignore it. Best-effort only.
-// Returns true if AT LEAST ONE element accepted the sinkId without throwing.
-export async function trySetSinkIdEverywhere(deviceId) {
-  try {
-    if (typeof document === 'undefined') return false;
-    var els = document.querySelectorAll('audio');
-    var anyOk = false;
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      if (typeof el.setSinkId !== 'function') continue;
-      try {
-        await el.setSinkId(deviceId);
-        anyOk = true;
-      } catch (e) { /* ignore — element may not support this sinkId */ }
-    }
-    return anyOk;
-  } catch (e) { return false; }
-}
-
 // ── Audio output mode (call-time audio session pinning) ───────────────────
 // IMPORTANT iOS PWA limitation: we cannot truly switch between earpiece and
 // loudspeaker in a browser the way native apps do. iOS Safari only exposes
@@ -394,20 +289,6 @@ export async function startCallSession(opts) {
           try { u.audioTrack.setVolume(currentRemoteVolume); } catch (e) {}
         }
       });
-    },
-    // Route remote audio playback to a specific output device (Android earpiece
-    // experiment — see detectAndroidEarpieceDeviceId below). Pass an empty string
-    // to fall back to system default. Silently no-ops on browsers that don't
-    // implement Agora's setPlaybackDevice (most iOS Safari builds).
-    setRemotePlaybackDevice: function (deviceId) {
-      var promises = Object.keys(remoteUsers).map(function (uidKey) {
-        var u = remoteUsers[uidKey];
-        if (u && u.audioTrack && typeof u.audioTrack.setPlaybackDevice === 'function') {
-          return u.audioTrack.setPlaybackDevice(deviceId).catch(function () { return null; });
-        }
-        return null;
-      });
-      return Promise.all(promises).catch(function () { return null; });
     },
     leave: async function () {
       try {

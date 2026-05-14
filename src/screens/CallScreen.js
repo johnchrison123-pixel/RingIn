@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
-import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid, trySetSinkIdEverywhere, setRemoteAudioVolume} from '../utils/agora';
+import {startCallSession, setAudioOutputMode} from '../utils/agora';
+import * as NativeAudio from '../utils/nativeAudio';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -28,7 +29,7 @@ var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'
 // at the bottom of the connected-call screen and logged on call start so we
 // can verify whether the user is actually running the latest code (or stuck
 // on a cached old build via service worker).
-var RINGIN_BUILD = 'v1.8-audio-debug';
+var RINGIN_BUILD = 'v1.9';
 
 // ── Module-level style constants ───────────────────────────────────────────
 // Every secs/coin tick re-renders the connected-call view. Hoisting the style
@@ -109,12 +110,6 @@ export default function CallScreen(props){
   var endReasonS = useState(null); var endReason = endReasonS[0]; var setEndReason = endReasonS[1];
 
   var sessionRef = useRef(null);   // holds the Agora controller {leave, setMuted}
-  // Android-only: deviceId of an earpiece audio output if one is detected
-  // by the heuristic in agora.detectAndroidEarpieceDeviceId. When non-null,
-  // toggleSpeaker uses it to route the remote audio to the earpiece (private
-  // mode) and falls back to the system default (loud media speaker) when
-  // speaker is on. iOS leaves this null — it never has it.
-  var androidEarpieceIdRef = useRef(null);
   var endedRef = useRef(false);    // guard against double-end
   var wakeLockRef = useRef(null);  // navigator.wakeLock — keeps screen on (Chrome Android)
   var silentAudioRef = useRef(null); // hidden <audio> looping silent track — keeps iOS audio session alive
@@ -206,6 +201,10 @@ export default function CallScreen(props){
   useEffect(function(){
     if(!channel || (typeof channel==='string' && channel.indexOf('pending-')===0)) return;
     try{ console.log('[ringin] CallScreen mount BUILD=' + RINGIN_BUILD + ' channel=' + channel); }catch(_){}
+    // Capacitor native shell only: put the audio session into call mode
+    // BEFORE Agora grabs the mic. iOS sets AVAudioSession to playAndRecord,
+    // Android sets AudioManager.MODE_IN_COMMUNICATION. No-op on web/PWA.
+    try{ NativeAudio.startCallMode(); }catch(_){}
     var cancelled = false;
     (async function(){
       try {
@@ -227,36 +226,12 @@ export default function CallScreen(props){
             setPhase('connected');
             // Default to EARPIECE-style audio when the call goes live:
             //  - audioSession pinned to play-and-record (mic alive)
-            //  - audio element volume at 0.5 (half — feels "private")
-            //  - Agora's setVolume cap at 50 (same half-volume)
-            // toggleSpeaker can take it to 1.0 / 100 for hands-free mode.
-            // Apply with a 200ms delay to ensure Agora's <audio> elements
-            // are in the DOM after track.play().
+            //  - Agora's setVolume reduced to 50 (private feel) on web/PWA
+            //  - In native (Capacitor) shell, the native plugin handles real
+            //    earpiece routing.
             try{ setAudioOutputMode('earpiece'); }catch(e){}
-            setTimeout(function(){
-              try{ setRemoteAudioVolume(0.5); }catch(e){}
-            }, 200);
-            // Android earpiece routing experiment: detect an earpiece audio
-            // output device, and if found, route Agora's remote audio to it.
-            // No-op on iOS and on Androids that don't expose the earpiece
-            // separately. Async, fire-and-forget. Also tries setSinkId as a
-            // second-chance attempt on devices where setPlaybackDevice fails
-            // but setSinkId('communications') may succeed.
-            if (isAndroid()) {
-              detectAndroidEarpieceDeviceId().then(function(devId){
-                if (cancelled) return;
-                if (devId) androidEarpieceIdRef.current = devId;
-                var s = sessionRef.current;
-                var target = devId || 'communications';
-                if (s && s.setRemotePlaybackDevice) {
-                  try { s.setRemotePlaybackDevice(target); } catch(_) {}
-                }
-                // Also try setSinkId on raw <audio> elements
-                setTimeout(function(){
-                  try { trySetSinkIdEverywhere(target); } catch(_){}
-                }, 0);
-              }).catch(function(){});
-            }
+            var s = sessionRef.current;
+            if (s) { try { s.setRemoteVolume(50); } catch(_){} }
             // Once both peers are present, mark the invite as accepted/started
             if(inviteId){
               sb.from('call_invites').update({status:'accepted',started_at:new Date().toISOString()}).eq('id',inviteId).then(function(){});
@@ -386,6 +361,8 @@ export default function CallScreen(props){
     endedRef.current = true;
     var s = sessionRef.current;
     if(s){ try{ s.leave(); }catch(e){} sessionRef.current = null; }
+    // Restore the native audio session to idle (no-op on web/PWA).
+    try{ NativeAudio.endCallMode(); }catch(_){}
     setEndReason(reason || 'caller_hangup');
     // Update invite row. If we hang up BEFORE the insert returns (inviteId is null),
     // mark the most recent ringing invite WE created as cancelled — this catches
@@ -481,76 +458,28 @@ export default function CallScreen(props){
   }, []);
 
   // Loudspeaker toggle.
-  // Behavior, per platform:
   //
-  //  iOS PWA — audioSession is pinned to play-and-record (mic alive). We
-  //  can't physically switch routing on iOS Web (no defaultToSpeaker option),
-  //  so the "speaker" toggle just boosts Agora's playback volume from 100
-  //  to 250 — louder earpiece, not true loudspeaker.
+  // WHEN RUNNING AS NATIVE APP (via Capacitor): calls the native audio plugin
+  // to physically switch between earpiece routing (AVAudioSession.playAndRecord
+  // / AudioManager.MODE_IN_COMMUNICATION + speakerphoneOff) and loudspeaker.
+  // This is the ONLY way to get true earpiece/speaker switching that works
+  // identically to WhatsApp, Telegram, etc.
   //
-  //  Android PWA — IF an earpiece audio output device was detected (see
-  //  androidEarpieceIdRef set in onRemoteJoined), we route Agora's remote
-  //  audio THERE for "earpiece mode" (off) and back to system default (loud
-  //  media speaker) for "speaker mode" (on). This is the closest a PWA can
-  //  get to native call-style audio routing without a Capacitor wrapper.
-  //  IF the earpiece wasn't detected (older Android Chrome / OEM that hides
-  //  it), we fall back to the same volume-only behavior as iOS.
+  // WHEN RUNNING AS PWA / WEB (no native plugin available): falls back to
+  // reducing Agora's playback volume (100 → 50) for "private mode". Cannot
+  // amplify above 100 — Web platform limit for WebRTC remote tracks.
   var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
-      // ── EXTENSIVE DIAGNOSTIC LOGGING — temporary while debugging the
-      // speaker toggle issue. Remove after the user confirms the toggle
-      // actually changes volume.
-      try{
-        console.log('=========================================');
-        console.log('[ringin][toggleSpeaker] BUILD=v16-debug');
-        console.log('[ringin][toggleSpeaker] state was speakerOn=' + on + ', going to ' + next);
-        console.log('[ringin][toggleSpeaker] navigator.audioSession =', navigator.audioSession);
-        var allAudio = document.querySelectorAll('audio');
-        console.log('[ringin][toggleSpeaker] document <audio> count =', allAudio.length);
-        for (var i = 0; i < allAudio.length; i++){
-          var a = allAudio[i];
-          console.log('  audio[' + i + ']: src=' + String(a.src || '(none)').slice(0,80)
-            + ' srcObject=' + (a.srcObject ? 'MediaStream' : 'null')
-            + ' volume=' + a.volume
-            + ' muted=' + a.muted
-            + ' paused=' + a.paused);
-        }
-      }catch(_){}
       try{ setAudioOutputMode('earpiece'); }catch(e){}
+      // Native plugin path (Capacitor) — true OS audio routing switch.
+      // No-op on web/PWA; falls through to volume contrast below.
+      try{ NativeAudio.setSpeakerphone(next); }catch(_){}
       var s = sessionRef.current;
       if(s){
-        try{
-          var changed = setRemoteAudioVolume(next ? 1.0 : 0.5);
-          console.log('[ringin][toggleSpeaker] setRemoteAudioVolume returned', changed);
-        }catch(e){ console.log('[ringin][toggleSpeaker] setRemoteAudioVolume threw', e && e.message); }
-        try{
-          s.setRemoteVolume(next ? 100 : 50);
-          console.log('[ringin][toggleSpeaker] s.setRemoteVolume(' + (next?100:50) + ') OK');
-        }catch(e){ console.log('[ringin][toggleSpeaker] s.setRemoteVolume threw', e && e.message); }
-        // Android-only earpiece/speaker routing
-        if (isAndroid()) {
-          // Two attempts in sequence:
-          //  1. Agora's RemoteAudioTrack.setPlaybackDevice — works on some
-          //     Chrome builds + Agora SDK combos
-          //  2. HTMLMediaElement.setSinkId('') / cached earpiece id — more
-          //     widely supported on Android Chromium
-          // next=true  → user wants speaker     → '' = system default (loud)
-          // next=false → user wants earpiece    → use detected earpiece id (if any) or 'communications'
-          var earpieceId = androidEarpieceIdRef.current || 'communications';
-          var target = next ? '' : earpieceId;
-          if (s.setRemotePlaybackDevice) {
-            try { s.setRemotePlaybackDevice(target); } catch(_) {}
-          }
-          // Direct setSinkId fallback on the page's audio elements (where
-          // Agora attaches the remote track's <audio>). Fires after a tick
-          // so Agora's playback element is definitely in the DOM.
-          setTimeout(function(){
-            try { trySetSinkIdEverywhere(target).then(function(ok){
-              try{ console.log('[ringin] setSinkId target=' + (target||'default') + ' result=' + ok); }catch(_){}
-            }); } catch(_){}
-          }, 0);
-        }
+        // Volume contrast for PWA fallback: 50 (private feel) ↔ 100 (full).
+        // Browsers can't amplify above 100 for WebRTC remote tracks.
+        try{ s.setRemoteVolume(next ? 100 : 50); }catch(e){}
       }
       return next;
     });
@@ -658,30 +587,8 @@ export default function CallScreen(props){
         ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
-    // Build stamp — tap 3 times rapidly to load Eruda debug console inside
-    // the PWA (so you don't need the ?debug=1 URL trick which doesn't work
-    // once installed). After 3 taps the version label briefly flashes to
-    // confirm activation, then Eruda's floating button appears.
-    React.createElement('button',{
-      onClick:function(){
-        try{
-          window.__ringinDebugTaps = (window.__ringinDebugTaps || 0) + 1;
-          if (window.__ringinDebugTaps >= 3){
-            window.__ringinDebugTaps = 0;
-            try{ localStorage.setItem('ringin_debug','1'); }catch(_){}
-            if (window.eruda){
-              try{ window.eruda.show(); }catch(_){}
-            } else {
-              var s = document.createElement('script');
-              s.src = 'https://cdn.jsdelivr.net/npm/eruda';
-              s.onload = function(){ try{ window.eruda && window.eruda.init(); window.eruda && window.eruda.show(); }catch(e){} };
-              document.body.appendChild(s);
-            }
-          }
-        }catch(_){}
-      },
-      style:{position:'fixed',bottom:'8px',left:'8px',fontSize:'9px',color:'rgba(255,255,255,0.35)',background:'transparent',border:'none',padding:'4px',fontFamily:'monospace',cursor:'pointer'}
-    }, RINGIN_BUILD + ' (tap 3×)'),
+    // Tiny build stamp at bottom-left for verifying deploys. Non-interactive.
+    React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD),
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────
