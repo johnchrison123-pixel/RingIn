@@ -71,13 +71,45 @@ export async function detectAndroidEarpieceDeviceId() {
     if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return null;
     var devices = await navigator.mediaDevices.enumerateDevices();
     var outputs = devices.filter(function (d) { return d.kind === 'audiooutput'; });
+    // DEBUG: log the device list so the user can see what's available on their device.
+    // Open Eruda (?debug=1) on Android to see this in the console.
+    try {
+      console.log('[ringin] audio outputs:', outputs.map(function (d) {
+        return { deviceId: d.deviceId, label: d.label, groupId: d.groupId };
+      }));
+    } catch (_) {}
     // Heuristic match — Chrome Android exposes earpiece labels variably
-    var EARPIECE_HINTS = /(earpiece|earpieces|handset|receiver|phone|telephone)/i;
+    var EARPIECE_HINTS = /(earpiece|earpieces|handset|receiver|phone|telephone|in-call)/i;
     for (var i = 0; i < outputs.length; i++) {
-      if (EARPIECE_HINTS.test(outputs[i].label || '')) return outputs[i].deviceId;
+      if (EARPIECE_HINTS.test(outputs[i].label || '')) {
+        try { console.log('[ringin] earpiece detected:', outputs[i].label); } catch(_) {}
+        return outputs[i].deviceId;
+      }
     }
+    try { console.log('[ringin] no earpiece device matched. Falling back to volume-only.'); } catch(_) {}
     return null;
   } catch (e) { return null; }
+}
+
+// Fallback for Android: try setSinkId on every <audio> element on the page,
+// using a special device ID. Some Android Chromium builds accept 'communications'
+// as a routing hint to the earpiece — others ignore it. Best-effort only.
+// Returns true if AT LEAST ONE element accepted the sinkId without throwing.
+export async function trySetSinkIdEverywhere(deviceId) {
+  try {
+    if (typeof document === 'undefined') return false;
+    var els = document.querySelectorAll('audio');
+    var anyOk = false;
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (typeof el.setSinkId !== 'function') continue;
+      try {
+        await el.setSinkId(deviceId);
+        anyOk = true;
+      } catch (e) { /* ignore — element may not support this sinkId */ }
+    }
+    return anyOk;
+  } catch (e) { return false; }
 }
 
 // ── Audio output mode (call-time audio session pinning) ───────────────────
