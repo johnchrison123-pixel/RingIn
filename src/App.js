@@ -433,7 +433,10 @@ export default function App() {
       // listener will still fire when the callee's PWA is open). Silently
       // swallow errors — they're already logged server-side.
       try{
-        fetch('/api/send-call-push', {
+        // Absolute URL so this also works in native Capacitor APK
+        // (where '/api/...' resolves to 'https://localhost/...' = nothing).
+        // In PWA, absolute URL is identical to the relative one.
+        fetch((process.env.REACT_APP_API_BASE_URL || 'https://ring-in.vercel.app') + '/api/send-call-push', {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify({

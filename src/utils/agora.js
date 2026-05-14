@@ -13,8 +13,12 @@
 
 var APP_ID = process.env.REACT_APP_AGORA_APP_ID || 'a0d22a99058142b2af0d18e3e570b880';
 
-// Allow override of the token endpoint when running locally
-var TOKEN_URL = process.env.REACT_APP_AGORA_TOKEN_URL || '/api/agora-token';
+// API base for backend calls. Defaults to the live production deploy so
+// relative '/api/...' calls also work from native Capacitor APKs (where
+// '/api/...' would resolve to 'https://localhost/...' = nothing). In PWA
+// mode, the absolute URL behaves identically to the relative one.
+var API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://ring-in.vercel.app';
+var TOKEN_URL = process.env.REACT_APP_AGORA_TOKEN_URL || (API_BASE + '/api/agora-token');
 
 // ── Lazy-load gate ─────────────────────────────────────────────────────────
 var _agoraPromise = null;
