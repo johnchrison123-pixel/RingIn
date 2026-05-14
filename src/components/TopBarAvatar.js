@@ -1,6 +1,8 @@
 /* eslint-disable */
 import React, {useState, useEffect} from 'react';
 import {sb} from '../utils/supabase';
+import {useMomentUserIds} from '../utils/momentUsers';
+import AvatarRing from './AvatarRing';
 
 /**
  * Avatar button for the per-screen top bar.
@@ -59,19 +61,27 @@ export default function TopBarAvatar(props) {
     };
   }, [userId]);
 
-  return React.createElement('button', {
-    onClick: onClick,
-    title: 'Profile',
-    style: {
-      width: size + 'px', height: size + 'px', borderRadius: '50%',
-      background: 'var(--ac)', border: '1px solid var(--border)',
-      padding: 0, overflow: 'hidden', cursor: 'pointer',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', fontWeight: 700, fontSize: '12px', flexShrink: 0,
+  // Show the moments ring around the top-bar avatar when the current
+  // user has an active moment posted. This keeps the visual treatment
+  // consistent — your avatar with a ring follows you wherever it appears.
+  var momentUserIds = useMomentUserIds();
+  var hasMoment = userId ? momentUserIds.has(userId) : false;
+
+  return React.createElement(AvatarRing, { show: hasMoment, thickness: 1.5 },
+    React.createElement('button', {
+      onClick: onClick,
+      title: 'Profile',
+      style: {
+        width: size + 'px', height: size + 'px', borderRadius: '50%',
+        background: 'var(--ac)', border: '1px solid var(--border)',
+        padding: 0, overflow: 'hidden', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', fontWeight: 700, fontSize: '12px', flexShrink: 0,
+      },
     },
-  },
-    avatar
-      ? React.createElement('img', {src: avatar, alt: 'profile', style: {width:'100%', height:'100%', objectFit:'cover'}})
-      : initial
+      avatar
+        ? React.createElement('img', {src: avatar, alt: 'profile', style: {width:'100%', height:'100%', objectFit:'cover'}})
+        : initial
+    )
   );
 }

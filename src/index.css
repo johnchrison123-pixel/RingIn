@@ -62,3 +62,20 @@ code {
   transform: scale(0.92);
   opacity: 0.85;
 }
+
+/* ── AvatarRing: Instagram/Facebook/LinkedIn-style story-ring glow ──────
+   The ring itself is rendered as an absolutely-positioned overlay by
+   <AvatarRing> (src/components/AvatarRing.js). This animation slow-
+   pulses the neon glow so the ring feels alive without being distracting. */
+@keyframes momentRingPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 6px rgba(232, 77, 154, 0.55),
+      0 0 14px rgba(123, 110, 255, 0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 10px rgba(232, 77, 154, 0.85),
+      0 0 22px rgba(123, 110, 255, 0.6);
+  }
+}

@@ -9,6 +9,8 @@ import {playSound,playUnlikeSound,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
 import Moments from '../components/Moments';
 import MomentComposer from '../components/MomentComposer';
+import AvatarRing from '../components/AvatarRing';
+import {useMomentUserIds, markMomentUser, refreshMomentUserIds} from '../utils/momentUsers';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -135,6 +137,9 @@ export function UserProfileView(props){
   var showLikersUS=useState(null); var showLikersU=showLikersUS[0]; var setShowLikersU=showLikersUS[1];
   var likersNamesUS=useState({}); var likersNamesU=likersNamesUS[0]; var setLikersNamesU=likersNamesUS[1];
   var showAvatarBigUS=useState(false); var showAvatarBigU=showAvatarBigUS[0]; var setShowAvatarBigU=showAvatarBigUS[1];
+  // Shared moments registry — drives the Instagram-style avatar ring on
+  // the profile cover avatar and on each post header.
+  var momentUserIds=useMomentUserIds();
 
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
@@ -415,10 +420,20 @@ export function UserProfileView(props){
           React.createElement('polyline',{points:'15 18 9 12 15 6'})
         )
       ),
+      // Big profile-cover avatar — wrapped in AvatarRing so an active
+      // moment poster gets the gradient halo on their cover too.
+      // The wrapper itself becomes the absolute-positioned element so
+      // the ring lives at the same coordinates as the original avatar.
       React.createElement('div',{
-        onClick:function(){if(avatarUrl)setShowAvatarBigU(true);},
-        style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',zIndex:4,cursor:avatarUrl?'pointer':'default'}},
-        avatarUrl?React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+        style:{position:'absolute',bottom:'-40px',left:'18px',zIndex:4}
+      },
+        React.createElement(AvatarRing,{ show: momentUserIds.has(user.id), thickness: 3 },
+          React.createElement('div',{
+            onClick:function(){if(avatarUrl)setShowAvatarBigU(true);},
+            style:{width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',cursor:avatarUrl?'pointer':'default'}},
+            avatarUrl?React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+          )
+        )
       )
     ),
     // Name + info
@@ -476,8 +491,10 @@ export function UserProfileView(props){
         return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
           // Post header
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px',position:'relative'}},
-            React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
-              pAvatar?React.createElement('img',{src:pAvatar,alt:displayName,style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+            React.createElement(AvatarRing,{ show: momentUserIds.has(user.id) },
+              React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
+                pAvatar?React.createElement('img',{src:pAvatar,alt:displayName,style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+              )
             ),
             React.createElement('div',{style:{flex:1}},
               React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},displayName),
@@ -536,8 +553,10 @@ export function UserProfileView(props){
               commentsArr.map(function(c){
                 var cLiked=(commentLikesU[c.id]||0)>0;
                 return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'12px'}},
-                  React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                    c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                  React.createElement(AvatarRing,{ show: momentUserIds.has(c.user_id), thickness: 1.5 },
+                    React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                      c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                    )
                   ),
                   React.createElement('div',{style:{flex:1}},
                     React.createElement('div',{style:{background:'var(--bg4)',borderRadius:'12px',padding:'7px 10px',marginBottom:'4px'}},
@@ -558,8 +577,10 @@ export function UserProfileView(props){
               })
             ),
             React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
-              React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user&&session.user.email?session.user.email.substring(0,2).toUpperCase():'?')
+              React.createElement(AvatarRing,{ show: momentUserIds.has(currentUserId), thickness: 1.5 },
+                React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
+                  currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user&&session.user.email?session.user.email.substring(0,2).toUpperCase():'?')
+                )
               ),
               React.createElement('input',{
                 value:commentInputU,
@@ -627,6 +648,12 @@ export default function HomeScreen(props){
   var pendingMomentFile = pendingMomentFileS[0]; var setPendingMomentFile = pendingMomentFileS[1];
   var realMomentsS = useState([]);
   var realMoments = realMomentsS[0]; var setRealMoments = realMomentsS[1];
+
+  // Shared Set<user_id> of users who have an active moment in the last 24h.
+  // Drives the Instagram-style ring around their avatar EVERYWHERE — feed,
+  // comments, like popup, online experts strip. Same hook is called in
+  // ProfileScreen, MessagesScreen, etc. so they all share one fetch.
+  var momentUserIds = useMomentUserIds();
 
   function groupMomentsByUser(rows, profMap){
     profMap = profMap || {};
@@ -762,6 +789,11 @@ export default function HomeScreen(props){
         // Close the composer + refresh strip
         setPendingMomentFile(null);
         loadRealMoments();
+        // Optimistic ring update — flag the current user as "has moment"
+        // immediately so their avatar shows the gradient halo everywhere
+        // without waiting for the next moments-table refetch (which races
+        // with replication and would leave a 1–2s window with no ring).
+        markMomentUser(currentUserId);
         return pending;
       }).catch(function(err){
         // Insert failed (table missing or RLS) — still cache locally so the
@@ -776,6 +808,10 @@ export default function HomeScreen(props){
         console.warn('[ringin] moments insert failed, using local cache:', err && err.message ? err.message : err);
         setPendingMomentFile(null);
         loadRealMoments();
+        // Optimistic ring update even on insert failure — the local-cached
+        // moment is still rendered in the strip, so the user's avatar
+        // should match.
+        markMomentUser(currentUserId);
         return pending;
       });
     });
@@ -1628,11 +1664,13 @@ export default function HomeScreen(props){
               var name=info.name||'Loading...';
               var av=info.avatar||null;
               return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
-                React.createElement('div',{
-                  onClick:function(){setShowLikers(null);goToUserProfile(uid,{name:name,avatar:av});},
-                  style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:'pointer'}
-                },
-                  av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
+                React.createElement(AvatarRing,{ show: momentUserIds.has(uid) },
+                  React.createElement('div',{
+                    onClick:function(){setShowLikers(null);goToUserProfile(uid,{name:name,avatar:av});},
+                    style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:'pointer'}
+                  },
+                    av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
+                  )
                 ),
                 React.createElement('div',{
                   onClick:function(){setShowLikers(null);goToUserProfile(uid,{name:name,avatar:av});},
@@ -1919,10 +1957,19 @@ export default function HomeScreen(props){
     ),
     React.createElement('div', {className:'esc', onTouchStart:function(ev){ev.stopPropagation();}, onMouseDown:function(ev){ev.preventDefault&&ev.preventDefault();}},
       onlineExperts.map(function(e){
+        // Mock experts populate the moments strip via slice(0,8). For
+        // consistency, also show the ring on those same experts in the
+        // "Online Now" row — so their identity reads as "has a moment"
+        // everywhere they appear, not just in the moments strip itself.
+        // Real users with Supabase moments are tracked via momentUserIds.
+        var mockHasMoment = onlineExperts.indexOf(e) < 8;
+        var hasMoment = momentUserIds.has(e.id) || mockHasMoment;
         return React.createElement('div', {key:e.id, className:'ecsm', style:{cursor:'pointer'}, onClick:function(){goToExpert(e);}},
           React.createElement('div', {style:{position:'relative',width:'48px',height:'48px',marginBottom:'6px'}},
-            React.createElement('div', {style:{width:'48px',height:'48px',borderRadius:'50%',background:e.color,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff'}},
-              e.img ? React.createElement('img',{src:e.img,alt:e.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : e.initials
+            React.createElement(AvatarRing, { show: hasMoment },
+              React.createElement('div', {style:{width:'48px',height:'48px',borderRadius:'50%',background:e.color,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff'}},
+                e.img ? React.createElement('img',{src:e.img,alt:e.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : e.initials
+              )
             ),
             React.createElement('div', {style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
           ),
@@ -2065,11 +2112,15 @@ export default function HomeScreen(props){
         var commentsArr=commentsCache[p.id]||[];
         return React.createElement('div', {key:p.id, className:'fpost'},
           React.createElement('div', {className:'ph', style:{position:'relative'}},
-            React.createElement('div', {
-              className:'pav',
-              style:{background:p.color, cursor:'pointer', overflow:'hidden', padding:0},
-              onClick:function(){p.expertId ? goToExpertById(p.expertId) : goToUserProfile(p.userId, {name:p.name, avatar:p.img});}
-            }, p.img ? React.createElement('img',{src:p.img,alt:p.name,style:{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}}) : p.initials),
+            // Post author avatar — wrapped with AvatarRing so it shows the
+            // moments halo when the author has posted a moment in the last 24h.
+            React.createElement(AvatarRing, { show: momentUserIds.has(p.userId) },
+              React.createElement('div', {
+                className:'pav',
+                style:{background:p.color, cursor:'pointer', overflow:'hidden', padding:0},
+                onClick:function(){p.expertId ? goToExpertById(p.expertId) : goToUserProfile(p.userId, {name:p.name, avatar:p.img});}
+              }, p.img ? React.createElement('img',{src:p.img,alt:p.name,style:{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}}) : p.initials)
+            ),
             React.createElement('div', null,
               React.createElement('div', {
                 className:'pn',

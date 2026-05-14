@@ -4,6 +4,8 @@ import {useFollow} from './useFollow';
 import {sb as sbProfile} from '../utils/supabase';
 import {usePostsRealtime} from '../utils/usePostsRealtime';
 import Moments from '../components/Moments';
+import AvatarRing from '../components/AvatarRing';
+import {useMomentUserIds} from '../utils/momentUsers';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
 
 var COUNTRIES=[
@@ -127,6 +129,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var email = session && session.user ? session.user.email : '';
   var initials = email ? email.substring(0,2).toUpperCase() : 'ME';
   var userId = session && session.user ? session.user.id : null;
+
+  // Shared moments registry — drives the Instagram-style avatar ring on
+  // the profile cover avatar and on each post header.
+  var momentUserIds = useMomentUserIds();
 
   var settingsS=useState(false); var showSettings=settingsS[0]; var setShowSettings=settingsS[1];
   var showPrivacyS=useState(false); var showPrivacy=showPrivacyS[0]; var setShowPrivacy=showPrivacyS[1];
@@ -1953,9 +1959,16 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         uploading?'Uploading...':'✏️ Edit Cover',
         React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0])uploadCover(e.target.files[0]);}})
       ),
-      // Avatar
-      React.createElement('div',{onClick:function(){setShowAvatarMenu(true);},style:{position:'absolute',bottom:'-40px',left:'18px',width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',zIndex:2,overflow:'hidden',cursor:'pointer'}},
-        avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+      // Avatar — wrapped in AvatarRing so the user gets the gradient halo
+      // on their profile cover whenever they have an active moment posted.
+      // The ring ALSO renders even outside the cover area for the user's
+      // own avatar (post headers below, etc.).
+      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',zIndex:2}},
+        React.createElement(AvatarRing,{ show: momentUserIds.has(userId), thickness: 3 },
+          React.createElement('div',{onClick:function(){setShowAvatarMenu(true);},style:{width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',cursor:'pointer'}},
+            avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+          )
+        )
       )
     ),
     // Name row
@@ -2003,8 +2016,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         // Composer
         React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px',marginBottom:'14px'}},
           React.createElement('div',{style:{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'10px'}},
-            React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
-              avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+            React.createElement(AvatarRing,{ show: momentUserIds.has(userId) },
+              React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
+                avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+              )
             ),
             React.createElement('textarea',{value:postText,onChange:function(e){playProfKeyClick();setPostText(e.target.value);},placeholder:"What's on your mind?",style:{flex:1,background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 11px',fontSize:'13px',color:'var(--text)',outline:'none',resize:'none',minHeight:'70px',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}})
           ),
@@ -2048,8 +2063,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           var commentsArr=commentsCacheProf[p.id]||[];
           return React.createElement('div',{key:p.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px',position:'relative'}},
-              React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
-                avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+              React.createElement(AvatarRing,{ show: momentUserIds.has(userId) },
+                React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
+                  avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'me',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+                )
               ),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},email.split('@')[0]),

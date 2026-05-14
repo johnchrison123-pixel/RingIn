@@ -4,6 +4,8 @@ import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
+import AvatarRing from '../components/AvatarRing';
+import {useMomentUserIds} from '../utils/momentUsers';
 import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
 
 var EXPERT_CONVOS_BASE=[
@@ -911,6 +913,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
 export default function MessagesScreen(props){
   var session = props.session;
   var myId = session&&session.user ? session.user.id : null;
+  // Shared moments registry — wraps a ring around the conversation
+  // partner's avatar in the convo list when they have an active moment.
+  var momentUserIds = useMomentUserIds();
   var expertConvosS=useState(EXPERT_CONVOS_BASE); var expertConvos=expertConvosS[0]; var setExpertConvos=expertConvosS[1];
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
@@ -1318,10 +1323,12 @@ export default function MessagesScreen(props){
             if(props.onUnreadCount) props.onUnreadCount(function(prev){return Math.max(0,prev-(c.unreadCount||0));});
           },style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
             React.createElement('div',{onClick:openTheirProfile,style:{position:'relative',flexShrink:0,cursor:'pointer'}},
-              React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
-                c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
+              React.createElement(AvatarRing,{ show: momentUserIds.has(c.otherId || c.receiverId || c.user_id) },
+                React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
+                  c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
+                )
               ),
-              c.isOnline ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)'}}) : null
+              c.isOnline ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)',zIndex:1}}) : null
             ),
             React.createElement('div',{style:{flex:1,minWidth:0}},
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px'}},
