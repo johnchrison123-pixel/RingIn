@@ -491,8 +491,12 @@ export default function CallScreen(props){
       // ignoring AudioManager (which would need a different fix).
       try{
         NativeAudio.setSpeakerphone(next).then(function(res){
+          // commDeviceType is AudioDeviceInfo.TYPE_* — 1=BUILTIN_EARPIECE, 2=BUILTIN_SPEAKER
+          // (yes, the order is "wrong" — that's Android.) If commDeviceType
+          // matches what we asked for, the modern API took effect.
+          var typeName = ({1:'EARPIECE',2:'SPEAKER',3:'WIRED_HS',4:'WIRED_HP',7:'BT_SCO',8:'BT_A2DP'})[res && res.commDeviceType] || ('t'+(res&&res.commDeviceType));
           var summary = res
-            ? ('plugin: mode=' + res.mode + ' speakerOn=' + res.isSpeakerphoneOn + ' (requested=' + next + ')')
+            ? ('plugin: mode=' + res.mode + ' spkrOn=' + res.isSpeakerphoneOn + ' commDev=' + typeName + ' vol=' + res.voiceCallVol + '/' + res.voiceCallMax + ' (req=' + next + ' sdk=' + res.sdk + ')')
             : ('plugin: NOT REGISTERED (running as web?)');
           setAudioDbg(summary);
         }).catch(function(e){ setAudioDbg('plugin error: ' + (e && e.message)); });

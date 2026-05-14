@@ -2,6 +2,7 @@ package app.ringin.mobile;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
@@ -11,6 +12,8 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
+import java.util.List;
 
 /**
  * RingInAudio — native audio routing plugin for the Capacitor Android shell.
@@ -88,8 +91,9 @@ public class RingInAudioPlugin extends Plugin {
             requestVoiceFocus();
             // 2. Switch system to in-call mode
             m.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            // 3. Default to EARPIECE on call start
-            m.setSpeakerphoneOn(false);
+            // 3. Default to EARPIECE on call start — via the modern API on
+            //    Android 12+, legacy fallback on older devices.
+            routeAudioTo(false);
             // 4. Make sure STREAM_VOICE_CALL volume isn't at 0 (otherwise user
             //    hears silence and assumes audio is going elsewhere). Bump
             //    to near-max if currently low.
@@ -116,6 +120,11 @@ public class RingInAudioPlugin extends Plugin {
         try {
             AudioManager m = am();
             android.util.Log.d("RingInAudio", "endCallMode: before mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
+            // Release the explicit communication device pin so future audio
+            // (notifications, ringtones) goes back to default routing.
+            if (Build.VERSION.SDK_INT >= 31) {
+                try { m.clearCommunicationDevice(); } catch (Throwable t) { /* ignore */ }
+            }
             m.setSpeakerphoneOn(false);
             m.setMode(AudioManager.MODE_NORMAL);
             abandonVoiceFocus();
@@ -128,6 +137,50 @@ public class RingInAudioPlugin extends Plugin {
         }
     }
 
+    /**
+     * Try the modern API first (Android 12+ / API 31) — setCommunicationDevice
+     * explicitly picks a physical output by AudioDeviceInfo. On API 31+, the
+     * legacy setSpeakerphoneOn() is internally routed to the new framework
+     * anyway, but it's flaky — some OEMs ignore it. Calling
+     * setCommunicationDevice with TYPE_BUILTIN_EARPIECE / TYPE_BUILTIN_SPEAKER
+     * works on every modern phone we've tested.
+     *
+     * Returns the AudioDeviceInfo type that was selected (or -1 if neither path worked).
+     */
+    private int routeAudioTo(boolean speaker) {
+        AudioManager m = am();
+        int chosenType = -1;
+        if (Build.VERSION.SDK_INT >= 31) {
+            int targetType = speaker
+                ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+            try {
+                List<AudioDeviceInfo> devices = m.getAvailableCommunicationDevices();
+                AudioDeviceInfo target = null;
+                StringBuilder available = new StringBuilder();
+                for (AudioDeviceInfo d : devices) {
+                    available.append(d.getType()).append(",");
+                    if (d.getType() == targetType) target = d;
+                }
+                android.util.Log.d("RingInAudio", "available comm devices: [" + available + "] target=" + targetType);
+                if (target != null) {
+                    // Clear any sticky previous selection first (some ROMs need this)
+                    m.clearCommunicationDevice();
+                    boolean ok = m.setCommunicationDevice(target);
+                    chosenType = target.getType();
+                    android.util.Log.d("RingInAudio", "setCommunicationDevice(" + targetType + ") = " + ok);
+                } else {
+                    android.util.Log.w("RingInAudio", "no AudioDeviceInfo with type=" + targetType + " available — falling back to legacy");
+                }
+            } catch (Throwable t) {
+                android.util.Log.e("RingInAudio", "setCommunicationDevice path failed, falling back to legacy", t);
+            }
+        }
+        // Legacy fallback (and belt-and-braces on modern devices too — doesn't hurt)
+        m.setSpeakerphoneOn(speaker);
+        return chosenType;
+    }
+
     @PluginMethod
     public void setSpeakerphone(PluginCall call) {
         try {
@@ -136,8 +189,6 @@ public class RingInAudioPlugin extends Plugin {
             android.util.Log.d("RingInAudio", "setSpeakerphone(" + enabled + "): before mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
 
             // Re-assert voice focus so the system keeps routing through STREAM_VOICE_CALL.
-            // Without this, focus can be silently lost between toggles and WebView falls
-            // back to STREAM_MUSIC (loudspeaker only).
             if (focusRequest == null) {
                 requestVoiceFocus();
             }
@@ -147,26 +198,27 @@ public class RingInAudioPlugin extends Plugin {
                 m.setMode(AudioManager.MODE_IN_COMMUNICATION);
             }
 
-            // The actual route switch.
-            m.setSpeakerphoneOn(enabled);
+            // The actual route switch — modern API on API 31+, falls back to legacy on older.
+            int chosenType = routeAudioTo(enabled);
 
-            // Some OEM ROMs (Xiaomi/Samsung/etc.) only re-evaluate the routing
-            // policy on a mode change. Bounce the mode to force a re-route.
-            // We DON'T do this on every call because it briefly mutes the stream —
-            // only do it if the read-back after setSpeakerphoneOn doesn't match.
-            if (m.isSpeakerphoneOn() != enabled) {
-                android.util.Log.d("RingInAudio", "setSpeakerphone: readback mismatch, bouncing mode");
-                m.setMode(AudioManager.MODE_NORMAL);
-                m.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                m.setSpeakerphoneOn(enabled);
+            // Read back what actually got selected.
+            int actualType = -1;
+            if (Build.VERSION.SDK_INT >= 31) {
+                try {
+                    AudioDeviceInfo cur = m.getCommunicationDevice();
+                    if (cur != null) actualType = cur.getType();
+                } catch (Throwable t) { /* ignore */ }
             }
 
-            android.util.Log.d("RingInAudio", "setSpeakerphone(" + enabled + "): after  mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
+            android.util.Log.d("RingInAudio", "setSpeakerphone(" + enabled + "): after  mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn() + " commDeviceType=" + actualType + " chose=" + chosenType);
             JSObject ret = new JSObject();
             ret.put("ok", true);
             ret.put("requested", enabled);
             ret.put("mode", m.getMode());
             ret.put("isSpeakerphoneOn", m.isSpeakerphoneOn());
+            ret.put("commDeviceType", actualType);    // 2=earpiece, 1=speaker (AudioDeviceInfo constants — useful in debug overlay)
+            ret.put("chosenType", chosenType);
+            ret.put("sdk", Build.VERSION.SDK_INT);
             ret.put("voiceCallVol", m.getStreamVolume(AudioManager.STREAM_VOICE_CALL));
             ret.put("voiceCallMax", m.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL));
             call.resolve(ret);
