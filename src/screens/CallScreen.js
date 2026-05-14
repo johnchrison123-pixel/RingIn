@@ -23,6 +23,13 @@ var SPEAKER_PATHS = [
 ];
 var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round'};
 
+// ── Build version stamp ───────────────────────────────────────────────────
+// Bumped whenever we change call audio handling. Shown as a tiny text label
+// at the bottom of the connected-call screen and logged on call start so we
+// can verify whether the user is actually running the latest code (or stuck
+// on a cached old build via service worker).
+var RINGIN_BUILD = 'v1.4-audio-debug';
+
 // ── Module-level style constants ───────────────────────────────────────────
 // Every secs/coin tick re-renders the connected-call view. Hoisting the style
 // objects means React doesn't allocate new objects on the hot path — and
@@ -198,6 +205,7 @@ export default function CallScreen(props){
   //      'pending-...' placeholder we use to show the UI instantly).
   useEffect(function(){
     if(!channel || (typeof channel==='string' && channel.indexOf('pending-')===0)) return;
+    try{ console.log('[ringin] CallScreen mount BUILD=' + RINGIN_BUILD + ' channel=' + channel); }catch(_){}
     var cancelled = false;
     (async function(){
       try {
@@ -490,16 +498,36 @@ export default function CallScreen(props){
   var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
+      // ── EXTENSIVE DIAGNOSTIC LOGGING — temporary while debugging the
+      // speaker toggle issue. Remove after the user confirms the toggle
+      // actually changes volume.
+      try{
+        console.log('=========================================');
+        console.log('[ringin][toggleSpeaker] BUILD=v16-debug');
+        console.log('[ringin][toggleSpeaker] state was speakerOn=' + on + ', going to ' + next);
+        console.log('[ringin][toggleSpeaker] navigator.audioSession =', navigator.audioSession);
+        var allAudio = document.querySelectorAll('audio');
+        console.log('[ringin][toggleSpeaker] document <audio> count =', allAudio.length);
+        for (var i = 0; i < allAudio.length; i++){
+          var a = allAudio[i];
+          console.log('  audio[' + i + ']: src=' + String(a.src || '(none)').slice(0,80)
+            + ' srcObject=' + (a.srcObject ? 'MediaStream' : 'null')
+            + ' volume=' + a.volume
+            + ' muted=' + a.muted
+            + ' paused=' + a.paused);
+        }
+      }catch(_){}
       try{ setAudioOutputMode('earpiece'); }catch(e){}
       var s = sessionRef.current;
       if(s){
-        // Direct HTMLMediaElement.volume control — universal, works on every
-        // browser, audibly different. Speaker on = max (1.0), speaker off =
-        // half (0.5) for a perceptible 2× contrast. We CAN'T go above 1.0
-        // for WebRTC remote audio in any browser — that's the Web platform
-        // limit. Capacitor wrapper would unlock true above-100% boost.
-        try{ setRemoteAudioVolume(next ? 1.0 : 0.5); }catch(e){}
-        try{ s.setRemoteVolume(next ? 100 : 50); }catch(e){}
+        try{
+          var changed = setRemoteAudioVolume(next ? 1.0 : 0.5);
+          console.log('[ringin][toggleSpeaker] setRemoteAudioVolume returned', changed);
+        }catch(e){ console.log('[ringin][toggleSpeaker] setRemoteAudioVolume threw', e && e.message); }
+        try{
+          s.setRemoteVolume(next ? 100 : 50);
+          console.log('[ringin][toggleSpeaker] s.setRemoteVolume(' + (next?100:50) + ') OK');
+        }catch(e){ console.log('[ringin][toggleSpeaker] s.setRemoteVolume threw', e && e.message); }
         // Android-only earpiece/speaker routing
         if (isAndroid()) {
           // Two attempts in sequence:
@@ -630,6 +658,8 @@ export default function CallScreen(props){
         ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
+    // Build stamp — temporary, lets the user verify which version they're running
+    React.createElement('div',{style:{position:'fixed',bottom:'8px',left:'8px',fontSize:'9px',color:'rgba(255,255,255,0.25)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD),
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────
