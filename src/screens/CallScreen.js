@@ -28,7 +28,7 @@ var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'
 // at the bottom of the connected-call screen and logged on call start so we
 // can verify whether the user is actually running the latest code (or stuck
 // on a cached old build via service worker).
-var RINGIN_BUILD = 'v1.4-audio-debug';
+var RINGIN_BUILD = 'v1.8-audio-debug';
 
 // ── Module-level style constants ───────────────────────────────────────────
 // Every secs/coin tick re-renders the connected-call view. Hoisting the style
