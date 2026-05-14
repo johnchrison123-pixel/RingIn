@@ -27,7 +27,7 @@
 // app-shell strategy and don't touch push messaging.
 // ──────────────────────────────────────────────────────────────────────────
 
-var CACHE_VERSION = 'ringin-v11';
+var CACHE_VERSION = 'ringin-v12';
 var APP_SHELL_CACHE = CACHE_VERSION + '-shell';
 var ASSET_CACHE     = CACHE_VERSION + '-assets';
 
@@ -132,6 +132,25 @@ self.addEventListener('fetch', function(event){
           return cached || caches.match('/');
         });
       })
+    );
+    return;
+  }
+
+  // Lazy-loaded JS chunks (e.g. /static/js/agora-sdk.abc123.chunk.js):
+  // NETWORK-FIRST. If we ever cache a partial/broken response — common when
+  // a chunk request races a deploy — stale-while-revalidate would keep
+  // serving that broken copy forever, breaking calls until the user nukes
+  // their PWA. Fetching fresh each time costs an extra ~100ms but is
+  // bulletproof. Cache is kept as offline fallback only.
+  if (isSameOriginStatic(request.url) && /\.chunk\.js$/.test(new URL(request.url).pathname)){
+    event.respondWith(
+      fetch(request).then(function(res){
+        if (res && res.status === 200 && res.type !== 'opaque'){
+          var copy = res.clone();
+          caches.open(ASSET_CACHE).then(function(c){ try{ c.put(request, copy); }catch(e){} });
+        }
+        return res;
+      }).catch(function(){ return caches.match(request); })
     );
     return;
   }
