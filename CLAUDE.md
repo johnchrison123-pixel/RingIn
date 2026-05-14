@@ -7,6 +7,55 @@
 - **Local Path:** ~/Desktop/The project/RingIn/ringin2
 - **Stack:** React CRA (Create React App) + Supabase + Vercel
 
+## ⚠ Phase 4 in progress — Capacitor native shell (for true earpiece/loudspeaker)
+
+We're wrapping RingIn in a Capacitor native shell so the speaker toggle can
+do REAL earpiece ↔ loudspeaker routing (AVAudioSession on iOS,
+AudioManager.MODE_IN_COMMUNICATION on Android) — same mechanism WhatsApp /
+Telegram use. PWA Web APIs can't do this; this is the only path.
+
+**Status**:
+- ✅ `capacitor.config.json` added at repo root
+- ✅ `@capacitor/core`, `@capacitor/ios`, `@capacitor/android`, `@capacitor/cli`
+  added to package.json
+- ✅ `src/utils/nativeAudio.js` — JS-side abstraction. Detects Capacitor +
+  calls native plugin if present, otherwise no-op. Already wired into
+  CallScreen.js (startCallMode → endCallMode → setSpeakerphone on toggle).
+- ⏳ Native iOS platform + Swift plugin — not yet created
+- ⏳ Native Android platform + Kotlin plugin — not yet created
+
+**Next manual steps when ready to build the native apps**:
+
+```bash
+# Run from repo root
+npm install                # installs the new Capacitor deps
+npm run build              # creates the build/ folder Capacitor packages
+
+# Add Android platform (needs Android Studio installed)
+npx cap add android
+# (next commit will land RingInAudio.kt under android/app/src/main/...)
+
+# Build + open in Android Studio
+npx cap sync android
+npx cap open android
+# In Android Studio: Build → Generate Signed Bundle/APK → APK
+# Install APK on Android phone — speaker toggle now does true routing
+```
+
+For iOS:
+```bash
+# Requires Mac + Xcode + Apple Developer account
+npx cap add ios
+npx cap sync ios
+npx cap open ios
+# In Xcode: select your team, plug in iPhone, Run.
+```
+
+**iOS prerequisite**: Apple Developer account ($99/yr). Without it, you can
+still BUILD the iOS app, but you can only run it on YOUR developer-signed
+phone (not distribute it). Android has no equivalent fee for direct APK
+install.
+
 ## ⚠ MANUAL SETUP NEEDED for Phase 3 (lock-screen call notifications)
 
 The `/api/send-call-push` function and the Firebase Messaging service

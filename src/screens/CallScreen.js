@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
 import {startCallSession, setAudioOutputMode} from '../utils/agora';
+import * as NativeAudio from '../utils/nativeAudio';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -200,6 +201,10 @@ export default function CallScreen(props){
   useEffect(function(){
     if(!channel || (typeof channel==='string' && channel.indexOf('pending-')===0)) return;
     try{ console.log('[ringin] CallScreen mount BUILD=' + RINGIN_BUILD + ' channel=' + channel); }catch(_){}
+    // Capacitor native shell only: put the audio session into call mode
+    // BEFORE Agora grabs the mic. iOS sets AVAudioSession to playAndRecord,
+    // Android sets AudioManager.MODE_IN_COMMUNICATION. No-op on web/PWA.
+    try{ NativeAudio.startCallMode(); }catch(_){}
     var cancelled = false;
     (async function(){
       try {
@@ -356,6 +361,8 @@ export default function CallScreen(props){
     endedRef.current = true;
     var s = sessionRef.current;
     if(s){ try{ s.leave(); }catch(e){} sessionRef.current = null; }
+    // Restore the native audio session to idle (no-op on web/PWA).
+    try{ NativeAudio.endCallMode(); }catch(_){}
     setEndReason(reason || 'caller_hangup');
     // Update invite row. If we hang up BEFORE the insert returns (inviteId is null),
     // mark the most recent ringing invite WE created as cancelled — this catches
@@ -465,13 +472,9 @@ export default function CallScreen(props){
     setSpeakerOn(function(on){
       var next = !on;
       try{ setAudioOutputMode('earpiece'); }catch(e){}
-      // Native plugin path — if RingIn is running inside the Capacitor
-      // wrapper, this triggers the real OS-level audio routing change.
-      try{
-        if (window.RingInNativeAudio && typeof window.RingInNativeAudio.setSpeakerphone === 'function'){
-          window.RingInNativeAudio.setSpeakerphone(next);
-        }
-      }catch(_){}
+      // Native plugin path (Capacitor) — true OS audio routing switch.
+      // No-op on web/PWA; falls through to volume contrast below.
+      try{ NativeAudio.setSpeakerphone(next); }catch(_){}
       var s = sessionRef.current;
       if(s){
         // Volume contrast for PWA fallback: 50 (private feel) ↔ 100 (full).

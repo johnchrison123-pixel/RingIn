@@ -1,0 +1,23 @@
+{
+  "appId": "app.ringin.mobile",
+  "appName": "RingIn",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "cleartext": false
+  },
+  "ios": {
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "backgroundColor": "#09090E",
+      "launchShowDuration": 1500
+    }
+  }
+}
