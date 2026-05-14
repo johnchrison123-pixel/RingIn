@@ -122,11 +122,24 @@ export async function startCallSession(opts) {
 
   var uid = hashUidToInt(opts.uidString);
   var tokenData;
+  // Consume the pre-fetched token if IncomingCallModal warmed it up. Saves
+  // the ~200-500ms network roundtrip after the user taps Accept.
   try {
-    tokenData = await fetchToken(opts.channel, uid);
-  } catch (e) {
-    if (opts.onError) opts.onError(new Error('Token fetch failed: ' + e.message));
-    throw e;
+    var pf = (typeof window !== 'undefined') ? window.__ringinPrefetchedAgoraToken : null;
+    var nowSecs = Math.floor(Date.now() / 1000);
+    if (pf && pf.channel === opts.channel && pf.uid === uid && pf.token
+        && (!pf.expiresAt || pf.expiresAt > nowSecs + 60)) {
+      tokenData = { token: pf.token, appId: pf.appId, channel: pf.channel, uid: pf.uid, expiresAt: pf.expiresAt };
+      try { window.__ringinPrefetchedAgoraToken = null; } catch (e) {}
+    }
+  } catch (e) { /* ignore — fall through to fresh fetch */ }
+  if (!tokenData) {
+    try {
+      tokenData = await fetchToken(opts.channel, uid);
+    } catch (e) {
+      if (opts.onError) opts.onError(new Error('Token fetch failed: ' + e.message));
+      throw e;
+    }
   }
 
   var client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });

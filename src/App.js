@@ -626,6 +626,7 @@ export default function App() {
     // ── Incoming call ring overlay (above the active-call overlay shouldn't happen because we suppress incoming when activeCall) ──
     incomingCall ? React.createElement(IncomingCallModal, {
       invite: incomingCall,
+      session: session,
       onAccept: acceptIncomingCall,
       onReject: function(){
         if(incomingCall && incomingCall.id) dismissedInvitesRef.current.add(incomingCall.id);

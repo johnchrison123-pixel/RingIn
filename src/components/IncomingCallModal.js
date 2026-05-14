@@ -2,14 +2,17 @@
 import React, {useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {playRingtone, stopRingtone, hapticPulse} from '../utils/soundEngine';
+import {hashUidToInt, prefetchAgora} from '../utils/agora';
 
 // Full-screen overlay shown when someone calls this user.
 // Props:
 //   invite    object   the call_invites row (has caller_id, caller_name, caller_avatar, channel, rate_per_min, id)
+//   session   object?  Supabase auth session — used to derive the callee's Agora uid so we can pre-fetch the join token
 //   onAccept  fn       called when user accepts — receives the invite so parent can open CallScreen
 //   onReject  fn       called after the invite is marked rejected
 export default function IncomingCallModal(props){
   var invite = props.invite || {};
+  var session = props.session;
   var hapticRef = useRef(null);
 
   // Real ringtone (warm two-stroke bell, loops every 2.4s, capped at 6 cycles).
@@ -31,6 +34,49 @@ export default function IncomingCallModal(props){
       if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
     };
   },[]);
+
+  // ── Pre-flight: warm up everything we'll need the moment the user taps
+  // Accept, so the connecting → connected transition is as fast as possible.
+  //
+  //  (a) prefetchAgora() — ensures the agora-rtc-sdk-ng chunk is downloaded
+  //      and parsed (no surprise lazy-load on tap).
+  //  (b) Fetch the /api/agora-token NOW while the modal is ringing. By the
+  //      time the user taps Accept, the token is already cached on window.
+  //      startCallSession picks it up instead of doing the network roundtrip
+  //      AFTER the tap. Saves ~200-500ms of perceived call-setup latency.
+  useEffect(function(){
+    try{ prefetchAgora(); }catch(e){}
+    var channel = invite.channel || invite.id;
+    if(!channel) return;
+    if(!session || !session.user || !session.user.id) return;
+    var uidStr = session.user.id;
+    var uidInt = hashUidToInt(uidStr);
+    var cancelled = false;
+    try{
+      fetch('/api/agora-token', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ channel: channel, uid: uidInt }),
+        keepalive: true,
+      }).then(function(r){
+        if(cancelled || !r || !r.ok) return null;
+        return r.json();
+      }).then(function(data){
+        if(cancelled || !data || !data.token) return;
+        try{
+          window.__ringinPrefetchedAgoraToken = {
+            channel: channel,
+            uid: uidInt,
+            token: data.token,
+            appId: data.appId,
+            expiresAt: data.expiresAt,
+          };
+        }catch(_){}
+      }).catch(function(){ /* network hiccup — fall back to inline fetch later */ });
+    }catch(e){ /* never block the modal on a pre-fetch error */ }
+    return function(){ cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function accept(){
     try{ stopRingtone(); }catch(e){}
