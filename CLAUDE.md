@@ -24,37 +24,61 @@ Telegram use. PWA Web APIs can't do this; this is the only path.
 - ⏳ Native iOS platform + Swift plugin — not yet created
 - ⏳ Native Android platform + Kotlin plugin — not yet created
 
-**Next manual steps when ready to build the native apps**:
+### Android build steps (no Play Store needed — sideload APK to 2 devices)
 
-```bash
-# Run from repo root
-npm install                # installs the new Capacitor deps
-npm run build              # creates the build/ folder Capacitor packages
+**One-time setup on your Windows laptop:**
 
-# Add Android platform (needs Android Studio installed)
-npx cap add android
-# (next commit will land RingInAudio.kt under android/app/src/main/...)
+1. Install **Android Studio** from https://developer.android.com/studio
+   (free, ~3 GB, includes Android SDK + JDK 17). Run it once, accept the
+   default SDK install path, let it download platform tools.
+2. (Optional) Install **Node.js 20+** if you don't have it.
 
-# Build + open in Android Studio
-npx cap sync android
-npx cap open android
-# In Android Studio: Build → Generate Signed Bundle/APK → APK
-# Install APK on Android phone — speaker toggle now does true routing
+**On each Android phone you want to test on, one-time:**
+1. Settings → About phone → tap "Build number" 7 times → enables Developer Options
+2. Settings → Developer Options → enable "USB debugging"
+   (OR if you just plan to copy an APK file across: Settings → Apps →
+   Special access → Install unknown apps → Files app → Allow)
+
+**Build + install the APK (every time you want a fresh build):**
+
+```powershell
+cd "C:\Users\johnc\Desktop\The project\RingIn\ringin2"
+
+# One-time after Capacitor packages were added in commit c06d4b0:
+npm install
+
+# Every build:
+npm run build                          # CRA build/ folder
+npx cap add android                    # ONE-TIME: scaffolds android/ folder
+node tools/install-native-plugins.mjs  # copies RingInAudio plugin into android/
+npx cap sync android                   # syncs build/ → android/
+npx cap open android                   # opens Android Studio
 ```
 
-For iOS:
+In Android Studio:
+- **First-time only**: it'll download SDKs / Gradle (~5 min). Just wait.
+- Plug your phone in → click the green **Run** button → app installs + launches directly.
+- OR **Build → Build Bundle/APK → Build APK(s)** → APK appears in
+  `android/app/build/outputs/apk/debug/app-debug.apk`. Copy that to the
+  second phone via USB/email/Drive, tap to install.
+
+Speaker toggle in this build does **true earpiece ↔ loudspeaker** via
+AudioManager — same mechanism WhatsApp uses.
+
+### iOS build steps (later, when you have Apple Developer)
+
+Same script handles iOS too. After getting Apple Developer ($99/yr):
+
 ```bash
-# Requires Mac + Xcode + Apple Developer account
+# Requires Mac + Xcode
 npx cap add ios
+node tools/install-native-plugins.mjs
 npx cap sync ios
 npx cap open ios
-# In Xcode: select your team, plug in iPhone, Run.
 ```
 
-**iOS prerequisite**: Apple Developer account ($99/yr). Without it, you can
-still BUILD the iOS app, but you can only run it on YOUR developer-signed
-phone (not distribute it). Android has no equivalent fee for direct APK
-install.
+In Xcode: select your developer team in target settings → plug in iPhone →
+Run. Without Apple Developer you can't sign for device install.
 
 ## ⚠ MANUAL SETUP NEEDED for Phase 3 (lock-screen call notifications)
 
