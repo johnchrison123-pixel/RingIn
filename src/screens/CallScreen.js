@@ -411,11 +411,15 @@ export default function CallScreen(props){
     return function(){
       try { if(startFailedTimerRef.current){ clearTimeout(startFailedTimerRef.current); startFailedTimerRef.current = null; } } catch(e){}
       try { if(endTimerRef.current){ clearTimeout(endTimerRef.current); endTimerRef.current = null; } } catch(e){}
-      // Restore default audio session — 'playback' means normal media routing
-      // (speaker for everyday audio). Safe no-op on browsers without the API.
+      // Restore audio session to 'auto' so iOS picks the right category
+      // based on the next thing the app does. Do NOT set to 'playback' —
+      // that would lock the session to media-only and the NEXT call's
+      // getUserMedia would fail with "AudioSession category is not
+      // compatible with audio capture". Safe no-op on browsers without
+      // the API.
       try{
         if (navigator && navigator.audioSession){
-          navigator.audioSession.type = 'playback';
+          navigator.audioSession.type = 'auto';
         }
       }catch(e){}
     };
