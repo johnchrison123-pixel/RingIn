@@ -1,7 +1,10 @@
 package app.ringin.mobile;
 
 import android.content.Context;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.os.Build;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -29,19 +32,81 @@ public class RingInAudioPlugin extends Plugin {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
     }
 
+    private AudioFocusRequest focusRequest;
+
+    /**
+     * Tell Android we want exclusive audio focus AS A VOICE CALL.
+     * This is what convinces the system to route WebView WebRTC audio
+     * through STREAM_VOICE_CALL (and therefore respect setSpeakerphoneOn)
+     * instead of STREAM_MUSIC (which always goes to the loudspeaker).
+     */
+    private void requestVoiceFocus() {
+        AudioManager m = am();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioAttributes attrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attrs)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(new AudioManager.OnAudioFocusChangeListener() {
+                    @Override public void onAudioFocusChange(int focusChange) {
+                        android.util.Log.d("RingInAudio", "audio focus change: " + focusChange);
+                    }
+                })
+                .build();
+            int result = m.requestAudioFocus(focusRequest);
+            android.util.Log.d("RingInAudio", "requestAudioFocus result=" + result + " (1=granted)");
+        } else {
+            // Pre-O legacy path
+            @SuppressWarnings("deprecation")
+            int result = m.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN);
+            android.util.Log.d("RingInAudio", "legacy requestAudioFocus result=" + result);
+        }
+    }
+
+    private void abandonVoiceFocus() {
+        AudioManager m = am();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
+            m.abandonAudioFocusRequest(focusRequest);
+            focusRequest = null;
+        } else {
+            @SuppressWarnings("deprecation")
+            int r = m.abandonAudioFocus(null);
+            android.util.Log.d("RingInAudio", "legacy abandonAudioFocus=" + r);
+        }
+    }
+
     @PluginMethod
     public void startCallMode(PluginCall call) {
         try {
             AudioManager m = am();
+            android.util.Log.d("RingInAudio", "startCallMode: before mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
+            // 1. Declare this app is a phone call — without this, Chrome WebView
+            //    plays WebRTC audio through STREAM_MUSIC (loudspeaker only).
+            requestVoiceFocus();
+            // 2. Switch system to in-call mode
             m.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            // Default to EARPIECE on call start. User toggles speaker
-            // explicitly for hands-free.
+            // 3. Default to EARPIECE on call start
             m.setSpeakerphoneOn(false);
+            // 4. Make sure STREAM_VOICE_CALL volume isn't at 0 (otherwise user
+            //    hears silence and assumes audio is going elsewhere). Bump
+            //    to near-max if currently low.
+            int maxVc = m.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+            int curVc = m.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+            if (curVc < maxVc / 2) {
+                m.setStreamVolume(AudioManager.STREAM_VOICE_CALL, (int)(maxVc * 0.75), 0);
+            }
+            android.util.Log.d("RingInAudio", "startCallMode: after  mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn() + " voiceVol=" + m.getStreamVolume(AudioManager.STREAM_VOICE_CALL) + "/" + maxVc);
             JSObject ret = new JSObject();
             ret.put("ok", true);
-            ret.put("mode", "MODE_IN_COMMUNICATION");
+            ret.put("mode", m.getMode());
+            ret.put("isSpeakerphoneOn", m.isSpeakerphoneOn());
+            ret.put("voiceCallVol", m.getStreamVolume(AudioManager.STREAM_VOICE_CALL));
+            ret.put("voiceCallMax", maxVc);
             call.resolve(ret);
-        } catch (Exception e) {
+        } catch (Exception e) { android.util.Log.e("RingInAudio", "method failed", e);
             call.reject("startCallMode failed: " + e.getMessage(), e);
         }
     }
@@ -50,12 +115,15 @@ public class RingInAudioPlugin extends Plugin {
     public void endCallMode(PluginCall call) {
         try {
             AudioManager m = am();
+            android.util.Log.d("RingInAudio", "endCallMode: before mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
             m.setSpeakerphoneOn(false);
             m.setMode(AudioManager.MODE_NORMAL);
+            abandonVoiceFocus();
+            android.util.Log.d("RingInAudio", "endCallMode: after  mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
             JSObject ret = new JSObject();
             ret.put("ok", true);
             call.resolve(ret);
-        } catch (Exception e) {
+        } catch (Exception e) { android.util.Log.e("RingInAudio", "method failed", e);
             call.reject("endCallMode failed: " + e.getMessage(), e);
         }
     }
@@ -65,18 +133,44 @@ public class RingInAudioPlugin extends Plugin {
         try {
             boolean enabled = call.getBoolean("enabled", false);
             AudioManager m = am();
-            // setSpeakerphoneOn only takes effect while in
-            // MODE_IN_COMMUNICATION — make sure we're in the right mode.
+            android.util.Log.d("RingInAudio", "setSpeakerphone(" + enabled + "): before mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
+
+            // Re-assert voice focus so the system keeps routing through STREAM_VOICE_CALL.
+            // Without this, focus can be silently lost between toggles and WebView falls
+            // back to STREAM_MUSIC (loudspeaker only).
+            if (focusRequest == null) {
+                requestVoiceFocus();
+            }
+
+            // Force the system into IN_COMMUNICATION mode if it has drifted out.
             if (m.getMode() != AudioManager.MODE_IN_COMMUNICATION) {
                 m.setMode(AudioManager.MODE_IN_COMMUNICATION);
             }
+
+            // The actual route switch.
             m.setSpeakerphoneOn(enabled);
+
+            // Some OEM ROMs (Xiaomi/Samsung/etc.) only re-evaluate the routing
+            // policy on a mode change. Bounce the mode to force a re-route.
+            // We DON'T do this on every call because it briefly mutes the stream —
+            // only do it if the read-back after setSpeakerphoneOn doesn't match.
+            if (m.isSpeakerphoneOn() != enabled) {
+                android.util.Log.d("RingInAudio", "setSpeakerphone: readback mismatch, bouncing mode");
+                m.setMode(AudioManager.MODE_NORMAL);
+                m.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                m.setSpeakerphoneOn(enabled);
+            }
+
+            android.util.Log.d("RingInAudio", "setSpeakerphone(" + enabled + "): after  mode=" + m.getMode() + " speaker=" + m.isSpeakerphoneOn());
             JSObject ret = new JSObject();
             ret.put("ok", true);
-            ret.put("enabled", enabled);
+            ret.put("requested", enabled);
+            ret.put("mode", m.getMode());
             ret.put("isSpeakerphoneOn", m.isSpeakerphoneOn());
+            ret.put("voiceCallVol", m.getStreamVolume(AudioManager.STREAM_VOICE_CALL));
+            ret.put("voiceCallMax", m.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL));
             call.resolve(ret);
-        } catch (Exception e) {
+        } catch (Exception e) { android.util.Log.e("RingInAudio", "method failed", e);
             call.reject("setSpeakerphone failed: " + e.getMessage(), e);
         }
     }
@@ -90,7 +184,7 @@ public class RingInAudioPlugin extends Plugin {
             ret.put("isSpeakerphoneOn", m.isSpeakerphoneOn());
             ret.put("isMicrophoneMute", m.isMicrophoneMute());
             call.resolve(ret);
-        } catch (Exception e) {
+        } catch (Exception e) { android.util.Log.e("RingInAudio", "method failed", e);
             call.reject("getState failed: " + e.getMessage(), e);
         }
     }
