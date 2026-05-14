@@ -1579,6 +1579,14 @@ export default function HomeScreen(props){
     sbHome:sbHome
   });
 
+  // Moments rendering: pull the current user's grouped moment OUT of the
+  // strip and pass it as `ownMoment`. This way the "+" tile doubles as the
+  // user's own moments tile (tap → view their slides) instead of rendering
+  // as a separate "You" heart NEXT to the "+", which is the bug — you'd
+  // see two tiles representing the same user after posting.
+  var ownMomentForStrip = realMoments.find(function(m){ return m.isSelf; }) || null;
+  var otherRealMoments = realMoments.filter(function(m){ return !m.isSelf; });
+
   return React.createElement('div', {className:'hc'},
     // Likes popup
     showLikers ? React.createElement('div',{
@@ -1870,7 +1878,11 @@ export default function HomeScreen(props){
       ownAvatar: (props.session && props.session.user && (function(){ try{ return localStorage.getItem('avatar_'+props.session.user.id) || null; }catch(_){ return null; } })()) || null,
       ownName: 'Moments',
       showAdd: true,
-      moments: realMoments.concat((onlineExperts || []).slice(0, 8).map(function(e){
+      // Self moment (if any) goes into the "+" tile — tap it to view your
+      // own slides, tap the "+" badge to add another. The strip below
+      // shows OTHER users' moments + the mock experts.
+      ownMoment: ownMomentForStrip,
+      moments: otherRealMoments.concat((onlineExperts || []).slice(0, 8).map(function(e){
         // expertId + role carried through so the reply/like callbacks can
         // build the right chat target (mock experts use 'expert_<id>' conv IDs)
         return { id: e.id, expertId: e.id, expertRole: e.role, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };

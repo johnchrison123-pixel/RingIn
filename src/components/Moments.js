@@ -398,6 +398,12 @@ var HEART_CLIP_PATH =
 // clip, optionally wrapped in a gradient "unread" ring. For the "add"
 // tile (isAdd=true), overlays a small + badge in the bottom-right corner
 // so the affordance stays visible even when the user has an avatar.
+//
+// When `onAddClick` is also passed, the + badge becomes its OWN click
+// target — tapping the badge opens the uploader, while tapping the heart
+// itself fires `onClick` (typically opening the viewer for your own
+// already-posted moments). This is the Instagram pattern: one tile per
+// user, with a separate "+" affordance to add more.
 function HeartTile(props){
   var size = props.size || 68;
   var ring = !!props.ring;
@@ -405,6 +411,7 @@ function HeartTile(props){
   var initials = props.initials || '?';
   var bg = props.bg || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
   var onClick = props.onClick;
+  var onAddClick = props.onAddClick;
   var isAdd = !!props.isAdd;
 
   // OUTER button is unclipped so the + badge can sit ON TOP of the heart
@@ -443,7 +450,10 @@ function HeartTile(props){
     position: 'relative',
   };
   // + badge for "add" tiles. Sits outside the clip so it's always visible
-  // even when an avatar is shown.
+  // even when an avatar is shown. If onAddClick is wired, the badge
+  // becomes a clickable button (intercepts the tap so the heart's main
+  // onClick — typically "open viewer" — doesn't fire).
+  var badgeClickable = isAdd && !!onAddClick;
   var badgeStyle = {
     position: 'absolute',
     bottom: '-2px',
@@ -460,12 +470,20 @@ function HeartTile(props){
     fontWeight: 700,
     lineHeight: 1,
     boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
-    pointerEvents: 'none',  /* click goes to the button, not the badge */
+    pointerEvents: badgeClickable ? 'auto' : 'none',
+    cursor: badgeClickable ? 'pointer' : 'default',
   };
 
-  return React.createElement('button', {
-    type: 'button',
+  // Outer is a <div> with role="button" rather than a <button>, so we can
+  // safely nest a clickable + badge inside without creating invalid HTML
+  // (nested <button> elements). Accessibility: tabIndex + keyboard handler.
+  return React.createElement('div', {
+    role: 'button',
+    tabIndex: 0,
     onClick: onClick,
+    onKeyDown: function(e){
+      if (onClick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(e); }
+    },
     title: isAdd ? 'Add a Moment' : (props.label || 'View Moment'),
     style: buttonStyle,
   },
@@ -482,7 +500,16 @@ function HeartTile(props){
     ),
     // + badge — only on the user's own "add" tile, only when they have an
     // avatar in the heart (otherwise the big "+" in the center is the cue).
-    (isAdd && src) ? React.createElement('div', {style: badgeStyle}, '+') : null
+    (isAdd && src) ? React.createElement(badgeClickable ? 'button' : 'div', {
+      type: badgeClickable ? 'button' : undefined,
+      style: badgeStyle,
+      onClick: badgeClickable ? function(e){
+        try{ e.stopPropagation && e.stopPropagation(); }catch(_){}
+        onAddClick();
+      } : undefined,
+      'aria-label': badgeClickable ? 'Add a Moment' : undefined,
+      title: badgeClickable ? 'Add a Moment' : undefined,
+    }, '+') : null
   );
 }
 
@@ -491,8 +518,17 @@ function HeartTile(props){
 //   ownAvatar     string?  current user's avatar (shown in the "+ add" tile)
 //   ownName       string?  label under the add tile (default "Your Moment")
 //   showAdd       bool     show the "+" tile (default true)
-//   moments       array    [{ id, userName, userAvatar, hasNew? }]
-//   onAdd         fn       called when user taps the "+" tile
+//   ownMoment     object?  current user's OWN grouped moment ({ slides:[…] })
+//                          — when present and non-empty, tapping the "+" tile
+//                          opens the viewer for the user's own slides, and
+//                          the "+" corner badge becomes a separate "add
+//                          another" button. Without this prop, posting a
+//                          moment makes a second "You" tile appear next to
+//                          the "+" tile — the bug we're fixing.
+//   moments       array    [{ id, userName, userAvatar, hasNew? }] — OTHER
+//                          users' moments only (parent should exclude self)
+//   onAdd         fn       called when user wants to add a moment ("+" tile
+//                          when no own slides, "+" badge when slides exist)
 //   onView        fn       called with a moment object when its tile is tapped
 //   compact       bool     smaller size for profile pages (default false)
 export default function Moments(props){
@@ -500,6 +536,8 @@ export default function Moments(props){
   var showAdd = props.showAdd !== false;
   var compact = !!props.compact;
   var size = compact ? 60 : 68;
+  var ownMoment = props.ownMoment || null;
+  var hasOwnSlides = !!(ownMoment && ownMoment.slides && ownMoment.slides.length > 0);
 
   // Internal viewer state — when set, MomentViewer overlay is rendered
   var viewerS = useState(null);
@@ -551,8 +589,26 @@ export default function Moments(props){
         initials: '+',
         isAdd: true,
         size: size,
+        // Show "unread" gradient ring when the user has fresh own moments —
+        // matches the visual treatment of other users' moment tiles.
+        ring: hasOwnSlides && (ownMoment.hasNew !== false),
         bg: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-        onClick: function(){ if(props.onAdd) props.onAdd(); else { try{ alert('Moments coming soon — capture & post photos/videos that vanish after 24h.'); }catch(e){} } },
+        // Main tile tap:
+        //   - user has own moments → open viewer with their slides
+        //   - no own moments yet   → open uploader (legacy "+" behavior)
+        onClick: function(){
+          if (hasOwnSlides) {
+            openViewerFor(ownMoment);
+            return;
+          }
+          if (props.onAdd) props.onAdd();
+          else { try{ alert('Moments coming soon — capture & post photos/videos that vanish after 24h.'); }catch(e){} }
+        },
+        // When user already has slides, the "+" corner badge becomes a
+        // separate clickable affordance for adding ANOTHER slide. Without
+        // this, the only way to add a new one would be to first watch all
+        // your old ones (the main tile only opens the viewer).
+        onAddClick: hasOwnSlides && props.onAdd ? props.onAdd : null,
       }),
       React.createElement('div', {
         style:{fontSize:'10px',color:'var(--t2)',maxWidth:size+8,textAlign:'center',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600}
