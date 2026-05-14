@@ -140,6 +140,16 @@ export async function startCallSession(opts) {
   // within the same user-activation window as the tap that initiated the call — if we
   // wait until after fetchToken (slow), the activation expires and mic creation
   // silently fails, leaving the user unable to be heard while still hearing the peer.
+  //
+  // iOS PWA audio session: must be 'play-and-record' BEFORE calling getUserMedia.
+  // If the previous call set it to 'playback' (media-only), Agora throws
+  // PERMISSION_DENIED with "AudioSession category is not compatible with audio
+  // capture". Defensive — always force it to play-and-record before mic creation.
+  try {
+    if (typeof navigator !== 'undefined' && navigator.audioSession) {
+      navigator.audioSession.type = 'play-and-record';
+    }
+  } catch (e) { /* not supported on this browser — fine */ }
   try {
     // CPU profile: speech_standard (16kHz mono) instead of music_standard (48kHz stereo)
     // is a ~3-4× CPU reduction on low-end Android (Samsung Internet's main pain point).
