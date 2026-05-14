@@ -27,7 +27,7 @@
 // app-shell strategy and don't touch push messaging.
 // ──────────────────────────────────────────────────────────────────────────
 
-var CACHE_VERSION = 'ringin-v10';
+var CACHE_VERSION = 'ringin-v11';
 var APP_SHELL_CACHE = CACHE_VERSION + '-shell';
 var ASSET_CACHE     = CACHE_VERSION + '-assets';
 

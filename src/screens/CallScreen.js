@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
-import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid} from '../utils/agora';
+import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid, trySetSinkIdEverywhere} from '../utils/agora';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -224,15 +224,22 @@ export default function CallScreen(props){
             // Android earpiece routing experiment: detect an earpiece audio
             // output device, and if found, route Agora's remote audio to it.
             // No-op on iOS and on Androids that don't expose the earpiece
-            // separately. Async, fire-and-forget.
+            // separately. Async, fire-and-forget. Also tries setSinkId as a
+            // second-chance attempt on devices where setPlaybackDevice fails
+            // but setSinkId('communications') may succeed.
             if (isAndroid()) {
               detectAndroidEarpieceDeviceId().then(function(devId){
-                if (cancelled || !devId) return;
-                androidEarpieceIdRef.current = devId;
+                if (cancelled) return;
+                if (devId) androidEarpieceIdRef.current = devId;
                 var s = sessionRef.current;
+                var target = devId || 'communications';
                 if (s && s.setRemotePlaybackDevice) {
-                  try { s.setRemotePlaybackDevice(devId); } catch(_) {}
+                  try { s.setRemotePlaybackDevice(target); } catch(_) {}
                 }
+                // Also try setSinkId on raw <audio> elements
+                setTimeout(function(){
+                  try { trySetSinkIdEverywhere(target); } catch(_){}
+                }, 0);
               }).catch(function(){});
             }
             // Once both peers are present, mark the invite as accepted/started
@@ -479,15 +486,31 @@ export default function CallScreen(props){
       try{ setAudioOutputMode('earpiece'); }catch(e){}
       var s = sessionRef.current;
       if(s){
-        try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){}
+        // Volume contrast widened from 100→250 to 100→400 (Agora's max). On
+        // mobile the 2.5x boost wasn't perceptible; 4x should be obvious.
+        try{ s.setRemoteVolume(next ? 400 : 100); }catch(e){}
         // Android-only earpiece/speaker routing
-        if (isAndroid() && s.setRemotePlaybackDevice) {
-          try {
-            // next=true → user wants speaker → '' = system default (loud)
-            // next=false → user wants earpiece → use detected earpiece deviceId if any
-            var target = next ? '' : (androidEarpieceIdRef.current || '');
-            s.setRemotePlaybackDevice(target);
-          } catch(_) {}
+        if (isAndroid()) {
+          // Two attempts in sequence:
+          //  1. Agora's RemoteAudioTrack.setPlaybackDevice — works on some
+          //     Chrome builds + Agora SDK combos
+          //  2. HTMLMediaElement.setSinkId('') / cached earpiece id — more
+          //     widely supported on Android Chromium
+          // next=true  → user wants speaker     → '' = system default (loud)
+          // next=false → user wants earpiece    → use detected earpiece id (if any) or 'communications'
+          var earpieceId = androidEarpieceIdRef.current || 'communications';
+          var target = next ? '' : earpieceId;
+          if (s.setRemotePlaybackDevice) {
+            try { s.setRemotePlaybackDevice(target); } catch(_) {}
+          }
+          // Direct setSinkId fallback on the page's audio elements (where
+          // Agora attaches the remote track's <audio>). Fires after a tick
+          // so Agora's playback element is definitely in the DOM.
+          setTimeout(function(){
+            try { trySetSinkIdEverywhere(target).then(function(ok){
+              try{ console.log('[ringin] setSinkId target=' + (target||'default') + ' result=' + ok); }catch(_){}
+            }); } catch(_){}
+          }, 0);
         }
       }
       return next;
