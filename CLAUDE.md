@@ -7,6 +7,48 @@
 - **Local Path:** ~/Desktop/The project/RingIn/ringin2
 - **Stack:** React CRA (Create React App) + Supabase + Vercel
 
+## ⚠ MANUAL SETUP NEEDED for Phase 3 (lock-screen call notifications)
+
+The `/api/send-call-push` function and the Firebase Messaging service
+worker are deployed, but they need these one-time config steps to actually
+deliver pushes:
+
+### A. Supabase — add the `fcm_token` column to `profiles` (if not present)
+```sql
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS fcm_token TEXT;
+```
+
+### B. Firebase Console — generate a service account
+1. Go to https://console.firebase.google.com/project/ring-in-23c07/settings/serviceaccounts/adminsdk
+2. Click **"Generate new private key"** → download the JSON
+3. Open the JSON, you'll need three values: `project_id`, `client_email`, `private_key`
+
+### C. Vercel — set Environment Variables (Project Settings → Environment Variables)
+Add ALL of these (all 3 environments: Production, Preview, Development):
+| Name | Value |
+|------|-------|
+| `FIREBASE_PROJECT_ID` | `ring-in-23c07` (from JSON) |
+| `FIREBASE_CLIENT_EMAIL` | the `client_email` from JSON |
+| `FIREBASE_PRIVATE_KEY` | the `private_key` from JSON — **paste with \n line breaks intact** |
+| `SUPABASE_URL` | `https://fnthuegoevgicqmzhwcw.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | from Supabase Dashboard → Project Settings → API → `service_role` key (NOT anon) |
+
+Then **redeploy** (any push or click "Redeploy" in Vercel UI).
+
+### D. For iOS push delivery (later — needs Apple Developer Account, $99/yr)
+1. Apple Developer → Create an **APNs Auth Key** (.p8 file)
+2. Firebase Console → Project Settings → Cloud Messaging → Apple app
+3. Upload the .p8 + provide Key ID + Team ID
+
+Until D is done, iOS PWA installs CAN'T receive lock-screen push (Android works fine without D).
+
+### Verifying it works (Android first)
+1. Install RingIn as PWA on Android phone, log in, grant notification permission when asked
+2. Confirm `fcm_token` populated in `profiles` row for that user
+3. From a different account, call them while their PWA is BACKGROUNDED (not closed yet)
+4. They should see an "Incoming Call — X is calling you" system notification with Accept / Decline
+5. Tap Accept → PWA opens → call connects
+
 ## Deployment
 - Vercel **auto-deploys** from GitHub `main` branch
 - To deploy: merge changes → push to `main` → Vercel picks it up automatically

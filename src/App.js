@@ -60,6 +60,51 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Lock-screen notification deep-link handler ─────────────────────────
+  // When the user taps an incoming-call push notification, the service
+  // worker opens the PWA at /?invite=<id>&action=accept|decline. Read
+  // those params after auth resolves, fetch the invite, and act:
+  //   - action=accept  → open the call screen directly (skip ring modal)
+  //   - action=decline → mark the invite rejected and stay on home
+  //   - no action      → fetch and show the incoming-call modal
+  // We wait for `session` to be populated since Supabase RLS requires it.
+  useEffect(function(){
+    if(!session || !session.user) return;
+    try{
+      var params = new URLSearchParams(window.location.search);
+      var inviteIdParam = params.get('invite');
+      if(!inviteIdParam) return;
+      var actionParam = params.get('action');
+      // Clean the URL so a future refresh doesn't re-trigger this
+      try{ window.history.replaceState({}, '', window.location.pathname); }catch(_){}
+
+      supabase.from('call_invites').select('*').eq('id', inviteIdParam).maybeSingle().then(function(r){
+        if(!r || !r.data) return;
+        var inv = r.data;
+        // Belt-and-suspenders: ignore if I'm not the callee
+        if(inv.callee_id !== session.user.id) return;
+        // Only act on ringing invites; anything ended/cancelled is stale
+        if(inv.status !== 'ringing') return;
+
+        if(actionParam === 'decline'){
+          supabase.from('call_invites').update({
+            status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected_from_notification',
+          }).eq('id', inviteIdParam).then(function(){});
+          return;
+        }
+        // accept (or no action — default to opening the ring modal)
+        if(actionParam === 'accept'){
+          // Jump straight into the call
+          if(typeof acceptIncomingCall === 'function') acceptIncomingCall(inv);
+        } else {
+          // Show the ring modal (same UX as if the user was already in-app)
+          setIncomingCall(inv);
+        }
+      });
+    }catch(e){ /* never break the app on a URL parse error */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(function() {
     // Eagerly start fetching the Agora SDK chunk on app mount. The idle-callback
     // prefetch in agora.js may never fire on a busy page; this guarantees the
@@ -382,6 +427,23 @@ export default function App() {
         return;
       }
       console.log('[ringin] call_invite inserted', inviteUuid);
+      // ── Fire FCM push so the callee rings even with PWA closed/locked.
+      // Best-effort: failure here doesn't abort the call (the realtime
+      // listener will still fire when the callee's PWA is open). Silently
+      // swallow errors — they're already logged server-side.
+      try{
+        fetch('/api/send-call-push', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({
+            invite_id: inviteUuid,
+            callee_id: calleeId,
+            caller_name: callerName,
+            caller_avatar: callerAvatar,
+          }),
+          keepalive: true,    // let it complete even if the page navigates
+        }).catch(function(e){ console.warn('[ringin] push trigger failed:', e && e.message); });
+      }catch(e){ /* never block the call */ }
     });
   }
   // Expose to window so any nested component can call it without prop-drilling
