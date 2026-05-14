@@ -169,6 +169,13 @@ public class RingInAudioPlugin extends Plugin {
                     boolean ok = m.setCommunicationDevice(target);
                     chosenType = target.getType();
                     android.util.Log.d("RingInAudio", "setCommunicationDevice(" + targetType + ") = " + ok);
+                    // CRITICAL: do NOT call setSpeakerphoneOn after this on API 31+.
+                    // On Android 12+, setSpeakerphoneOn(false) is internally implemented
+                    // as clearCommunicationDevice(), which would UNDO the pin we just set.
+                    // setSpeakerphoneOn(true) maps to setCommunicationDevice(SPEAKER),
+                    // which would also override us if we're pinning EARPIECE. So we
+                    // return early here on the modern path.
+                    return chosenType;
                 } else {
                     android.util.Log.w("RingInAudio", "no AudioDeviceInfo with type=" + targetType + " available — falling back to legacy");
                 }
@@ -176,7 +183,7 @@ public class RingInAudioPlugin extends Plugin {
                 android.util.Log.e("RingInAudio", "setCommunicationDevice path failed, falling back to legacy", t);
             }
         }
-        // Legacy fallback (and belt-and-braces on modern devices too — doesn't hurt)
+        // Legacy path — only used on pre-API-31 or if the modern API couldn't find the device.
         m.setSpeakerphoneOn(speaker);
         return chosenType;
     }
