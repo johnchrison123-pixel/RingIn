@@ -438,18 +438,21 @@ export default function CallScreen(props){
     });
   }, []);
 
-  // Loudspeaker toggle. Two layers, in priority order:
-  //  1. On iOS Safari 16.4+ (PWA), setAudioOutputMode flips
-  //     navigator.audioSession.type between 'play-and-record' (earpiece) and
-  //     'playback' (loudspeaker) — a real OS-level audio routing change.
-  //  2. As a fallback for Android/older iOS, we also adjust Agora's playback
-  //     volume (Agora scale: 0–400; 80 = quieter "private" mode, 250 = boost).
-  //     On Android this is the best we can do without a native shell because
-  //     Chromium doesn't expose audio output device selection for WebRTC.
+  // Loudspeaker toggle.
+  // We can't change the audio session type in-call without breaking the mic
+  // (see comment in agora.js setAudioOutputMode). So the toggle simply boosts
+  // Agora's remote playback volume:
+  //   off (earpiece feel): 100 — normal
+  //   on  (speaker feel):  250 — boosted
+  // On iOS PWA this is "louder earpiece" (routing stays earpiece). On Android
+  // PWA audio routes through Android's chosen output (usually the loud media
+  // speaker) so the boost effectively gives a true loudspeaker feel.
   var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
-      try{ setAudioOutputMode(next ? 'speaker' : 'earpiece'); }catch(e){}
+      // Keep the session pinned to play-and-record (mic alive). Safe no-op
+      // on browsers without the API.
+      try{ setAudioOutputMode('earpiece'); }catch(e){}
       var s = sessionRef.current;
       if(s){ try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){} }
       return next;
