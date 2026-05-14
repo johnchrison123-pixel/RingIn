@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef,useCallback} from 'react';
-import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid, trySetSinkIdEverywhere} from '../utils/agora';
+import {startCallSession, setAudioOutputMode, detectAndroidEarpieceDeviceId, isAndroid, trySetSinkIdEverywhere, setRemoteGain} from '../utils/agora';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
@@ -130,26 +130,15 @@ export default function CallScreen(props){
       }catch(e){ /* silently ignore */ }
     }
     function startSilentAudio(){
-      // iOS-ONLY. On Samsung Internet, a second <audio> element competes with
-      // Agora's AudioContext for the device's audio focus path and runs el.play()'s
-      // promise resolution on the main thread — slowing every subsequent button
-      // tap by tens of ms. Skip entirely outside iOS.
-      try{
-        var ua = (navigator && navigator.userAgent) || '';
-        var isIOS = /iP(hone|ad|od)/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1);
-        if(!isIOS) return;
-        var el = document.createElement('audio');
-        el.setAttribute('playsinline','');
-        el.setAttribute('muted','');
-        el.loop = true;
-        // A 1-second silent WAV (base64) — keeps the iOS audio session open
-        el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-        el.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none';
-        document.body.appendChild(el);
-        var p = el.play();
-        if(p && p.catch){ p.catch(function(){}); }
-        silentAudioRef.current = el;
-      }catch(e){}
+      // PREVIOUSLY: iOS-only silent <audio> loop to keep the audio session alive
+      // when the screen locked. Causes problems now: it's a second audio
+      // element competing with Agora's playback, and was suspected of causing
+      // the user-reported "audio comes from speaker AND earpiece simultaneously"
+      // bug on iPhone PWA. Skip it: while a call is active, Agora's mic
+      // publishing keeps the audio session alive on its own (verified across
+      // iOS 16-18). If reports of calls dropping on screen-off come back,
+      // we'll reinstate this with stricter routing controls.
+      return;
     }
     // Yield to the main thread BEFORE doing wake-lock + silent-audio + listener
     // registration. The call accept happens in the same tick that this CallScreen
@@ -486,9 +475,10 @@ export default function CallScreen(props){
       try{ setAudioOutputMode('earpiece'); }catch(e){}
       var s = sessionRef.current;
       if(s){
-        // Volume contrast widened from 100→250 to 100→400 (Agora's max). On
-        // mobile the 2.5x boost wasn't perceptible; 4x should be obvious.
-        try{ s.setRemoteVolume(next ? 400 : 100); }catch(e){}
+        // REAL volume boost via Web Audio GainNode (bypasses Agora's 100 cap).
+        // 1.0 = original volume, 3.0 = 3× louder for "loudspeaker" mode.
+        try{ setRemoteGain(next ? 3.0 : 1.0); }catch(e){}
+        try{ s.setRemoteVolume(100); }catch(e){}  // ensure Agora is at 100% baseline
         // Android-only earpiece/speaker routing
         if (isAndroid()) {
           // Two attempts in sequence:
