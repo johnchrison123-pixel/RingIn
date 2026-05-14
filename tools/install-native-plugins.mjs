@@ -34,13 +34,14 @@ function installAndroid() {
     return;
   }
 
-  // 1. Copy RingInAudioPlugin.kt into the package directory the Android app uses.
-  //    Capacitor scaffolds the app package as `app.ringin.mobile` (matching
-  //    appId in capacitor.config.json). The native plugin must live in
-  //    android/app/src/main/java/app/ringin/mobile/RingInAudioPlugin.kt
-  const pluginSrc = path.join(ROOT, 'capacitor-plugin', 'android', 'RingInAudioPlugin.kt');
+  // 1. Copy RingInAudioPlugin.java into the package directory the Android app uses.
+  //    Capacitor's default Android scaffold is Java-only — no Kotlin plugin
+  //    is applied — so the audio plugin must be Java to be picked up by the
+  //    compiler. appId is `app.ringin.mobile` per capacitor.config.json, so
+  //    the file lives in android/app/src/main/java/app/ringin/mobile/.
+  const pluginSrc = path.join(ROOT, 'capacitor-plugin', 'android', 'RingInAudioPlugin.java');
   const pluginDst = path.join(
-    androidRoot, 'app', 'src', 'main', 'java', 'app', 'ringin', 'mobile', 'RingInAudioPlugin.kt'
+    androidRoot, 'app', 'src', 'main', 'java', 'app', 'ringin', 'mobile', 'RingInAudioPlugin.java'
   );
   write(pluginDst, read(pluginSrc));
   log('✔ Wrote', pluginDst);
