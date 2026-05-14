@@ -658,8 +658,30 @@ export default function CallScreen(props){
         ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
-    // Build stamp — temporary, lets the user verify which version they're running
-    React.createElement('div',{style:{position:'fixed',bottom:'8px',left:'8px',fontSize:'9px',color:'rgba(255,255,255,0.25)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD),
+    // Build stamp — tap 3 times rapidly to load Eruda debug console inside
+    // the PWA (so you don't need the ?debug=1 URL trick which doesn't work
+    // once installed). After 3 taps the version label briefly flashes to
+    // confirm activation, then Eruda's floating button appears.
+    React.createElement('button',{
+      onClick:function(){
+        try{
+          window.__ringinDebugTaps = (window.__ringinDebugTaps || 0) + 1;
+          if (window.__ringinDebugTaps >= 3){
+            window.__ringinDebugTaps = 0;
+            try{ localStorage.setItem('ringin_debug','1'); }catch(_){}
+            if (window.eruda){
+              try{ window.eruda.show(); }catch(_){}
+            } else {
+              var s = document.createElement('script');
+              s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+              s.onload = function(){ try{ window.eruda && window.eruda.init(); window.eruda && window.eruda.show(); }catch(e){} };
+              document.body.appendChild(s);
+            }
+          }
+        }catch(_){}
+      },
+      style:{position:'fixed',bottom:'8px',left:'8px',fontSize:'9px',color:'rgba(255,255,255,0.35)',background:'transparent',border:'none',padding:'4px',fontFamily:'monospace',cursor:'pointer'}
+    }, RINGIN_BUILD + ' (tap 3×)'),
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────
