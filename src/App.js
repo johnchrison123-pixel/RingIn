@@ -13,6 +13,7 @@ import AnonymousConnect from './screens/AnonymousConnect';
 import CallScreen from './screens/CallScreen';
 import IncomingCallModal from './components/IncomingCallModal';
 import InstallPrompt from './components/InstallPrompt';
+import UpdatePrompt from './components/UpdatePrompt';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
@@ -637,6 +638,12 @@ export default function App() {
     // ── PWA install prompt — non-intrusive bottom pill, dismissible, hidden when
     //    already running standalone, hidden during an active or incoming call.
     !activeCall && !incomingCall ? React.createElement(InstallPrompt, null) : null,
+
+    // ── PWA update prompt — appears when a new SW version is waiting. Tapping
+    //    Update fires SKIP_WAITING + reload so users get fresh code in one tap
+    //    (instead of having to fully close + reopen the PWA). Suppressed during
+    //    a live call so we never reload mid-conversation.
+    !activeCall && !incomingCall ? React.createElement(UpdatePrompt, null) : null,
 
     React.createElement('nav', {className:'bottom-nav'},
       tabs.map(function(tab, idx) {

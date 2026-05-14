@@ -20,26 +20,61 @@ export function registerAppShellSW(){
   // Skip in dev — react-scripts' webpack-dev-server doesn't play well with SW caching.
   if (process.env.NODE_ENV !== 'production') return;
 
+  // Expose an apply-update function the UI banner can call. It tells the
+  // waiting SW to take over and reloads when it does. Defined on window so
+  // the React component can call it without prop drilling through the SW
+  // registration helper.
+  if (typeof window !== 'undefined' && !window.__ringinApplySWUpdate){
+    window.__ringinApplySWUpdate = function(){
+      try{
+        if (!navigator || !navigator.serviceWorker) return;
+        navigator.serviceWorker.getRegistration().then(function(reg){
+          if (!reg || !reg.waiting) {
+            // No waiting SW — just reload to be safe
+            try{ window.location.reload(); }catch(_){}
+            return;
+          }
+          // When the new SW takes control, refresh so its code runs
+          var listener = function(){
+            try{ navigator.serviceWorker.removeEventListener('controllerchange', listener); }catch(_){}
+            try{ window.location.reload(); }catch(_){}
+          };
+          navigator.serviceWorker.addEventListener('controllerchange', listener);
+          // Hand off control
+          try{ reg.waiting.postMessage({ type: 'SKIP_WAITING' }); }catch(_){}
+        });
+      }catch(_){}
+    };
+  }
+
   // Defer to idle/load so SW registration never delays first paint.
   function go(){
     try{
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
         .then(function(reg){
-          // Watch for updates. When a new SW is found and finishes installing,
-          // tell it to skip waiting so it becomes active on next navigation.
-          // (We don't force-reload — see top comment.)
+          // Watch for updates. When a new SW finishes installing AND there's
+          // already an active controller (so this isn't the first-ever
+          // install), broadcast a window event so the React banner can
+          // surface the "update ready" pill. We deliberately do NOT auto-
+          // skipWaiting anymore — the user taps the banner to apply.
           if (reg && reg.addEventListener){
-            reg.addEventListener('updatefound', function(){
-              var newSW = reg.installing;
-              if (newSW){
-                newSW.addEventListener('statechange', function(){
-                  if (newSW.state === 'installed' && navigator.serviceWorker.controller){
-                    try{ newSW.postMessage({ type: 'SKIP_WAITING' }); }catch(e){}
-                  }
-                });
-              }
-            });
-            // Also poke for updates every 60 min while the app stays open
+            function watchInstall(sw){
+              if (!sw) return;
+              sw.addEventListener('statechange', function(){
+                if (sw.state === 'installed' && navigator.serviceWorker.controller){
+                  try{ window.dispatchEvent(new Event('ringin-sw-update-available')); }catch(_){}
+                }
+              });
+            }
+            // Catch a SW already installing (page loaded between install + activate)
+            if (reg.installing) watchInstall(reg.installing);
+            // Catch new SWs found later while the app stays open
+            reg.addEventListener('updatefound', function(){ watchInstall(reg.installing); });
+            // If a SW is already waiting (from a previous session), surface immediately
+            if (reg.waiting && navigator.serviceWorker.controller){
+              try{ window.dispatchEvent(new Event('ringin-sw-update-available')); }catch(_){}
+            }
+            // Periodic update check while the app stays open (every 60 min)
             setInterval(function(){ try{ reg.update(); }catch(e){} }, 60 * 60 * 1000);
           }
         })
