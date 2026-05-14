@@ -62,20 +62,25 @@ function getPlugin() {
 }
 
 // Switch audio output between earpiece (false) and loudspeaker (true).
-// On web/PWA: no-op (returns false). On native: calls the OS audio router.
-// Returns true if the native plugin handled it, false if we fell through.
+// On web/PWA: no-op (returns null). On native: calls the OS audio router
+// and returns the AudioManager state AFTER the change so the caller can
+// verify it actually took effect (and show on screen for debugging).
 export async function setSpeakerphone(on) {
   try {
     var p = getPlugin();
-    if (!p) return false;
-    if (typeof p.setSpeakerphone === 'function') {
-      await p.setSpeakerphone({ enabled: !!on });
-      return true;
+    if (!p) {
+      try{ console.log('[ringin] setSpeakerphone: no native plugin (running as web)'); }catch(_){}
+      return null;
     }
-    return false;
+    if (typeof p.setSpeakerphone === 'function') {
+      var res = await p.setSpeakerphone({ enabled: !!on });
+      try{ console.log('[ringin] setSpeakerphone result:', JSON.stringify(res)); }catch(_){}
+      return res;
+    }
+    return null;
   } catch (e) {
     try { console.warn('[ringin] native setSpeakerphone failed:', e && e.message); } catch (_) {}
-    return false;
+    return { error: e && e.message };
   }
 }
 
