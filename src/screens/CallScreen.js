@@ -47,7 +47,19 @@ var HANGUP_BTN_STYLE = {
   background:'#c0392b', border:'none', cursor:'pointer',
   boxShadow:'0 6px 22px rgba(192,57,43,0.65)',
   willChange:'transform',
+  display:'flex', alignItems:'center', justifyContent:'center',
+  padding:0,
 };
+// Standard "call_end" icon — phone handset on a wave shape, rotated. Same
+// silhouette WhatsApp / Signal / iOS use so users recognize it instantly.
+var HANGUP_ICON = React.createElement('svg', {
+  viewBox:'0 0 24 24', width:'30', height:'30', fill:'#fff',
+  style:{transform:'rotate(0deg)'}
+},
+  React.createElement('path', {
+    d:'M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z'
+  })
+);
 var RIPPLE_1 = {position:'absolute',width:'120px',height:'120px',borderRadius:'50%',background:'rgba(123,110,255,0.15)',top:'-15px',left:'-15px',animation:'ripple 1.2s ease-out infinite'};
 var RIPPLE_2 = {position:'absolute',width:'140px',height:'140px',borderRadius:'50%',background:'rgba(123,110,255,0.08)',top:'-25px',left:'-25px',animation:'ripple 1.2s ease-out infinite 0.4s'};
 
@@ -539,12 +551,56 @@ export default function CallScreen(props){
         React.createElement('span',{style:{letterSpacing:'2px'}},['.','..',  '...'][ringSecs%3])
       ),
       error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
-      React.createElement('button',{
-        onClick: onHangupClick,
-        className: 'ringin-tap',
-        title:'End call',
-        style: HANGUP_BTN_STYLE
-      })
+
+      // Same three buttons as the connected state — gives the caller a familiar
+      // call-controls layout while ringing. Mute and Speaker are visible but
+      // disabled until the call actually connects (no audio to control yet).
+      React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
+        // ── MUTE (disabled while ringing) ──
+        React.createElement('button',{
+          onClick: toggleMute,
+          className: 'ringin-tap',
+          title: muted ? 'Unmute' : 'Mute',
+          disabled: true,
+          style: Object.assign({}, BTN_BASE, {
+            background: muted ? '#ffffff' : BTN_GRADIENT,
+            color: muted ? '#7B6EFF' : '#ffffff',
+            cursor: 'not-allowed',
+            opacity: 0.45,
+            boxShadow: muted ? BTN_SHADOW_WHITE : BTN_SHADOW_BRAND,
+          })
+        },
+          React.createElement('svg', SVG_ATTRS,
+            MIC_PATHS[0], MIC_PATHS[1], MIC_PATHS[2],
+            muted ? MIC_SLASH : null
+          )
+        ),
+        // ── HANGUP (with icon) ──
+        React.createElement('button',{
+          onClick: onHangupClick,
+          className: 'ringin-tap',
+          title:'End call',
+          style: HANGUP_BTN_STYLE,
+        }, HANGUP_ICON),
+        // ── SPEAKER (disabled while ringing) ──
+        React.createElement('button',{
+          onClick: toggleSpeaker,
+          className: 'ringin-tap',
+          title: speakerOn ? 'Switch off loudspeaker' : 'Switch on loudspeaker',
+          disabled: true,
+          style: Object.assign({}, BTN_BASE, {
+            background: speakerOn ? '#ffffff' : BTN_GRADIENT,
+            color: speakerOn ? '#7B6EFF' : '#ffffff',
+            cursor: 'not-allowed',
+            opacity: 0.45,
+            boxShadow: speakerOn ? BTN_SHADOW_WHITE : BTN_SHADOW_BRAND,
+          })
+        },
+          React.createElement('svg', SVG_ATTRS,
+            SPEAKER_PATHS[0], SPEAKER_PATHS[1], SPEAKER_PATHS[2]
+          )
+        )
+      )
     );
   }
 
@@ -589,13 +645,13 @@ export default function CallScreen(props){
           muted ? MIC_SLASH : null
         )
       ),
-      // ── HANGUP — darker plain red, no icon ─────────────────
+      // ── HANGUP — darker red with the call_end (handset) icon ──
       React.createElement('button',{
         onClick: onHangupClick,
         className: 'ringin-tap',
         title:'End call',
         style: HANGUP_BTN_STYLE,
-      }),
+      }, HANGUP_ICON),
       // ── SPEAKER (loudspeaker boost) ────────────────────────
       React.createElement('button',{
         onClick: toggleSpeaker,
