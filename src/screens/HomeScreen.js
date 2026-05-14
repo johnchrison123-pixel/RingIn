@@ -8,6 +8,7 @@ import LiveWorkshopScreen from './LiveWorkshopScreen';
 import {playSound,playUnlikeSound,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
 import Moments from '../components/Moments';
+import MomentComposer from '../components/MomentComposer';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -616,6 +617,169 @@ export default function HomeScreen(props){
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
   var currentUserName = props.session&&props.session.user ? ((props.session.user.email||'').split('@')[0] || null) : null;
   var currentUserAvatar = currentUserId ? localStorage.getItem('avatar_'+currentUserId) : null;
+
+  // ── Moments: file picker + composer state ──────────────────────────────
+  // Real user-posted moments fetched from Supabase (`moments` table) and
+  // cached in localStorage so the poster sees their own immediately even
+  // if the network is slow / table is missing.
+  var momentFileRef = useRef(null);
+  var pendingMomentFileS = useState(null);
+  var pendingMomentFile = pendingMomentFileS[0]; var setPendingMomentFile = pendingMomentFileS[1];
+  var realMomentsS = useState([]);
+  var realMoments = realMomentsS[0]; var setRealMoments = realMomentsS[1];
+
+  function groupMomentsByUser(rows, profMap){
+    profMap = profMap || {};
+    var grouped = {};
+    var order = [];
+    rows.forEach(function(r){
+      var uid = r.user_id;
+      if(!grouped[uid]){
+        var p = profMap[uid] || {};
+        var name = (p.full_name && p.full_name.trim())
+          || (p.email && p.email.indexOf('@')>=0 ? p.email.split('@')[0] : null)
+          || (uid === currentUserId ? 'You' : 'User');
+        var avatar = p.avatar_url || null;
+        if(!avatar){
+          try{ avatar = localStorage.getItem('avatar_'+uid) || null; }catch(_){}
+        }
+        grouped[uid] = {
+          id: 'user-'+uid,
+          userId: uid,
+          userName: uid === currentUserId ? 'You' : name,
+          userAvatar: avatar,
+          color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+          slides: [],
+          hasNew: true,
+          isSelf: uid === currentUserId,
+        };
+        order.push(uid);
+      }
+      grouped[uid].slides.push({
+        id: r.id,
+        imageUrl: r.image_url,
+        caption: r.caption || '',
+        createdAt: r.created_at,
+      });
+    });
+    // Sort: self first, then by latest slide timestamp desc
+    var arr = order.map(function(u){ return grouped[u]; });
+    arr.sort(function(a,b){
+      if(a.isSelf && !b.isSelf) return -1;
+      if(!a.isSelf && b.isSelf) return 1;
+      var aT = a.slides.length ? new Date(a.slides[0].createdAt).getTime() : 0;
+      var bT = b.slides.length ? new Date(b.slides[0].createdAt).getTime() : 0;
+      return bT - aT;
+    });
+    // Slides inside each user are oldest → newest so they play in order
+    arr.forEach(function(u){
+      u.slides.sort(function(x,y){ return new Date(x.createdAt).getTime() - new Date(y.createdAt).getTime(); });
+    });
+    return arr;
+  }
+
+  function loadOwnLocalMoments(){
+    if(!currentUserId) return [];
+    try{
+      var raw = localStorage.getItem('ringin_my_moments_'+currentUserId);
+      if(!raw) return [];
+      var list = JSON.parse(raw) || [];
+      var cutoff = Date.now() - 24*60*60*1000;
+      return list.filter(function(r){ return new Date(r.created_at).getTime() > cutoff; });
+    }catch(_){ return []; }
+  }
+
+  function loadRealMoments(){
+    if(!currentUserId) return;
+    var cutoffIso = new Date(Date.now() - 24*60*60*1000).toISOString();
+    sbHome.from('moments').select('*').gt('created_at', cutoffIso).order('created_at',{ascending:false}).then(function(r){
+      var rows;
+      if(r.error){
+        // Likely the migration hasn't run yet. Fall back to localStorage so
+        // the poster still sees their own moments.
+        rows = loadOwnLocalMoments();
+      } else {
+        rows = r.data || [];
+        // Merge any localStorage-cached own moments not yet reflected (offline insert, etc)
+        var ownLocal = loadOwnLocalMoments();
+        ownLocal.forEach(function(or){
+          if(!rows.find(function(rr){ return rr.id === or.id; })) rows.push(or);
+        });
+      }
+      if(rows.length === 0){ setRealMoments([]); return; }
+      var uids = []; var seen = {};
+      rows.forEach(function(rr){ if(!seen[rr.user_id]){ seen[rr.user_id] = true; uids.push(rr.user_id); } });
+      sbHome.from('profiles').select('id,full_name,avatar_url,email').in('id', uids).then(function(pr){
+        var profMap = {};
+        (pr.data || []).forEach(function(p){ profMap[p.id] = p; });
+        setRealMoments(groupMomentsByUser(rows, profMap));
+      });
+    });
+  }
+
+  useEffect(function(){ loadRealMoments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [currentUserId]);
+
+  function pickMomentFile(){
+    if(momentFileRef.current) momentFileRef.current.click();
+  }
+
+  function onMomentFileChosen(e){
+    var f = e.target && e.target.files && e.target.files[0];
+    // Reset value so the user can pick the same file twice in a row
+    try{ e.target.value = ''; }catch(_){}
+    if(f) setPendingMomentFile(f);
+  }
+
+  function postMoment(file, caption){
+    if(!file || !currentUserId) return Promise.reject(new Error('Not signed in'));
+    var safeExt = ((file.name||'').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+    var fileName = 'moments/' + currentUserId + '/' + Date.now() + '-' + Math.random().toString(36).slice(2,7) + '.' + safeExt;
+    return sbHome.storage.from('chat-images').upload(fileName, file, {contentType: file.type || 'image/jpeg'}).then(function(up){
+      if(up.error) throw up.error;
+      var url = sbHome.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
+      var nowIso = new Date().toISOString();
+      var pending = {
+        // Temporary id until Supabase returns one — keeps the row valid in
+        // localStorage even if the table isn't there yet.
+        id: 'local-'+Date.now()+'-'+Math.random().toString(36).slice(2,5),
+        user_id: currentUserId,
+        image_url: url,
+        caption: (caption||'').trim() || null,
+        created_at: nowIso,
+      };
+      return sbHome.from('moments').insert([{user_id:currentUserId, image_url:url, caption: pending.caption}]).select().single().then(function(ins){
+        if(ins.data) pending = ins.data;
+        // Cache locally so it's still there if the table read fails.
+        try{
+          var key = 'ringin_my_moments_'+currentUserId;
+          var raw = localStorage.getItem(key);
+          var list = raw ? JSON.parse(raw) : [];
+          list.unshift(pending);
+          var cutoff = Date.now() - 24*60*60*1000;
+          list = list.filter(function(r){ return new Date(r.created_at).getTime() > cutoff; });
+          localStorage.setItem(key, JSON.stringify(list));
+        }catch(_){}
+        // Close the composer + refresh strip
+        setPendingMomentFile(null);
+        loadRealMoments();
+        return pending;
+      }).catch(function(err){
+        // Insert failed (table missing or RLS) — still cache locally so the
+        // user sees their moment, then surface a non-fatal hint via console.
+        try{
+          var key = 'ringin_my_moments_'+currentUserId;
+          var raw = localStorage.getItem(key);
+          var list = raw ? JSON.parse(raw) : [];
+          list.unshift(pending);
+          localStorage.setItem(key, JSON.stringify(list));
+        }catch(_){}
+        console.warn('[ringin] moments insert failed, using local cache:', err && err.message ? err.message : err);
+        setPendingMomentFile(null);
+        loadRealMoments();
+        return pending;
+      });
+    });
+  }
 
   function loadComments(postId){
     var cached=null;
@@ -1330,6 +1494,60 @@ export default function HomeScreen(props){
     if(exp && onViewExpert) onViewExpert(exp);
   }
 
+  // ── Moments → chat bridge ────────────────────────────────────────────────
+  // Writes a chat message (like or reply) into the localStorage thread for a
+  // mock expert. The message text uses two prefixes that MessagesScreen
+  // recognises:
+  //   [mlike]<caption>             — renders as "Liked your status" + quote
+  //   [mreply]<caption>|<reply>    — renders as "Replied to status" + quote
+  // Both are persisted via the same `msgs_<convId>` localStorage key
+  // ChatBox already reads from, and the expert is added to
+  // `ringin_expert_convos_<myId>` so it shows in the inbox.
+  function writeMomentChat(m, slide, text){
+    if(!currentUserId || !m) return;
+    var convId = 'expert_' + m.expertId;
+    var nowIso = new Date().toISOString();
+    var msg = {
+      id: 'local-mreply-' + Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      conversation_id: convId,
+      sender_id: currentUserId,
+      sender_name: currentUserName || 'You',
+      receiver_id: convId,
+      text: text,
+      read: true,
+      created_at: nowIso,
+    };
+    try{
+      var msgsKey = 'msgs_' + convId;
+      var prev = []; try{ var raw = localStorage.getItem(msgsKey); if(raw) prev = JSON.parse(raw); }catch(_){ }
+      prev.push(msg);
+      localStorage.setItem(msgsKey, JSON.stringify(prev));
+    }catch(_){}
+    try{
+      var ecKey = 'ringin_expert_convos_' + currentUserId;
+      var ec = []; try{ var ecRaw = localStorage.getItem(ecKey); if(ecRaw) ec = JSON.parse(ecRaw); }catch(_){ }
+      var idx = -1; for(var i=0; i<ec.length; i++){ if(ec[i] && ec[i].convId === convId){ idx = i; break; } }
+      var entry = {
+        id: convId,
+        convId: convId,
+        otherId: convId,
+        receiverId: convId,
+        name: m.userName || 'Expert',
+        img: m.userAvatar || null,
+        role: m.expertRole || '',
+        color: m.color || 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+        initials: (m.userName || '??').substring(0,2).toUpperCase(),
+        isOnline: true,
+        lastMsg: text,
+        lastTime: nowIso,
+        unreadCount: 0,
+        isExpertMock: true,
+      };
+      if(idx >= 0) ec[idx] = Object.assign({}, ec[idx], entry); else ec.unshift(entry);
+      localStorage.setItem(ecKey, JSON.stringify(ec));
+    }catch(_){}
+  }
+
   function goToUserProfile(userId, cachedInfo){
     if(!userId) return;
     if(userId === currentUserId){
@@ -1629,16 +1847,58 @@ export default function HomeScreen(props){
       ) : null
     ) : null,
 
+    // Hidden file input — opened by the + tile in the Moments strip.
+    React.createElement('input', {
+      ref: momentFileRef,
+      type:'file',
+      accept:'image/*',
+      style:{display:'none'},
+      onChange: onMomentFileChosen,
+    }),
+
+    // Composer overlay (only when a file is picked & waiting to post)
+    pendingMomentFile ? React.createElement(MomentComposer, {
+      file: pendingMomentFile,
+      onCancel: function(){ setPendingMomentFile(null); },
+      onShare: postMoment,
+    }) : null,
+
     // ── Moments — RingIn's heart-shaped Stories, Instagram-style.
-    // No section header — the first tile (user's own avatar) is labelled
-    // "Moments" so it doubles as the section indicator.
+    // Real user-posted moments (from Supabase) come first, then mock
+    // expert moments fill out the strip for demo purposes.
     React.createElement(Moments, {
       ownAvatar: (props.session && props.session.user && (function(){ try{ return localStorage.getItem('avatar_'+props.session.user.id) || null; }catch(_){ return null; } })()) || null,
       ownName: 'Moments',
       showAdd: true,
-      moments: (onlineExperts || []).slice(0, 8).map(function(e){
-        return { id: e.id, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
-      }),
+      moments: realMoments.concat((onlineExperts || []).slice(0, 8).map(function(e){
+        // expertId + role carried through so the reply/like callbacks can
+        // build the right chat target (mock experts use 'expert_<id>' conv IDs)
+        return { id: e.id, expertId: e.id, expertRole: e.role, userName: e.name, userAvatar: e.img || null, color: e.color, hasNew: true };
+      })),
+      // + tile → open the hidden file input to pick a photo
+      onAdd: pickMomentFile,
+      // Like → drops a tiny "Liked your status" message into the chat with
+      // that expert. Reply → drops "Replied to status: <quote>" + the typed
+      // reply. For real users (expertId undefined) the chat write is a no-op
+      // — those interactions can be wired to real DMs later.
+      onLike: function(m, slide){
+        if(m && m.expertId != null) writeMomentChat(m, slide, '[mlike]'+(slide && slide.text ? slide.text : (slide && slide.caption ? slide.caption : '')));
+      },
+      onReply: function(m, slide, text){
+        if(m && m.expertId != null) writeMomentChat(m, slide, '[mreply]'+(slide && slide.text ? slide.text : (slide && slide.caption ? slide.caption : ''))+'|'+text);
+      },
+      onViewProfile: function(m){
+        // Mock expert → open expert profile via Search tab.
+        if(m && m.expertId != null){
+          var exp = EXPERTS.find(function(e){ return e.id === m.expertId; });
+          if(exp && onViewExpert) onViewExpert(exp);
+          return;
+        }
+        // Real user → open their user profile view.
+        if(m && m.userId && props.session && props.session.user && m.userId !== props.session.user.id){
+          goToUserProfile(m.userId, { name: m.userName, avatar: m.userAvatar });
+        }
+      },
     }),
 
     React.createElement('div', {className:'sh'},

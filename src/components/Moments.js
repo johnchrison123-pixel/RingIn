@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, {useState, useEffect, useRef} from 'react';
+import {createPortal} from 'react-dom';
 
 // ── Mock moment slides used when no real data is wired up ─────────────────
 // Each "expert" gets a deterministic set of 3–4 gradient cards with captions
@@ -41,24 +42,70 @@ function setForId(id){
 function MomentViewer(props){
   var user = props.user || {};
   var slides = props.slides || [];
+  var moment = props.moment || {};
   var onClose = props.onClose;
+  var onLike = props.onLike;
+  var onReply = props.onReply;
   var idxS = useState(0);
   var idx = idxS[0]; var setIdx = idxS[1];
   var timerRef = useRef(null);
   var SLIDE_MS = 4500;
 
-  // Auto-advance
+  // Reply state
+  var replyTextS = useState('');
+  var replyText = replyTextS[0]; var setReplyText = replyTextS[1];
+  var pausedS = useState(false);
+  var paused = pausedS[0]; var setPaused = pausedS[1];
+  var sentToastS = useState('');
+  var sentToast = sentToastS[0]; var setSentToast = sentToastS[1];
+
+  // Like state per slide. Persisted in localStorage keyed by
+  // momentId-slideId, so reopening shows the same heart fill state.
+  function likesKey(){ try{ return 'ringin_moment_likes'; }catch(_){ return 'ringin_moment_likes'; } }
+  function likedSet(){
+    try{ var raw = localStorage.getItem(likesKey()); return raw ? JSON.parse(raw) : {}; }catch(_){ return {}; }
+  }
+  function isLikedFor(slideId){
+    var k = (moment.id != null ? moment.id : 'na') + ':' + slideId;
+    var s = likedSet();
+    return !!s[k];
+  }
+  function setLikedFor(slideId, val){
+    var k = (moment.id != null ? moment.id : 'na') + ':' + slideId;
+    var s = likedSet();
+    if(val) s[k] = true; else delete s[k];
+    try{ localStorage.setItem(likesKey(), JSON.stringify(s)); }catch(_){}
+  }
+  var likedNowS = useState(false);
+  var likedNow = likedNowS[0]; var setLikedNow = likedNowS[1];
+  // Once the user interacts with a slide (like or reply), auto-advance
+  // stops and the viewer "stays still" — only an explicit tap moves on.
+  // Reset back to false when the user manually navigates to a different
+  // slide, so each new slide gets its own dwell timer until interacted with.
+  var interactedS = useState(false);
+  var interacted = interactedS[0]; var setInteracted = interactedS[1];
+  useEffect(function(){
+    var cur = slides[idx]; if(!cur) return;
+    setLikedNow(isLikedFor(cur.id));
+    setInteracted(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, slides.length]);
+
+  // Auto-advance — pauses while the user is composing a reply, and STOPS
+  // entirely once they've liked or replied to this slide.
   useEffect(function(){
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (paused || interacted) return;
     timerRef.current = setTimeout(function(){
       if (idx < slides.length - 1) setIdx(idx + 1);
       else if (onClose) onClose();
     }, SLIDE_MS);
     return function(){ if (timerRef.current) clearTimeout(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, slides.length]);
+  }, [idx, slides.length, paused, interacted]);
 
-  // Tap left third = back, tap right two-thirds = next
+  // Tap left third = back, tap right two-thirds = next. Taps on the
+  // composer / like row are stopPropagation'd so they don't navigate.
   function handleTap(e){
     try{
       var rect = e.currentTarget.getBoundingClientRect();
@@ -73,22 +120,92 @@ function MomentViewer(props){
     }catch(_){}
   }
 
+  function showToast(text){
+    setSentToast(text);
+    setTimeout(function(){ setSentToast(''); }, 1400);
+  }
+
+  function toggleLike(e){
+    if(e && e.stopPropagation) e.stopPropagation();
+    var cur = slides[idx]; if(!cur) return;
+    var nowLiked = !likedNow;
+    setLikedFor(cur.id, nowLiked);
+    setLikedNow(nowLiked);
+    // Liking pins the slide — viewer stays still and auto-advance halts.
+    setInteracted(true);
+    // Only drop a chat message on the transition from unliked → liked, so
+    // toggling on/off doesn't spam the recipient's chat.
+    if(nowLiked && typeof onLike === 'function'){
+      try{ onLike(moment, cur); }catch(_){}
+      showToast('Liked ❤️');
+    }
+  }
+
+  function sendReply(e){
+    if(e && e.stopPropagation) e.stopPropagation();
+    var t = (replyText || '').trim();
+    if(!t) return;
+    var cur = slides[idx]; if(!cur) return;
+    if(typeof onReply === 'function'){
+      try{ onReply(moment, cur, t); }catch(_){}
+    }
+    setReplyText('');
+    setPaused(false);
+    // Pin the slide after sending — don't auto-advance, don't auto-close.
+    // The user taps to move on when they're ready.
+    setInteracted(true);
+    showToast('Sent ✓');
+  }
+
   if (!slides.length) return null;
   var cur = slides[idx];
+  // Image moment vs gradient/text moment — real user-posted moments carry
+  // an imageUrl and (optional) caption; mock expert moments use cur.bg + cur.text.
+  var hasImage = !!cur.imageUrl;
+  var captionText = cur.caption != null ? cur.caption : (cur.text || '');
 
-  return React.createElement('div', {
+  // Portal to document.body — a `position:fixed` element inside .moments-strip
+  // gets trapped by the .app-container / .screen-content stacking context on
+  // some browsers (iOS Safari especially), which renders the viewer at the
+  // strip's bounds instead of the full viewport. Portalling sidesteps all of
+  // that by mounting the overlay at document.body.
+  var overlay = React.createElement('div', {
     onClick: handleTap,
+    // Block parent's swipe-back and scroll while the viewer is open.
+    onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+    onTouchMove: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
     style: {
-      position:'fixed', inset:0, zIndex:9999,
-      background: cur.bg,
+      position:'fixed',
+      // top/left + height in dvh — this makes the overlay's bottom edge end
+      // at the DYNAMIC viewport bottom (i.e. just above Safari's URL bar
+      // when it's visible). With plain `100vh` the overlay extends behind
+      // the URL bar and the composer at bottom:18px gets clipped.
+      top:0, left:0,
+      width:'100vw', height:'100dvh',
+      zIndex:9999,
+      background: hasImage ? '#000' : cur.bg,
       color:'#fff',
       display:'flex', flexDirection:'column',
       alignItems:'center', justifyContent:'center',
       padding:'24px',
       userSelect:'none', WebkitUserSelect:'none',
       cursor:'pointer',
+      overflow:'hidden',
     }
   },
+    // Image layer (real moments) — sits below the chrome (progress bars,
+    // header, composer). object-fit:contain so portraits/landscapes both
+    // render without cropping; black letterbox via the parent bg.
+    hasImage ? React.createElement('img', {
+      src: cur.imageUrl, alt:'',
+      onError: function(e){ try{ e.target.style.display='none'; }catch(_){} },
+      style:{
+        position:'absolute',
+        top:0, left:0, width:'100%', height:'100%',
+        objectFit:'contain',
+        zIndex:0,
+      }
+    }) : null,
     // Progress bars
     React.createElement('div', {
       style:{
@@ -106,12 +223,15 @@ function MomentViewer(props){
               height:'100%', background:'#fff',
               width: i < idx ? '100%' : (i === idx ? '0%' : '0%'),
               animation: i === idx ? 'momentBarFill ' + SLIDE_MS + 'ms linear forwards' : 'none',
+              // Freeze the bar mid-fill when the user is composing a reply
+              // or has just liked / replied — matches the timer behaviour.
+              animationPlayState: (i === idx && (paused || interacted)) ? 'paused' : 'running',
             }
           })
         );
       })
     ),
-    // Header
+    // Header — avatar + name are tappable to open the expert's profile
     React.createElement('div', {
       style:{
         position:'absolute',
@@ -121,29 +241,140 @@ function MomentViewer(props){
         zIndex:2,
       }
     },
-      user.avatar ? React.createElement('img', {
-        src: user.avatar, alt:'',
-        style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)'}
-      }) : React.createElement('div', {
-        style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}
-      }, (user.name||'?').charAt(0).toUpperCase()),
-      React.createElement('div', {style:{flex:1,fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)'}}, user.name || ''),
+      React.createElement('div', {
+        onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(props.onViewProfile) props.onViewProfile(props.moment); },
+        style:{display:'flex', alignItems:'center', gap:'10px', flex:1, cursor:'pointer'},
+      },
+        user.avatar ? React.createElement('img', {
+          src: user.avatar, alt:'',
+          style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)'}
+        }) : React.createElement('div', {
+          style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}
+        }, (user.name||'?').charAt(0).toUpperCase()),
+        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)'}}, user.name || '')
+      ),
       React.createElement('button', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(onClose) onClose(); },
         className:'ringin-tap',
         style:{background:'transparent',border:'none',color:'#fff',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'4px 6px',fontWeight:300}
       }, '×')
     ),
-    // Caption
-    React.createElement('div', {
+    // Caption — gradient slides: big centred text. Image slides: smaller
+    // text sitting above the composer with a subtle dark backdrop so it
+    // stays legible over any photo.
+    captionText ? (hasImage ? React.createElement('div', {
+      style:{
+        position:'absolute',
+        left:'14px', right:'14px',
+        bottom:'calc(74px + env(safe-area-inset-bottom, 0px))',
+        background:'rgba(0,0,0,0.42)',
+        backdropFilter:'blur(4px)',
+        WebkitBackdropFilter:'blur(4px)',
+        borderRadius:'14px',
+        padding:'10px 14px',
+        fontSize:'14px',
+        fontWeight:600,
+        lineHeight:1.35,
+        textAlign:'center',
+        zIndex:2,
+        textShadow:'0 1px 6px rgba(0,0,0,0.4)',
+      }
+    }, captionText) : React.createElement('div', {
       style:{
         fontSize:'26px', fontWeight:800, lineHeight:1.3,
         textAlign:'center', maxWidth:'82%',
         textShadow:'0 2px 16px rgba(0,0,0,0.35)',
         fontFamily:'Syne, DM Sans, sans-serif',
+        position:'relative', zIndex:1,
       }
-    }, cur.text)
+    }, captionText)) : null,
+    // ── Reply composer + Like row (bottom) ────────────────────────────────
+    // Sits above the home-indicator safe area. Tapping anywhere here MUST
+    // NOT trigger the tap-navigate handler on the parent, so every event
+    // is stopPropagation'd. Pauses the auto-advance while focused.
+    React.createElement('div', {
+      onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style:{
+        position:'absolute',
+        left:'14px', right:'14px',
+        // 10px above the safe-area inset puts the composer right above the
+        // home-indicator blank zone — like Instagram. env() handles both
+        // PWA (≈34px home-indicator inset) and Safari (URL bar already
+        // excluded by the 100dvh overlay above).
+        bottom:'calc(10px + env(safe-area-inset-bottom, 0px))',
+        display:'flex', alignItems:'center', gap:'8px',
+        zIndex:3,
+      }
+    },
+      React.createElement('input', {
+        type:'text',
+        value: replyText,
+        placeholder: 'Reply to '+ (user.name ? user.name.split(' ')[0] : 'this moment') + '…',
+        onFocus: function(){ setPaused(true); },
+        onBlur: function(){ setPaused(false); },
+        onChange: function(e){ setReplyText(e.target.value); },
+        onKeyDown: function(e){ if(e.key === 'Enter'){ sendReply(e); } },
+        style:{
+          flex:1,
+          background:'rgba(0,0,0,0.32)',
+          border:'1px solid rgba(255,255,255,0.35)',
+          borderRadius:'24px',        // +10% from 22px
+          padding:'11px 15px',        // +10% from 10px/14px
+          fontSize:'15.4px',          // +10% from 14px
+          color:'#fff',
+          outline:'none',
+          fontFamily:'DM Sans, sans-serif',
+          WebkitAppearance:'none',
+        }
+      }),
+      (replyText && replyText.trim()) ? React.createElement('button', {
+        onClick: sendReply,
+        className:'ringin-tap',
+        style:{
+          background:'#fff', border:'none',
+          color:'#222', fontWeight:700,
+          fontSize:'14.3px',          // +10% from 13px
+          padding:'10px 15px',        // +10% from 9px/14px
+          borderRadius:'24px',
+          cursor:'pointer',
+        }
+      }, 'Send') : React.createElement('button', {
+        onClick: toggleLike,
+        className:'ringin-tap',
+        title: likedNow ? 'Unlike' : 'Like',
+        style:{
+          background:'rgba(0,0,0,0.32)',
+          border:'1px solid rgba(255,255,255,0.35)',
+          color:'#fff',
+          width:'44px', height:'44px', // +10% from 40px
+          borderRadius:'50%',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:'22px', lineHeight:1, // +10% from 20px
+          cursor:'pointer',
+        }
+      }, likedNow ? '❤️' : '🤍')
+    ),
+    // Brief "Sent ✓" / "Liked ❤️" toast — auto-hides after ~1.4s
+    sentToast ? React.createElement('div', {
+      style:{
+        position:'absolute',
+        bottom:'calc(74px + env(safe-area-inset-bottom, 0px))',
+        left:'50%', transform:'translateX(-50%)',
+        background:'rgba(0,0,0,0.55)',
+        color:'#fff',
+        padding:'7px 14px',
+        borderRadius:'20px',
+        fontSize:'12px', fontWeight:600,
+        zIndex:4,
+        pointerEvents:'none',
+      }
+    }, sentToast) : null
   );
+
+  // SSR guard — document is undefined during server render; we only need
+  // the portal on the client anyway.
+  if (typeof document === 'undefined' || !document.body) return overlay;
+  return createPortal(overlay, document.body);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -233,6 +464,7 @@ function HeartTile(props){
   };
 
   return React.createElement('button', {
+    type: 'button',
     onClick: onClick,
     title: isAdd ? 'Add a Moment' : (props.label || 'View Moment'),
     style: buttonStyle,
@@ -274,10 +506,13 @@ export default function Moments(props){
   var viewer = viewerS[0]; var setViewer = viewerS[1];
 
   function openViewerFor(m){
-    var slides = setForId(m.id);
+    // Real moments come with their own slides (image + caption); mock
+    // expert moments fall back to deterministic gradient sample sets.
+    var slides = (m.slides && m.slides.length > 0) ? m.slides : setForId(m.id);
     setViewer({
       user: { name: m.userName || '', avatar: m.userAvatar || null },
       slides: slides,
+      moment: m,
     });
   }
   function closeViewer(){ setViewer(null); }
@@ -354,7 +589,11 @@ export default function Moments(props){
     viewer ? React.createElement(MomentViewer, {
       user: viewer.user,
       slides: viewer.slides,
+      moment: viewer.moment,
       onClose: closeViewer,
+      onLike: props.onLike,
+      onReply: props.onReply,
+      onViewProfile: props.onViewProfile,
     }) : null
   );
 }
