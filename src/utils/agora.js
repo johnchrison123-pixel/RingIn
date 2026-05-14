@@ -44,33 +44,40 @@ if (typeof window !== 'undefined') {
 // the user is likely about to call.
 export function prefetchAgora() { try { getAgoraRTC(); } catch (e) {} }
 
-// ── Audio output mode (earpiece vs loudspeaker) ────────────────────────────
-// Default phone-call behavior is to route audio through the earpiece (you hold
-// the phone to your ear) and only switch to the loudspeaker when explicitly
-// toggled. WebRTC in browsers doesn't expose audio routing directly the way
-// native AVAudioSession / AudioManager do, but iOS Safari 16.4+ added
-// `navigator.audioSession.type` which IS controllable from JS and DOES route
-// the call audio correctly when set to:
-//   'play-and-record'  → earpiece  (private, like a normal cellular call)
-//   'playback'         → loudspeaker (hands-free)
+// ── Audio output mode (call-time audio session pinning) ───────────────────
+// IMPORTANT iOS PWA limitation: we cannot truly switch between earpiece and
+// loudspeaker in a browser the way native apps do. iOS Safari only exposes
+// `navigator.audioSession.type` with a fixed enum:
 //
-// On Android Chromium and older iOS there's no equivalent web API, so we fall
-// back to Agora's playback volume — lower for "private" mode (user holds phone
-// close), higher for speaker mode. Best we can do without a native shell.
+//   'play-and-record'   bidirectional audio, EARPIECE output (mic works ✓)
+//   'playback'          output-only, LOUDSPEAKER output (mic DEAD ✗)
 //
-// `mode` is either 'earpiece' or 'speaker'. Returns true if a real OS-level
-// audio session switch happened (iOS 16.4+ PWA), false if we only adjusted
-// volume (everything else). Callers shouldn't depend on the return value —
-// it's just for telemetry/debug.
+// Switching to 'playback' for "loudspeaker mode" silently kills the user's
+// mic and the call goes one-way. Native apps use AVAudioSession.playAndRecord
+// with the `defaultToSpeaker` OPTION to route to speaker while keeping
+// recording — web doesn't expose those options.
+//
+// So this function now ALWAYS pins the session to 'play-and-record' — the
+// mode argument is accepted for API compatibility but ignored at the
+// session-category level. The "loudspeaker" toggle in CallScreen achieves
+// its effect by boosting Agora's playback volume (100 → 250), not by
+// changing routing. On iOS PWA "speaker mode" = louder earpiece. On Android
+// PWA there's no audioSession API at all and audio plays through whatever
+// Android routes to (usually the loud media speaker).
+//
+// Returns true if we touched audioSession.type, false otherwise (Android,
+// older browsers).
 export function setAudioOutputMode(mode){
   try{
     var ns = navigator;
     if (ns && ns.audioSession && typeof ns.audioSession === 'object'){
-      // iOS Safari 16.4+ — actual routing switch
       try{
-        ns.audioSession.type = (mode === 'speaker') ? 'playback' : 'play-and-record';
+        // Always 'play-and-record' so the mic stays alive. mode is intentionally ignored.
+        if (ns.audioSession.type !== 'play-and-record'){
+          ns.audioSession.type = 'play-and-record';
+        }
         return true;
-      }catch(e){ /* fall through to volume fallback */ }
+      }catch(e){}
     }
   }catch(e){}
   return false;
