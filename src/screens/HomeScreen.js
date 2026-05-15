@@ -149,6 +149,9 @@ export function UserProfileView(props){
   var reportTargetUS=useState(null); var reportTargetU=reportTargetUS[0]; var setReportTargetU=reportTargetUS[1];
   // Per-user "hide like counts" preference (Instagram-style toggle).
   var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
+  // Hashtag filter — tap any tag chip in feed → filters to only posts with
+  // that tag. Click "Clear" to restore the full feed.
+  var selectedTagS=useState(null); var selectedTag=selectedTagS[0]; var setSelectedTag=selectedTagS[1];
 
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
@@ -1806,7 +1809,38 @@ export default function HomeScreen(props){
           )
         ),
         notifs.length===0 ? React.createElement('div',{style:{textAlign:'center',padding:'24px',color:'var(--t2)',fontSize:'13px'}},'No notifications yet') :
-        notifs.map(function(n){
+        // Notification batching: collapse adjacent same-type same-target
+        // notifications into a single "Alice and N others ___" line so the
+        // user isn't drowning in identical-shape notifications. Reduces
+        // notification fatigue per Section 6 of the research doc.
+        // Grouping rule: same type AND same post_id, within ~30 min window.
+        (function(){
+          var BATCH_WINDOW_MS = 30 * 60 * 1000;
+          var batched = [];
+          for (var i = 0; i < notifs.length; i++) {
+            var n = notifs[i];
+            var last = batched[batched.length - 1];
+            if (last && last.type === n.type && last.post_id != null && last.post_id === n.post_id) {
+              var dt = Math.abs(new Date(last.created_at).getTime() - new Date(n.created_at).getTime());
+              if (dt < BATCH_WINDOW_MS) {
+                last._extras = (last._extras || []).concat([n]);
+                if (!last.read || !n.read) last.read = false;
+                continue;
+              }
+            }
+            batched.push(Object.assign({}, n, { _extras: [] }));
+          }
+          // Rewrite messages for batched groups so the user sees a clean
+          // "Alice and N others liked your post" instead of N rows.
+          batched.forEach(function(g){
+            var extras = g._extras || [];
+            if (extras.length === 0) return;
+            var firstName = (g.from_user_name || 'Someone');
+            var verb = (g.message || '').replace(/^[^ ]+ /, ''); // drop the original sender's name from "Alice liked your post"
+            g.message = firstName + ' and ' + extras.length + ' other' + (extras.length === 1 ? '' : 's') + ' ' + (verb || 'reacted to your post');
+          });
+          return batched;
+        })().map(function(n){
           return React.createElement('div', {key:n.id, style:{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 18px',borderTop:'1px solid var(--border)',background:!n.read?'rgba(123,110,255,0.06)':'transparent'}},
             React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}},
               n.from_user_avatar ? React.createElement('img',{src:n.from_user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (n.from_user_name||n.message||'?').substring(0,2).toUpperCase()
@@ -2155,8 +2189,62 @@ export default function HomeScreen(props){
         );
       })
     ) : null,
+    // Hashtag filter banner — appears when user tapped a tag chip.
+    selectedTag ? React.createElement('div', {
+      style:{padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--acg, rgba(123,110,255,0.08))',borderBottom:'1px solid var(--border)'}
+    },
+      React.createElement('div', {style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}}, 'Showing #' + selectedTag),
+      React.createElement('button', {
+        onClick:function(){ setSelectedTag(null); },
+        style:{background:'transparent',border:'1px solid var(--border)',borderRadius:'14px',padding:'4px 10px',fontSize:'11px',color:'var(--t2)',cursor:'pointer',fontFamily:'inherit'}
+      }, '× Clear filter')
+    ) : null,
     React.createElement('div', {style:{padding:'0'}},
-      posts.map(function(p){
+      // Optional hashtag filter applied client-side. When selectedTag is null,
+      // the full feed renders unchanged.
+      (function(){
+        var src = selectedTag
+          ? posts.filter(function(p){ return Array.isArray(p.tags) && p.tags.indexOf(selectedTag) >= 0; })
+          : posts.slice();
+        // Diversity cap: stop the same author from dominating the feed via
+        // 4+ consecutive posts. Pulls a same-author run > 3 down past the
+        // next available different-author post. Preserves overall ordering;
+        // only swaps adjacent runs. (Not a full re-rank — chronological
+        // remains the dominant signal, this just breaks up clumps.)
+        // Skipped while a hashtag filter is active (the user's intent is
+        // explicit there).
+        if (!selectedTag) {
+          var run = 0; var lastAuthor = null;
+          for (var i = 0; i < src.length; i++) {
+            var aid = src[i].userId || src[i].user_id || src[i].expertId;
+            if (aid === lastAuthor) {
+              run += 1;
+              if (run >= 3) {
+                // Look ahead for the next post by a different author and
+                // swap it up. Cap the search window so we don't waste cycles.
+                var swapWith = -1;
+                for (var j = i + 1; j < Math.min(i + 8, src.length); j++) {
+                  var aj = src[j].userId || src[j].user_id || src[j].expertId;
+                  if (aj !== aid) { swapWith = j; break; }
+                }
+                if (swapWith > 0) {
+                  var tmp = src[i + 1];
+                  src[i + 1] = src[swapWith];
+                  src[swapWith] = tmp;
+                  // Reset run count after the swap-in.
+                  run = 0;
+                  lastAuthor = src[i + 1].userId || src[i + 1].user_id || src[i + 1].expertId;
+                  continue;
+                }
+              }
+            } else {
+              run = 1;
+              lastAuthor = aid;
+            }
+          }
+        }
+        return src;
+      })().map(function(p){
         var commentsArr=commentsCache[p.id]||[];
         return React.createElement('div', {key:p.id, className:'fpost'},
           React.createElement('div', {className:'ph', style:{position:'relative'}},
@@ -2217,7 +2305,7 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'pb'},
             React.createElement('div', {className:'ptxt'}, p.text),
             React.createElement('div', null,
-              p.tags.map(function(t){return React.createElement('span', {key:t, className:'ptag'}, '#'+t);})
+              p.tags.map(function(t){return React.createElement('span', {key:t, className:'ptag', onClick:function(e){e.stopPropagation();setSelectedTag(t);try{window.scrollTo({top:0,behavior:'smooth'});}catch(_){}}, style:{cursor:'pointer'}}, '#'+t);})
             )
           ),
           p.rate&&p.rate>0&&p.expertId ? React.createElement('div', {className:'cstrip'},

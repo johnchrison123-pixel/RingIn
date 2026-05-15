@@ -138,6 +138,22 @@ Until D is done, iOS PWA installs CAN'T receive lock-screen push (Android works 
 - All hooks (useState, useEffect, useRef, custom hooks) must be called BEFORE any conditional returns
 - useEffect cleanups are required for all Supabase realtime channel subscriptions
 
+## Database Migrations — Expand-Contract Pattern (CRITICAL)
+Every schema change MUST be either backward-compatible OR forward-compatible — **never both at once**. Doing both in a single deploy is the #1 cause of "deploy worked but half my users see broken UI" outages.
+
+**The rule:** never delete a column AND change client code to stop using it in the same release. Split into TWO releases.
+
+**Example — adding a new `audience` column to `posts`:**
+1. **Release A — Expand:** SQL migration adds `audience text default 'public'`. Client code (current AND new) continues to work because the column has a sensible default. Deploy.
+2. **Release B — Use:** Client code reads/writes the new column. Old client code is gone from production. Deploy.
+3. **Release C — Contract** (only when truly safe): drop the old column / old default if unused.
+
+**For RingIn specifically:**
+- All Supabase migrations live in `supabase/migrations/NNNN_<name>.sql` (we follow Supabase CLI naming).
+- The React client should always assume the column **may not exist yet** when shipping a feature backed by a migration. Use try/catch around the `.from(...).select(...)` and gracefully fall back (see `src/utils/momentUsers.js` and `src/components/ReportModal.js` for the pattern).
+- **Never** rename a column in-place — `add new column → backfill → switch reads → drop old`.
+- Forward-compatibility check before each deploy: "if this code shipped to production but the migration didn't run, would it crash?" If yes, fix it before merging.
+
 ## Project Structure
 ```
 src/

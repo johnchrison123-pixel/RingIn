@@ -34,17 +34,24 @@ function installAndroid() {
     return;
   }
 
-  // 1. Copy RingInAudioPlugin.java into the package directory the Android app uses.
+  // 1. Copy native plugin Java files into the package directory the Android app uses.
   //    Capacitor's default Android scaffold is Java-only — no Kotlin plugin
-  //    is applied — so the audio plugin must be Java to be picked up by the
+  //    is applied — so plugins must be Java to be picked up by the
   //    compiler. appId is `app.ringin.mobile` per capacitor.config.json, so
-  //    the file lives in android/app/src/main/java/app/ringin/mobile/.
-  const pluginSrc = path.join(ROOT, 'capacitor-plugin', 'android', 'RingInAudioPlugin.java');
-  const pluginDst = path.join(
-    androidRoot, 'app', 'src', 'main', 'java', 'app', 'ringin', 'mobile', 'RingInAudioPlugin.java'
-  );
-  write(pluginDst, read(pluginSrc));
-  log('✔ Wrote', pluginDst);
+  //    files live in android/app/src/main/java/app/ringin/mobile/.
+  const PLUGIN_FILES = [
+    'RingInAudioPlugin.java',         // earpiece/loudspeaker switching (audio fix)
+    'RingInNotifChannelsPlugin.java', // Android notification channels (T1.17)
+  ];
+  PLUGIN_FILES.forEach(function(name){
+    const src = path.join(ROOT, 'capacitor-plugin', 'android', name);
+    if (!exists(src)) { warn('plugin source missing:', src); return; }
+    const dst = path.join(
+      androidRoot, 'app', 'src', 'main', 'java', 'app', 'ringin', 'mobile', name
+    );
+    write(dst, read(src));
+    log('✔ Wrote', dst);
+  });
 
   // 2. Patch MainActivity.java so Capacitor knows about the plugin.
   //    MainActivity must call registerPlugin(RingInAudioPlugin::class.java)
@@ -59,25 +66,38 @@ function installAndroid() {
     return;
   }
   let mainSrc = read(mainActivityPath);
-  if (mainSrc.includes('RingInAudioPlugin.class')) {
-    log('• MainActivity.java already registers RingInAudioPlugin — skipping patch.');
+  // Each plugin we want registered. Idempotent — only injects what's missing.
+  const TO_REGISTER = ['RingInAudioPlugin', 'RingInNotifChannelsPlugin'];
+  const missing = TO_REGISTER.filter(function(p){ return !mainSrc.includes(p + '.class'); });
+  if (missing.length === 0) {
+    log('• MainActivity.java already registers all plugins — skipping patch.');
+  } else if (mainSrc.includes('public void onCreate(')) {
+    // Already has an onCreate — append registerPlugin lines just after the
+    // opening brace.
+    missing.forEach(function(p){
+      mainSrc = mainSrc.replace(
+        /(public void onCreate\([^)]*\)\s*\{)/,
+        (m) => m + '\n        registerPlugin(' + p + '.class);'
+      );
+    });
+    write(mainActivityPath, mainSrc);
+    log('✔ Patched', mainActivityPath, '(registerPlugin lines added: ' + missing.join(', ') + ')');
   } else {
-    // Inject the import + registerPlugin call.
-    // We DON'T need to change the class — just override onCreate inside it.
+    // Inject a fresh onCreate override registering all required plugins.
+    const regLines = TO_REGISTER.map(function(p){ return '        registerPlugin(' + p + '.class);'; }).join('\n');
     const inject = `
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
-        registerPlugin(RingInAudioPlugin.class);
+${regLines}
         super.onCreate(savedInstanceState);
     }
 `;
-    // Find the class body — insert right after the opening { of MainActivity.
     mainSrc = mainSrc.replace(
       /public class MainActivity extends BridgeActivity \{/,
       (m) => m + inject
     );
     write(mainActivityPath, mainSrc);
-    log('✔ Patched', mainActivityPath, '(registerPlugin call added)');
+    log('✔ Patched', mainActivityPath, '(onCreate added with: ' + TO_REGISTER.join(', ') + ')');
   }
 
   // 3. Ensure the app has the RECORD_AUDIO permission (Agora needs it; users
