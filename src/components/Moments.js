@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, {useState, useEffect, useRef} from 'react';
+import {sb} from '../utils/supabase';
 import {createPortal} from 'react-dom';
 
 // ── Mock moment slides used when no real data is wired up ─────────────────
@@ -46,10 +47,20 @@ function MomentViewer(props){
   var onClose = props.onClose;
   var onLike = props.onLike;
   var onReply = props.onReply;
+  var myUserId = props.myUserId || null;       // T2.5
+  var isOwn = !!props.isOwn;                    // T2.5
   var idxS = useState(0);
   var idx = idxS[0]; var setIdx = idxS[1];
   var timerRef = useRef(null);
   var SLIDE_MS = 4500;
+  // T2.5 — moment_views integration. As viewer changes slides, upsert
+  // a view row. If isOwn, fetch + display the viewer count for this slide.
+  var viewCountS = useState(0);
+  var viewCount = viewCountS[0]; var setViewCount = viewCountS[1];
+  var viewerListS = useState([]);
+  var viewerList = viewerListS[0]; var setViewerList = viewerListS[1];
+  var showViewersS = useState(false);
+  var showViewers = showViewersS[0]; var setShowViewers = showViewersS[1];
 
   // Reply state
   var replyTextS = useState('');
@@ -84,6 +95,37 @@ function MomentViewer(props){
   // slide, so each new slide gets its own dwell timer until interacted with.
   var interactedS = useState(false);
   var interacted = interactedS[0]; var setInteracted = interactedS[1];
+
+  // T2.5 — record a view + (if own moment) fetch view count + viewer list
+  // each time the visible slide changes. UPSERT on (moment_id, viewer_id)
+  // so viewing twice doesn't insert twice. Graceful fallback if migration
+  // 0007_moment_views.sql isn't applied.
+  useEffect(function(){
+    var cur = slides[idx]; if (!cur || !cur.id) return;
+    // Only track real moment slides (the Supabase ones), not the deterministic
+    // demo slides (their ids look like 's0-1', 's1-2' etc. — short).
+    var looksLikeRealId = typeof cur.id === 'string' && cur.id.length > 12;
+    if (!looksLikeRealId || !myUserId) { setViewCount(0); setViewerList([]); return; }
+    // Don't record self-views.
+    if (!isOwn) {
+      try {
+        sb.from('moment_views').upsert(
+          [{ moment_id: cur.id, viewer_id: myUserId, viewed_at: new Date().toISOString() }],
+          { onConflict: 'moment_id,viewer_id' }
+        ).then(function(){});
+      } catch(_) {}
+    } else {
+      // Owner — fetch viewers for this slide.
+      try {
+        sb.from('moment_views').select('viewer_id, viewed_at').eq('moment_id', cur.id).order('viewed_at', { ascending: false }).limit(50).then(function(r){
+          if (r.error || !r.data) { setViewCount(0); setViewerList([]); return; }
+          setViewCount(r.data.length);
+          setViewerList(r.data);
+        });
+      } catch(_) { setViewCount(0); setViewerList([]); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, slides.length]);
   useEffect(function(){
     var cur = slides[idx]; if(!cur) return;
     setLikedNow(isLikedFor(cur.id));
@@ -253,6 +295,12 @@ function MomentViewer(props){
         }, (user.name||'?').charAt(0).toUpperCase()),
         React.createElement('div', {style:{fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)'}}, user.name || '')
       ),
+      // T2.5 — "Seen by N" badge for own moments. Tappable, opens viewer list.
+      // Sibling of the inner clickable header so tapping doesn't open profile.
+      (isOwn && viewCount > 0) ? React.createElement('button',{
+        onClick:function(e){ if(e&&e.stopPropagation) e.stopPropagation(); setShowViewers(true); },
+        style:{display:'inline-flex',alignItems:'center',gap:'4px',background:'rgba(0,0,0,0.4)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:'12px',padding:'4px 10px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',marginRight:'8px',fontFamily:'inherit'}
+      }, '👁 ', viewCount) : null,
       React.createElement('button', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(onClose) onClose(); },
         className:'ringin-tap',
@@ -368,7 +416,33 @@ function MomentViewer(props){
         zIndex:4,
         pointerEvents:'none',
       }
-    }, sentToast) : null
+    }, sentToast) : null,
+    // T2.5 — viewer list popup. Owner-only, opened by tapping "👁 N" badge.
+    showViewers ? React.createElement('div',{
+      onClick:function(){ setShowViewers(false); },
+      style:{position:'absolute',inset:0,zIndex:10,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(8px)',display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{background:'#0c0c12',borderTopLeftRadius:'18px',borderTopRightRadius:'18px',width:'100%',maxWidth:'460px',maxHeight:'70%',display:'flex',flexDirection:'column',color:'#fff',padding:'14px 16px 24px',boxShadow:'0 -8px 30px rgba(0,0,0,0.5)'}
+      },
+        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}},
+          React.createElement('div',{style:{fontSize:'14px',fontWeight:700}}, 'Seen by ' + viewerList.length),
+          React.createElement('button',{onClick:function(){ setShowViewers(false); },style:{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:'22px',cursor:'pointer',fontFamily:'inherit'}},'×')
+        ),
+        viewerList.length === 0
+          ? React.createElement('div',{style:{textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px',padding:'20px'}}, 'No views yet.')
+          : React.createElement('div',{style:{overflowY:'auto',flex:1}},
+              viewerList.map(function(v){
+                return React.createElement('div',{key:v.viewer_id,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid rgba(255,255,255,0.08)'}},
+                  React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700}}, (v.viewer_id||'?').substring(0,2).toUpperCase()),
+                  React.createElement('div',{style:{flex:1,fontSize:'12px',color:'rgba(255,255,255,0.85)'}}, (v.viewer_id||'').substring(0, 8) + '…'),
+                  React.createElement('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.45)'}}, v.viewed_at ? new Date(v.viewed_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '')
+                );
+              })
+            )
+      )
+    ) : null
   );
 
   // SSR guard — document is undefined during server render; we only need
@@ -551,6 +625,9 @@ export default function Moments(props){
       user: { name: m.userName || '', avatar: m.userAvatar || null },
       slides: slides,
       moment: m,
+      // T2.5 — flag own moments so the viewer shows the "Seen by N" badge
+      // and skips recording self-views.
+      isOwn: !!m.isSelf,
     });
   }
   function closeViewer(){ setViewer(null); }
@@ -650,6 +727,9 @@ export default function Moments(props){
       onLike: props.onLike,
       onReply: props.onReply,
       onViewProfile: props.onViewProfile,
+      // T2.5 — view count tracking
+      myUserId: props.myUserId || null,
+      isOwn: viewer.isOwn === true,
     }) : null
   );
 }

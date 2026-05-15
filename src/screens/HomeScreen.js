@@ -2012,6 +2012,7 @@ export default function HomeScreen(props){
       ownAvatar: (props.session && props.session.user && (function(){ try{ return localStorage.getItem('avatar_'+props.session.user.id) || null; }catch(_){ return null; } })()) || null,
       ownName: 'Moments',
       showAdd: true,
+      myUserId: currentUserId,  // T2.5 — passed through to MomentViewer for view tracking
       // Self moment (if any) goes into the "+" tile — tap it to view your
       // own slides, tap the "+" badge to add another. The strip below
       // shows OTHER users' moments + the mock experts.
