@@ -11,6 +11,7 @@ import Moments from '../components/Moments';
 import MomentComposer from '../components/MomentComposer';
 import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds, markMomentUser, refreshMomentUserIds} from '../utils/momentUsers';
+import ReportModal, {flushQueuedReports} from '../components/ReportModal';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -140,6 +141,8 @@ export function UserProfileView(props){
   // Shared moments registry — drives the Instagram-style avatar ring on
   // the profile cover avatar and on each post header.
   var momentUserIds=useMomentUserIds();
+  // Report modal state — replaces the previously fake alert("Thank you...").
+  var reportTargetUS=useState(null); var reportTargetU=reportTargetUS[0]; var setReportTargetU=reportTargetUS[1];
 
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
@@ -315,6 +318,8 @@ export function UserProfileView(props){
   var initials = displayName.substring(0,2).toUpperCase();
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
+    // Report modal — replaces previously fake alert("Thank you for reporting...").
+    React.createElement(ReportModal,{target:reportTargetU,onClose:function(){setReportTargetU(null);},session:session}),
     // Likes popup modal
     showLikersU ? React.createElement('div',{
       onClick:function(){setShowLikersU(null);},
@@ -395,7 +400,7 @@ export function UserProfileView(props){
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}toastSuccess('🔗 Link copied!');setPostMenuU(null);}},
             {icon:'➕',label:(props.following&&props.following[p.userId]?'✓ Unfollow ':'Follow ')+displayName,fn:function(){props.toggleFollow(p.userId,displayName,avatarUrl,'RingIn Member');setPostMenuU(null);}},
             {icon:'😶',label:'Not interested',fn:function(){setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenuU(null);}},
-            {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenuU(null);}}
+            {icon:'🚩',label:'Report',red:true,fn:function(){setReportTargetU({type:'post',id:p.id,label:'this post'});setPostMenuU(null);}}
           ];
           return items.map(function(item,i){
             return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',padding:'14px 20px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.07)':'none',cursor:'pointer'}},
@@ -648,6 +653,20 @@ export default function HomeScreen(props){
   var pendingMomentFile = pendingMomentFileS[0]; var setPendingMomentFile = pendingMomentFileS[1];
   var realMomentsS = useState([]);
   var realMoments = realMomentsS[0]; var setRealMoments = realMomentsS[1];
+
+  // Report modal state — used by feed posts, photo viewer, and any
+  // user/comment/message reports. setReportTarget({type,id,label}).
+  var reportTargetS = useState(null);
+  var reportTarget = reportTargetS[0]; var setReportTarget = reportTargetS[1];
+
+  // Drain any queued reports from previous sessions where the `reports`
+  // table didn't exist yet — best-effort, runs once on mount.
+  useEffect(function(){
+    flushQueuedReports().then(function(n){
+      if (n > 0) try{ console.log('[ringin] flushed ' + n + ' queued reports to Supabase'); }catch(_){}
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Shared Set<user_id> of users who have an active moment in the last 24h.
   // Drives the Instagram-style ring around their avatar EVERYWHERE — feed,
@@ -1333,7 +1352,7 @@ export default function HomeScreen(props){
       // ── FROSTED GLASS 3-DOT MENU ──
       pdMenuOpen?React.createElement('div',{onClick:function(){setPdMenuOpen(false);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}},
         React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'rgba(28,24,40,0.82)',backdropFilter:'blur(48px)',WebkitBackdropFilter:'blur(48px)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'20px',width:'270px',overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,0.6)'}},
-          [{label:'Save Photo',icon:'⬇️',action:savePhoto},{label:'Share',icon:'↗️',action:sharePhoto},{label:'Report Photo',icon:'🚩',action:function(){setPdMenuOpen(false);alert('Thank you. We will review this.');}},{label:'Cancel',icon:'',action:function(){setPdMenuOpen(false);},danger:true}]
+          [{label:'Save Photo',icon:'⬇️',action:savePhoto},{label:'Share',icon:'↗️',action:sharePhoto},{label:'Report Photo',icon:'🚩',action:function(){setPdMenuOpen(false);var pd=postDetail; if(pd) setReportTarget({type:'photo',id:(pd.img||pd.id)+'',label:'this photo'});}},{label:'Cancel',icon:'',action:function(){setPdMenuOpen(false);},danger:true}]
           .map(function(item,i,arr){
             return React.createElement('button',{key:item.label,onClick:item.action,style:{display:'flex',alignItems:'center',gap:'12px',width:'100%',padding:'16px 20px',background:'none',border:'none',borderBottom:i<arr.length-1?'1px solid rgba(255,255,255,0.08)':'none',color:item.danger?'rgba(255,80,80,0.9)':'var(--text)',fontSize:'15px',fontWeight:item.danger?400:500,cursor:'pointer',textAlign:'left',fontFamily:'DM Sans,sans-serif'}},
               item.icon?React.createElement('span',{style:{fontSize:'17px'}},item.icon):null, item.label
@@ -1624,6 +1643,8 @@ export default function HomeScreen(props){
   var otherRealMoments = realMoments.filter(function(m){ return !m.isSelf; });
 
   return React.createElement('div', {className:'hc'},
+    // Report modal — replaces the previously fake alert("Thank you for reporting...").
+    React.createElement(ReportModal,{target:reportTarget,onClose:function(){setReportTarget(null);},session:props.session}),
     // Likes popup
     showLikers ? React.createElement('div',{
       onClick:function(){setShowLikers(null);},
@@ -1717,7 +1738,7 @@ export default function HomeScreen(props){
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}toastSuccess('🔗 Link copied!');setPostMenu(null);}},
             {icon:'➕',label:(following[p.userId]?'✓ Unfollow ':'Follow ')+p.name,fn:function(){toggleFollow(p.userId,p.name,p.img,'RingIn Member');setPostMenu(null);}},
             {icon:'😶',label:'Not interested',fn:function(){setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenu(null);}},
-            {icon:'🚩',label:'Report',red:true,fn:function(){alert('Thank you for reporting. We\'ll review this post.');setPostMenu(null);}}
+            {icon:'🚩',label:'Report',red:true,fn:function(){setReportTarget({type:'post',id:p.id,label:'this post'});setPostMenu(null);}}
           ];
           return items.map(function(item,i){
             return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',padding:'14px 20px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.07)':'none',cursor:'pointer'}},
