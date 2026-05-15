@@ -2025,8 +2025,15 @@ export default function HomeScreen(props){
         )
       );
     }),
-    React.createElement('div', {className:'sh'},
-      React.createElement('div', {className:'st'}, 'Feed')
+    // Feed header — labeled "Latest" so users know it's chronological,
+    // not algorithm-curated. Lean into the 2026 sentiment shift away
+    // from algorithmic feeds.
+    React.createElement('div', {className:'sh', style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      React.createElement('div', {className:'st'}, 'Feed'),
+      React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'10px',color:'var(--t2)',fontWeight:600,letterSpacing:'0.3px'}},
+        React.createElement('span', {style:{display:'inline-block',width:'5px',height:'5px',borderRadius:'50%',background:'#27C96A'}}),
+        'LATEST FIRST'
+      )
     ),
     React.createElement('div', {className:'composer', onClick:function(){if(!showComp)setShowComp(true);}},
       React.createElement('div', {className:'comp-top'},

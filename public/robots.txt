@@ -1,3 +1,68 @@
-# https://www.robotstxt.org/robotstxt.html
+# RingIn — public-facing robots policy
+# Allow well-behaved crawlers to index public pages (profiles + posts).
+# Deny API routes, internal research artefacts, and the service worker.
+
 User-agent: *
-Disallow:
+Allow: /
+Disallow: /api/
+Disallow: /static/
+Disallow: /sw.js
+Disallow: /firebase-messaging-sw.js
+Disallow: /research-2026.html
+Disallow: /research-2026.pdf
+Disallow: /research-2026.md
+
+# Whitelist common social-card crawlers explicitly so any future rate
+# limit or CDN rule doesn't accidentally lock them out of fetching
+# OpenGraph metadata for link previews.
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: Slackbot
+Allow: /
+
+User-agent: WhatsApp
+Allow: /
+
+User-agent: TelegramBot
+Allow: /
+
+User-agent: Discordbot
+Allow: /
+
+# Block AI training crawlers — RingIn users have not consented to
+# having their posts/profiles used to train commercial LLMs.
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Meta-ExternalAgent
+Disallow: /
+
+Sitemap: https://ring-in.vercel.app/sitemap.xml

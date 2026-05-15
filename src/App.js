@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import ErrorBoundary from './components/ErrorBoundary';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -611,20 +612,29 @@ export default function App() {
     }
   },
     // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar
-    React.createElement('div', {className:'screen-content'}, renderScreen()),
+    React.createElement('div', {className:'screen-content'},
+      React.createElement(ErrorBoundary, { scope: activeTab + ' tab' }, renderScreen())
+    ),
 
     // ── Active call overlay (above bottom nav) ──
+    // Wrapped in ErrorBoundary so a crash in the call UI ends the call
+    // gracefully instead of blanking the entire app while audio is live.
     activeCall ? React.createElement('div',{style:{position:'fixed',inset:0,zIndex:900,background:'var(--bg)'}},
-      React.createElement(CallScreen, {
-        expert: activeCall.expert,
-        session: session,
-        inviteId: activeCall.inviteId,
-        channel: activeCall.channel,
-        isIncoming: !!activeCall.isIncoming,
-        coins: 1240, // TODO: pull live coin balance via wallet hook
-        onCoinsChange: function(){},
-        onEnd: function(){ setActiveCall(null); },
-      })
+      React.createElement(ErrorBoundary, {
+        scope: 'call',
+        onError: function(){ try { setActiveCall(null); } catch(_){} },
+      },
+        React.createElement(CallScreen, {
+          expert: activeCall.expert,
+          session: session,
+          inviteId: activeCall.inviteId,
+          channel: activeCall.channel,
+          isIncoming: !!activeCall.isIncoming,
+          coins: 1240, // TODO: pull live coin balance via wallet hook
+          onCoinsChange: function(){},
+          onEnd: function(){ setActiveCall(null); },
+        })
+      )
     ) : null,
 
     // ── Incoming call ring overlay (above the active-call overlay shouldn't happen because we suppress incoming when activeCall) ──
