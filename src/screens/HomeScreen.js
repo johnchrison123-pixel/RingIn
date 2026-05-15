@@ -1053,6 +1053,10 @@ export default function HomeScreen(props){
   // Hashtag filter (T1.14) — tap any tag chip in feed → filters to only posts
   // with that tag. Click "× Clear filter" banner to restore the full feed.
   var selectedTagS=useState(null); var selectedTag=selectedTagS[0]; var setSelectedTag=selectedTagS[1];
+  // Per-user "hide like counts" preference (T1.12). When true, post like
+  // labels render "Liked" / "0 Likes" instead of the raw count. Same hook is
+  // also called inside UserProfileView so both scopes can read the toggle.
+  var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
   var loadingS=useState(_cachedPosts.length===0); var loading=loadingS[0]; var setLoading=loadingS[1];
   var fileInputRef=useRef(null);
