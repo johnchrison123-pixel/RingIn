@@ -1336,7 +1336,26 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           {icon:'🚫',label:'Blocked Users',sub:'Manage people you\'ve blocked',fn:function(){setShowBlocked(true);}},
           {icon:'🔇',label:'Muted Words',sub:'Hide posts containing specific words',fn:function(){setShowMuted(true);}},
           {icon:'📥',label:'Download My Data',sub:'Get a copy of your RingIn data',fn:function(){var uid=userId;if(!uid){alert('Please log in first');return;}Promise.all([sbProfile.from('posts').select('*').eq('user_id',uid),sbProfile.from('comments').select('*').eq('user_id',uid)]).then(function(results){var data={exported_at:new Date().toISOString(),user_id:uid,email:email,posts:results[0].data||[],comments:results[1].data||[]};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ringin-data-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);});}},
-          {icon:'🗑️',label:'Delete Account',sub:'Permanently remove your account',fn:function(){if(window.confirm('Are you sure? This cannot be undone.'))alert('Please contact support@ringin.app to delete your account.');},red:true},
+          {icon:'🗑️',label:'Delete Account',sub:'30-day cooling-off — sign back in to cancel',fn:function(){
+            // Real delete flow (T2.9). Calls the request_account_deletion
+            // RPC defined in supabase/migrations/0011_account_deletion.sql.
+            // - Sets profiles.deleted_at = now() → account hidden from app.
+            // - User signs back in within 30 days to cancel.
+            // - After 30 days a scheduled job purges PII.
+            // If the migration hasn't been applied, RPC returns "function does
+            // not exist" → fall back to the email-support message.
+            if(!window.confirm('Delete your RingIn account?\n\n• You will be signed out.\n• You have 30 days to cancel by signing back in.\n• After 30 days, your name, email and avatar are permanently scrubbed.\n• Your posts and comments stay, anonymised.')) return;
+            sbProfile.rpc('request_account_deletion').then(function(r){
+              if(r.error){
+                console.warn('[ringin] delete account RPC error', r.error);
+                alert('Could not start deletion automatically. Please email support@ringin.app and we will process it manually.');
+                return;
+              }
+              // Sign out — supabase client clears the session.
+              try { sbProfile.auth.signOut(); } catch(_){}
+              alert('Your account is now scheduled for deletion. Sign back in within 30 days to cancel. We are sorry to see you go.');
+            });
+          },red:true},
         ].map(function(item,i,arr){
           return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}},
             React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},item.icon),

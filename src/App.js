@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
+import {startLastSeen, stopLastSeen} from './utils/lastSeen';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -114,9 +115,21 @@ export default function App() {
     // accept doesn't trigger a 200-1500ms synchronous parse hang on Samsung Internet.
     try { prefetchAgora(); } catch(e){}
 
-    supabase.auth.getSession().then(function(res) { setSession(res.data.session); });
+    supabase.auth.getSession().then(function(res) {
+      setSession(res.data.session);
+      // Start last_seen heartbeat — pings profiles.last_seen_at every 60s
+      // while app is foregrounded. T2.4, requires migration 0006_last_seen.sql.
+      if (res.data.session && res.data.session.user) {
+        try { startLastSeen(res.data.session.user.id); } catch(_){}
+      }
+    });
     var sub = supabase.auth.onAuthStateChange(function(_event, session) {
       setSession(session);
+      // Restart heartbeat on auth change (sign-in / sign-out).
+      try {
+        if (session && session.user) startLastSeen(session.user.id);
+        else stopLastSeen();
+      } catch(_) {}
       if(session && session.user){
         var email = session.user.email || '';
         var emailPrefix = email.indexOf('@') > 0 ? email.split('@')[0] : 'user';
