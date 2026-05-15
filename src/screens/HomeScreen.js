@@ -12,6 +12,7 @@ import MomentComposer from '../components/MomentComposer';
 import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds, markMomentUser, refreshMomentUserIds} from '../utils/momentUsers';
 import ReportModal, {flushQueuedReports} from '../components/ReportModal';
+import compressImage from '../utils/compressImage';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -778,8 +779,18 @@ export default function HomeScreen(props){
 
   function postMoment(file, caption){
     if(!file || !currentUserId) return Promise.reject(new Error('Not signed in'));
-    var safeExt = ((file.name||'').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
-    var fileName = 'moments/' + currentUserId + '/' + Date.now() + '-' + Math.random().toString(36).slice(2,7) + '.' + safeExt;
+    // Client-side compression first — typically 70-90% size cut on raw
+    // phone camera images. compressImage returns the original file if
+    // it's already small or browser can't decode (e.g. HEIC on Chrome).
+    return compressImage(file, { maxEdge: 1600, quality: 0.82 }).then(function(compressed){
+      var ef = compressed || file;
+      var safeExt = ((ef.name||'').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+      var fileName = 'moments/' + currentUserId + '/' + Date.now() + '-' + Math.random().toString(36).slice(2,7) + '.' + safeExt;
+      return uploadMomentInner(ef, fileName, caption);
+    });
+  }
+
+  function uploadMomentInner(file, fileName, caption){
     return sbHome.storage.from('chat-images').upload(fileName, file, {contentType: file.type || 'image/jpeg'}).then(function(up){
       if(up.error) throw up.error;
       var url = sbHome.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;

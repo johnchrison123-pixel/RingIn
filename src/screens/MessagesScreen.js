@@ -6,6 +6,7 @@ import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine'
 import TopBarAvatar from '../components/TopBarAvatar';
 import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds} from '../utils/momentUsers';
+import compressImage from '../utils/compressImage';
 import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
 
 var EXPERT_CONVOS_BASE=[
@@ -764,22 +765,35 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             ev.target.value='';
             return;
           }
-          // Validate file size (max 5MB)
+          // Validate file size (max 5MB) — checked BEFORE compression so users
+          // get a clean error on a 12MB photo instead of silently compressing
+          // a 20MB monster. After compression the actual upload is usually
+          // 200-600KB.
           if(file.size>5*1024*1024){
             setToast('Image must be under 5MB');
             setTimeout(function(){setToast('');},2500);
             ev.target.value='';
             return;
           }
-          var ext=file.type==='image/jpeg'?'jpg':file.type==='image/png'?'png':file.type==='image/gif'?'gif':'webp';
-          var fileName='chat_'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
           var tempId='tmp_img_'+Date.now();
           var localUrl=URL.createObjectURL(file);
           var receiverId=convo.receiverId||(convId.replace(myId,'').replace('_',''));
           // Optimistic placeholder while uploading
           var optimisticMsg={id:tempId,conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+localUrl,read:false,created_at:new Date().toISOString()};
           setMsgs(function(prev){return prev.concat([optimisticMsg]);});
-          sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(r){
+          // Compress before upload — saves bandwidth + Supabase Storage cost.
+          // GIF compression would destroy the animation, so skip it for that type.
+          var compressP = file.type === 'image/gif'
+            ? Promise.resolve(file)
+            : compressImage(file, { maxEdge: 1600, quality: 0.82 });
+          compressP.then(function(ef){
+            var uploadFile = ef || file;
+            var ext = uploadFile.type === 'image/jpeg' ? 'jpg' :
+                      uploadFile.type === 'image/png'  ? 'png' :
+                      uploadFile.type === 'image/gif'  ? 'gif' :
+                      uploadFile.type === 'image/webp' ? 'webp' : 'jpg';
+            var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+          sb.storage.from('chat-images').upload(fileName,uploadFile,{contentType:uploadFile.type}).then(function(r){
             if(r.error){
               console.error('RingIn Error [chatPhotoUpload]:', r.error&&r.error.message?r.error.message:'Unknown error');
               setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
@@ -802,6 +816,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               }
               if(onMessageSent) onMessageSent(convo,'📷 Photo');
             });
+          });
+          }).catch(function(err){
+            // Compression itself failed (rare) — fall back to uploading raw.
+            console.warn('[ringin] image compress failed, uploading raw', err);
+            var ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'webp';
+            var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(){});
           });
           ev.target.value='';
         }
