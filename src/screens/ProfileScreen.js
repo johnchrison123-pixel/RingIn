@@ -1158,6 +1158,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                     bioJson.notif_prefs[row.key]=n;
                     sbProfile.from('profiles').update({bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(){});
                   });
+                  // T2.13 — also write to the proper notification_prefs table
+                  // (migration 0015). Column name follows notify_<key> convention.
+                  // Falls back silently if migration isn't applied.
+                  try {
+                    var col = 'notify_' + unifiedKey;
+                    var patch = { user_id: userId };
+                    patch[col] = n;
+                    sbProfile.from('notification_prefs').upsert([patch], { onConflict: 'user_id' }).then(function(){});
+                  } catch(_) {}
                 }
               },
               style:{width:'46px',height:'26px',borderRadius:'13px',background:row.val?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
