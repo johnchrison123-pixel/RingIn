@@ -1,0 +1,101 @@
+name: Publish OTA Bundle
+
+# Self-hosted OTA pipeline. On every push to main:
+#   1. Builds the CRA web bundle.
+#   2. Zips build/ into a versioned bundle (YYYY.MMDD.HHMM).
+#   3. Commits the zip + updated /bundles/latest.json manifest back to main.
+#   4. Vercel auto-deploys, making the new bundle live at
+#      https://ring-in.vercel.app/bundles/<version>.zip.
+#   5. Native APK on next launch reads /bundles/latest.json, downloads the
+#      new zip, and swaps it in via @capgo/capacitor-updater.
+#
+# No external service signup required. Self-hosted entirely on Vercel.
+# Old bundles stay in public/bundles/ — clean them up periodically with
+# a manual prune workflow if storage becomes an issue.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      # Skip if the only thing that changed is the bundles folder (avoids
+      # an infinite loop where this workflow's own commit triggers itself).
+      - '!public/bundles/**'
+
+  workflow_dispatch:  # allow manual trigger
+
+permissions:
+  contents: write  # needed to commit the bundle back to main
+
+concurrency:
+  group: ota-bundle-${{ github.ref }}
+  cancel-in-progress: false  # don't cancel mid-publish
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Need to push back to the same branch
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build CRA bundle
+        run: |
+          export CI=false  # CRA treats warnings as errors when CI=true; let it warn
+          npm run build
+
+      - name: Compute bundle version
+        id: version
+        run: |
+          # Format: YYYY.MMDD.HHMM (UTC). Monotonically increasing → easy version compare.
+          VERSION=$(date -u +"%Y.%m%d.%H%M")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Bundle version: $VERSION"
+
+      - name: Package bundle zip
+        run: |
+          mkdir -p public/bundles
+          cd build
+          # Capgo expects a flat zip of the deployable web root
+          zip -rq "../public/bundles/${{ steps.version.outputs.version }}.zip" .
+          cd ..
+          ls -lh public/bundles/
+
+      - name: Update manifest
+        run: |
+          cat > public/bundles/latest.json <<EOF
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "url": "https://ring-in.vercel.app/bundles/${{ steps.version.outputs.version }}.zip",
+            "published_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "git_sha": "${{ github.sha }}"
+          }
+          EOF
+          cat public/bundles/latest.json
+
+      - name: Commit and push bundle
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/bundles/
+          if git diff --staged --quiet; then
+            echo "No bundle changes to commit"
+          else
+            git commit -m "OTA bundle: ${{ steps.version.outputs.version }} [skip ci]"
+            git push
+          fi

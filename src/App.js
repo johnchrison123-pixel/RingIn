@@ -5,6 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
 import {loadBlocks} from './utils/blocks';
 import {startCloseFriends} from './utils/closeFriends';
+import {startOtaUpdater} from './utils/otaUpdater';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -116,6 +117,11 @@ export default function App() {
     // SDK is downloaded + parsed long before the user accepts a call, so call
     // accept doesn't trigger a 200-1500ms synchronous parse hang on Samsung Internet.
     try { prefetchAgora(); } catch(e){}
+    // OTA: check for a newer web bundle on app start (native only — PWA
+    // already updates via service worker). Self-hosted: manifest at
+    // ring-in.vercel.app/bundles/latest.json + bundle zips alongside,
+    // published by .github/workflows/publish-bundle.yml.
+    try { startOtaUpdater(); } catch(e){}
 
     supabase.auth.getSession().then(function(res) {
       setSession(res.data.session);

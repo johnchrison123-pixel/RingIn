@@ -1,0 +1,3 @@
+# Bundles published by .github/workflows/publish-bundle.yml live here.
+# This .gitkeep ensures the folder exists even when no bundles have been
+# published yet, so Vercel doesn't 404 the route.
