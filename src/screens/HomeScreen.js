@@ -1034,6 +1034,12 @@ export default function HomeScreen(props){
   var collapsedThreadsS=useState({}); var collapsedThreads=collapsedThreadsS[0]; var setCollapsedThreads=collapsedThreadsS[1];
   var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
   var showCompS=useState(false); var showComp=showCompS[0]; var setShowComp=showCompS[1];
+  // Per-post audience selector (T2.3, requires migration 0005_audience.sql).
+  // 'public' = anyone signed in. 'followers' = only people who follow you.
+  // 'private' = only you. Default to last-used (saved in localStorage).
+  var compAudienceS=useState(function(){try{return localStorage.getItem('ringin_last_audience')||'public';}catch(_){return 'public';}});
+  var compAudience=compAudienceS[0]; var setCompAudience=compAudienceS[1];
+  var compAudienceMenuS=useState(false); var compAudienceMenu=compAudienceMenuS[0]; var setCompAudienceMenu=compAudienceMenuS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
   var loadingS=useState(_cachedPosts.length===0); var loading=loadingS[0]; var setLoading=loadingS[1];
   var fileInputRef=useRef(null);
@@ -1448,9 +1454,22 @@ export default function HomeScreen(props){
           video_url: compVideo&&compVideo.supaUrl?compVideo.supaUrl:null,
           tags: allTags,
           likes: [],
-          comments_count: 0
+          comments_count: 0,
+          // Audience selector (T2.3, requires migration 0005). If the column
+          // doesn't exist yet the insert will fail with "column does not
+          // exist" — caught and retried below WITHOUT this field, so the
+          // post still goes through (defaults to public).
+          audience: compAudience,
         };
-        sbHome.from('posts').insert([postData]).select().then(function(res){
+        // Remember last-used audience so the next post defaults to it.
+        try{ localStorage.setItem('ringin_last_audience', compAudience); }catch(_){}
+        function handleInsertResult(res){
+          if (res.error && /audience/.test(res.error.message || '')) {
+            // Migration 0005 not applied yet — retry without the audience
+            // field so the post still goes through (defaults to public).
+            var fallback = Object.assign({}, postData); delete fallback.audience;
+            return sbHome.from('posts').insert([fallback]).select().then(handleInsertResult);
+          }
       if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');alert('Something went wrong. Please try again.');setPosting(false);return;}
       if(res.data&&res.data[0]){
         sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
@@ -1505,7 +1524,9 @@ export default function HomeScreen(props){
       setCompMediaType('photo');
       setShowComp(false);
       setPosting(false);
-        });
+        }  // close handleInsertResult body
+        // Kick off the insert with retry handler.
+        sbHome.from('posts').insert([postData]).select().then(handleInsertResult);
       });
     });
   }
@@ -2164,7 +2185,26 @@ export default function HomeScreen(props){
               React.createElement('input',{type:'file',accept:'video/*',style:{display:'none'},disabled:!!compVideo,onChange:function(e){if(e.target.files[0])handleVideoUpload(e.target.files[0]);}})
             ),
             React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setCompEmoji(function(v){return !v;});}},compEmoji?'😊 Hide':'😊 Emoji'),
-            React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setShowComp(false);setCompText('');setCompImgs([]);setCompVideo(null);setCompEmoji(false);}},'✕ Cancel')
+            React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setShowComp(false);setCompText('');setCompImgs([]);setCompVideo(null);setCompEmoji(false);}},'✕ Cancel'),
+            // ── Audience selector chip (T2.3) ──
+            React.createElement('div',{style:{position:'relative'}},
+              React.createElement('div',{className:'comp-att-btn',style:{cursor:'pointer'},onClick:function(){setCompAudienceMenu(function(v){return !v;});}},
+                (compAudience==='public'?'🌐 Public':compAudience==='followers'?'👥 Followers':'🔒 Only me')+' ▾'
+              ),
+              compAudienceMenu ? React.createElement('div',{style:{position:'absolute',bottom:'calc(100% + 4px)',left:0,background:'var(--bg2,#161028)',border:'1px solid var(--border)',borderRadius:'10px',padding:'4px',boxShadow:'0 6px 20px rgba(0,0,0,0.4)',zIndex:50,minWidth:'180px'}},
+                [['public','🌐','Public','Anyone signed in can see'],['followers','👥','Followers','Only people who follow you'],['private','🔒','Only me','Drafts / personal notes']].map(function(opt){
+                  var active=compAudience===opt[0];
+                  return React.createElement('div',{key:opt[0],onClick:function(){setCompAudience(opt[0]);setCompAudienceMenu(false);},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderRadius:'6px',cursor:'pointer',background:active?'rgba(123,110,255,0.12)':'transparent'}},
+                    React.createElement('span',{style:{fontSize:'16px'}},opt[1]),
+                    React.createElement('div',{style:{flex:1}},
+                      React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--text)'}},opt[2]),
+                      React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},opt[3])
+                    ),
+                    active?React.createElement('span',{style:{color:'var(--ac)',fontWeight:700}},'✓'):null
+                  );
+                })
+              ) : null
+            )
           ),
           React.createElement('button', {
             className:'comp-post-btn',
