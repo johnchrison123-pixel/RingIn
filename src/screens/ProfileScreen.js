@@ -1497,18 +1497,32 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',null,'You haven\'t blocked anyone.')
           )
         : React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden'}},
-            blockedList.map(function(user,i){
-              var initStr=user.name?user.name.substring(0,2).toUpperCase():'??';
-              return React.createElement('div',{key:user.id||i,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',borderBottom:i<blockedList.length-1?'1px solid var(--border)':'none'}},
+            // BUG FIX (was: blockedList iterated as objects with .id and .name,
+            // but MessagesScreen.js stores plain user-ID strings via blocked.push(otherId).
+            // Result: name shows undefined and Unblock button removed ALL entries
+            // because u.id !== user.id was undefined !== undefined === false.)
+            // Normalise each entry to a {id, name} shape regardless of how it was stored.
+            blockedList.map(function(rawEntry, i){
+              var entry = (typeof rawEntry === 'string')
+                ? { id: rawEntry, name: null }
+                : { id: (rawEntry && (rawEntry.id || rawEntry.user_id)) || ('row-' + i), name: (rawEntry && rawEntry.name) || null };
+              var displayName = entry.name || (entry.id ? (entry.id.length > 12 ? entry.id.slice(0,8) + '…' : entry.id) : 'Unknown user');
+              var initStr = entry.name ? entry.name.substring(0,2).toUpperCase() : (entry.id ? entry.id.substring(0,2).toUpperCase() : '??');
+              return React.createElement('div',{key:entry.id+'_'+i,style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',borderBottom:i<blockedList.length-1?'1px solid var(--border)':'none'}},
                 React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff'}},initStr),
                 React.createElement('div',{style:{flex:1,minWidth:0}},
-                  React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},user.name||user.id)
+                  React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},displayName)
                 ),
                 React.createElement('button',{
                   onClick:function(){
-                    var newList=blockedList.filter(function(u){return u.id!==user.id;});
+                    // Compare against THIS row's normalised id, AND keep both
+                    // string and object entries that don't match.
+                    var newList = blockedList.filter(function(u){
+                      var uid = (typeof u === 'string') ? u : (u && (u.id || u.user_id));
+                      return uid !== entry.id;
+                    });
                     setBlockedList(newList);
-                    try{localStorage.setItem('ringin_blocked',JSON.stringify(newList));}catch(e){}
+                    try{ localStorage.setItem('ringin_blocked', JSON.stringify(newList)); }catch(e){}
                   },
                   style:{padding:'7px 14px',background:'rgba(239,71,71,0.12)',border:'1px solid rgba(239,71,71,0.3)',borderRadius:'8px',color:'#ef4747',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0}
                 },'Unblock')

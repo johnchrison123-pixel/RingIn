@@ -15,7 +15,7 @@ const EXPERTS = [
   {id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'},
 ];
 
-function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded}){
+function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded, onGoToMessages}){
   var isFollowing = following ? !!following[String(expert.id)] : false;
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     React.createElement('button',{onClick:onBack,title:'Back',style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.55)',border:'none',borderRadius:'50%',width:'34px',height:'34px',color:'#fff',padding:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},
@@ -37,7 +37,7 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
             onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
             style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px'}
           }, isFollowing ? 'Following' : '+ Follow'),
-          React.createElement('button',{onClick:function(){if(props.onGoToMessages)props.onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
+          React.createElement('button',{onClick:function(){if(onGoToMessages)onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
           React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
         )
       ),
@@ -91,8 +91,24 @@ export default function SearchScreen(props){
     following:following,
     toggleFollow:toggleFollow,
     followLoaded:followLoaded,
-    onCall:function(exp){setActiveCall(exp);},
-    onBack:function(){setSelected(null);if(props.onBack)props.onBack();}
+    onCall:function(exp){
+      // BUG FIX (was: setActiveCall(exp) → opened the legacy local CallScreen,
+      // bypassing the call_invites pipeline so the callee never got a ring).
+      // Use the same global startCall hook that HomeScreen uses so a real
+      // call_invites row is created and FCM push fires for the callee.
+      try {
+        if (window && typeof window.__ringInStartCall === 'function') {
+          window.__ringInStartCall(exp);
+        } else {
+          // Fallback for sessions where the global isn't installed yet —
+          // legacy behavior (no real ringing for mock-id experts, but
+          // doesn't crash).
+          setActiveCall(exp);
+        }
+      } catch (_) { setActiveCall(exp); }
+    },
+    onBack:function(){setSelected(null);if(props.onBack)props.onBack();},
+    onGoToMessages: props.onGoToMessages,
   });
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
