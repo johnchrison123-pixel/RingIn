@@ -6,6 +6,7 @@ import {usePostsRealtime} from '../utils/usePostsRealtime';
 import Moments from '../components/Moments';
 import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds} from '../utils/momentUsers';
+import {useHideLikes} from '../utils/likeDisplayPref';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
 
 var COUNTRIES=[
@@ -133,6 +134,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   // Shared moments registry — drives the Instagram-style avatar ring on
   // the profile cover avatar and on each post header.
   var momentUserIds = useMomentUserIds();
+  // Per-user "hide like counts" preference toggle for the privacy panel.
+  var hideLikesPair = useHideLikes(); var hideLikesLocal = hideLikesPair[0]; var setHideLikesLocal = hideLikesPair[1];
 
   var settingsS=useState(false); var showSettings=settingsS[0]; var setShowSettings=settingsS[1];
   var showPrivacyS=useState(false); var showPrivacy=showPrivacyS[0]; var setShowPrivacy=showPrivacyS[1];
@@ -1266,6 +1269,23 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             )
           );
         })
+      ),
+
+      // ── Hide Like Counts (Instagram-style toggle) ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Like Counts'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          React.createElement('div',{style:{flex:1,paddingRight:'12px'}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},'❤️ Hide Like Counts'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',lineHeight:1.5}},'Hides numeric like counts on posts in your feed. The total stays visible to the post author.')
+          ),
+          React.createElement('button',{
+            onClick:function(){setHideLikesLocal(!hideLikesLocal);},
+            style:{width:'46px',height:'26px',borderRadius:'13px',background:hideLikesLocal?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
+          },
+            React.createElement('div',{style:{position:'absolute',top:'3px',left:hideLikesLocal?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+          )
+        )
       ),
 
       // ── Lock Profile ──

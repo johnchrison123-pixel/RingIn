@@ -111,10 +111,70 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var msgMenuS=useState(null); var msgMenu=msgMenuS[0]; var setMsgMenu=msgMenuS[1];
   var toastS=useState(''); var toast=toastS[0]; var setToast=toastS[1];
   var chatMenuOpenS=useState(false); var chatMenuOpen=chatMenuOpenS[0]; var setChatMenuOpen=chatMenuOpenS[1];
+
+  // Per-conversation read-receipts toggle (reciprocal — like WhatsApp).
+  // Stored in localStorage `ringin_rr_off` as a Set of conversation IDs.
+  // When OFF for this convo: (a) we don't mark messages as read in the DB,
+  // so the other side never sees our ✓✓ blue tick. (b) We also don't
+  // display ✓✓ for our own sent messages — keeping the deal reciprocal.
+  function loadReadReceiptsOffSet(){
+    try{
+      var raw=localStorage.getItem('ringin_rr_off');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    }catch(_){ return new Set(); }
+  }
+  var rrOffSetS=useState(loadReadReceiptsOffSet());
+  var rrOffSet=rrOffSetS[0]; var setRrOffSet=rrOffSetS[1];
+  var convIdKey = convo ? (convo.convId || convo.id) : null;
+  var readReceiptsOffHere = convIdKey ? rrOffSet.has(convIdKey) : false;
+
+  function toggleReadReceipts(){
+    if (!convIdKey) return;
+    var next = new Set(rrOffSet);
+    if (next.has(convIdKey)) next.delete(convIdKey);
+    else next.add(convIdKey);
+    setRrOffSet(next);
+    try{ localStorage.setItem('ringin_rr_off', JSON.stringify(Array.from(next))); }catch(_){}
+    setChatMenuOpen(false);
+  }
   var mutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var mutedConvos=mutedConvosS[0]; var setMutedConvos=mutedConvosS[1];
   var pressTimerRef=useRef(null);
   var fileInputRef=useRef(null);
   var chatTypingTimerRef=useRef(null);
+
+  // ── Typing-indicator state (Supabase Realtime broadcast) ────────────
+  // We piggyback on the existing chat channel (subscribed at line ~234).
+  // - When I type, broadcast {typing:true} every ~3s (debounced).
+  // - 3s after I stop typing, broadcast {typing:false}.
+  // - When I receive a broadcast from the other side: set otherTyping=true
+  //   for 5s, auto-clearing on timeout.
+  var otherTypingS=useState(false); var otherTyping=otherTypingS[0]; var setOtherTyping=otherTypingS[1];
+  var typingChannelRef=useRef(null);    // populated in the same useEffect that subscribes for messages
+  var typingClearTimerRef=useRef(null); // clears otherTyping after silence
+  var typingSendTimerRef=useRef(null);  // debounces my outgoing typing-stop broadcast
+  var lastTypingSentAtRef=useRef(0);    // throttle typing-start broadcasts to once per 2.5s
+
+  function broadcastTyping(isTyping){
+    var ch = typingChannelRef.current;
+    if (!ch) return;
+    try {
+      ch.send({ type: 'broadcast', event: 'typing', payload: { user_id: myId, typing: !!isTyping } });
+    } catch(_) {}
+  }
+
+  function onTypingKeystroke(){
+    var now = Date.now();
+    if (now - lastTypingSentAtRef.current > 2500) {
+      lastTypingSentAtRef.current = now;
+      broadcastTyping(true);
+    }
+    // Reset the "stop typing" timer.
+    if (typingSendTimerRef.current) clearTimeout(typingSendTimerRef.current);
+    typingSendTimerRef.current = setTimeout(function(){
+      broadcastTyping(false);
+      lastTypingSentAtRef.current = 0;
+    }, 3000);
+  }
   var levHoldIntervalRef=useRef(null);
   var levHapticIntervalRef=useRef(null); // separate haptic ticker
   var levHoldStartRef=useRef(null);
@@ -197,9 +257,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     sb.from('messages').select('*').eq('conversation_id',convId).order('created_at').then(function(r){
       if(r.data) setMsgs(r.data);
       // Mark as read
-      sb.from('messages').update({read:true}).eq('conversation_id',convId).neq('sender_id',myId).then(function(){});
+      // Skip the read-marking write if the user has disabled read receipts
+      // for this conversation — keeps the deal reciprocal (we don't tell
+      // them we read them, so we don't see their ✓✓ blue tick either).
+      if (!readReceiptsOffHere) {
+        sb.from('messages').update({read:true}).eq('conversation_id',convId).neq('sender_id',myId).then(function(){});
+      }
     });
-    // Realtime subscription
+    // Realtime subscription — chat messages + typing broadcasts on the
+    // same channel so we only pay for one ws connection per conversation.
     var ch=sb.channel('chat-'+convId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'conversation_id=eq.'+convId},function(p){
         setMsgs(function(prev){
@@ -208,12 +274,39 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         });
         // Mark received messages as read + play notification sound
         if(p.new.sender_id!==myId){
-          sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
+          if (!readReceiptsOffHere) {
+            sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
+          }
           var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
           if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
         }
-      }).subscribe();
-    return function(){sb.removeChannel(ch);};
+      })
+      .on('broadcast', { event: 'typing' }, function(msg){
+        // Ignore my own echoes (Supabase broadcasts include the sender by default).
+        var pl = msg && msg.payload;
+        if (!pl || !pl.user_id || pl.user_id === myId) return;
+        if (pl.typing) {
+          setOtherTyping(true);
+          if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+          // Auto-clear 5s after the last typing=true ping in case the
+          // typing=false broadcast gets dropped.
+          typingClearTimerRef.current = setTimeout(function(){ setOtherTyping(false); }, 5000);
+        } else {
+          setOtherTyping(false);
+          if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+        }
+      })
+      .subscribe();
+    typingChannelRef.current = ch;
+    return function(){
+      // Best-effort "I stopped typing" before leaving so the other side
+      // doesn't see lingering bouncing dots.
+      try { broadcastTyping(false); } catch(_) {}
+      if (typingClearTimerRef.current) { clearTimeout(typingClearTimerRef.current); typingClearTimerRef.current = null; }
+      if (typingSendTimerRef.current) { clearTimeout(typingSendTimerRef.current); typingSendTimerRef.current = null; }
+      typingChannelRef.current = null;
+      sb.removeChannel(ch);
+    };
   },[convId]);
 
   useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
@@ -521,6 +614,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
         }, mutedConvos.includes(convo&&(convo.convId||convo.id)) ? '🔔 Unmute Conversation' : '🔕 Mute Conversation'),
         React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
+        // Per-conversation read-receipts toggle. Reciprocal — when off, the
+        // other side sees no ✓✓ blue from us AND we see no ✓✓ blue from them.
+        React.createElement('button',{
+          onClick:toggleReadReceipts,
+          style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
+            background:'none',border:'none',borderRadius:'8px',color:'var(--text)',
+            fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
+        }, readReceiptsOffHere ? '👁 Show Read Receipts' : '🙈 Hide Read Receipts'),
+        React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
         React.createElement('button',{
           onClick:clearAllChat,
           style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
@@ -621,11 +723,29 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               ),
               React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
                 m.created_at?React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})):null,
-                isMe?React.createElement('span',{style:{color:m.read?'var(--ac)':'var(--t3)'}},m.read?'✓✓':'✓'):null
+                // Tick state: ✓ = sent (not yet read), ✓✓ blue = read.
+                // If the user has read receipts disabled for this convo,
+                // we never show ✓✓ blue — the deal is reciprocal: we don't
+                // see theirs, we don't show ours.
+                isMe?React.createElement('span',{style:{color:(m.read && !readReceiptsOffHere)?'#4A9CFF':'var(--t3)',fontWeight:600,letterSpacing:'-1px'}},(m.read && !readReceiptsOffHere)?'✓✓':'✓'):null
               )
             )
           );
         }),
+        // Typing indicator — appears at the bottom of the message list when
+        // the other party is typing. Three dots with staggered bounce.
+        otherTyping ? React.createElement('div',{
+          style:{display:'flex',alignItems:'center',gap:'6px',padding:'4px 8px 0',animation:'ringin-typing-fade 0.15s ease-out'}
+        },
+          React.createElement('div',{style:{width:'24px',height:'24px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
+            otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+          ),
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',padding:'9px 13px',borderRadius:'18px 18px 18px 4px',background:'var(--bg3)',border:'1px solid var(--border)'}},
+            React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--t2)',animation:'ringin-typing-dot 1.2s ease-in-out infinite',animationDelay:'0s'}}),
+            React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--t2)',animation:'ringin-typing-dot 1.2s ease-in-out infinite',animationDelay:'0.2s'}}),
+            React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--t2)',animation:'ringin-typing-dot 1.2s ease-in-out infinite',animationDelay:'0.4s'}})
+          )
+        ) : null,
         React.createElement('div',{ref:bottomRef})
       ),
 
@@ -833,7 +953,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       },'😊'),
       React.createElement('input',{
         value:txt,
-        onChange:function(e){setTxt(e.target.value);clearTimeout(chatTypingTimerRef.current);chatTypingTimerRef.current=setTimeout(function(){playMsKeyClick();},80);},
+        onChange:function(e){setTxt(e.target.value);clearTimeout(chatTypingTimerRef.current);chatTypingTimerRef.current=setTimeout(function(){playMsKeyClick();},80);onTypingKeystroke();},
         onKeyDown:function(e){if(e.key==='Enter')send();},
         placeholder:'Type a message...',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}

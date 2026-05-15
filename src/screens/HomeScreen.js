@@ -13,6 +13,7 @@ import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds, markMomentUser, refreshMomentUserIds} from '../utils/momentUsers';
 import ReportModal, {flushQueuedReports} from '../components/ReportModal';
 import compressImage from '../utils/compressImage';
+import {useHideLikes} from '../utils/likeDisplayPref';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
 
@@ -142,8 +143,12 @@ export function UserProfileView(props){
   // Shared moments registry — drives the Instagram-style avatar ring on
   // the profile cover avatar and on each post header.
   var momentUserIds=useMomentUserIds();
+  // Per-user "hide like counts" preference.
+  var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
   // Report modal state — replaces the previously fake alert("Thank you...").
   var reportTargetUS=useState(null); var reportTargetU=reportTargetUS[0]; var setReportTargetU=reportTargetUS[1];
+  // Per-user "hide like counts" preference (Instagram-style toggle).
+  var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
 
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
@@ -532,7 +537,11 @@ export function UserProfileView(props){
                   p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'ulg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                   React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#ulg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
                 ),
-                React.createElement('span',{onClick:function(e){e.stopPropagation();if((p.likedByIds||[]).length>0){setShowLikersU(p.id);}},style:{cursor:(p.likedByIds||[]).length>0?'pointer':'default'}},(Array.isArray(p.likedByIds)?p.likedByIds.length:p.likes)+' Like')
+                React.createElement('span',{onClick:function(e){e.stopPropagation();if((p.likedByIds||[]).length>0){setShowLikersU(p.id);}},style:{cursor:(p.likedByIds||[]).length>0?'pointer':'default'}},
+                  // Hide-likes toggle: when ON, show "Liked" label only (count hidden).
+                  hideLikes ? ((Array.isArray(p.likedByIds)?p.likedByIds.length:p.likes) > 0 ? 'Liked' : '0 Likes')
+                            : ((Array.isArray(p.likedByIds)?p.likedByIds.length:p.likes)+' Like')
+                )
               )
             ),
             React.createElement('button',{
@@ -2222,7 +2231,9 @@ export default function HomeScreen(props){
                 p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
                 React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
               ),
-              React.createElement('span',{onClick:function(e){openLikersPopup(e,p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},p.likes,' Likes')
+              React.createElement('span',{onClick:function(e){openLikersPopup(e,p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},
+                hideLikes ? (p.likes > 0 ? 'Liked' : '0 Likes') : (p.likes + ' Likes')
+              )
             )
           ),
             React.createElement('button', {className:'pa', onClick:function(){

@@ -79,3 +79,16 @@ code {
       0 0 22px rgba(123, 110, 255, 0.6);
   }
 }
+
+/* ── Chat typing indicator ──────────────────────────────────────────────
+   Three dots with a staggered bounce. Driven by MessagesScreen.js via
+   animation-delay on each dot (0s, 0.2s, 0.4s). Pure CSS — no JS timers
+   needed once typing state is set. */
+@keyframes ringin-typing-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30%           { transform: translateY(-3px); opacity: 1;  }
+}
+@keyframes ringin-typing-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
