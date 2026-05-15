@@ -1,0 +1,30 @@
+{
+  "name": "ringin-website",
+  "version": "1.0.0",
+  "description": "RingIn Web Platform - Expert calling social network",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "keywords": [
+    "expert",
+    "calling",
+    "social",
+    "marketplace"
+  ],
+  "author": "RingIn Team",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "@tailwindcss/postcss": "^4.3.0",
+    "autoprefixer": "^10.5.0",
+    "lucide-react": "^1.14.0",
+    "next": "^16.2.6",
+    "postcss": "^8.5.14",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tailwindcss": "^4.3.0"
+  }
+}

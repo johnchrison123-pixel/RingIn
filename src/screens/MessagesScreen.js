@@ -137,6 +137,48 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     try{ localStorage.setItem('ringin_rr_off', JSON.stringify(Array.from(next))); }catch(_){}
     setChatMenuOpen(false);
   }
+
+  // T2.1 — Restrict mode (Instagram's anti-harassment 3-tier).
+  // The other party can still send DMs / comment, but their actions
+  // are isolated until you choose to surface them. Reads/writes to the
+  // restricted_users table (migration 0003_restrict.sql).
+  var restrictedSetS = useState(new Set());
+  var restrictedSet = restrictedSetS[0]; var setRestrictedSet = restrictedSetS[1];
+  useEffect(function(){
+    if (!myId) return;
+    try {
+      sb.from('restricted_users').select('restricted_id').eq('restrictor_id', myId).then(function(r){
+        if (r && !r.error && r.data) setRestrictedSet(new Set(r.data.map(function(row){ return row.restricted_id; })));
+      });
+    } catch(_) {}
+  }, [myId]);
+  var otherIdForRestrict = (convo && (convo.otherId || convo.receiverId || convo.user_id)) || null;
+  var isRestrictedHere = otherIdForRestrict ? restrictedSet.has(otherIdForRestrict) : false;
+  function toggleRestrict(){
+    if (!myId || !otherIdForRestrict) return;
+    setChatMenuOpen(false);
+    if (isRestrictedHere) {
+      // Optimistic remove.
+      var nset = new Set(restrictedSet); nset.delete(otherIdForRestrict); setRestrictedSet(nset);
+      sb.from('restricted_users').delete().eq('restrictor_id', myId).eq('restricted_id', otherIdForRestrict).then(function(r){
+        if (r && r.error) {
+          var rb = new Set(restrictedSet); rb.add(otherIdForRestrict); setRestrictedSet(rb);
+          alert('Failed to unrestrict: ' + r.error.message);
+        }
+      });
+    } else {
+      var nset2 = new Set(restrictedSet); nset2.add(otherIdForRestrict); setRestrictedSet(nset2);
+      sb.from('restricted_users').upsert([{ restrictor_id: myId, restricted_id: otherIdForRestrict }], { onConflict: 'restrictor_id,restricted_id' }).then(function(r){
+        if (r && r.error) {
+          var rb2 = new Set(restrictedSet); rb2.delete(otherIdForRestrict); setRestrictedSet(rb2);
+          alert('Failed to restrict: ' + r.error.message);
+        } else {
+          setToast('Restricted. They won\'t know.');
+          setTimeout(function(){ setToast(''); }, 2200);
+        }
+      });
+    }
+  }
   var mutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var mutedConvos=mutedConvosS[0]; var setMutedConvos=mutedConvosS[1];
   var pressTimerRef=useRef(null);
 
@@ -750,6 +792,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             background:'none',border:'none',borderRadius:'8px',color:'var(--text)',
             fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
         }, readReceiptsOffHere ? '👁 Show Read Receipts' : '🙈 Hide Read Receipts'),
+        React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
+        // T2.1 — Restrict mode. The other side has no notification or
+        // visible signal that anything has changed (anti-retaliation).
+        React.createElement('button',{
+          onClick:toggleRestrict,
+          style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
+            background:'none',border:'none',borderRadius:'8px',color:'var(--text)',
+            fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
+        }, isRestrictedHere ? '✓ Unrestrict' : '⚠ Restrict ' + (convo && convo.name ? convo.name.split(' ')[0] : 'User')),
         React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
         React.createElement('button',{
           onClick:clearAllChat,
