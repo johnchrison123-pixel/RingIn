@@ -75,6 +75,13 @@ export default function SearchScreen(props){
   var acS = useState('all'); var activecat = acS[0]; var setAc = acS[1];
   var searchQS = useState(''); var searchQ = searchQS[0]; var setSearchQ = searchQS[1];
   var typingTimerRef = useRef(null);
+  // ── T2.8: Global FTS results (people + posts via Postgres FTS RPCs).
+  // Fires when the search query has 2+ chars. Results render BELOW the
+  // existing experts filter list.
+  var ftsPeopleS = useState([]); var ftsPeople = ftsPeopleS[0]; var setFtsPeople = ftsPeopleS[1];
+  var ftsPostsS = useState([]); var ftsPosts = ftsPostsS[0]; var setFtsPosts = ftsPostsS[1];
+  var ftsLoadingS = useState(false); var ftsLoading = ftsLoadingS[0]; var setFtsLoading = ftsLoadingS[1];
+  var ftsDebounceRef = useRef(null);
   // CUSTOM HOOKS AFTER useState
   var session = props.session;
   var currentUserId = session&&session.user ? session.user.id : null;
@@ -84,6 +91,26 @@ export default function SearchScreen(props){
   var followLoaded = followHook.loaded;
   // useEffect LAST
   useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
+
+  // T2.8 — debounced FTS query against the new search_posts / search_profiles
+  // RPCs. Fires 250ms after the user stops typing, only when query >= 2 chars.
+  useEffect(function(){
+    if (ftsDebounceRef.current) clearTimeout(ftsDebounceRef.current);
+    var q = (searchQ || '').trim();
+    if (q.length < 2) { setFtsPeople([]); setFtsPosts([]); setFtsLoading(false); return; }
+    setFtsLoading(true);
+    ftsDebounceRef.current = setTimeout(function(){
+      Promise.all([
+        sb.rpc('search_profiles', { q: q, lim: 8 }).then(function(r){ return (r && !r.error && r.data) ? r.data : []; }).catch(function(){ return []; }),
+        sb.rpc('search_posts',    { q: q, lim: 8 }).then(function(r){ return (r && !r.error && r.data) ? r.data : []; }).catch(function(){ return []; }),
+      ]).then(function(results){
+        setFtsPeople(results[0]);
+        setFtsPosts(results[1]);
+        setFtsLoading(false);
+      });
+    }, 250);
+    return function(){ if (ftsDebounceRef.current) clearTimeout(ftsDebounceRef.current); };
+  }, [searchQ]);
   // CONDITIONAL RETURNS AFTER ALL HOOKS
   if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
   if(selected) return React.createElement(ExpertProfile,{
@@ -189,6 +216,58 @@ export default function SearchScreen(props){
           )
         );
       })
+      );
+    })(),
+
+    // ── T2.8: Global FTS results (people + posts) ──
+    // Renders below the experts list when there's a query >= 2 chars.
+    // Uses search_profiles + search_posts RPCs from migration 0010.
+    (function(){
+      var q = (searchQ || '').trim();
+      if (q.length < 2) return null;
+      return React.createElement('div',{style:{padding:'0 18px 80px'}},
+        ftsLoading ? React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'11px',padding:'8px'}},'Searching…') : null,
+        // People
+        ftsPeople.length > 0 ? React.createElement('div',{style:{marginTop:'6px'}},
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',padding:'10px 0 6px'}}, 'People · ' + ftsPeople.length),
+          ftsPeople.map(function(p){
+            var name = (p.full_name && p.full_name.trim()) || (p.email ? p.email.split('@')[0] : 'User');
+            return React.createElement('div',{
+              key:p.id,
+              onClick:function(){
+                if (props.onGoToMessages) {
+                  // Open a 1:1 chat with this person via existing messages flow.
+                  var convId = [currentUserId, p.id].sort().join('_');
+                  props.onGoToMessages({id:convId,convId:convId,otherId:p.id,receiverId:p.id,user_id:p.id,name:name,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:name.substring(0,2).toUpperCase()});
+                }
+              },
+              style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'6px',cursor:'pointer'}
+            },
+              React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'14px',flexShrink:0}},
+                p.avatar_url ? React.createElement('img',{src:p.avatar_url,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : name.substring(0,2).toUpperCase()
+              ),
+              React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
+                p.bio ? React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, p.bio.substring(0,80)) : null
+              )
+            );
+          })
+        ) : null,
+        // Posts
+        ftsPosts.length > 0 ? React.createElement('div',{style:{marginTop:'6px'}},
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',padding:'10px 0 6px'}}, 'Posts · ' + ftsPosts.length),
+          ftsPosts.map(function(p){
+            return React.createElement('div',{
+              key:p.id,
+              style:{padding:'10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'6px'}
+            },
+              React.createElement('div',{style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'4px'}}, (p.text||'').substring(0,140) + (p.text && p.text.length > 140 ? '…' : '')),
+              React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}}, (p.user_name || 'Someone') + ' · ' + (p.created_at ? new Date(p.created_at).toLocaleDateString() : ''))
+            );
+          })
+        ) : null,
+        // Empty state — both empty but query active
+        (!ftsLoading && ftsPeople.length === 0 && ftsPosts.length === 0) ? React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',padding:'14px 0'}},'No people or posts match "'+q+'"') : null
       );
     })()
   );
