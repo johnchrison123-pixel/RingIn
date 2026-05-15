@@ -82,6 +82,17 @@ export default function SearchScreen(props){
   var ftsPostsS = useState([]); var ftsPosts = ftsPostsS[0]; var setFtsPosts = ftsPostsS[1];
   var ftsLoadingS = useState(false); var ftsLoading = ftsLoadingS[0]; var setFtsLoading = ftsLoadingS[1];
   var ftsDebounceRef = useRef(null);
+
+  // ── T2.12: Trending hashtags from the materialized view (0014_trending.sql).
+  // Shown when there's no active search query. Tap a tag → seeds search with #tag.
+  var trendingS = useState([]); var trending = trendingS[0]; var setTrending = trendingS[1];
+  useEffect(function(){
+    try {
+      sb.from('trending_tags').select('tag, post_count').limit(8).then(function(r){
+        if (r && !r.error && r.data) setTrending(r.data);
+      }).catch(function(){});
+    } catch(_) {}
+  }, []);
   // CUSTOM HOOKS AFTER useState
   var session = props.session;
   var currentUserId = session&&session.user ? session.user.id : null;
@@ -170,6 +181,24 @@ export default function SearchScreen(props){
         }, '✕') : null
       )
     ),
+
+    // ── T2.12: Trending hashtags chip strip ──
+    // Visible only when search is empty + we have data from 0014_trending.sql.
+    (!searchQ && trending && trending.length > 0) ? React.createElement('div',{style:{padding:'4px 18px 10px'}},
+      React.createElement('div',{style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, '🔥 Trending Tags'),
+      React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
+        trending.map(function(t){
+          return React.createElement('button',{
+            key:t.tag,
+            onClick:function(){ setSearchQ('#' + t.tag); },
+            style:{display:'inline-flex',alignItems:'center',gap:'4px',padding:'4px 10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',color:'var(--text)',fontSize:'11px',cursor:'pointer',fontFamily:'inherit'}
+          },
+            React.createElement('span',{style:{color:'#7B6EFF',fontWeight:600}}, '#' + t.tag),
+            React.createElement('span',{style:{color:'var(--t3)',fontSize:'10px'}}, t.post_count)
+          );
+        })
+      )
+    ) : null,
     (function(){
       var q = (searchQ||'').trim().toLowerCase();
       var filtered = !q ? EXPERTS : EXPERTS.filter(function(e){
