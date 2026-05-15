@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
+import {loadBlocks} from './utils/blocks';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -121,6 +122,10 @@ export default function App() {
       // while app is foregrounded. T2.4, requires migration 0006_last_seen.sql.
       if (res.data.session && res.data.session.user) {
         try { startLastSeen(res.data.session.user.id); } catch(_){}
+        // T2.11 — load + migrate blocks. Fires the one-time legacy
+        // localStorage → server migration on first run after the migration
+        // is applied. Idempotent thereafter.
+        try { loadBlocks(res.data.session.user.id); } catch(_){}
       }
     });
     var sub = supabase.auth.onAuthStateChange(function(_event, session) {
