@@ -147,11 +147,6 @@ export function UserProfileView(props){
   var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
   // Report modal state — replaces the previously fake alert("Thank you...").
   var reportTargetUS=useState(null); var reportTargetU=reportTargetUS[0]; var setReportTargetU=reportTargetUS[1];
-  // Per-user "hide like counts" preference (Instagram-style toggle).
-  var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
-  // Hashtag filter — tap any tag chip in feed → filters to only posts with
-  // that tag. Click "Clear" to restore the full feed.
-  var selectedTagS=useState(null); var selectedTag=selectedTagS[0]; var setSelectedTag=selectedTagS[1];
 
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
@@ -1055,6 +1050,9 @@ export default function HomeScreen(props){
   var compAudienceS=useState(function(){try{return localStorage.getItem('ringin_last_audience')||'public';}catch(_){return 'public';}});
   var compAudience=compAudienceS[0]; var setCompAudience=compAudienceS[1];
   var compAudienceMenuS=useState(false); var compAudienceMenu=compAudienceMenuS[0]; var setCompAudienceMenu=compAudienceMenuS[1];
+  // Hashtag filter (T1.14) — tap any tag chip in feed → filters to only posts
+  // with that tag. Click "× Clear filter" banner to restore the full feed.
+  var selectedTagS=useState(null); var selectedTag=selectedTagS[0]; var setSelectedTag=selectedTagS[1];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
   var loadingS=useState(_cachedPosts.length===0); var loading=loadingS[0]; var setLoading=loadingS[1];
   var fileInputRef=useRef(null);
