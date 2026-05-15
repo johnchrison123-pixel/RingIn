@@ -139,6 +139,94 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   }
   var mutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var mutedConvos=mutedConvosS[0]; var setMutedConvos=mutedConvosS[1];
   var pressTimerRef=useRef(null);
+
+  // ── 6-emoji message reactions (T2.2, requires migration 0004_reactions.sql) ──
+  // Map: message_id (string|number) → { emoji: [user_id1, user_id2, ...] }
+  // Lets us render "❤️ 3" badges + know if the current user already reacted.
+  var REACTION_EMOJIS = ['❤️','😂','😮','😢','🙏','👍'];
+  var reactionsByMsgS = useState({});
+  var reactionsByMsg = reactionsByMsgS[0]; var setReactionsByMsg = reactionsByMsgS[1];
+  // Reaction picker floating bar — shows above a long-pressed message.
+  var reactionPickerS = useState(null);  // {msgId, x, y} or null
+  var reactionPicker = reactionPickerS[0]; var setReactionPicker = reactionPickerS[1];
+
+  function openReactionPicker(msg, ev) {
+    try {
+      var target = ev && ev.currentTarget;
+      var rect = target ? target.getBoundingClientRect() : { left: 60, top: 200, width: 0, height: 0 };
+      setReactionPicker({
+        msgId: msg.id,
+        isMine: msg.sender_id === myId,
+        x: rect.left, y: rect.top,
+      });
+    } catch (_) {
+      setReactionPicker({ msgId: msg.id, isMine: msg.sender_id === myId, x: 60, y: 200 });
+    }
+  }
+
+  function toggleReaction(msgId, emoji) {
+    var curMap = reactionsByMsg[msgId] || {};
+    var alreadyReacted = (curMap[emoji] || []).indexOf(myId) >= 0;
+    // Optimistic update.
+    setReactionsByMsg(function(prev){
+      var next = Object.assign({}, prev);
+      var msgMap = Object.assign({}, prev[msgId] || {});
+      if (alreadyReacted) {
+        msgMap[emoji] = (msgMap[emoji] || []).filter(function(u){ return u !== myId; });
+        if (msgMap[emoji].length === 0) delete msgMap[emoji];
+      } else {
+        msgMap[emoji] = (msgMap[emoji] || []).concat([myId]);
+      }
+      next[msgId] = msgMap;
+      return next;
+    });
+    setReactionPicker(null);
+    // Persist — try/catch in case the migration isn't applied.
+    try {
+      if (alreadyReacted) {
+        sb.from('message_reactions').delete()
+          .eq('message_id', msgId).eq('user_id', myId).eq('emoji', emoji)
+          .then(function(){});
+      } else {
+        sb.from('message_reactions').insert([{ message_id: msgId, user_id: myId, emoji: emoji }])
+          .then(function(r){
+            if (r && r.error) {
+              // Rollback optimistic add on failure (likely migration not applied yet).
+              setReactionsByMsg(function(prev){
+                var next = Object.assign({}, prev);
+                var mm = Object.assign({}, prev[msgId] || {});
+                if (mm[emoji]) mm[emoji] = mm[emoji].filter(function(u){ return u !== myId; });
+                if (mm[emoji] && mm[emoji].length === 0) delete mm[emoji];
+                next[msgId] = mm;
+                return next;
+              });
+              try { console.warn('[ringin] reaction insert failed:', r.error.message); } catch(_){}
+            }
+          });
+      }
+    } catch (_) {}
+  }
+
+  // Load reactions for all currently-loaded messages whenever the message
+  // list changes. Cheap query, single round-trip.
+  useEffect(function(){
+    if (!msgs || msgs.length === 0) return;
+    var ids = msgs.map(function(m){ return m.id; }).filter(function(x){ return x != null && (typeof x === 'number' || (typeof x === 'string' && x.indexOf('tmp_') !== 0)); });
+    if (ids.length === 0) return;
+    try {
+      sb.from('message_reactions').select('message_id,user_id,emoji').in('message_id', ids).then(function(r){
+        if (r.error || !r.data) return;  // table may not exist yet — silent fallback
+        var grouped = {};
+        r.data.forEach(function(row){
+          if (!grouped[row.message_id]) grouped[row.message_id] = {};
+          if (!grouped[row.message_id][row.emoji]) grouped[row.message_id][row.emoji] = [];
+          grouped[row.message_id][row.emoji].push(row.user_id);
+        });
+        setReactionsByMsg(grouped);
+      });
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msgs.length]);
   var fileInputRef=useRef(null);
   var chatTypingTimerRef=useRef(null);
 
@@ -597,6 +685,46 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     ),
 
     // ── Chat header 3-dot menu dropdown ──
+    // Floating reaction picker — appears on long-press of any message.
+    reactionPicker ? React.createElement(React.Fragment, null,
+      React.createElement('div', {
+        style:{position:'fixed',inset:0,zIndex:400},
+        onClick:function(){ setReactionPicker(null); }
+      }),
+      React.createElement('div', {
+        onClick:function(e){ e.stopPropagation(); },
+        style:{
+          position:'fixed',
+          left: Math.max(12, Math.min(reactionPicker.x, (typeof window!=='undefined'?window.innerWidth:360) - 280)),
+          top: Math.max(80, reactionPicker.y - 56),
+          zIndex:401,
+          background:'var(--bg2,#161028)',
+          border:'1px solid var(--border)',
+          borderRadius:'24px',
+          padding:'6px 10px',
+          display:'flex',
+          gap:'6px',
+          boxShadow:'0 10px 30px rgba(0,0,0,0.55)',
+        }
+      },
+        REACTION_EMOJIS.map(function(e){
+          return React.createElement('button',{
+            key:e,
+            onClick:function(){ toggleReaction(reactionPicker.msgId, e); },
+            style:{background:'none',border:'none',cursor:'pointer',fontSize:'22px',padding:'4px',lineHeight:1,fontFamily:'inherit'}
+          }, e);
+        }),
+        // For OWN messages, also offer the legacy "•••" → unsend menu.
+        reactionPicker.isMine ? React.createElement('button',{
+          onClick:function(){
+            var msg = msgs.find(function(m){ return m.id === reactionPicker.msgId; });
+            setReactionPicker(null);
+            if (msg) openMsgMenu(msg, { currentTarget: { getBoundingClientRect: function(){ return { left: reactionPicker.x, top: reactionPicker.y, width:0, height:0 }; } } });
+          },
+          style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',padding:'4px 8px',color:'var(--t2)',fontFamily:'inherit'}
+        }, '⋯') : null
+      )
+    ) : null,
     chatMenuOpen ? React.createElement(React.Fragment, null,
       React.createElement('div',{
         style:{position:'fixed',inset:0,zIndex:300},
@@ -671,10 +799,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             React.createElement('div',null,
               React.createElement('div',{
                 style:{maxWidth:'260px',padding:'9px 13px',borderRadius:isMe?'18px 18px 4px 18px':'18px 18px 18px 4px',background:isMe?'var(--ac)':'var(--bg3)',border:isMe?'none':'1px solid var(--border)',fontSize:'13px',color:isMe?'#fff':'var(--text)',lineHeight:1.4},
-                onMouseDown:function(ev){if(m.sender_id!==myId)return;pressTimerRef.current=setTimeout(function(){openMsgMenu(m,ev);},500);},
+                onMouseDown:function(ev){pressTimerRef.current=setTimeout(function(){openReactionPicker(m,ev);},500);},
                 onMouseUp:function(){clearTimeout(pressTimerRef.current);},
                 onMouseLeave:function(){clearTimeout(pressTimerRef.current);},
-                onTouchStart:function(ev){if(m.sender_id!==myId)return;pressTimerRef.current=setTimeout(function(){openMsgMenu(m,{currentTarget:ev.currentTarget});},500);},
+                onTouchStart:function(ev){pressTimerRef.current=setTimeout(function(){openReactionPicker(m,{currentTarget:ev.currentTarget});},500);},
                 onTouchEnd:function(){clearTimeout(pressTimerRef.current);}
               },
                 m.text&&m.text.startsWith('[img]')
@@ -728,7 +856,33 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                 // we never show ✓✓ blue — the deal is reciprocal: we don't
                 // see theirs, we don't show ours.
                 isMe?React.createElement('span',{style:{color:(m.read && !readReceiptsOffHere)?'#4A9CFF':'var(--t3)',fontWeight:600,letterSpacing:'-1px'}},(m.read && !readReceiptsOffHere)?'✓✓':'✓'):null
-              )
+              ),
+              // Reaction badges below the message — one chip per emoji with count.
+              (function(){
+                var rmap = reactionsByMsg[m.id]; if (!rmap) return null;
+                var emojis = Object.keys(rmap).filter(function(e){ return rmap[e] && rmap[e].length > 0; });
+                if (emojis.length === 0) return null;
+                return React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'4px',justifyContent:isMe?'flex-end':'flex-start'}},
+                  emojis.map(function(e){
+                    var users = rmap[e] || [];
+                    var iReacted = users.indexOf(myId) >= 0;
+                    return React.createElement('button',{
+                      key:e,
+                      onClick:function(){ toggleReaction(m.id, e); },
+                      style:{
+                        display:'inline-flex',alignItems:'center',gap:'3px',
+                        padding:'2px 7px',borderRadius:'12px',
+                        background:iReacted?'rgba(232,77,154,0.15)':'var(--bg3)',
+                        border:'1px solid '+(iReacted?'#E84D9A':'var(--border)'),
+                        fontSize:'11px',color:'var(--text)',cursor:'pointer',fontFamily:'inherit',
+                      }
+                    },
+                      React.createElement('span',null,e),
+                      users.length>1?React.createElement('span',{style:{fontSize:'10px',fontWeight:600,opacity:0.8}}, users.length):null
+                    );
+                  })
+                );
+              })()
             )
           );
         }),
