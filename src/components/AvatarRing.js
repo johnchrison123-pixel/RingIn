@@ -50,6 +50,18 @@ export default function AvatarRing(props) {
   var inset = -(thickness + 1.5);  // ring extends slightly past the avatar's edge
   var glow = (props.glow !== false);
   var pulse = (props.pulse !== false);
+  // T2.7 — variant='close-friends' renders the ring in green (matches
+  // Instagram's Close Friends Story ring). Default is the pink-purple
+  // moments ring.
+  var variant = props.variant || 'moment';
+  var isCloseFriends = variant === 'close-friends';
+
+  var ringBackground = isCloseFriends
+    ? 'linear-gradient(135deg,#27C96A 0%,#1FA858 50%,#0F6E3A 100%)'
+    : 'linear-gradient(135deg,#FF6B6B 0%,#E84D9A 50%,#7B6EFF 100%)';
+  var ringGlow = isCloseFriends
+    ? '0 0 6px rgba(39,201,106,0.55), 0 0 14px rgba(15,110,58,0.4)'
+    : '0 0 6px rgba(232,77,154,0.55), 0 0 14px rgba(123,110,255,0.4)';
 
   // The gradient ring. Painted into an absolute-positioned overlay that
   // sits on top of (and slightly past) the children. mask-composite cuts
@@ -59,20 +71,13 @@ export default function AvatarRing(props) {
     inset: inset,
     borderRadius: '50%',
     padding: thickness,
-    background: 'linear-gradient(135deg,#FF6B6B 0%,#E84D9A 50%,#7B6EFF 100%)',
+    background: ringBackground,
     pointerEvents: 'none',
-    // The two-layer mask trick: first mask is content-box (centre area
-    // only), second covers everything. Composite-exclude subtracts the
-    // first from the second, leaving only the padding strip = the ring.
     WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
     WebkitMaskComposite: 'xor',
     mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
     maskComposite: 'exclude',
-    // Glow: stacked box-shadows for a neon look (close pink layer +
-    // diffuse purple layer). Pulses via @keyframes momentRingPulse.
-    boxShadow: glow
-      ? '0 0 6px rgba(232,77,154,0.55), 0 0 14px rgba(123,110,255,0.4)'
-      : 'none',
+    boxShadow: glow ? ringGlow : 'none',
     animation: pulse ? 'momentRingPulse 2.4s ease-in-out infinite' : 'none',
   };
 

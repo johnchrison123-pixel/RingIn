@@ -481,6 +481,9 @@ var HEART_CLIP_PATH =
 function HeartTile(props){
   var size = props.size || 68;
   var ring = !!props.ring;
+  // T2.7 — ringVariant='close-friends' renders the ring in green (matches
+  // Instagram's Close Friends Story tier).
+  var ringVariant = props.ringVariant || 'moment';
   var src = props.src || null;
   var initials = props.initials || '?';
   var bg = props.bg || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
@@ -506,7 +509,11 @@ function HeartTile(props){
     position: 'absolute',
     inset: 0,
     clipPath: HEART_CLIP_PATH,
-    background: ring ? 'linear-gradient(135deg,#FF6B6B,#E84D9A,#7B6EFF)' : 'transparent',
+    background: ring
+      ? (ringVariant === 'close-friends'
+          ? 'linear-gradient(135deg,#27C96A,#1FA858,#0F6E3A)'
+          : 'linear-gradient(135deg,#FF6B6B,#E84D9A,#7B6EFF)')
+      : 'transparent',
     padding: ring ? 3 : 0,
     boxSizing: 'border-box',
   };
@@ -669,6 +676,8 @@ export default function Moments(props){
         // Show "unread" gradient ring when the user has fresh own moments —
         // matches the visual treatment of other users' moment tiles.
         ring: hasOwnSlides && (ownMoment.hasNew !== false),
+        // T2.7 — green ring if your latest moment is close-friends-only.
+        ringVariant: (ownMoment && ownMoment.closeFriendsOnly) ? 'close-friends' : 'moment',
         bg: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
         // Main tile tap:
         //   - user has own moments → open viewer with their slides
@@ -702,6 +711,7 @@ export default function Moments(props){
           initials: m.userName ? m.userName.charAt(0).toUpperCase() : '?',
           bg: m.color || 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
           ring: m.hasNew !== false,
+          ringVariant: m.closeFriendsOnly ? 'close-friends' : 'moment',
           size: size,
           label: m.userName,
           // Always open the internal viewer. If parent passes onView it runs

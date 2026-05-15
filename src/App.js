@@ -4,6 +4,7 @@ import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
 import {loadBlocks} from './utils/blocks';
+import {startCloseFriends} from './utils/closeFriends';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -126,6 +127,8 @@ export default function App() {
         // localStorage → server migration on first run after the migration
         // is applied. Idempotent thereafter.
         try { loadBlocks(res.data.session.user.id); } catch(_){}
+        // T2.7 — load Close Friends list (cached + server refresh).
+        try { startCloseFriends(res.data.session.user.id); } catch(_){}
       }
     });
     var sub = supabase.auth.onAuthStateChange(function(_event, session) {

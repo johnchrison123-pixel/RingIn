@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import {useFollow} from './useFollow';
 import {sb as sbProfile} from '../utils/supabase';
 import {usePostsRealtime} from '../utils/usePostsRealtime';
@@ -7,6 +7,7 @@ import Moments from '../components/Moments';
 import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds} from '../utils/momentUsers';
 import {useHideLikes} from '../utils/likeDisplayPref';
+import {useCloseFriends, addCloseFriend, removeCloseFriend} from '../utils/closeFriends';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
 
 var COUNTRIES=[
@@ -136,6 +137,27 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var momentUserIds = useMomentUserIds();
   // Per-user "hide like counts" preference toggle for the privacy panel.
   var hideLikesPair = useHideLikes(); var hideLikesLocal = hideLikesPair[0]; var setHideLikesLocal = hideLikesPair[1];
+  // T2.7 — Close Friends list (Set<userId>) + visibility of the manager screen.
+  var closeFriendsList = useCloseFriends();
+  var showCloseFriendsS = useState(false); var showCloseFriends = showCloseFriendsS[0]; var setShowCloseFriends = showCloseFriendsS[1];
+  var cfSearchS = useState(''); var cfSearch = cfSearchS[0]; var setCfSearch = cfSearchS[1];
+  var cfPeopleS = useState([]); var cfPeople = cfPeopleS[0]; var setCfPeople = cfPeopleS[1];
+  var cfDebounceRef = useRef(null);
+  // Search-as-you-type via the FTS RPC; re-uses the search_profiles function from migration 0010.
+  useEffect(function(){
+    if (!showCloseFriends) return;
+    if (cfDebounceRef.current) clearTimeout(cfDebounceRef.current);
+    var q = (cfSearch || '').trim();
+    if (q.length < 2) { setCfPeople([]); return; }
+    cfDebounceRef.current = setTimeout(function(){
+      try {
+        sbProfile.rpc('search_profiles', { q: q, lim: 12 }).then(function(r){
+          if (r && !r.error && r.data) setCfPeople(r.data.filter(function(p){ return p.id !== userId; }));
+        });
+      } catch(_) {}
+    }, 250);
+    return function(){ if (cfDebounceRef.current) clearTimeout(cfDebounceRef.current); };
+  }, [cfSearch, showCloseFriends]);
 
   var settingsS=useState(false); var showSettings=settingsS[0]; var setShowSettings=settingsS[1];
   var showPrivacyS=useState(false); var showPrivacy=showPrivacyS[0]; var setShowPrivacy=showPrivacyS[1];
@@ -1163,6 +1185,74 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     )
   );
 
+  // ── T2.7: CLOSE FRIENDS MANAGER SCREEN ──
+  if(showCloseFriends) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+      React.createElement('button',{
+        onClick:function(){setShowCloseFriends(false);setCfSearch('');},
+        style:{background:'none',border:'none',color:'var(--text)',fontSize:'18px',cursor:'pointer'}
+      },'←'),
+      React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Close Friends')
+    ),
+    React.createElement('div',{style:{padding:'14px 18px',color:'var(--t2)',fontSize:'12px',lineHeight:1.5,borderBottom:'1px solid var(--border)'}},
+      'People on this list see your Close-Friends-only moments. They are NOT notified when you add or remove them.'
+    ),
+    // Current list
+    closeFriendsList.size > 0 ? React.createElement('div',null,
+      React.createElement('div',{style:{padding:'12px 18px 6px',fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px'}},
+        'On your list · ' + closeFriendsList.size
+      ),
+      Array.from(closeFriendsList).map(function(fid){
+        return React.createElement('div',{
+          key:fid,
+          style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 18px',borderBottom:'1px solid var(--border)'}
+        },
+          React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#27C96A,#1FA858)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px',flexShrink:0}}, '★'),
+          React.createElement('div',{style:{flex:1,fontSize:'12px',color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, fid.substring(0, 16) + '…'),
+          React.createElement('button',{
+            onClick:function(){ removeCloseFriend(fid).catch(function(e){ alert('Failed to remove: '+(e&&e.message)); }); },
+            style:{padding:'5px 10px',background:'rgba(239,71,71,0.12)',border:'1px solid rgba(239,71,71,0.3)',borderRadius:'8px',color:'#ef4747',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          },'Remove')
+        );
+      })
+    ) : React.createElement('div',{style:{textAlign:'center',padding:'30px 18px',color:'var(--t3)',fontSize:'12px'}},'Your list is empty. Search below to add people.'),
+    // Search to add
+    React.createElement('div',{style:{padding:'14px 18px 8px',borderTop:'1px solid var(--border)'}},
+      React.createElement('div',{style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, 'Add people'),
+      React.createElement('input',{
+        value:cfSearch,
+        onChange:function(e){setCfSearch(e.target.value);},
+        placeholder:'Search by name or email…',
+        style:{width:'100%',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'9px 12px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}
+      })
+    ),
+    React.createElement('div',{style:{padding:'4px 18px 80px'}},
+      cfPeople.map(function(p){
+        var alreadyOn = closeFriendsList.has(p.id);
+        var name = (p.full_name && p.full_name.trim()) || (p.email ? p.email.split('@')[0] : 'User');
+        return React.createElement('div',{
+          key:p.id,
+          style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}
+        },
+          React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px',flexShrink:0}},
+            p.avatar_url ? React.createElement('img',{src:p.avatar_url,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : name.substring(0,2).toUpperCase()
+          ),
+          React.createElement('div',{style:{flex:1,fontSize:'13px',color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
+          React.createElement('button',{
+            onClick:function(){
+              if (alreadyOn) {
+                removeCloseFriend(p.id).catch(function(e){ alert('Failed: '+(e&&e.message)); });
+              } else {
+                addCloseFriend(p.id).catch(function(e){ alert('Failed: '+(e&&e.message)); });
+              }
+            },
+            style:{padding:'6px 12px',background:alreadyOn?'rgba(239,71,71,0.12)':'rgba(39,201,106,0.12)',border:'1px solid '+(alreadyOn?'rgba(239,71,71,0.3)':'rgba(39,201,106,0.4)'),borderRadius:'8px',color:alreadyOn?'#ef4747':'#27C96A',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, alreadyOn ? 'Remove' : '+ Add')
+        );
+      })
+    )
+  );
+
   // ── PRIVACY SCREEN ──
   if(showPrivacy) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
@@ -1285,6 +1375,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           },
             React.createElement('div',{style:{position:'absolute',top:'3px',left:hideLikesLocal?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
           )
+        )
+      ),
+
+      // ── T2.7: Close Friends list manager ──
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Close Friends'),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,marginBottom:'10px'}},
+          'When you post a moment with the ★ Close Friends toggle on, only people on this list will see it. Your moment tile shows a green ring instead of pink.'
+        ),
+        React.createElement('button',{
+          onClick:function(){ setShowCloseFriends(true); },
+          style:{padding:'8px 14px',background:'rgba(39,201,106,0.15)',border:'1px solid rgba(39,201,106,0.4)',borderRadius:'10px',color:'#27C96A',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',gap:'6px'}
+        },
+          React.createElement('span',null,'★ '),
+          'Manage Close Friends · ' + closeFriendsList.size
         )
       ),
 

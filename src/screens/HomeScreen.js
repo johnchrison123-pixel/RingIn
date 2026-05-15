@@ -711,6 +711,8 @@ export default function HomeScreen(props){
           slides: [],
           hasNew: true,
           isSelf: uid === currentUserId,
+          // T2.7 — set true if ANY slide in this user's set is close-friends-only
+          closeFriendsOnly: false,
         };
         order.push(uid);
       }
@@ -719,7 +721,9 @@ export default function HomeScreen(props){
         imageUrl: r.image_url,
         caption: r.caption || '',
         createdAt: r.created_at,
+        closeFriendsOnly: !!r.close_friends_only,
       });
+      if (r.close_friends_only) grouped[uid].closeFriendsOnly = true;
     });
     // Sort: self first, then by latest slide timestamp desc
     var arr = order.map(function(u){ return grouped[u]; });
@@ -789,8 +793,9 @@ export default function HomeScreen(props){
     if(f) setPendingMomentFile(f);
   }
 
-  function postMoment(file, caption){
+  function postMoment(file, caption, opts){
     if(!file || !currentUserId) return Promise.reject(new Error('Not signed in'));
+    var closeFriendsOnly = !!(opts && opts.closeFriendsOnly);
     // Client-side compression first — typically 70-90% size cut on raw
     // phone camera images. compressImage returns the original file if
     // it's already small or browser can't decode (e.g. HEIC on Chrome).
@@ -798,11 +803,11 @@ export default function HomeScreen(props){
       var ef = compressed || file;
       var safeExt = ((ef.name||'').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
       var fileName = 'moments/' + currentUserId + '/' + Date.now() + '-' + Math.random().toString(36).slice(2,7) + '.' + safeExt;
-      return uploadMomentInner(ef, fileName, caption);
+      return uploadMomentInner(ef, fileName, caption, closeFriendsOnly);
     });
   }
 
-  function uploadMomentInner(file, fileName, caption){
+  function uploadMomentInner(file, fileName, caption, closeFriendsOnly){
     return sbHome.storage.from('chat-images').upload(fileName, file, {contentType: file.type || 'image/jpeg'}).then(function(up){
       if(up.error) throw up.error;
       var url = sbHome.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
@@ -816,7 +821,17 @@ export default function HomeScreen(props){
         caption: (caption||'').trim() || null,
         created_at: nowIso,
       };
-      return sbHome.from('moments').insert([{user_id:currentUserId, image_url:url, caption: pending.caption}]).select().single().then(function(ins){
+      // T2.7 — include close_friends_only when migration 0009 is applied.
+      // If the column doesn't exist yet, retry without it (graceful fallback).
+      var insertRow = {user_id:currentUserId, image_url:url, caption: pending.caption};
+      if (closeFriendsOnly) insertRow.close_friends_only = true;
+      return sbHome.from('moments').insert([insertRow]).select().single().then(function(ins){
+        if (ins.error && /close_friends_only/.test(ins.error.message || '')) {
+          var fb = Object.assign({}, insertRow); delete fb.close_friends_only;
+          return sbHome.from('moments').insert([fb]).select().single();
+        }
+        return ins;
+      }).then(function(ins){
         if(ins.data) pending = ins.data;
         // Cache locally so it's still there if the table read fails.
         try{

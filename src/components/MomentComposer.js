@@ -8,12 +8,16 @@ import {createPortal} from 'react-dom';
 export default function MomentComposer(props){
   var file = props.file;
   var onCancel = props.onCancel;
-  var onShare = props.onShare;  // async (file, caption) => row
+  var onShare = props.onShare;  // async (file, caption, opts) => row
 
   var captionS = useState(''); var caption = captionS[0]; var setCaption = captionS[1];
   var uploadingS = useState(false); var uploading = uploadingS[0]; var setUploading = uploadingS[1];
   var previewUrlS = useState(null); var previewUrl = previewUrlS[0]; var setPreviewUrl = previewUrlS[1];
   var errorS = useState(''); var error = errorS[0]; var setError = errorS[1];
+  // T2.7 — close-friends-only toggle. When true, the moment is only
+  // visible to users on the poster's close_friends list (and gets the
+  // green ring variant in the strip).
+  var closeFriendsOnlyS = useState(false); var closeFriendsOnly = closeFriendsOnlyS[0]; var setCloseFriendsOnly = closeFriendsOnlyS[1];
 
   useEffect(function(){
     if(!file) return;
@@ -27,7 +31,7 @@ export default function MomentComposer(props){
     if(uploading || !file) return;
     setUploading(true);
     setError('');
-    Promise.resolve(onShare && onShare(file, (caption || '').trim()))
+    Promise.resolve(onShare && onShare(file, (caption || '').trim(), { closeFriendsOnly: closeFriendsOnly }))
       .then(function(){ /* parent closes us */ })
       .catch(function(err){
         setError((err && err.message) ? err.message : 'Failed to share. Please try again.');
@@ -96,6 +100,36 @@ export default function MomentComposer(props){
         textAlign:'center',
       }
     }, error) : null,
+
+    // T2.7 — Audience chip (Public ↔ Close Friends). Sits above the
+    // caption input. Tap to toggle. Green when close-friends-only.
+    React.createElement('div', {
+      style:{
+        position:'absolute',
+        left:'12px',
+        bottom:'calc(60px + env(safe-area-inset-bottom, 0px))',
+        zIndex:1,
+      }
+    },
+      React.createElement('button', {
+        onClick: function(){ setCloseFriendsOnly(function(v){ return !v; }); },
+        className:'ringin-tap',
+        style:{
+          background: closeFriendsOnly ? 'rgba(39,201,106,0.85)' : 'rgba(0,0,0,0.55)',
+          border: '1px solid ' + (closeFriendsOnly ? '#27C96A' : 'rgba(255,255,255,0.35)'),
+          color:'#fff',
+          padding:'6px 12px',
+          borderRadius:'18px',
+          fontSize:'12px',
+          fontWeight:600,
+          cursor:'pointer',
+          fontFamily:'inherit',
+          display:'inline-flex',
+          alignItems:'center',
+          gap:'5px',
+        }
+      }, closeFriendsOnly ? '★ Close Friends' : '🌐 Public')
+    ),
 
     // Caption + Share row
     React.createElement('div', {
