@@ -5,10 +5,67 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#09090E" />
-    <meta
-      name="description"
-      content="RingIn — connect, message, and call experts in real time."
-    />
+    <meta name="description" content="RingIn — connect, message, and call experts in real time. Pay-per-minute audio consultations. No ads, no algorithm, just real conversations." />
+    <link rel="canonical" href="https://ring-in.vercel.app/" />
+
+    <!-- ── OpenGraph (Facebook / LinkedIn / WhatsApp / Slack / Discord / iMessage) ──
+         These render the link preview when a RingIn URL is shared. Every
+         non-Google crawler in this list (facebookexternalhit, Twitterbot,
+         LinkedInBot, Slackbot, Discordbot, WhatsApp's fetcher) does NOT
+         execute JavaScript — without these tags the preview is empty.
+         For per-PAGE meta (specific user / specific post), the Vercel
+         middleware at /middleware.js detects the crawler UA and rewrites
+         to /api/preview which serves enriched HTML with page-specific tags. -->
+    <meta property="og:site_name" content="RingIn" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ring-in.vercel.app/" />
+    <meta property="og:title" content="RingIn — talk to experts, by the minute" />
+    <meta property="og:description" content="Connect, message, and call experts in real time. Pay-per-minute audio consultations. No ads, no algorithm — just real conversations." />
+    <meta property="og:image" content="https://ring-in.vercel.app/logo512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card — falls back to og:* but having explicit twitter:* avoids
+         the rare cases where X's parser ignores OG. summary_large_image is
+         the modern hero card layout. -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="RingIn — talk to experts, by the minute" />
+    <meta name="twitter:description" content="Connect, message, and call experts in real time. Pay-per-minute audio consultations." />
+    <meta name="twitter:image" content="https://ring-in.vercel.app/logo512.png" />
+
+    <!-- ── schema.org / JSON-LD structured data ──
+         Drives Google's rich SERP results (knowledge-panel-style) and is
+         indexable by every major search engine. Per-PAGE Person / Article
+         schema is injected by the crawler-aware middleware for /profile/<id>
+         and /post/<id> — this block is the org-level baseline.
+         BreadcrumbList omitted at root (no breadcrumbs to root). -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://ring-in.vercel.app/#organization",
+          "name": "RingIn",
+          "url": "https://ring-in.vercel.app/",
+          "logo": "https://ring-in.vercel.app/logo512.png",
+          "description": "Pay-per-minute audio consultations with experts.",
+          "sameAs": [
+            "https://github.com/johnchrison123-pixel/RingIn"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://ring-in.vercel.app/#website",
+          "url": "https://ring-in.vercel.app/",
+          "name": "RingIn",
+          "publisher": { "@id": "https://ring-in.vercel.app/#organization" },
+          "inLanguage": "en-US"
+        }
+      ]
+    }
+    </script>
 
     <!-- ── PWA / Apple home-screen app meta ──────────────────────────────────
          These let RingIn install to the iOS home screen and run full-screen
