@@ -132,19 +132,40 @@ export async function downloadAndApply(version, url, onProgress) {
   try {
     try { console.log('[ringin OTA] downloading', version); } catch(_){}
     var bundle = await Capgo.download({ url: url, version: version });
-    if (typeof onProgress === 'function') try { onProgress(95); } catch(_){}
-    await Capgo.set({ id: bundle.id });
-    setCurrentVersion(version);
-    if (typeof onProgress === 'function') try { onProgress(100); } catch(_){}
-    try { console.log('[ringin OTA] installed', version, '— reloading'); } catch(_){}
-    // Flag the next boot so post-reload UpdatePrompt can show a brief
-    // "finishing up" overlay instead of a flash of nothing.
-    try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
-    if (typeof Capgo.reload === 'function') {
-      await Capgo.reload();
-    } else {
-      try { window.location.reload(); } catch(_){}
+    if (typeof onProgress === 'function') try { onProgress(90); } catch(_){}
+    // CRITICAL: verify the bundle actually downloaded successfully.
+    // If status is 'error' / 'pending', set() will silently do nothing
+    // and we'll be left with the old bundle but a misleading "updated"
+    // version label.
+    if (bundle && bundle.status && bundle.status !== 'success' && bundle.status !== 'pending') {
+      throw new Error('Bundle download failed: status=' + bundle.status);
     }
+    try { console.log('[ringin OTA] downloaded bundle:', JSON.stringify(bundle)); } catch(_){}
+    // Set the flags BEFORE set() because set() reloads immediately and
+    // the JS context dies — anything after may never run.
+    try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
+    setCurrentVersion(version);
+    if (typeof onProgress === 'function') try { onProgress(95); } catch(_){}
+    // Capgo's set() docs (line 230 of definitions.d.ts):
+    //   "Set the current bundle and immediately reloads the app."
+    // So we DON'T call reload() separately — set() does both. The
+    // previous bug was calling reload() right after set() which sometimes
+    // caused the reload to happen with the OLD bundle still active
+    // (race between set's reload trigger and our explicit reload).
+    await Capgo.set({ id: bundle.id });
+    // If we get here without the app reloading, something went wrong.
+    // Force a reload as a fallback.
+    try { console.log('[ringin OTA] set() did not reload — forcing'); } catch(_){}
+    if (typeof onProgress === 'function') try { onProgress(100); } catch(_){}
+    setTimeout(function(){
+      if (typeof Capgo.reload === 'function') {
+        Capgo.reload().catch(function(){
+          try { window.location.reload(); } catch(_){}
+        });
+      } else {
+        try { window.location.reload(); } catch(_){}
+      }
+    }, 100);
   } finally {
     if (pluginListener && typeof pluginListener.remove === 'function') {
       try { await pluginListener.remove(); } catch(_){}
