@@ -1,7 +1,7 @@
 ﻿{
-  "version": "2026.0516.1630",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1630.zip",
-  "published_at": "2026-05-16T16:30:51Z",
+  "version": "2026.0516.1642",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1642.zip",
+  "published_at": "2026-05-16T16:42:03Z",
   "git_sha": "manual",
-  "note": "true 3D cube transition (Insta-style) + Updating splash (no white flash)"
+  "note": "bundle version pill at bottom of Profile screen"
 }
