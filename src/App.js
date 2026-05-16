@@ -5,7 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
 import {loadBlocks} from './utils/blocks';
 import {startCloseFriends} from './utils/closeFriends';
-import {startOtaUpdater} from './utils/otaUpdater';
+import {startOtaUpdater, applyUpdateNow} from './utils/otaUpdater';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -121,7 +121,24 @@ export default function App() {
     // already updates via service worker). Self-hosted: manifest at
     // ring-in.vercel.app/bundles/latest.json + bundle zips alongside,
     // published by .github/workflows/publish-bundle.yml.
-    try { startOtaUpdater(); } catch(e){}
+    //
+    // When a new bundle has been downloaded and is staged for activation,
+    // we surface the same "Update available" banner the PWA SW path uses —
+    // so the user sees one consistent prompt regardless of whether they
+    // installed via APK or via Add-to-Home-Screen.
+    try {
+      // Register a global helper that the UpdatePrompt component calls when
+      // the user taps "Update" — for native it goes through Capgo's reload,
+      // for PWA it falls back to window.location.reload().
+      try { window.__ringinApplyOtaUpdate = applyUpdateNow; } catch(_){}
+      startOtaUpdater(function(info){
+        // Dispatch the same event PWA uses so UpdatePrompt picks it up.
+        try {
+          var ev = new CustomEvent('ringin-sw-update-available', { detail: { source: 'ota', version: info && info.version } });
+          window.dispatchEvent(ev);
+        } catch(_){}
+      });
+    } catch(e){}
 
     supabase.auth.getSession().then(function(res) {
       setSession(res.data.session);

@@ -21,9 +21,20 @@ export default function UpdatePrompt(){
   var available = availableS[0]; var setAvailable = availableS[1];
   var applyingS = useState(false);
   var applying = applyingS[0]; var setApplying = applyingS[1];
+  // Track whether the available update came from the native OTA path
+  // (Capgo bundle download) or the PWA service worker — they apply via
+  // different mechanisms, so we route accordingly when the user taps Update.
+  var sourceS = useState('sw');
+  var source = sourceS[0]; var setSource = sourceS[1];
 
   useEffect(function(){
-    function onReady(){ setAvailable(true); }
+    function onReady(ev){
+      try {
+        var src = (ev && ev.detail && ev.detail.source) || 'sw';
+        setSource(src);
+      } catch(_) { setSource('sw'); }
+      setAvailable(true);
+    }
     try{ window.addEventListener('ringin-sw-update-available', onReady); }catch(_){}
     return function(){
       try{ window.removeEventListener('ringin-sw-update-available', onReady); }catch(_){}
@@ -32,15 +43,18 @@ export default function UpdatePrompt(){
 
   function applyUpdate(){
     setApplying(true);
-    // Small delay so the user sees the spinner state, then call the global
-    // helper installed by swRegistration.js. That sends SKIP_WAITING to the
-    // new SW and reloads the page when the new SW takes over.
+    // Small delay so the user sees the spinner state, then route to the
+    // correct apply function based on update source:
+    //   - 'ota' (native APK with a staged Capgo bundle) → __ringinApplyOtaUpdate
+    //   - 'sw'  (PWA with a waiting service worker)     → __ringinApplySWUpdate
     setTimeout(function(){
       try{
-        if (typeof window.__ringinApplySWUpdate === 'function'){
+        if (source === 'ota' && typeof window.__ringinApplyOtaUpdate === 'function'){
+          window.__ringinApplyOtaUpdate();
+        } else if (typeof window.__ringinApplySWUpdate === 'function'){
           window.__ringinApplySWUpdate();
         } else {
-          // Fallback if the helper somehow isn't there — just reload
+          // Fallback if neither helper is there — just reload
           try{ window.location.reload(); }catch(_){}
         }
       }catch(_){
