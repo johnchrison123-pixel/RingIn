@@ -460,9 +460,19 @@ function MomentViewer(props){
     // smooth instead of the laggy state-driven version the user flagged.
     onPointerDown: function(e){
       if (isInteractive(e)) return;
+      // EDGE REJECTION — on Android phones with gesture navigation,
+      // swipes that start within ~22px of the screen edge trigger the
+      // SYSTEM BACK gesture (which closes the viewer via popstate).
+      // Ignore those: let Android handle them. The user can still
+      // swipe between users — they just need to start further inside.
+      var startX = (e && e.clientX) || 0;
+      var EDGE_REJECT = 22;
+      if (startX < EDGE_REJECT || startX > (VW - EDGE_REJECT)) {
+        return;  // do not capture, do not pause — system handles it
+      }
       try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch(_){}
       gestureRef.current = {
-        x: (e && e.clientX) || 0,
+        x: startX,
         y: (e && e.clientY) || 0,
         t: Date.now(),
         moved: false,
@@ -470,7 +480,6 @@ function MomentViewer(props){
       };
       dragNowRef.current = { dx: 0, dy: 0, kind: null };
       // INSTANT pause — touching the slide pauses immediately (Insta pattern).
-      // Was a 220ms hold timer before; user flagged the delay as laggy.
       setHoldPaused(true);
     },
     onPointerMove: function(e){
@@ -1383,15 +1392,21 @@ export default function Moments(props){
 
   // Called by MomentViewer on a horizontal swipe — moves to next/prev
   // user in the ordered list. Matches Instagram's swipe-between-stories.
+  //
+  // DEFENSIVE: this function NEVER closes the viewer. If the current
+  // moment isn't found in the list (race condition) or we're already
+  // at an edge, we just return — the viewer stays open on whatever it
+  // was showing. Previously we called closeViewer() on these edge
+  // cases, which caused the "viewer exits on swipe" bug.
   function jumpToUser(direction){
     if (!viewer) return;
     var list = buildOrderedList();
     var currentId = viewer.moment && viewer.moment.id;
     var i = -1;
     for (var k = 0; k < list.length; k++) { if (list[k].id === currentId) { i = k; break; } }
-    if (i < 0) { closeViewer(); return; }
+    if (i < 0) return;                  // current moment not in list — bail without closing
     var next = i + direction;
-    if (next < 0 || next >= list.length) { closeViewer(); return; }
+    if (next < 0 || next >= list.length) return;  // at edge — stay put
     openViewerFor(list[next], direction);
   }
 
