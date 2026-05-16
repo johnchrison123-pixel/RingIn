@@ -1,13 +1,13 @@
 ﻿{
-  "version": "2026.0516.1837",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1837.zip",
-  "published_at": "2026-05-16T18:37:50Z",
+  "version": "2026.0516.1851",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1851.zip",
+  "published_at": "2026-05-16T18:51:16Z",
   "git_sha": "manual",
-  "title": "Smoother updates + moment swipe fix",
+  "title": "Moments swipe — really fixed this time",
   "notes": [
-    "Fix: swiping between users in moments no longer exits the viewer",
-    "Fix: no more blank screen after the progress bar finishes",
-    "New: update popup re-shows every 5 min + when app comes back online",
-    "Slower progress bar that flows continuously through the reload"
+    "Fix: swipe between users no longer exits the viewer",
+    "Cause: Android system back-gesture was firing on edge swipes",
+    "Now: ignores swipes that start within 22px of either screen edge",
+    "Plus: jumpToUser is defensive — never closes the viewer on edge cases"
   ]
 }
