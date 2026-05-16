@@ -1,7 +1,6 @@
-﻿{
-  "version": "2026.0516.1328",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1328.zip",
-  "published_at": "2026-05-16T13:28:16Z",
-  "git_sha": "manual",
-  "note": "moments routing fix: home strip = direct play, profile avatar = picker, brighter neon ring"
+{
+  "version": "2026.0516.0929",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.0929.zip",
+  "published_at": "2026-05-16T09:29:25Z",
+  "git_sha": "130e8274c2767c70febc0da6d360fc7e6b842d9e"
 }
