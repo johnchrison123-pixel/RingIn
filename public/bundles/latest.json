@@ -1,13 +1,13 @@
 ﻿{
-  "version": "2026.0516.1808",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1808.zip",
-  "published_at": "2026-05-16T18:08:10Z",
+  "version": "2026.0516.1822",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1822.zip",
+  "published_at": "2026-05-16T18:22:21Z",
   "git_sha": "manual",
-  "title": "Messages tabs + manual update check",
+  "title": "Real fix: no more auto-update",
   "notes": [
-    "New: Friends / Experts / Business tabs in Messages",
-    "New: Check for Updates button in Settings",
-    "Fix: confirmed no more silent auto-download",
-    "Fix: empty states added for Business + empty Friends list"
+    "Fix: disabled Capgo native autoUpdate — this was the root cause of the blank-screen behavior",
+    "Fix: hardware Back button now closes Moment viewer instead of exiting the app",
+    "Fix: bumped APK to v3.15 — install once to activate the native config",
+    "New: same green popup + frosted updating overlay flow you wanted"
   ]
 }
