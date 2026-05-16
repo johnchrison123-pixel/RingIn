@@ -1,7 +1,6 @@
 {
-  "version": "2026.0516.1251",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1251.zip",
-  "published_at": "2026-05-16T12:51:22Z",
-  "git_sha": "manual",
-  "note": "moments overhaul: press-hold fix, eye icon left-bottom, share button, swipe-between-users, avatar picker"
+  "version": "2026.0516.0854",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.0854.zip",
+  "published_at": "2026-05-16T08:54:07Z",
+  "git_sha": "6c6c59f4f61552d2f460535390eea073190f7760"
 }
