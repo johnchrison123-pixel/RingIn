@@ -341,15 +341,30 @@ function MomentViewer(props){
       pressStartRef.current = null;
       if (!data) return;
       if (data.held) { setHoldPaused(false); return; }
-      // Was a quick tap. Decide between swipe-down-dismiss and left/right
-      // navigation by comparing axis deltas.
+      // Quick tap → decide between three gestures by inspecting deltas.
       var dx = ((e && e.clientX) || 0) - data.x;
       var dy = ((e && e.clientY) || 0) - data.y;
-      if (dy > 90 && Math.abs(dy) > Math.abs(dx)) {
+      var absDx = Math.abs(dx);
+      var absDy = Math.abs(dy);
+      // 1. Vertical swipe down (>90px) → dismiss the viewer entirely.
+      if (dy > 90 && absDy > absDx) {
         if (onClose) onClose();
         return;
       }
-      // Normal tap → run the existing left/right hit-test.
+      // 2. Horizontal swipe (>60px, mostly horizontal) → jump to the NEXT
+      //    or PREVIOUS user's moments, not the next slide of this user.
+      //    Matches Instagram behaviour where left/right swipes are
+      //    "next/prev person", and taps are "next/prev slide".
+      if (absDx > 60 && absDx > absDy) {
+        if (typeof props.onNextUser === 'function') {
+          props.onNextUser(dx < 0 ? 1 : -1);  // swipe-left = next person
+          return;
+        }
+        // Fallback if parent didn't wire it: just close.
+        if (onClose) onClose();
+        return;
+      }
+      // 3. Pure tap → existing left/right hit-test for within-user nav.
       handleTap(e);
     },
     onPointerCancel: function(){
@@ -383,6 +398,12 @@ function MomentViewer(props){
       alignItems:'center', justifyContent:'center',
       padding:'24px',
       userSelect:'none', WebkitUserSelect:'none',
+      WebkitTouchCallout:'none',
+      // touch-action:none stops the browser from inventing its own gestures
+      // (pull-to-refresh, double-tap zoom, text selection) so our React
+      // pointer handlers get every event cleanly. Without this, Chrome
+      // would steal long-press on the slide and show its text-selection UI.
+      touchAction:'none',
       cursor:'pointer',
       overflow:'hidden',
     }
@@ -390,14 +411,28 @@ function MomentViewer(props){
     // Image layer (real moments) — sits below the chrome (progress bars,
     // header, composer). object-fit:contain so portraits/landscapes both
     // render without cropping; black letterbox via the parent bg.
+    //
+    // CRITICAL: pointer-events:none + draggable=false + WebkitTouchCallout
+    // so the long-press CONTEXT MENU ("Save image…", "Copy image") doesn't
+    // hijack the press-and-hold gesture. Without these, on Android Chrome
+    // and iOS Safari, holding on an image triggers the system save-image
+    // sheet instead of pausing the story — which was exactly the bug the
+    // user hit on their OWN moments (others' fallback gradient slides have
+    // no <img>, so press-hold worked fine there).
     hasImage ? React.createElement('img', {
       src: cur.imageUrl, alt:'',
+      draggable: false,
       onError: function(e){ try{ e.target.style.display='none'; }catch(_){} },
       style:{
         position:'absolute',
         top:0, left:0, width:'100%', height:'100%',
         objectFit:'contain',
         zIndex:0,
+        pointerEvents:'none',
+        userSelect:'none',
+        WebkitUserSelect:'none',
+        WebkitTouchCallout:'none',
+        WebkitUserDrag:'none',
       }
     }) : null,
     // Progress bars
@@ -452,13 +487,8 @@ function MomentViewer(props){
           React.createElement('div', {style:{fontSize:'12px',color:'rgba(255,255,255,0.75)',fontWeight:500,textShadow:'0 1px 3px rgba(0,0,0,0.3)',flexShrink:0}}, relativeTime(cur.createdAt))
         )
       ),
-      // T2.5 — "Seen by N" badge for own moments. ALWAYS visible on own
-      // moments (even with 0 views) so the owner can open the sheet and see
-      // "No one has viewed this yet." — matches Instagram's behaviour.
-      isOwn ? React.createElement('button',{
-        onClick:function(e){ if(e&&e.stopPropagation) e.stopPropagation(); setShowViewers(true); },
-        style:{display:'inline-flex',alignItems:'center',gap:'4px',background:'rgba(0,0,0,0.4)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:'12px',padding:'4px 10px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',marginRight:'6px',fontFamily:'inherit',flexShrink:0}
-      }, '👁 ', viewCount) : null,
+      // (T2.5 "👁 N" badge moved out of the header — it now lives in the
+      // bottom row, left of the reply composer, per user feedback.)
       // 3-dot menu for own moments — Delete / Save / Copy link (Insta-style).
       isOwn ? React.createElement('button', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); setOwnMenu(true); },
@@ -500,24 +530,49 @@ function MomentViewer(props){
         position:'relative', zIndex:1,
       }
     }, captionText)) : null,
-    // ── Reply composer + Like row (bottom) ────────────────────────────────
+    // ── Reply composer + actions row (bottom) ─────────────────────────────
     // Sits above the home-indicator safe area. Tapping anywhere here MUST
     // NOT trigger the tap-navigate handler on the parent, so every event
     // is stopPropagation'd. Pauses the auto-advance while focused.
+    //
+    // Layout (no text typed):
+    //   [👁 N (own only)]  [reply input ___]  [♡ Like]  [↗ Share]
+    // Layout (typing):
+    //   [reply input typing...]  [Send]
     React.createElement('div', {
       onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
       style:{
         position:'absolute',
         left:'14px', right:'14px',
         // 10px above the safe-area inset puts the composer right above the
-        // home-indicator blank zone — like Instagram. env() handles both
-        // PWA (≈34px home-indicator inset) and Safari (URL bar already
-        // excluded by the 100dvh overlay above).
+        // home-indicator blank zone — like Instagram.
         bottom:'calc(10px + env(safe-area-inset-bottom, 0px))',
         display:'flex', alignItems:'center', gap:'8px',
         zIndex:3,
       }
     },
+      // Eye / Seen-by-N button (own moments only, left of input).
+      // ALWAYS visible — even with 0 views — opens the viewer sheet which
+      // shows "No one has viewed this yet" with a friendly empty state.
+      (isOwn && !(replyText && replyText.trim())) ? React.createElement('button', {
+        onClick:function(e){ if(e&&e.stopPropagation) e.stopPropagation(); setShowViewers(true); },
+        className:'ringin-tap',
+        title:'See who viewed',
+        style:{
+          display:'inline-flex', alignItems:'center', gap:'4px',
+          background:'rgba(0,0,0,0.4)',
+          border:'1px solid rgba(255,255,255,0.32)',
+          borderRadius:'22px',
+          padding:'9px 12px',
+          color:'#fff',
+          fontSize:'13px', fontWeight:600,
+          cursor:'pointer', flexShrink:0,
+          fontFamily:'inherit',
+          minHeight:'44px',
+        }
+      }, '👁 ', viewCount) : null,
       React.createElement('input', {
         type:'text',
         value: replyText,
@@ -530,13 +585,14 @@ function MomentViewer(props){
           flex:1,
           background:'rgba(0,0,0,0.32)',
           border:'1px solid rgba(255,255,255,0.35)',
-          borderRadius:'24px',        // +10% from 22px
-          padding:'11px 15px',        // +10% from 10px/14px
-          fontSize:'15.4px',          // +10% from 14px
+          borderRadius:'24px',
+          padding:'11px 15px',
+          fontSize:'15.4px',
           color:'#fff',
           outline:'none',
           fontFamily:'DM Sans, sans-serif',
           WebkitAppearance:'none',
+          minWidth:0,
         }
       }),
       (replyText && replyText.trim()) ? React.createElement('button', {
@@ -545,26 +601,71 @@ function MomentViewer(props){
         style:{
           background:'#fff', border:'none',
           color:'#222', fontWeight:700,
-          fontSize:'14.3px',          // +10% from 13px
-          padding:'10px 15px',        // +10% from 9px/14px
+          fontSize:'14.3px',
+          padding:'10px 15px',
           borderRadius:'24px',
-          cursor:'pointer',
+          cursor:'pointer', flexShrink:0,
         }
-      }, 'Send') : React.createElement('button', {
-        onClick: toggleLike,
-        className:'ringin-tap',
-        title: likedNow ? 'Unlike' : 'Like',
-        style:{
-          background:'rgba(0,0,0,0.32)',
-          border:'1px solid rgba(255,255,255,0.35)',
-          color:'#fff',
-          width:'44px', height:'44px', // +10% from 40px
-          borderRadius:'50%',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          fontSize:'22px', lineHeight:1, // +10% from 20px
-          cursor:'pointer',
-        }
-      }, likedNow ? '❤️' : '🤍')
+      }, 'Send') : [
+        // Heart / Like button.
+        React.createElement('button', {
+          key:'like',
+          onClick: toggleLike,
+          className:'ringin-tap',
+          title: likedNow ? 'Unlike' : 'Like',
+          style:{
+            background:'rgba(0,0,0,0.32)',
+            border:'1px solid rgba(255,255,255,0.35)',
+            color:'#fff',
+            width:'44px', height:'44px',
+            borderRadius:'50%',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:'22px', lineHeight:1,
+            cursor:'pointer', flexShrink:0,
+          }
+        }, likedNow ? '❤️' : '🤍'),
+        // Share button (right of heart). Uses the Web Share API where
+        // available (native Android share sheet, iOS PWA share sheet);
+        // falls back to copying a link to the clipboard.
+        React.createElement('button', {
+          key:'share',
+          onClick: function(e){
+            if (e && e.stopPropagation) e.stopPropagation();
+            var cur4 = slides[idx]; if (!cur4) return;
+            var link = 'https://ring-in.vercel.app/?moment=' + encodeURIComponent(cur4.id);
+            var shareData = { title: 'Moment on RingIn', text: captionText || 'Check this moment on RingIn', url: link };
+            try {
+              if (navigator.share) {
+                navigator.share(shareData).then(function(){ showToast('Shared'); }).catch(function(){});
+              } else {
+                try { navigator.clipboard.writeText(link); } catch(_){}
+                showToast('Link copied');
+              }
+            } catch(_) {
+              try { navigator.clipboard.writeText(link); } catch(_){}
+              showToast('Link copied');
+            }
+          },
+          className:'ringin-tap',
+          title:'Share',
+          style:{
+            background:'rgba(0,0,0,0.32)',
+            border:'1px solid rgba(255,255,255,0.35)',
+            color:'#fff',
+            width:'44px', height:'44px',
+            borderRadius:'50%',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:'19px', lineHeight:1,
+            cursor:'pointer', flexShrink:0,
+          }
+        },
+          // ↗ paper-plane glyph (Insta-style)
+          React.createElement('svg', {viewBox:'0 0 24 24', width:'19', height:'19', fill:'none', stroke:'#fff', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round'},
+            React.createElement('line', {x1:22, y1:2, x2:11, y2:13}),
+            React.createElement('polygon', {points:'22 2 15 22 11 13 2 9 22 2'})
+          )
+        )
+      ]
     ),
     // Brief "Sent ✓" / "Liked ❤️" toast — auto-hides after ~1.4s
     sentToast ? React.createElement('div', {
@@ -581,42 +682,9 @@ function MomentViewer(props){
         pointerEvents:'none',
       }
     }, sentToast) : null,
-    // Quick emoji reactions row (Insta-style). Sits just above the reply
-    // composer. Single tap → fires onReply with the emoji as the message.
-    // Hidden when the user has already liked/replied (interacted) so it
-    // doesn't compete with the toast.
-    !interacted ? React.createElement('div', {
-      onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
-      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
-      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
-      style:{
-        position:'absolute',
-        left:'14px', right:'14px',
-        bottom:'calc(70px + env(safe-area-inset-bottom, 0px))',
-        display:'flex', justifyContent:'space-between',
-        gap:'4px', zIndex:3,
-      }
-    },
-      ['❤️','😂','😮','😢','👍','🔥'].map(function(em){
-        return React.createElement('button', {
-          key: em,
-          onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); sendQuickReaction(em); },
-          className: 'ringin-tap',
-          style:{
-            flex:1,
-            background:'rgba(0,0,0,0.35)',
-            border:'1px solid rgba(255,255,255,0.18)',
-            borderRadius:'50%',
-            aspectRatio:'1 / 1',
-            maxWidth:'46px',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            fontSize:'20px', cursor:'pointer',
-            backdropFilter:'blur(4px)',
-            WebkitBackdropFilter:'blur(4px)',
-          }
-        }, em);
-      })
-    ) : null,
+    // (Quick-emoji-reactions row removed per user feedback — the bottom
+    // composer now has just the Eye/Reply/Like/Share row, matching the
+    // requested Instagram-like layout.)
     // Owner-only 3-dot menu. Slides up from bottom with Delete / Save options.
     ownMenu ? React.createElement('div', {
       onClick: function(){ setOwnMenu(false); },
@@ -885,6 +953,22 @@ export default function Moments(props){
   // Internal viewer state — when set, MomentViewer overlay is rendered
   var viewerS = useState(null);
   var viewer = viewerS[0]; var setViewer = viewerS[1];
+  // Avatar action menu for OWN moments (the user explicitly asked for a
+  // bottom-sheet picker between "View my moments" / "Add a new moment"
+  // when they tap their own tile while they already have a status posted).
+  var ownPickerS = useState(false);
+  var ownPicker = ownPickerS[0]; var setOwnPicker = ownPickerS[1];
+
+  // Build the ordered list of users-with-moments. Used by horizontal
+  // swipe (next/prev user) and by the "view my moments" path. Self is
+  // always first when showAdd && hasOwnSlides, then the moments[] prop
+  // (which the parent already excludes self from).
+  function buildOrderedList(){
+    var list = [];
+    if (hasOwnSlides) list.push(ownMoment);
+    moments.forEach(function(m){ list.push(m); });
+    return list;
+  }
 
   function openViewerFor(m){
     // Real moments come with their own slides (image + caption); mock
@@ -900,6 +984,20 @@ export default function Moments(props){
     });
   }
   function closeViewer(){ setViewer(null); }
+
+  // Called by MomentViewer on a horizontal swipe — moves to next/prev
+  // user in the ordered list. Matches Instagram's swipe-between-stories.
+  function jumpToUser(direction){
+    if (!viewer) return;
+    var list = buildOrderedList();
+    var currentId = viewer.moment && viewer.moment.id;
+    var i = -1;
+    for (var k = 0; k < list.length; k++) { if (list[k].id === currentId) { i = k; break; } }
+    if (i < 0) { closeViewer(); return; }
+    var next = i + direction;
+    if (next < 0 || next >= list.length) { closeViewer(); return; }
+    openViewerFor(list[next]);
+  }
 
   // Defensive: total nav strip height is heart (size) + label gap (5px) +
   // label height (~12px) + top padding (12px) + bottom padding (16px) =
@@ -942,11 +1040,14 @@ export default function Moments(props){
         ringVariant: (ownMoment && ownMoment.closeFriendsOnly) ? 'close-friends' : 'moment',
         bg: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
         // Main tile tap:
-        //   - user has own moments → open viewer with their slides
-        //   - no own moments yet   → open uploader (legacy "+" behavior)
+        //   - user has own moments → show picker (View / Add another)
+        //   - no own moments yet   → open uploader directly
+        //
+        // The picker is a bottom-sheet so you don't have to remember the
+        // "+" badge affordance — every option is named, like FB Stories.
         onClick: function(){
           if (hasOwnSlides) {
-            openViewerFor(ownMoment);
+            setOwnPicker(true);
             return;
           }
           if (props.onAdd) props.onAdd();
@@ -989,6 +1090,43 @@ export default function Moments(props){
     // Empty-state pad so the last tile has a bit of right margin when scrolling
     React.createElement('div', {style:{minWidth:'4px',flexShrink:0}}),
 
+    // Avatar action menu — bottom-sheet picker shown when user taps their
+    // own heart tile while they already have a moment posted. Lets them
+    // pick "View my moments" vs "Add another" instead of guessing whether
+    // the tap or the "+" badge does what they want.
+    ownPicker ? React.createElement('div', {
+      onClick: function(){ setOwnPicker(false); },
+      style:{position:'fixed', inset:0, zIndex:9998, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'flex-end', justifyContent:'center', backdropFilter:'blur(4px)', WebkitBackdropFilter:'blur(4px)'}
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style:{background:'#15151d', borderTopLeftRadius:'18px', borderTopRightRadius:'18px', width:'100%', maxWidth:'460px', color:'#fff', padding:'8px 0 calc(20px + env(safe-area-inset-bottom, 0px))', display:'flex', flexDirection:'column', boxShadow:'0 -8px 30px rgba(0,0,0,0.5)', fontFamily:'DM Sans, system-ui, sans-serif'}
+      },
+        React.createElement('div', {style:{width:'40px', height:'4px', background:'rgba(255,255,255,0.25)', borderRadius:'2px', margin:'4px auto 14px'}}),
+        React.createElement('div', {style:{fontSize:'13px', color:'rgba(255,255,255,0.55)', textAlign:'center', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'0.5px', fontWeight:600}}, 'Your moments'),
+        React.createElement('button', {
+          onClick: function(){ setOwnPicker(false); openViewerFor(ownMoment); },
+          style:{background:'none', border:'none', color:'#fff', fontSize:'16px', fontWeight:600, padding:'16px 22px', textAlign:'left', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'12px'}
+        }, '👁  View my moments  ', React.createElement('span', {style:{color:'rgba(255,255,255,0.5)', fontSize:'13px', fontWeight:500, marginLeft:'auto'}}, (ownMoment && ownMoment.slides && ownMoment.slides.length) || 0)),
+        React.createElement('button', {
+          onClick: function(){ setOwnPicker(false); if (props.onAdd) props.onAdd(); },
+          style:{background:'none', border:'none', color:'#fff', fontSize:'16px', fontWeight:600, padding:'16px 22px', textAlign:'left', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'12px'}
+        }, '➕  Add another moment'),
+        React.createElement('button', {
+          onClick: function(){
+            setOwnPicker(false);
+            if (props.onViewProfile && ownMoment) {
+              try { props.onViewProfile(ownMoment); } catch(_) {}
+            }
+          },
+          style:{background:'none', border:'none', color:'#fff', fontSize:'16px', fontWeight:600, padding:'16px 22px', textAlign:'left', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'12px'}
+        }, '👤  Go to my profile'),
+        React.createElement('button', {
+          onClick: function(){ setOwnPicker(false); },
+          style:{background:'none', border:'none', color:'rgba(255,255,255,0.55)', fontSize:'15px', fontWeight:500, padding:'16px 22px', textAlign:'center', cursor:'pointer', fontFamily:'inherit', borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:'8px'}
+        }, 'Cancel')
+      )
+    ) : null,
     // Full-screen Insta-style viewer (rendered as last child; position:fixed
     // takes it out of flow regardless of where it sits in the DOM).
     viewer ? React.createElement(MomentViewer, {
@@ -1002,6 +1140,8 @@ export default function Moments(props){
       // T2.5 — view count tracking
       myUserId: props.myUserId || null,
       isOwn: viewer.isOwn === true,
+      // Horizontal swipe → jump to next/prev user in the strip.
+      onNextUser: jumpToUser,
     }) : null
   );
 }
