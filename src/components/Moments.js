@@ -1005,9 +1005,8 @@ function MomentViewer(props){
     var bg = hasImg ? '#000' : (first && first.bg) || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
     var name = m.userName || '';
     var avatar = m.userAvatar || null;
-    // Position on the cube surface. translateZ pushes the face out from
-    // the cube center by half the face width — so it sits on the cube's
-    // surface, not through its center.
+    var caption = first ? (first.caption || first.text || '') : '';
+    // Position on the cube surface.
     var faceRot = offset > 0 ? 90 : -90;
     var faceTransform = 'rotateY(' + faceRot + 'deg) translateZ(' + halfDepthPx + 'px)';
     return React.createElement('div', {
@@ -1026,6 +1025,8 @@ function MomentViewer(props){
         transform: faceTransform,
       }
     },
+      // Image layer — same renderer as current slide (background-image
+      // div, not <img>) so the visual matches exactly during the swipe.
       hasImg ? React.createElement('div', {
         style: {
           position: 'absolute', top:0, left:0, width:'100%', height:'100%',
@@ -1034,25 +1035,59 @@ function MomentViewer(props){
           backgroundRepeat: 'no-repeat', backgroundColor: '#000',
         }
       }) : null,
-      // Name pill so the user knows whose story is peeking in
+      // User name pill at the TOP (same place as the current slide)
       React.createElement('div', {
         style: {
           position: 'absolute',
           top: 'calc(24px + env(safe-area-inset-top, 0px))',
-          left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: '20px',
-          color: '#fff', fontSize: '13px', fontWeight: 600,
+          left: '14px',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          color: '#fff', fontSize: '14px', fontWeight: 700,
           textShadow: '0 1px 4px rgba(0,0,0,0.4)',
-          backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
         }
       },
         avatar ? React.createElement('img', {
           src: avatar, alt: '',
-          style: { width:'22px', height:'22px', borderRadius:'50%', objectFit:'cover' }
-        }) : null,
-        name
-      )
+          style: { width:'32px', height:'32px', borderRadius:'50%', objectFit:'cover', border:'1.5px solid rgba(255,255,255,0.5)' }
+        }) : React.createElement('div', {
+          style: { width:'32px', height:'32px', borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', fontWeight:700 }
+        }, (name || '?').charAt(0).toUpperCase()),
+        React.createElement('div', null, name)
+      ),
+      // Caption — same look as current slide so the transition is seamless.
+      caption ? (hasImg ? React.createElement('div', {
+        style: {
+          position: 'absolute',
+          left: '14px', right: '14px',
+          bottom: 'calc(74px + env(safe-area-inset-bottom, 0px))',
+          background: 'rgba(0,0,0,0.42)',
+          backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+          borderRadius: '14px',
+          padding: '10px 14px',
+          fontSize: '14px', fontWeight: 600, lineHeight: 1.35,
+          textAlign: 'center', color: '#fff',
+          textShadow: '0 1px 6px rgba(0,0,0,0.4)',
+        }
+      }, caption) : React.createElement('div', {
+        style: {
+          position: 'absolute', left: '24px', right: '24px', top: '50%',
+          transform: 'translateY(-50%)',
+          fontSize: '24px', fontWeight: 800, lineHeight: 1.3,
+          textAlign: 'center', color: '#fff',
+          textShadow: '0 2px 16px rgba(0,0,0,0.35)',
+          fontFamily: 'Syne, DM Sans, sans-serif',
+        }
+      }, caption)) : null,
+      // Simple progress bar placeholder so the chrome matches the current slide
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: 'calc(10px + env(safe-area-inset-top, 0px))',
+          left: 8, right: 8, height: '3px',
+          background: 'rgba(255,255,255,0.3)',
+          borderRadius: '2px',
+        }
+      })
     );
   }
 

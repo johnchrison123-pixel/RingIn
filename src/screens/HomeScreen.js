@@ -2069,7 +2069,11 @@ export default function HomeScreen(props){
       React.createElement('div', {className:'st'}, 'Online Now'),
       React.createElement('div', {className:'sa'}, 'See all')
     ),
-    React.createElement('div', {className:'esc', onTouchStart:function(ev){ev.stopPropagation();}, onMouseDown:function(ev){ev.preventDefault&&ev.preventDefault();}},
+    // NOTE: removed onMouseDown:preventDefault — it blocked vertical
+    // scroll on Android Webview when user touched a card and tried to
+    // swipe down. Card's onClick still navigates to the expert.
+    // onTouchStart stopPropagation also removed for safety.
+    React.createElement('div', {className:'esc'},
       onlineExperts.map(function(e){
         // Mock experts populate the moments strip via slice(0,8). For
         // consistency, also show the ring on those same experts in the
