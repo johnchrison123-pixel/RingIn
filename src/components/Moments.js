@@ -1338,6 +1338,42 @@ export default function Moments(props){
     setTimeout(function(){ setClickGuard(false); }, 400);
   }
 
+  // Android back-button handler — when the moment viewer is open, the
+  // hardware Back button should CLOSE THE VIEWER, not exit the app.
+  // Implementation: when viewer opens we push a history entry so Capacitor's
+  // default back-handler (which calls window.history.back()) triggers our
+  // popstate listener and closes the viewer cleanly.
+  useEffect(function(){
+    if (!viewer) return;
+    var closedByBack = false;
+    try {
+      history.pushState({ ringinMomentViewer: 1, _t: Date.now() }, '', '');
+    } catch(_){}
+    function onPopState(){
+      // Hardware back pressed (or browser back) → close viewer.
+      closedByBack = true;
+      setViewer(null);
+      setClickGuard(true);
+      setTimeout(function(){ setClickGuard(false); }, 400);
+    }
+    window.addEventListener('popstate', onPopState);
+    return function(){
+      window.removeEventListener('popstate', onPopState);
+      // If user closed manually (tap ×, swipe down, etc.) we need to pop
+      // the history entry we added so the back stack stays clean. Skip
+      // if popstate already fired (closedByBack=true) — history has
+      // already moved on.
+      if (!closedByBack) {
+        try {
+          if (history.state && history.state.ringinMomentViewer) {
+            history.back();
+          }
+        } catch(_){}
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewer]);
+
   // Called by MomentViewer on a horizontal swipe — moves to next/prev
   // user in the ordered list. Matches Instagram's swipe-between-stories.
   function jumpToUser(direction){
