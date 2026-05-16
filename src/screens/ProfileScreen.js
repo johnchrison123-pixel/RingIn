@@ -1880,8 +1880,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         style:{width:'100%',padding:'13px',background:'rgba(239,71,71,.1)',border:'1px solid rgba(239,71,71,.3)',borderRadius:'12px',color:'#ef4747',fontSize:'14px',fontWeight:600,cursor:'pointer'}
       },'Sign Out'),
       // ── App / version section — sits BELOW Sign Out, styled like the
-      //    other settings rows above. User asked for the version pill to
-      //    live in the settings list rather than as a separate footer.
+      //    other settings rows above. Shows BOTH the APK release version
+      //    (v3.x — bumped each time you reinstall the APK) AND the live
+      //    OTA bundle version (auto-updates without reinstalling).
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginTop:'24px',marginBottom:'10px',paddingLeft:'2px'}},'App'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'24px'}},
         // Row 1: current bundle version (tap → manual update check)
@@ -1912,13 +1913,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         },
           React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'📦'),
           React.createElement('div',{style:{flex:1,minWidth:0}},
-            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'Bundle Version'),
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
+              // APK release version baked in at build time (bumped each
+              // time we ship a new .apk). Constant lives in the bundle.
+              var APK_VERSION = 'v3.12';
+              var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
-                if (v && v !== '0.0.0') return v;
-                return 'built-in (no OTA yet)';
-              } catch(_) { return 'unknown'; }
+                if (v && v !== '0.0.0') bundle = v;
+              } catch(_){}
+              return bundle ? (APK_VERSION + ' · bundle ' + bundle) : (APK_VERSION + ' · built-in');
             })())
           ),
           React.createElement('div',{style:{fontSize:'11px',color:'var(--ac)',fontWeight:600}},'CHECK')
