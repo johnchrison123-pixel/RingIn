@@ -1878,7 +1878,46 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('button',{
         onClick:function(){supabase.auth.signOut();},
         style:{width:'100%',padding:'13px',background:'rgba(239,71,71,.1)',border:'1px solid rgba(239,71,71,.3)',borderRadius:'12px',color:'#ef4747',fontSize:'14px',fontWeight:600,cursor:'pointer'}
-      },'Sign Out')
+      },'Sign Out'),
+      // Bundle version footer — so the user can verify which OTA bundle
+      // is currently running. Tappable: triggers an immediate manual
+      // check for a newer bundle (otherwise the OTA only checks 4 sec
+      // after launch).
+      React.createElement('div',{
+        onClick:function(){
+          try {
+            // Force a manual OTA check. The popup will appear if a newer
+            // bundle exists; otherwise show a toast that we're up-to-date.
+            var verNow = (function(){ try { return localStorage.getItem('ringin_ota_current_version') || 'web'; } catch(_){ return 'web'; } })();
+            import('../utils/otaUpdater').then(function(mod){
+              if (mod && typeof mod.checkForUpdate === 'function') {
+                mod.checkForUpdate().then(function(r){
+                  if (r && r.ok && r.installed) {
+                    alert('New version downloaded: ' + r.installed + '\nTap the green Update banner to apply.');
+                  } else if (r && r.skipped && r.reason === 'already-current') {
+                    alert('You are on the latest version (' + verNow + ').');
+                  } else if (r && r.skipped && r.reason === 'web') {
+                    alert('Web (PWA) — updates via service worker automatically.');
+                  } else {
+                    alert('Update check: ' + JSON.stringify(r));
+                  }
+                });
+              }
+            }).catch(function(){ alert('Version: ' + verNow); });
+          } catch(_) { alert('Version: unknown'); }
+        },
+        style:{marginTop:'18px',padding:'14px 12px',textAlign:'center',color:'var(--t2)',fontSize:'11px',lineHeight:1.5,cursor:'pointer',userSelect:'none',WebkitUserSelect:'none'}
+      },
+        React.createElement('div',{style:{fontWeight:700,color:'var(--text)',fontSize:'12px',marginBottom:'3px'}},'RingIn'),
+        React.createElement('div',null, (function(){
+          try {
+            var v = localStorage.getItem('ringin_ota_current_version');
+            if (v && v !== '0.0.0') return 'Bundle ' + v;
+            return 'Bundle: built-in (no OTA update yet)';
+          } catch(_) { return 'Bundle: unknown'; }
+        })()),
+        React.createElement('div',{style:{marginTop:'4px',color:'var(--ac)',fontWeight:600}},'Tap to check for updates')
+      )
     )
   );
 
