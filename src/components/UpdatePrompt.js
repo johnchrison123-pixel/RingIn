@@ -43,10 +43,10 @@ export default function UpdatePrompt(){
 
   function applyUpdate(){
     setApplying(true);
-    // Small delay so the user sees the spinner state, then route to the
-    // correct apply function based on update source:
-    //   - 'ota' (native APK with a staged Capgo bundle) → __ringinApplyOtaUpdate
-    //   - 'sw'  (PWA with a waiting service worker)     → __ringinApplySWUpdate
+    // Give the fullscreen "Updating…" splash a beat to mount so the user
+    // never sees the WhiteFlash that happens between the React tree
+    // tear-down and the new bundle's first paint. Then route to the
+    // correct apply function based on update source.
     setTimeout(function(){
       try{
         if (source === 'ota' && typeof window.__ringinApplyOtaUpdate === 'function'){
@@ -54,16 +54,78 @@ export default function UpdatePrompt(){
         } else if (typeof window.__ringinApplySWUpdate === 'function'){
           window.__ringinApplySWUpdate();
         } else {
-          // Fallback if neither helper is there — just reload
           try{ window.location.reload(); }catch(_){}
         }
       }catch(_){
         try{ window.location.reload(); }catch(_){}
       }
-    }, 80);
+    }, 200);
   }
 
   function dismiss(){ setAvailable(false); }
+
+  // When the user has tapped Update, take over the whole screen with a
+  // dark "Updating RingIn…" splash + an indeterminate progress bar.
+  // This covers the brief window between the React unmount and the new
+  // bundle's first paint so the user never sees the white-flash that
+  // used to happen.
+  if (applying) {
+    return React.createElement('div', {
+      role: 'dialog', 'aria-label': 'Updating RingIn',
+      style: {
+        position: 'fixed', top: 0, left: 0,
+        width: '100vw', height: '100dvh',
+        background: '#09090E',
+        color: '#fff',
+        zIndex: 9999999,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: '22px',
+        fontFamily: 'DM Sans, system-ui, sans-serif',
+      }
+    },
+      // Logo / gradient mark
+      React.createElement('div', {
+        style: {
+          width: '78px', height: '78px',
+          borderRadius: '22px',
+          background: 'linear-gradient(135deg,#5B4FD4,#E84D9A)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '38px', fontWeight: 800,
+          color: '#fff',
+          boxShadow: '0 10px 40px rgba(232,77,154,0.35)',
+          animation: 'ringinPulseGlow 1.6s ease-in-out infinite',
+        }
+      }, 'R'),
+      React.createElement('div', { style: { fontSize: '20px', fontWeight: 700, letterSpacing: '-0.01em' } }, 'Updating RingIn'),
+      React.createElement('div', { style: { fontSize: '13px', color: 'rgba(255,255,255,0.55)', marginTop: '-12px' } }, 'Fetching the latest version…'),
+      // Indeterminate progress bar — looping gradient stripe
+      React.createElement('div', {
+        style: {
+          width: '220px', height: '4px',
+          borderRadius: '2px',
+          background: 'rgba(255,255,255,0.08)',
+          overflow: 'hidden',
+          position: 'relative',
+        }
+      },
+        React.createElement('div', {
+          style: {
+            position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
+            background: 'linear-gradient(90deg, transparent, #B44FE8 30%, #5B4FD4 70%, transparent)',
+            animation: 'ringinUpdateSlide 1.2s ease-in-out infinite',
+            borderRadius: '2px',
+          }
+        })
+      ),
+      // Inject keyframes inline so we don't depend on an external stylesheet
+      // for the splash to animate (the new bundle's CSS won't be loaded yet).
+      React.createElement('style', null,
+        '@keyframes ringinUpdateSlide { 0%{transform:translateX(-100%)} 100%{transform:translateX(550%)} }' +
+        '@keyframes ringinPulseGlow { 0%,100%{box-shadow:0 10px 40px rgba(232,77,154,0.35)} 50%{box-shadow:0 10px 60px rgba(91,79,212,0.7)} }'
+      )
+    );
+  }
 
   if (!available) return null;
 

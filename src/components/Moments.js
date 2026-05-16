@@ -104,10 +104,6 @@ function MomentViewer(props){
   // Rubber-band damping distance — how far past an edge the slide can
   // travel before clamping. 70px feels resistive without drifting.
   var RUBBER_BAND_MAX = 70;
-  // Max tilt during horizontal drag. 8° is the gentle Insta look (15°
-  // felt too aggressive per user feedback; WhatsApp Status sits around
-  // this range too).
-  var MAX_TILT_DEG = 8;
 
   // Like state per slide. Persisted in localStorage keyed by
   // momentId-slideId, so reopening shows the same heart fill state.
@@ -359,66 +355,97 @@ function MomentViewer(props){
     return sign * (RUBBER_BAND_MAX * (1 - 1 / (1 + v / RUBBER_BAND_MAX)));
   }
 
-  // Build a CSS transform string for a slide at logical offset.
-  // offset: -1 = prev user, 0 = current, +1 = next user.
-  // dx is the live horizontal drag distance; dy the vertical dismiss.
+  // TRUE 3D CUBE TRANSITION (Instagram pattern).
+  //
+  // Each slide is a face. Faces hinge on their OUTER screen edges (current
+  // on the LEFT edge when swiping left to the next user; current on the
+  // RIGHT edge when swiping right to the previous user). The two faces
+  // meet at a vertical seam that moves across the screen as the drag
+  // progresses, exactly matching Instagram's stories carousel.
+  //
+  // Math:
+  //   ratio = dx / VW  ∈ [-1, +1]
+  //     ratio<0: swiping LEFT (toward next user)
+  //     ratio>0: swiping RIGHT (toward previous user)
+  //
+  //   current slide:  rotateY(-ratio * 90deg)
+  //     when swiping left, rotates +90° around its LEFT edge → right edge
+  //     swings back into the screen, face foreshortens from the right
+  //     when swiping right, rotates -90° around its RIGHT edge → left edge
+  //     swings back into the screen, face foreshortens from the left
+  //     transform-origin flips based on swipe direction (left or right edge)
+  //
+  //   next slide:     rotateY(-90deg - ratio * 90deg)   origin: 100% 50%
+  //     at rest:  -90° (edge-on at right of screen, invisible)
+  //     at full: 0° (flat, fully visible)
+  //
+  //   prev slide:     rotateY( 90deg - ratio * 90deg)   origin: 0% 50%
+  //     at rest:  +90° (edge-on at left of screen, invisible)
+  //     at full: 0° (flat, fully visible)
+  //
+  // Returns { transform, origin } so writeTransforms can apply both —
+  // the origin needs to flip per swipe direction for the current slide.
   function buildTransform(offset, dx, dy){
-    var translateX = offset * VW + dx;
-    var translateY = (offset === 0) ? Math.max(0, dy) : 0;
-    // Tilt based on the slide's screen position right now.
-    var screenPos = translateX / VW;  // -1=fully left, 0=center, 1=fully right
-    var clamped = Math.max(-1, Math.min(1, screenPos));
-    var rotY = -clamped * MAX_TILT_DEG;
-    // Slight scale-down as the current slide is dragged downward to
-    // dismiss — hints at the "letting go" feel.
-    var scale = 1;
+    // Vertical dismiss only applies to the current slide.
     if (offset === 0 && dy > 0) {
-      scale = 1 - 0.10 * Math.min(1, dy / (VH * 0.6));
+      var scale = 1 - 0.10 * Math.min(1, dy / (VH * 0.6));
+      return {
+        transform: 'translate3d(0,' + dy + 'px,0) scale(' + scale + ')',
+        origin: '50% 50%',
+      };
     }
-    return 'perspective(1400px) translate3d(' + translateX + 'px,' + translateY + 'px,0) rotateY(' + rotY + 'deg) scale(' + scale + ')';
+    var ratio = Math.max(-1, Math.min(1, dx / VW));
+    if (offset === 0) {
+      var rot = -ratio * 90;  // ratio<0 → rot>0 (swipe left); ratio>0 → rot<0 (swipe right)
+      var origin = ratio < 0 ? '0% 50%' : '100% 50%';
+      return { transform: 'rotateY(' + rot + 'deg)', origin: origin };
+    }
+    if (offset === 1) {
+      // Next user — visible when swiping left (ratio<0).
+      var rotN = -90 - ratio * 90;  // ratio=0 → -90; ratio=-1 → 0
+      return { transform: 'rotateY(' + rotN + 'deg)', origin: '100% 50%' };
+    }
+    if (offset === -1) {
+      // Previous user — visible when swiping right (ratio>0).
+      var rotP = 90 - ratio * 90;  // ratio=0 → +90; ratio=+1 → 0
+      return { transform: 'rotateY(' + rotP + 'deg)', origin: '0% 50%' };
+    }
+    return { transform: 'rotateY(0deg)', origin: '50% 50%' };
   }
 
-  // Apply the current drag state directly to the slide elements via
-  // ref. Bypasses React entirely → no re-render per frame, no virtual
-  // DOM diff, just element.style.transform = '…' which is composited
-  // straight on the GPU. The smoothest you can do on mobile.
+  // Apply the current drag state directly to slide elements via ref —
+  // bypasses React entirely so the GPU does the only work per frame.
   function writeTransforms(dx, dy, kind){
-    if (mainOverlayRef.current) {
-      mainOverlayRef.current.style.transition = 'none';
-      mainOverlayRef.current.style.transform = buildTransform(0, dx, dy);
+    function apply(el, offset){
+      if (!el) return;
+      var t = buildTransform(offset, dx, dy);
+      el.style.transition = 'none';
+      el.style.transform = t.transform;
+      el.style.transformOrigin = t.origin;
     }
-    if (prevGhostRef.current) {
-      prevGhostRef.current.style.transition = 'none';
-      prevGhostRef.current.style.transform = buildTransform(-1, dx, 0);
-    }
-    if (nextGhostRef.current) {
-      nextGhostRef.current.style.transition = 'none';
-      nextGhostRef.current.style.transform = buildTransform(1, dx, 0);
-    }
+    apply(mainOverlayRef.current, 0);
+    apply(prevGhostRef.current, -1);
+    apply(nextGhostRef.current, 1);
     if (backdropRef.current && kind === 'v') {
       backdropRef.current.style.transition = 'none';
       backdropRef.current.style.opacity = String(Math.max(0.25, 1 - dy / (VH * 0.6)));
     }
   }
 
-  // Snap the slide elements to a target pose with a CSS transition.
-  // Used on release: either to ease back to neutral (snap-back) or to
-  // ease all the way off-screen (commit). The transition runs on the
-  // GPU; React stays out of it.
+  // Animate slides to a target pose with a CSS transition. Runs on the
+  // GPU compositor; React stays out of it.
   function animateTo(targetDx, targetDy, kind, durationMs){
     var ease = 'transform ' + durationMs + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
-    if (mainOverlayRef.current) {
-      mainOverlayRef.current.style.transition = ease;
-      mainOverlayRef.current.style.transform = buildTransform(0, targetDx, targetDy);
+    function apply(el, offset){
+      if (!el) return;
+      var t = buildTransform(offset, targetDx, targetDy);
+      el.style.transition = ease;
+      el.style.transform = t.transform;
+      el.style.transformOrigin = t.origin;
     }
-    if (prevGhostRef.current) {
-      prevGhostRef.current.style.transition = ease;
-      prevGhostRef.current.style.transform = buildTransform(-1, targetDx, 0);
-    }
-    if (nextGhostRef.current) {
-      nextGhostRef.current.style.transition = ease;
-      nextGhostRef.current.style.transform = buildTransform(1, targetDx, 0);
-    }
+    apply(mainOverlayRef.current, 0);
+    apply(prevGhostRef.current, -1);
+    apply(nextGhostRef.current, 1);
     if (backdropRef.current) {
       backdropRef.current.style.transition = 'opacity ' + durationMs + 'ms ease-out';
       var op = 1;
@@ -573,14 +600,13 @@ function MomentViewer(props){
     onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
     onTouchMove: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
     style: {
-      position:'fixed',
-      // top/left + height in dvh — this makes the overlay's bottom edge end
-      // at the DYNAMIC viewport bottom (i.e. just above Safari's URL bar
-      // when it's visible). With plain `100vh` the overlay extends behind
-      // the URL bar and the composer at bottom:18px gets clipped.
+      // ABSOLUTE inside the perspective cube stage (which is itself fixed
+      // and full-viewport). Was 'fixed' when the overlay lived standalone
+      // at document.body; now that it's a cube face it must be absolute
+      // so it inherits the parent's 3D context.
+      position:'absolute',
       top:0, left:0,
-      width:'100vw', height:'100dvh',
-      zIndex:9999,
+      width:'100%', height:'100%',
       background: hasImage ? '#000' : cur.bg,
       color:'#fff',
       display:'flex', flexDirection:'column',
@@ -588,25 +614,15 @@ function MomentViewer(props){
       padding:'24px',
       userSelect:'none', WebkitUserSelect:'none',
       WebkitTouchCallout:'none',
-      // Tap-highlight is the grey/blue flash Chrome paints on a tapped
-      // element. Without 'transparent' it ALSO shows during a long-press
-      // and gives the impression of a selection rectangle. Killed.
       WebkitTapHighlightColor:'transparent',
-      // touch-action:none stops the browser from inventing its own gestures
-      // (pull-to-refresh, double-tap zoom, text selection) so our React
-      // pointer handlers get every event cleanly. Without this, Chrome
-      // would steal long-press on the slide and show its text-selection UI.
       touchAction:'none',
       cursor:'pointer',
       overflow:'hidden',
-      // Hint the browser to render this layer on the GPU so the live
-      // drag transform is buttery smooth even on mid-range Android.
+      pointerEvents: 'auto',  // parent cube stage has pointer-events:none
       WebkitBackfaceVisibility: 'hidden',
       backfaceVisibility: 'hidden',
-      // Initial transform — at rest. Drag handler writes new transforms
-      // directly via ref (mainOverlayRef.current.style.transform) so this
-      // initial value only matters on first paint.
-      transform: 'translate3d(0,0,0)',
+      // Initial pose — flat, in the screen plane.
+      transform: 'rotateY(0deg)',
       transformOrigin: 'center center',
     }
   },
@@ -974,11 +990,10 @@ function MomentViewer(props){
     ) : null
   );
 
-  // Build a "ghost" peek for an adjacent user. ALWAYS mounted when the
-  // adjacent moment exists (used to be conditional on drag.kind, but
-  // toggling it caused a layout/composite flash on the first drag move).
-  // Sits off-screen at translateX(±100vw) at rest; the drag handler
-  // writes new transforms directly via ref during a swipe.
+  // Build a "ghost" peek for an adjacent user. ALWAYS mounted (when the
+  // adjacent moment exists). At rest each ghost is rotated 90° around
+  // its outer edge so it's edge-on (invisible). The drag handler writes
+  // a new rotateY through the ref during the swipe.
   function renderGhost(m, offset, refToAttach){
     if (!m) return null;
     var first = (m.slides && m.slides[0]) || null;
@@ -986,24 +1001,26 @@ function MomentViewer(props){
     var bg = hasImg ? '#000' : (first && first.bg) || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
     var name = m.userName || '';
     var avatar = m.userAvatar || null;
-    // Initial transform — pre-positioned off-screen at ±100vw with no tilt.
-    var initialTx = offset * VW;
+    // Initial pose: edge-on outside the viewport.
+    //   offset=+1 (next):  rotateY(-90deg), hinge at right edge (100% 50%)
+    //   offset=-1 (prev):  rotateY(+90deg), hinge at left edge  (0% 50%)
+    var initRot = offset > 0 ? -90 : 90;
+    var initOrigin = offset > 0 ? '100% 50%' : '0% 50%';
     return React.createElement('div', {
       key: 'ghost-' + offset,
       ref: refToAttach,
       'aria-hidden': 'true',
       style: {
-        position: 'fixed',
+        position: 'absolute',
         top: 0, left: 0,
-        width: '100vw', height: '100dvh',
+        width: '100%', height: '100%',
         background: bg,
-        zIndex: 9998,
         pointerEvents: 'none',
         overflow: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         backfaceVisibility: 'hidden',
-        transform: 'translate3d(' + initialTx + 'px,0,0)',
-        transformOrigin: 'center center',
+        transform: 'rotateY(' + initRot + 'deg)',
+        transformOrigin: initOrigin,
       }
     },
       hasImg ? React.createElement('div', {
@@ -1051,12 +1068,31 @@ function MomentViewer(props){
     }
   });
 
-  // Wrap backdrop + ghosts + main overlay in a fragment for portalling.
+  // Perspective wrapper — gives the cube transition real 3D depth. Without
+  // a parent `perspective`, rotateY on the children would just flatten
+  // (no foreshortening). 1100px feels like Instagram's stories camera.
+  // pointer-events:none on the wrapper so the main overlay (which has
+  // pointer-events:auto) is the only interactive element.
+  var cubeStage = React.createElement('div', {
+    style: {
+      position: 'fixed', top: 0, left: 0,
+      width: '100vw', height: '100dvh',
+      perspective: '1100px',
+      perspectiveOrigin: '50% 50%',
+      transformStyle: 'preserve-3d',
+      zIndex: 9998,
+      pointerEvents: 'none',
+      overflow: 'hidden',
+    }
+  },
+    renderGhost(prevMoment, -1, prevGhostRef),
+    overlay,                                  // current — in the middle so it z-stacks correctly
+    renderGhost(nextMoment, 1, nextGhostRef)
+  );
+
   var portalRoot = React.createElement(React.Fragment, null,
     backdrop,
-    renderGhost(prevMoment, -1, prevGhostRef),
-    renderGhost(nextMoment, 1, nextGhostRef),
-    overlay
+    cubeStage
   );
 
   // SSR guard — document is undefined during server render; we only need
