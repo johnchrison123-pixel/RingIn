@@ -46,8 +46,10 @@ export default function AvatarRing(props) {
     return props.children || null;
   }
 
-  var thickness = (props.thickness != null) ? props.thickness : 2;
-  var inset = -(thickness + 1.5);  // ring extends slightly past the avatar's edge
+  // Default 3px (was 2) so the ring reads at a glance on a phone. Callers
+  // that want extra-thick (profile cover avatar etc.) can override.
+  var thickness = (props.thickness != null) ? props.thickness : 3;
+  var inset = -(thickness + 2);  // ring extends slightly past the avatar's edge
   var glow = (props.glow !== false);
   var pulse = (props.pulse !== false);
   // T2.7 — variant='close-friends' renders the ring in green (matches
@@ -56,12 +58,15 @@ export default function AvatarRing(props) {
   var variant = props.variant || 'moment';
   var isCloseFriends = variant === 'close-friends';
 
+  // Pink → magenta → purple. Slightly more saturated stops than before
+  // so the neon look is unmistakable even against a dark page bg.
   var ringBackground = isCloseFriends
     ? 'linear-gradient(135deg,#27C96A 0%,#1FA858 50%,#0F6E3A 100%)'
-    : 'linear-gradient(135deg,#FF6B6B 0%,#E84D9A 50%,#7B6EFF 100%)';
+    : 'linear-gradient(135deg,#FF4D8D 0%,#E84D9A 30%,#C03DFF 65%,#7B6EFF 100%)';
+  // Two-layer neon glow — inner hot-pink halo + outer purple bloom.
   var ringGlow = isCloseFriends
     ? '0 0 6px rgba(39,201,106,0.55), 0 0 14px rgba(15,110,58,0.4)'
-    : '0 0 6px rgba(232,77,154,0.55), 0 0 14px rgba(123,110,255,0.4)';
+    : '0 0 8px rgba(232,77,154,0.85), 0 0 18px rgba(192,61,255,0.55), 0 0 26px rgba(123,110,255,0.35)';
 
   // The gradient ring. Painted into an absolute-positioned overlay that
   // sits on top of (and slightly past) the children. mask-composite cuts

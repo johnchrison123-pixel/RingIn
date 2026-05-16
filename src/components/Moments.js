@@ -953,16 +953,11 @@ export default function Moments(props){
   // Internal viewer state — when set, MomentViewer overlay is rendered
   var viewerS = useState(null);
   var viewer = viewerS[0]; var setViewer = viewerS[1];
-  // Avatar action menu for OWN moments (the user explicitly asked for a
-  // bottom-sheet picker between "View my moments" / "Add a new moment"
-  // when they tap their own tile while they already have a status posted).
-  var ownPickerS = useState(false);
-  var ownPicker = ownPickerS[0]; var setOwnPicker = ownPickerS[1];
 
   // Build the ordered list of users-with-moments. Used by horizontal
-  // swipe (next/prev user) and by the "view my moments" path. Self is
-  // always first when showAdd && hasOwnSlides, then the moments[] prop
-  // (which the parent already excludes self from).
+  // swipe (next/prev user). Self is always first when showAdd &&
+  // hasOwnSlides, then the moments[] prop (which the parent already
+  // excludes self from).
   function buildOrderedList(){
     var list = [];
     if (hasOwnSlides) list.push(ownMoment);
@@ -998,6 +993,25 @@ export default function Moments(props){
     if (next < 0 || next >= list.length) { closeViewer(); return; }
     openViewerFor(list[next]);
   }
+
+  // Window event hook — lets OTHER screens (e.g. ProfileScreen's avatar
+  // menu) open the user's own moments through THIS Moments instance.
+  // We listen here because Moments owns the MomentViewer, so triggering
+  // it from elsewhere would otherwise require duplicating the viewer.
+  // The listener is gated to instances that have showAdd (i.e. the
+  // user's-own context) so we don't open from a Moments strip embedded
+  // on another user's profile.
+  useEffect(function(){
+    if (!showAdd) return;
+    function onOpenOwn(){
+      if (hasOwnSlides) openViewerFor(ownMoment);
+    }
+    try { window.addEventListener('ringin-open-own-moment', onOpenOwn); } catch(_){}
+    return function(){
+      try { window.removeEventListener('ringin-open-own-moment', onOpenOwn); } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAdd, hasOwnSlides, ownMoment]);
 
   // Defensive: total nav strip height is heart (size) + label gap (5px) +
   // label height (~12px) + top padding (12px) + bottom padding (16px) =
@@ -1040,14 +1054,13 @@ export default function Moments(props){
         ringVariant: (ownMoment && ownMoment.closeFriendsOnly) ? 'close-friends' : 'moment',
         bg: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
         // Main tile tap:
-        //   - user has own moments → show picker (View / Add another)
-        //   - no own moments yet   → open uploader directly
-        //
-        // The picker is a bottom-sheet so you don't have to remember the
-        // "+" badge affordance — every option is named, like FB Stories.
+        //   - user has own moments → open viewer directly (Instagram pattern)
+        //   - no own moments yet   → open uploader
+        // The "+" corner badge is the dedicated affordance for adding
+        // ANOTHER moment when you already have one.
         onClick: function(){
           if (hasOwnSlides) {
-            setOwnPicker(true);
+            openViewerFor(ownMoment);
             return;
           }
           if (props.onAdd) props.onAdd();
@@ -1090,43 +1103,9 @@ export default function Moments(props){
     // Empty-state pad so the last tile has a bit of right margin when scrolling
     React.createElement('div', {style:{minWidth:'4px',flexShrink:0}}),
 
-    // Avatar action menu — bottom-sheet picker shown when user taps their
-    // own heart tile while they already have a moment posted. Lets them
-    // pick "View my moments" vs "Add another" instead of guessing whether
-    // the tap or the "+" badge does what they want.
-    ownPicker ? React.createElement('div', {
-      onClick: function(){ setOwnPicker(false); },
-      style:{position:'fixed', inset:0, zIndex:9998, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'flex-end', justifyContent:'center', backdropFilter:'blur(4px)', WebkitBackdropFilter:'blur(4px)'}
-    },
-      React.createElement('div', {
-        onClick: function(e){ e.stopPropagation(); },
-        style:{background:'#15151d', borderTopLeftRadius:'18px', borderTopRightRadius:'18px', width:'100%', maxWidth:'460px', color:'#fff', padding:'8px 0 calc(20px + env(safe-area-inset-bottom, 0px))', display:'flex', flexDirection:'column', boxShadow:'0 -8px 30px rgba(0,0,0,0.5)', fontFamily:'DM Sans, system-ui, sans-serif'}
-      },
-        React.createElement('div', {style:{width:'40px', height:'4px', background:'rgba(255,255,255,0.25)', borderRadius:'2px', margin:'4px auto 14px'}}),
-        React.createElement('div', {style:{fontSize:'13px', color:'rgba(255,255,255,0.55)', textAlign:'center', marginBottom:'8px', textTransform:'uppercase', letterSpacing:'0.5px', fontWeight:600}}, 'Your moments'),
-        React.createElement('button', {
-          onClick: function(){ setOwnPicker(false); openViewerFor(ownMoment); },
-          style:{background:'none', border:'none', color:'#fff', fontSize:'16px', fontWeight:600, padding:'16px 22px', textAlign:'left', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'12px'}
-        }, '👁  View my moments  ', React.createElement('span', {style:{color:'rgba(255,255,255,0.5)', fontSize:'13px', fontWeight:500, marginLeft:'auto'}}, (ownMoment && ownMoment.slides && ownMoment.slides.length) || 0)),
-        React.createElement('button', {
-          onClick: function(){ setOwnPicker(false); if (props.onAdd) props.onAdd(); },
-          style:{background:'none', border:'none', color:'#fff', fontSize:'16px', fontWeight:600, padding:'16px 22px', textAlign:'left', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'12px'}
-        }, '➕  Add another moment'),
-        React.createElement('button', {
-          onClick: function(){
-            setOwnPicker(false);
-            if (props.onViewProfile && ownMoment) {
-              try { props.onViewProfile(ownMoment); } catch(_) {}
-            }
-          },
-          style:{background:'none', border:'none', color:'#fff', fontSize:'16px', fontWeight:600, padding:'16px 22px', textAlign:'left', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'12px'}
-        }, '👤  Go to my profile'),
-        React.createElement('button', {
-          onClick: function(){ setOwnPicker(false); },
-          style:{background:'none', border:'none', color:'rgba(255,255,255,0.55)', fontSize:'15px', fontWeight:500, padding:'16px 22px', textAlign:'center', cursor:'pointer', fontFamily:'inherit', borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:'8px'}
-        }, 'Cancel')
-      )
-    ) : null,
+    // (Per user feedback: the avatar PICKER lives on the ProfileScreen
+    // avatar tap, NOT on the home-feed Moments strip. Tapping the heart
+    // tile here goes straight to the viewer — restored that behaviour.)
     // Full-screen Insta-style viewer (rendered as last child; position:fixed
     // takes it out of flow regardless of where it sits in the DOM).
     viewer ? React.createElement(MomentViewer, {
