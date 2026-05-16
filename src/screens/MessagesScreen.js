@@ -1334,6 +1334,12 @@ export default function MessagesScreen(props){
   var unreadS=useState({}); var unread=unreadS[0]; var setUnread=unreadS[1];
   var _hasCachedConvos=(function(){try{var cc=localStorage.getItem('convos_'+myId);return !!(cc&&JSON.parse(cc).length);}catch(e){return false;}})();
   var loadingConvosS=useState(!_hasCachedConvos); var loadingConvos=loadingConvosS[0]; var setLoadingConvos=loadingConvosS[1];
+  // Tabs at top of inbox — Insta Reels/Friends pattern. Filters which
+  // conversations show in the list below.
+  //   'friends'  → real user-to-user chats (no expert/business role)
+  //   'experts'  → expert profile chats (users with role='expert')
+  //   'business' → business profile chats (users with role='business')
+  var tabS = useState('friends'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
   var typingTimerRef=useRef(null);
   var totalUnreadS=useState(function(){
     try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
@@ -1631,6 +1637,45 @@ export default function MessagesScreen(props){
         );
       })
     ) : null,
+    // Tabs — Friends / Experts / Business (Instagram Reels/Friends style)
+    React.createElement('div',{
+      style:{
+        display:'flex', justifyContent:'center', alignItems:'center',
+        gap:'24px', padding:'6px 18px 12px',
+        borderBottom:'1px solid var(--border)',
+      }
+    },
+      ['friends','experts','business'].map(function(tab){
+        var labels = { friends:'Friends', experts:'Experts', business:'Business' };
+        var isActive = activeTab === tab;
+        return React.createElement('button',{
+          key:tab,
+          onClick:function(){ setActiveTab(tab); },
+          style:{
+            background:'none', border:'none',
+            padding:'6px 2px', cursor:'pointer',
+            fontFamily:'inherit',
+            fontSize:'15px',
+            fontWeight: isActive ? 800 : 600,
+            color: isActive ? 'var(--text)' : 'var(--t3)',
+            position:'relative',
+            letterSpacing:'-0.2px',
+            transition:'color 180ms',
+          }
+        },
+          labels[tab],
+          isActive ? React.createElement('div',{
+            style:{
+              position:'absolute', left:'50%', bottom:'-12px',
+              transform:'translateX(-50%)',
+              width:'30px', height:'3px',
+              borderRadius:'2px',
+              background:'linear-gradient(90deg,#7B6EFF,#E84D9A)',
+            }
+          }) : null
+        );
+      })
+    ),
     // Conversations
     React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'0 16px'}},
       loadingConvos ? React.createElement('div',null,
@@ -1645,8 +1690,8 @@ export default function MessagesScreen(props){
           );
         })
       ) : null,
-      // Real user conversations
-      !loadingConvos && userConvos.length>0 ? React.createElement('div',null,
+      // Real user conversations — only on the FRIENDS tab
+      activeTab === 'friends' && !loadingConvos && userConvos.length>0 ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
         userConvos.map(function(c){
           // Helper to open the other user's profile from avatar/name clicks
@@ -1714,9 +1759,9 @@ export default function MessagesScreen(props){
           );
         })
       ) : null,
-      // Expert conversations
-      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Experts'),
-      expertConvos.map(function(c){
+      // Expert conversations — only on the EXPERTS tab
+      activeTab === 'experts' ? React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'Experts') : null,
+      activeTab === 'experts' ? expertConvos.map(function(c){
         return React.createElement('div',{key:c.id,onClick:function(){setActive(c);},style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
           React.createElement('div',{style:{position:'relative',flexShrink:0}},
             React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:c.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
@@ -1749,7 +1794,26 @@ export default function MessagesScreen(props){
             )
           )
         );
-      })
+      }) : null,
+      // Empty state for Business tab (no business accounts wired up yet).
+      activeTab === 'business' ? React.createElement('div',{
+        style:{
+          textAlign:'center', padding:'60px 24px',
+          display:'flex', flexDirection:'column', alignItems:'center', gap:'10px',
+        }
+      },
+        React.createElement('div',{style:{width:'56px',height:'56px',borderRadius:'16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px'}}, '🏢'),
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)'}}, 'Business chats coming soon'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',maxWidth:'260px',lineHeight:1.5}}, 'When verified businesses send you messages, they will land here.')
+      ) : null,
+      // Empty state for Friends tab when there are no real user chats yet
+      activeTab === 'friends' && !loadingConvos && userConvos.length === 0 ? React.createElement('div',{
+        style:{textAlign:'center', padding:'60px 24px', display:'flex', flexDirection:'column', alignItems:'center', gap:'10px'}
+      },
+        React.createElement('div',{style:{width:'56px',height:'56px',borderRadius:'16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px'}}, '👥'),
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)'}}, 'No conversations yet'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',maxWidth:'260px',lineHeight:1.5}}, 'Tap + at the top to start a chat with someone.')
+      ) : null
     )
   );
 }
