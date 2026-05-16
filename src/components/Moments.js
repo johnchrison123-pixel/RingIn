@@ -97,6 +97,11 @@ function MomentViewer(props){
   var prevGhostRef = useRef(null);
   var nextGhostRef = useRef(null);
   var backdropRef = useRef(null);
+  // ONE ref drives the whole cube — we only write a single transform per
+  // pointer move (the cube's rotation), not three. Faces are children of
+  // this cube and ride along rigidly. This is the true Instagram cube,
+  // not the "two independent flaps" model I had before.
+  var cubeRef = useRef(null);
   // rAF handle so we coalesce multiple pointermove events fired in the
   // same frame into a single transform write.
   var rafRef = useRef(0);
@@ -355,97 +360,73 @@ function MomentViewer(props){
     return sign * (RUBBER_BAND_MAX * (1 - 1 / (1 + v / RUBBER_BAND_MAX)));
   }
 
-  // TRUE 3D CUBE TRANSITION (Instagram pattern).
+  // TRUE RIGID 3D CUBE (Instagram Stories pattern).
   //
-  // Each slide is a face. Faces hinge on their OUTER screen edges (current
-  // on the LEFT edge when swiping left to the next user; current on the
-  // RIGHT edge when swiping right to the previous user). The two faces
-  // meet at a vertical seam that moves across the screen as the drag
-  // progresses, exactly matching Instagram's stories carousel.
+  // The cube has three faces (prev / current / next) positioned on its
+  // surfaces — each pre-rotated and pushed out from the cube center by
+  // translateZ(half-face-width). At rest, only the current face is in
+  // front of the camera; prev and next are perpendicular, edge-on, and
+  // invisible.
+  //
+  // Dragging rotates the ENTIRE CUBE around its central vertical axis.
+  // Faces ride along rigidly. As the cube turns, the previously-visible
+  // face swings off to the side while the adjacent face swings into
+  // view, meeting at the shared edge — that's the seam the user sees
+  // moving across the screen.
   //
   // Math:
-  //   ratio = dx / VW  ∈ [-1, +1]
-  //     ratio<0: swiping LEFT (toward next user)
-  //     ratio>0: swiping RIGHT (toward previous user)
+  //   ratio = dx / VW   (-1 fully swiped to next, +1 fully swiped to prev)
+  //   cube rotation = -ratio * 90deg  (swipe-left → cube turns counter-clockwise)
   //
-  //   current slide:  rotateY(-ratio * 90deg)
-  //     when swiping left, rotates +90° around its LEFT edge → right edge
-  //     swings back into the screen, face foreshortens from the right
-  //     when swiping right, rotates -90° around its RIGHT edge → left edge
-  //     swings back into the screen, face foreshortens from the left
-  //     transform-origin flips based on swipe direction (left or right edge)
+  // Plus a subtle scale-down at midpoint (1.0 → 0.96 → 1.0) so the cube
+  // appears to recede slightly during rotation — the polish the other
+  // AI flagged ("scale down during middle of swipe to prevent corners
+  // from looking distorted").
   //
-  //   next slide:     rotateY(-90deg - ratio * 90deg)   origin: 100% 50%
-  //     at rest:  -90° (edge-on at right of screen, invisible)
-  //     at full: 0° (flat, fully visible)
-  //
-  //   prev slide:     rotateY( 90deg - ratio * 90deg)   origin: 0% 50%
-  //     at rest:  +90° (edge-on at left of screen, invisible)
-  //     at full: 0° (flat, fully visible)
-  //
-  // Returns { transform, origin } so writeTransforms can apply both —
-  // the origin needs to flip per swipe direction for the current slide.
-  function buildTransform(offset, dx, dy){
-    // Vertical dismiss only applies to the current slide.
-    if (offset === 0 && dy > 0) {
-      var scale = 1 - 0.10 * Math.min(1, dy / (VH * 0.6));
-      return {
-        transform: 'translate3d(0,' + dy + 'px,0) scale(' + scale + ')',
-        origin: '50% 50%',
-      };
+  // halfDepth: cube faces sit at translateZ(halfDepth). To keep the
+  // current face at the viewport plane (no perspective magnification at
+  // rest), we also pull the cube back by translateZ(-halfDepth). Net Z
+  // of current face at rest = 0.
+  function buildCubeTransform(dx, dy){
+    // Vertical dismiss only applies to the cube as a whole — drags the
+    // whole stack downward with a scale fade.
+    if (dy > 0) {
+      var dismissScale = 1 - 0.10 * Math.min(1, dy / (VH * 0.6));
+      return 'translate3d(0,' + dy + 'px,0) scale(' + dismissScale + ')';
     }
     var ratio = Math.max(-1, Math.min(1, dx / VW));
-    if (offset === 0) {
-      var rot = -ratio * 90;  // ratio<0 → rot>0 (swipe left); ratio>0 → rot<0 (swipe right)
-      var origin = ratio < 0 ? '0% 50%' : '100% 50%';
-      return { transform: 'rotateY(' + rot + 'deg)', origin: origin };
-    }
-    if (offset === 1) {
-      // Next user — visible when swiping left (ratio<0).
-      var rotN = -90 - ratio * 90;  // ratio=0 → -90; ratio=-1 → 0
-      return { transform: 'rotateY(' + rotN + 'deg)', origin: '100% 50%' };
-    }
-    if (offset === -1) {
-      // Previous user — visible when swiping right (ratio>0).
-      var rotP = 90 - ratio * 90;  // ratio=0 → +90; ratio=+1 → 0
-      return { transform: 'rotateY(' + rotP + 'deg)', origin: '0% 50%' };
-    }
-    return { transform: 'rotateY(0deg)', origin: '50% 50%' };
+    var rot = -ratio * 90;  // ratio<0 → rot>0 (cube turns to bring next into view)
+    // Subtle recede + zoom-out at midpoint (Insta polish).
+    var midDist = Math.abs(ratio);   // 0 at rest, 1 at full swipe
+    var scale = 1 - 0.04 * midDist;  // up to 4% smaller at midpoint
+    var halfDepth = Math.round(VW / 2);
+    // Compose: pull cube back by halfDepth so faces at translateZ(halfDepth)
+    // land at viewport z=0 at rest. Then rotateY. Then optional scale.
+    return 'translateZ(' + (-halfDepth) + 'px) rotateY(' + rot + 'deg) scale(' + scale + ')';
   }
 
-  // Apply the current drag state directly to slide elements via ref —
-  // bypasses React entirely so the GPU does the only work per frame.
-  function writeTransforms(dx, dy, kind){
-    function apply(el, offset){
-      if (!el) return;
-      var t = buildTransform(offset, dx, dy);
-      el.style.transition = 'none';
-      el.style.transform = t.transform;
-      el.style.transformOrigin = t.origin;
+  // Single write per frame — only the cube wrapper's transform changes.
+  // Faces inside are positioned with rotateY+translateZ at mount time
+  // and never need per-frame updates.
+  function writeCubeTransform(dx, dy, kind){
+    if (cubeRef.current) {
+      cubeRef.current.style.transition = 'none';
+      cubeRef.current.style.transform = buildCubeTransform(dx, dy);
     }
-    apply(mainOverlayRef.current, 0);
-    apply(prevGhostRef.current, -1);
-    apply(nextGhostRef.current, 1);
     if (backdropRef.current && kind === 'v') {
       backdropRef.current.style.transition = 'none';
       backdropRef.current.style.opacity = String(Math.max(0.25, 1 - dy / (VH * 0.6)));
     }
   }
 
-  // Animate slides to a target pose with a CSS transition. Runs on the
-  // GPU compositor; React stays out of it.
-  function animateTo(targetDx, targetDy, kind, durationMs){
+  // Animate cube to a target pose with a CSS transition. GPU does the
+  // work; React stays out of it.
+  function animateCubeTo(targetDx, targetDy, kind, durationMs){
     var ease = 'transform ' + durationMs + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
-    function apply(el, offset){
-      if (!el) return;
-      var t = buildTransform(offset, targetDx, targetDy);
-      el.style.transition = ease;
-      el.style.transform = t.transform;
-      el.style.transformOrigin = t.origin;
+    if (cubeRef.current) {
+      cubeRef.current.style.transition = ease;
+      cubeRef.current.style.transform = buildCubeTransform(targetDx, targetDy);
     }
-    apply(mainOverlayRef.current, 0);
-    apply(prevGhostRef.current, -1);
-    apply(nextGhostRef.current, 1);
     if (backdropRef.current) {
       backdropRef.current.style.transition = 'opacity ' + durationMs + 'ms ease-out';
       var op = 1;
@@ -455,6 +436,11 @@ function MomentViewer(props){
       backdropRef.current.style.opacity = String(op);
     }
   }
+
+  // Compatibility shims — handler functions below still call writeTransforms
+  // and animateTo by their old names.
+  var writeTransforms = writeCubeTransform;
+  var animateTo = animateCubeTo;
 
   // Tracks where the live drag is right now — separate from gestureRef
   // because pointerup needs to know the final dx/dy without reading the
@@ -506,12 +492,8 @@ function MomentViewer(props){
         else return;  // ignore upward
         g.moved = true;
         setHoldPaused(true);
-        // First frame in a drag — make sure willChange:transform is on
-        // so the GPU layer is ready. (No setState; we just twiddle the
-        // CSS hint directly via ref.)
-        if (mainOverlayRef.current) mainOverlayRef.current.style.willChange = 'transform';
-        if (prevGhostRef.current) prevGhostRef.current.style.willChange = 'transform';
-        if (nextGhostRef.current) nextGhostRef.current.style.willChange = 'transform';
+        // First frame in a drag — arm the GPU layer on the cube wrapper.
+        if (cubeRef.current) cubeRef.current.style.willChange = 'transform';
       }
       if (!g.kind) return;
       // Apply rubber-band when swiping toward a non-existent neighbour.
@@ -621,8 +603,10 @@ function MomentViewer(props){
       pointerEvents: 'auto',  // parent cube stage has pointer-events:none
       WebkitBackfaceVisibility: 'hidden',
       backfaceVisibility: 'hidden',
-      // Initial pose — flat, in the screen plane.
-      transform: 'rotateY(0deg)',
+      // Current face sits on the cube's front surface. The cube wrapper
+      // translates back by halfDepth so this face ends up at viewport
+      // z=0 (no perspective magnification at rest).
+      transform: 'translateZ(' + Math.round(VW / 2) + 'px)',
       transformOrigin: 'center center',
     }
   },
@@ -990,22 +974,23 @@ function MomentViewer(props){
     ) : null
   );
 
-  // Build a "ghost" peek for an adjacent user. ALWAYS mounted (when the
-  // adjacent moment exists). At rest each ghost is rotated 90° around
-  // its outer edge so it's edge-on (invisible). The drag handler writes
-  // a new rotateY through the ref during the swipe.
-  function renderGhost(m, offset, refToAttach){
+  // Build a peek for an adjacent user. Positioned as a face on the cube:
+  //   offset=+1 (next): rotated +90° (faces right), pushed out by halfDepth
+  //   offset=-1 (prev): rotated -90° (faces left),  pushed out by halfDepth
+  // The cube wrapper does ALL the rotation per-frame; this face's transform
+  // is set once at mount and never touched again.
+  function renderGhost(m, offset, refToAttach, halfDepthPx){
     if (!m) return null;
     var first = (m.slides && m.slides[0]) || null;
     var hasImg = !!(first && first.imageUrl);
     var bg = hasImg ? '#000' : (first && first.bg) || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
     var name = m.userName || '';
     var avatar = m.userAvatar || null;
-    // Initial pose: edge-on outside the viewport.
-    //   offset=+1 (next):  rotateY(-90deg), hinge at right edge (100% 50%)
-    //   offset=-1 (prev):  rotateY(+90deg), hinge at left edge  (0% 50%)
-    var initRot = offset > 0 ? -90 : 90;
-    var initOrigin = offset > 0 ? '100% 50%' : '0% 50%';
+    // Position on the cube surface. translateZ pushes the face out from
+    // the cube center by half the face width — so it sits on the cube's
+    // surface, not through its center.
+    var faceRot = offset > 0 ? 90 : -90;
+    var faceTransform = 'rotateY(' + faceRot + 'deg) translateZ(' + halfDepthPx + 'px)';
     return React.createElement('div', {
       key: 'ghost-' + offset,
       ref: refToAttach,
@@ -1019,8 +1004,7 @@ function MomentViewer(props){
         overflow: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         backfaceVisibility: 'hidden',
-        transform: 'rotateY(' + initRot + 'deg)',
-        transformOrigin: initOrigin,
+        transform: faceTransform,
       }
     },
       hasImg ? React.createElement('div', {
@@ -1068,26 +1052,52 @@ function MomentViewer(props){
     }
   });
 
-  // Perspective wrapper — gives the cube transition real 3D depth. Without
-  // a parent `perspective`, rotateY on the children would just flatten
-  // (no foreshortening). 1100px feels like Instagram's stories camera.
-  // pointer-events:none on the wrapper so the main overlay (which has
-  // pointer-events:auto) is the only interactive element.
+  // TRUE 3D CUBE structure (Insta Stories pattern):
+  //
+  //   <perspectiveWrapper>     -- fixed full screen, perspective: 800
+  //     <cubeWrapper>          -- preserve-3d, rotateY(theta) via ref
+  //       <prevFace>           -- rotateY(-90deg) translateZ(halfDepth)
+  //       <currentFace>        -- translateZ(halfDepth)
+  //       <nextFace>           -- rotateY(+90deg) translateZ(halfDepth)
+  //
+  // The cubeWrapper is the only thing that rotates per-frame. Faces are
+  // glued to their cube sides and ride along rigidly.
+  //
+  // halfDepth = VW/2 so faces sit on a cube of side length VW. The
+  // cubeWrapper translateZ(-halfDepth) brings the current face back to
+  // the viewport plane (z=0) at rest, so no perspective magnification.
+  var halfDepth = Math.round(VW / 2);
   var cubeStage = React.createElement('div', {
     style: {
       position: 'fixed', top: 0, left: 0,
       width: '100vw', height: '100dvh',
-      perspective: '1100px',
+      perspective: '800px',          // tighter perspective = more dramatic 3D
       perspectiveOrigin: '50% 50%',
-      transformStyle: 'preserve-3d',
       zIndex: 9998,
       pointerEvents: 'none',
-      overflow: 'hidden',
+      overflow: 'hidden',            // clip cube to viewport bounds
     }
   },
-    renderGhost(prevMoment, -1, prevGhostRef),
-    overlay,                                  // current — in the middle so it z-stacks correctly
-    renderGhost(nextMoment, 1, nextGhostRef)
+    React.createElement('div', {
+      ref: cubeRef,
+      style: {
+        position: 'absolute', top: 0, left: 0,
+        width: '100%', height: '100%',
+        transformStyle: 'preserve-3d',
+        // Initial pose — current face at viewport plane.
+        transform: 'translateZ(' + (-halfDepth) + 'px) rotateY(0deg)',
+        transformOrigin: '50% 50%',
+        WebkitBackfaceVisibility: 'hidden',
+        backfaceVisibility: 'hidden',
+      }
+    },
+      // Left face (prev user). Rotated to point left from cube center.
+      renderGhost(prevMoment, -1, prevGhostRef, halfDepth),
+      // Front face (current user). Has the chrome (header, composer, etc).
+      overlay,
+      // Right face (next user). Rotated to point right from cube center.
+      renderGhost(nextMoment, 1, nextGhostRef, halfDepth)
+    )
   );
 
   var portalRoot = React.createElement(React.Fragment, null,
