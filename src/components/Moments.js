@@ -87,20 +87,27 @@ function MomentViewer(props){
   var pressTimerRef = useRef(null);
   var gestureRef = useRef(null);
 
-  // Live drag state — drives the live-follow translation/tilt of the
-  // current slide AND the adjacent-user preview slides. Re-renders on
-  // every pointermove so the slides track the finger.
-  //   kind: null | 'h' (horizontal between users) | 'v' (vertical dismiss)
-  //   dx, dy: pixels offset from gesture start
-  //   anim:  null | 'snap' | 'commit-next' | 'commit-prev' | 'commit-down'
-  //          'snap'   = release didn't hit threshold → easing back to 0
-  //          'commit-*' = release past threshold → easing to the final pose
-  var dragS = useState({ kind: null, dx: 0, dy: 0, anim: null });
-  var drag = dragS[0]; var setDrag = dragS[1];
-  // Cached on first render: how far past an edge to allow rubber-band
-  // travel before clamping. 60px is enough to feel resistance without
-  // letting the slide drift across the screen.
+  // Direct-DOM refs for live drag. The viewer used to re-render on every
+  // pointermove via setState, which on mid-range Android pushed render
+  // budget into 16ms per frame just for React reconciliation of a 600-line
+  // component. Now we write transforms straight to the slide elements,
+  // so the only thing that has to happen per-frame is a single style
+  // assignment + a GPU composite. No virtual DOM diff, no reflow.
+  var mainOverlayRef = useRef(null);
+  var prevGhostRef = useRef(null);
+  var nextGhostRef = useRef(null);
+  var backdropRef = useRef(null);
+  // rAF handle so we coalesce multiple pointermove events fired in the
+  // same frame into a single transform write.
+  var rafRef = useRef(0);
+
+  // Rubber-band damping distance — how far past an edge the slide can
+  // travel before clamping. 70px feels resistive without drifting.
   var RUBBER_BAND_MAX = 70;
+  // Max tilt during horizontal drag. 8° is the gentle Insta look (15°
+  // felt too aggressive per user feedback; WhatsApp Status sits around
+  // this range too).
+  var MAX_TILT_DEG = 8;
 
   // Like state per slide. Persisted in localStorage keyed by
   // momentId-slideId, so reopening shows the same heart fill state.
@@ -337,75 +344,105 @@ function MomentViewer(props){
     return false;
   }
 
-  // Viewport size (used by drag math). Fallback to 360x640 for SSR.
+  // Viewport size (read each render — pretty cheap).
   var VW = typeof window !== 'undefined' ? window.innerWidth : 360;
   var VH = typeof window !== 'undefined' ? window.innerHeight : 640;
 
-  // Adjacent moments — looked up once per render. The viewer renders the
-  // first slide of each as a peek during a horizontal drag, so both
-  // stories are visible exactly like Instagram.
+  // Adjacent moments — peeks rendered as siblings of the current overlay.
   var prevMoment = (typeof props.getAdjacent === 'function') ? props.getAdjacent(-1) : null;
   var nextMoment = (typeof props.getAdjacent === 'function') ? props.getAdjacent(1) : null;
 
-  // Apply a soft rubber-band curve to drags past an edge. When the user
-  // tries to swipe to a non-existent neighbour, the slide can travel up
-  // to ~RUBBER_BAND_MAX with progressive resistance, then snap back on
-  // release. Implementation: f(x) = max * (1 - 1/(1 + x/max)).
+  // Rubber-band f(x) = max * (1 - 1/(1 + x/max)) — soft resistance.
   function rubberBand(over){
     var sign = over < 0 ? -1 : 1;
     var v = Math.abs(over);
     return sign * (RUBBER_BAND_MAX * (1 - 1 / (1 + v / RUBBER_BAND_MAX)));
   }
 
-  // Tilt a slide based on where it sits on screen, in degrees.
-  // pos = -1 → fully on left, 0 → centered, 1 → fully on right.
-  // Center tilts 0°, far positions tilt up to ±MAX_TILT.
-  var MAX_TILT = 15;  // Insta-like subtle 3D, not aggressive cube
-  function tiltForPos(pos){
-    // Clamp to ±1 so off-screen previews don't over-rotate.
-    var p = Math.max(-1, Math.min(1, pos));
-    return -p * MAX_TILT;
-  }
-
-  // Compute live transform for a slide at logical position offset
-  // (-1 = prev user, 0 = current, +1 = next user).
-  function transformForOffset(offset){
-    var dx = drag.dx || 0;
-    var dy = drag.dy || 0;
-    // Horizontal contribution: each slide shifts with the finger.
+  // Build a CSS transform string for a slide at logical offset.
+  // offset: -1 = prev user, 0 = current, +1 = next user.
+  // dx is the live horizontal drag distance; dy the vertical dismiss.
+  function buildTransform(offset, dx, dy){
     var translateX = offset * VW + dx;
-    // Vertical contribution (dismiss drag) — only current applies it.
     var translateY = (offset === 0) ? Math.max(0, dy) : 0;
-    // Tilt based on current screen position of THIS slide.
-    var screenPos = (translateX) / VW;  // 0=center, -1=fully left, 1=fully right
-    var rotY = tiltForPos(screenPos);
-    // Scale down + fade slightly as it falls away vertically (dismiss).
-    var dismissProgress = drag.kind === 'v' ? Math.min(1, dy / (VH * 0.6)) : 0;
-    var scale = 1 - 0.12 * dismissProgress;
-    return {
-      transform: 'perspective(1400px) translate3d(' + translateX + 'px, ' + translateY + 'px, 0) rotateY(' + rotY + 'deg) scale(' + scale + ')',
-      transformOrigin: 'center center',
-      transition: drag.anim ? 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none',
-      willChange: drag.anim || drag.kind ? 'transform' : 'auto',
-    };
+    // Tilt based on the slide's screen position right now.
+    var screenPos = translateX / VW;  // -1=fully left, 0=center, 1=fully right
+    var clamped = Math.max(-1, Math.min(1, screenPos));
+    var rotY = -clamped * MAX_TILT_DEG;
+    // Slight scale-down as the current slide is dragged downward to
+    // dismiss — hints at the "letting go" feel.
+    var scale = 1;
+    if (offset === 0 && dy > 0) {
+      scale = 1 - 0.10 * Math.min(1, dy / (VH * 0.6));
+    }
+    return 'perspective(1400px) translate3d(' + translateX + 'px,' + translateY + 'px,0) rotateY(' + rotY + 'deg) scale(' + scale + ')';
   }
 
-  // Opacity for the dismiss drag — the backdrop fades as the user pulls
-  // the slide down, hinting that release will dismiss.
-  var backdropOpacity = 1;
-  if (drag.kind === 'v') {
-    backdropOpacity = Math.max(0.25, 1 - (drag.dy / (VH * 0.6)));
+  // Apply the current drag state directly to the slide elements via
+  // ref. Bypasses React entirely → no re-render per frame, no virtual
+  // DOM diff, just element.style.transform = '…' which is composited
+  // straight on the GPU. The smoothest you can do on mobile.
+  function writeTransforms(dx, dy, kind){
+    if (mainOverlayRef.current) {
+      mainOverlayRef.current.style.transition = 'none';
+      mainOverlayRef.current.style.transform = buildTransform(0, dx, dy);
+    }
+    if (prevGhostRef.current) {
+      prevGhostRef.current.style.transition = 'none';
+      prevGhostRef.current.style.transform = buildTransform(-1, dx, 0);
+    }
+    if (nextGhostRef.current) {
+      nextGhostRef.current.style.transition = 'none';
+      nextGhostRef.current.style.transform = buildTransform(1, dx, 0);
+    }
+    if (backdropRef.current && kind === 'v') {
+      backdropRef.current.style.transition = 'none';
+      backdropRef.current.style.opacity = String(Math.max(0.25, 1 - dy / (VH * 0.6)));
+    }
   }
+
+  // Snap the slide elements to a target pose with a CSS transition.
+  // Used on release: either to ease back to neutral (snap-back) or to
+  // ease all the way off-screen (commit). The transition runs on the
+  // GPU; React stays out of it.
+  function animateTo(targetDx, targetDy, kind, durationMs){
+    var ease = 'transform ' + durationMs + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+    if (mainOverlayRef.current) {
+      mainOverlayRef.current.style.transition = ease;
+      mainOverlayRef.current.style.transform = buildTransform(0, targetDx, targetDy);
+    }
+    if (prevGhostRef.current) {
+      prevGhostRef.current.style.transition = ease;
+      prevGhostRef.current.style.transform = buildTransform(-1, targetDx, 0);
+    }
+    if (nextGhostRef.current) {
+      nextGhostRef.current.style.transition = ease;
+      nextGhostRef.current.style.transform = buildTransform(1, targetDx, 0);
+    }
+    if (backdropRef.current) {
+      backdropRef.current.style.transition = 'opacity ' + durationMs + 'ms ease-out';
+      var op = 1;
+      if (kind === 'v' && targetDy > 0) {
+        op = Math.max(0, 1 - targetDy / (VH * 0.6));
+      }
+      backdropRef.current.style.opacity = String(op);
+    }
+  }
+
+  // Tracks where the live drag is right now — separate from gestureRef
+  // because pointerup needs to know the final dx/dy without reading the
+  // DOM. Updated every pointermove via the rAF callback.
+  var dragNowRef = useRef({ dx: 0, dy: 0, kind: null });
 
   var overlay = React.createElement('div', {
-    // Live pointer gesture handler — covers tap, press-hold, horizontal
-    // drag-between-users, and vertical drag-to-dismiss. All three drag
-    // modes follow the finger in real time and either commit (past
-    // threshold) or snap back (below threshold) on release.
+    ref: mainOverlayRef,
+    // Pointer gesture handler — covers tap, press-hold, horizontal swipe
+    // between users (live drag) and vertical swipe-to-dismiss (live drag).
+    // All drag updates go DIRECTLY to the DOM via writeTransforms() — no
+    // React re-render until release. That's what makes the drag actually
+    // smooth instead of the laggy state-driven version the user flagged.
     onPointerDown: function(e){
       if (isInteractive(e)) return;
-      // Capture this pointer so we keep receiving move/up events even
-      // if the finger slides outside the element.
       try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch(_){}
       gestureRef.current = {
         x: (e && e.clientX) || 0,
@@ -415,9 +452,9 @@ function MomentViewer(props){
         moved: false,
         kind: null,
       };
+      dragNowRef.current = { dx: 0, dy: 0, kind: null };
       try { clearTimeout(pressTimerRef.current); } catch(_){}
       pressTimerRef.current = setTimeout(function(){
-        // Long press → pause. Skip if we've already started a drag.
         if (gestureRef.current && !gestureRef.current.moved) {
           gestureRef.current.held = true;
           setHoldPaused(true);
@@ -427,115 +464,110 @@ function MomentViewer(props){
     onPointerMove: function(e){
       var g = gestureRef.current;
       if (!g) return;
-      if (g.held) return;  // hold-pause mode — ignore movement
-      var dx = ((e && e.clientX) || 0) - g.x;
-      var dy = ((e && e.clientY) || 0) - g.y;
-      var absDx = Math.abs(dx);
-      var absDy = Math.abs(dy);
+      if (g.held) return;
+      var cx = (e && e.clientX) || 0;
+      var cy = (e && e.clientY) || 0;
+      var rawDx = cx - g.x;
+      var rawDy = cy - g.y;
+      var absDx = Math.abs(rawDx);
+      var absDy = Math.abs(rawDy);
       // Decide drag axis once movement crosses the slop threshold.
       if (!g.kind && (absDx > 10 || absDy > 10)) {
-        // Cancel pending press-and-hold; we're now in drag mode.
         try { clearTimeout(pressTimerRef.current); } catch(_){}
-        if (absDx > absDy) {
-          g.kind = 'h';
-        } else if (dy > 0) {
-          // Only vertical-DOWN triggers dismiss (Insta pattern).
-          g.kind = 'v';
-        } else {
-          // Vertical UP — ignore (no swipe-up affordance yet).
-          return;
-        }
+        if (absDx > absDy) g.kind = 'h';
+        else if (rawDy > 0) g.kind = 'v';
+        else return;  // ignore upward
         g.moved = true;
         setHoldPaused(true);
+        // First frame in a drag — make sure willChange:transform is on
+        // so the GPU layer is ready. (No setState; we just twiddle the
+        // CSS hint directly via ref.)
+        if (mainOverlayRef.current) mainOverlayRef.current.style.willChange = 'transform';
+        if (prevGhostRef.current) prevGhostRef.current.style.willChange = 'transform';
+        if (nextGhostRef.current) nextGhostRef.current.style.willChange = 'transform';
       }
       if (!g.kind) return;
-      // Horizontal drag: apply rubber-band when there's no neighbour.
+      // Apply rubber-band when swiping toward a non-existent neighbour.
+      var dx = rawDx, dy = rawDy;
       if (g.kind === 'h') {
-        var effective = dx;
-        if (dx < 0 && !nextMoment) {
-          // Trying to swipe past the last user — resist.
-          effective = rubberBand(dx);
-        } else if (dx > 0 && !prevMoment) {
-          // Trying to swipe past the first user — resist.
-          effective = rubberBand(dx);
-        }
-        setDrag({ kind: 'h', dx: effective, dy: 0, anim: null });
+        if (dx < 0 && !nextMoment) dx = rubberBand(dx);
+        else if (dx > 0 && !prevMoment) dx = rubberBand(dx);
+        dy = 0;
       } else {
-        // Vertical dismiss drag — only allow positive dy.
-        var effDy = Math.max(0, dy);
-        setDrag({ kind: 'v', dx: 0, dy: effDy, anim: null });
+        dx = 0;
+        dy = Math.max(0, dy);
       }
+      dragNowRef.current = { dx: dx, dy: dy, kind: g.kind };
+      // Coalesce multiple events fired in the same frame.
+      if (rafRef.current) return;
+      rafRef.current = (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : function(cb){ return setTimeout(cb, 16); })(function(){
+        rafRef.current = 0;
+        var d = dragNowRef.current;
+        if (!d) return;
+        writeTransforms(d.dx, d.dy, d.kind);
+      });
     },
     onPointerUp: function(e){
       if (isInteractive(e)) return;
       var g = gestureRef.current;
       gestureRef.current = null;
       try { clearTimeout(pressTimerRef.current); } catch(_){}
+      // Cancel any pending rAF write so we control the final pose.
+      if (rafRef.current) {
+        try { cancelAnimationFrame(rafRef.current); } catch(_){}
+        rafRef.current = 0;
+      }
       if (!g) return;
-      // Hold released → resume playback, no other action.
       if (g.held) { setHoldPaused(false); return; }
-      // Was a drag — commit or snap back.
+      var d = dragNowRef.current || { dx: 0, dy: 0, kind: null };
+      dragNowRef.current = null;
+      // Horizontal drag — commit or snap back.
       if (g.kind === 'h') {
-        var commitThreshold = VW * 0.22;  // 22% of viewport width
-        var dx = drag.dx;
-        var canCommit = (dx < 0 && nextMoment) || (dx > 0 && prevMoment);
-        if (Math.abs(dx) > commitThreshold && canCommit) {
-          var direction = dx < 0 ? 1 : -1;
-          // Animate to the commit position (slide all the way off), then
-          // ask the parent to mount the next user. The new viewer mounts
-          // at a translateX of (offset * VW), which means the prev/next
-          // we just animated to becomes the new current.
-          setDrag({ kind: 'h', dx: direction > 0 ? -VW : VW, dy: 0, anim: 'commit' });
+        var commitThreshold = VW * 0.22;
+        var canCommit = (d.dx < 0 && nextMoment) || (d.dx > 0 && prevMoment);
+        if (Math.abs(d.dx) > commitThreshold && canCommit) {
+          var direction = d.dx < 0 ? 1 : -1;
+          // Animate ALL THREE slides to the commit position (the strip
+          // slides by exactly one screen width); then ask parent to
+          // mount the next user.
+          animateTo(direction > 0 ? -VW : VW, 0, 'h', 260);
           setHoldPaused(false);
           setTimeout(function(){
             try { props.onNextUser(direction); } catch(_){}
-            setDrag({ kind: null, dx: 0, dy: 0, anim: null });
           }, 260);
           return;
         }
-        // Snap back — animate to 0 and clear drag state.
-        setDrag({ kind: 'h', dx: 0, dy: 0, anim: 'snap' });
+        // Snap back — animate to neutral.
+        animateTo(0, 0, 'h', 240);
         setHoldPaused(false);
-        setTimeout(function(){ setDrag({ kind: null, dx: 0, dy: 0, anim: null }); }, 260);
         return;
       }
       if (g.kind === 'v') {
         var commitDownThreshold = VH * 0.18;
-        if (drag.dy > commitDownThreshold) {
-          // Commit dismiss — animate down off-screen then call onClose.
-          setDrag({ kind: 'v', dx: 0, dy: VH, anim: 'commit' });
+        if (d.dy > commitDownThreshold) {
+          animateTo(0, VH, 'v', 240);
           setHoldPaused(false);
-          setTimeout(function(){
-            try { if (onClose) onClose(); } catch(_){}
-          }, 220);
+          setTimeout(function(){ try { if (onClose) onClose(); } catch(_){} }, 230);
           return;
         }
-        // Snap back up.
-        setDrag({ kind: 'v', dx: 0, dy: 0, anim: 'snap' });
+        animateTo(0, 0, 'v', 220);
         setHoldPaused(false);
-        setTimeout(function(){ setDrag({ kind: null, dx: 0, dy: 0, anim: null }); }, 260);
         return;
       }
-      // No drag — pure tap. Run hit-test.
+      // No drag — pure tap.
       handleTap(e);
     },
     onPointerCancel: function(){
       try { clearTimeout(pressTimerRef.current); } catch(_){}
+      if (rafRef.current) { try { cancelAnimationFrame(rafRef.current); } catch(_){} rafRef.current = 0; }
       gestureRef.current = null;
+      dragNowRef.current = null;
       setHoldPaused(false);
-      // Snap drag back to neutral.
-      if (drag.kind) {
-        setDrag({ kind: drag.kind, dx: 0, dy: 0, anim: 'snap' });
-        setTimeout(function(){ setDrag({ kind: null, dx: 0, dy: 0, anim: null }); }, 260);
-      }
+      animateTo(0, 0, 'h', 200);
     },
     onPointerLeave: function(){
-      // Drag finger off the screen while holding → release pause cleanly.
       try { clearTimeout(pressTimerRef.current); } catch(_){}
-      if (gestureRef.current && gestureRef.current.held) {
-        setHoldPaused(false);
-      }
-      gestureRef.current = null;
+      if (gestureRef.current && gestureRef.current.held) setHoldPaused(false);
     },
     // Block parent's swipe-back and scroll while the viewer is open.
     onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
@@ -571,11 +603,11 @@ function MomentViewer(props){
       // drag transform is buttery smooth even on mid-range Android.
       WebkitBackfaceVisibility: 'hidden',
       backfaceVisibility: 'hidden',
-      // Apply the live-drag transform (offset 0 = current slide).
-      transform: transformForOffset(0).transform,
+      // Initial transform — at rest. Drag handler writes new transforms
+      // directly via ref (mainOverlayRef.current.style.transform) so this
+      // initial value only matters on first paint.
+      transform: 'translate3d(0,0,0)',
       transformOrigin: 'center center',
-      transition: drag.anim ? 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none',
-      willChange: drag.kind || drag.anim ? 'transform' : 'auto',
     }
   },
     // Image layer (real moments) — rendered as a CSS background-image div
@@ -942,23 +974,23 @@ function MomentViewer(props){
     ) : null
   );
 
-  // Build a "ghost" peek for an adjacent user. Rendered as a sibling of
-  // the main overlay during a horizontal drag so both stories are
-  // visible simultaneously — the Instagram pattern. Just the first
-  // slide's background + name; no chrome / composer / timer.
-  function renderGhost(m, offset){
+  // Build a "ghost" peek for an adjacent user. ALWAYS mounted when the
+  // adjacent moment exists (used to be conditional on drag.kind, but
+  // toggling it caused a layout/composite flash on the first drag move).
+  // Sits off-screen at translateX(±100vw) at rest; the drag handler
+  // writes new transforms directly via ref during a swipe.
+  function renderGhost(m, offset, refToAttach){
     if (!m) return null;
-    // Don't bother rendering ghosts when we're not even dragging — saves
-    // a few DOM nodes and avoids paint cost on every frame.
-    if (drag.kind !== 'h' && !drag.anim) return null;
     var first = (m.slides && m.slides[0]) || null;
     var hasImg = !!(first && first.imageUrl);
     var bg = hasImg ? '#000' : (first && first.bg) || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
     var name = m.userName || '';
     var avatar = m.userAvatar || null;
-    var t = transformForOffset(offset);
+    // Initial transform — pre-positioned off-screen at ±100vw with no tilt.
+    var initialTx = offset * VW;
     return React.createElement('div', {
       key: 'ghost-' + offset,
+      ref: refToAttach,
       'aria-hidden': 'true',
       style: {
         position: 'fixed',
@@ -970,13 +1002,10 @@ function MomentViewer(props){
         overflow: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         backfaceVisibility: 'hidden',
-        transform: t.transform,
-        transformOrigin: t.transformOrigin,
-        transition: t.transition,
-        willChange: t.willChange,
+        transform: 'translate3d(' + initialTx + 'px,0,0)',
+        transformOrigin: 'center center',
       }
     },
-      // Background image
       hasImg ? React.createElement('div', {
         style: {
           position: 'absolute', top:0, left:0, width:'100%', height:'100%',
@@ -985,7 +1014,7 @@ function MomentViewer(props){
           backgroundRepeat: 'no-repeat', backgroundColor: '#000',
         }
       }) : null,
-      // Name pill at top so the user knows whose story is peeking in
+      // Name pill so the user knows whose story is peeking in
       React.createElement('div', {
         style: {
           position: 'absolute',
@@ -1007,27 +1036,26 @@ function MomentViewer(props){
     );
   }
 
-  // Backdrop — sits BEHIND every slide. Fades during vertical dismiss
-  // drag so the underlying page is hinted at, matching Insta's behaviour
-  // when the user pulls a story down.
+  // Backdrop — sits BEHIND every slide. Opacity tweaked directly via
+  // ref during vertical dismiss drag (no setState).
   var backdrop = React.createElement('div', {
     key: 'backdrop',
+    ref: backdropRef,
     'aria-hidden': 'true',
     style: {
       position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh',
       background: '#000',
-      opacity: backdropOpacity,
+      opacity: 1,
       zIndex: 9997,
       pointerEvents: 'none',
-      transition: drag.anim ? 'opacity 220ms ease-out' : 'none',
     }
   });
 
   // Wrap backdrop + ghosts + main overlay in a fragment for portalling.
   var portalRoot = React.createElement(React.Fragment, null,
     backdrop,
-    renderGhost(prevMoment, -1),
-    renderGhost(nextMoment, 1),
+    renderGhost(prevMoment, -1, prevGhostRef),
+    renderGhost(nextMoment, 1, nextGhostRef),
     overlay
   );
 

@@ -1,7 +1,7 @@
-{
-  "version": "2026.0516.1407",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1407.zip",
-  "published_at": "2026-05-16T14:07:25Z",
+﻿{
+  "version": "2026.0516.1426",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1426.zip",
+  "published_at": "2026-05-16T14:27:02Z",
   "git_sha": "manual",
-  "note": "live drag both stories visible insta-style + rubber-band + click-guard"
+  "note": "ref-based DOM drag (no React re-render per frame), 8deg tilt, smoother"
 }
