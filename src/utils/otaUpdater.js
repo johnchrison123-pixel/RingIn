@@ -105,12 +105,34 @@ export async function checkForUpdate() {
 }
 
 // Convenience entry point for App.js useEffect.
-export function startOtaUpdater(){
+// Pass `onReady` callback to be notified when a new bundle has finished
+// downloading and is staged for activation on reload. App.js uses this to
+// show a visible "Update ready — Tap to restart" banner instead of waiting
+// silently for the next cold start.
+export function startOtaUpdater(onReady){
   if (!isNative()) return;
   // Defer slightly so app boot isn't blocked by network.
   setTimeout(function(){
     checkForUpdate().then(function(r){
       try { console.log('[ringin OTA] check:', JSON.stringify(r)); } catch(_){}
+      // Fire the callback once the new bundle is staged. The user can then
+      // tap "Restart" to call applyUpdateNow() (or wait for next cold start).
+      if (r && r.ok && r.installed && typeof onReady === 'function') {
+        try { onReady({ version: r.installed, prev: r.prev || null }); } catch(_){}
+      }
     });
   }, 4000);
+}
+
+// Tear down the running web view and let the native shell relaunch with the
+// new bundle. Capgo's plugin handles the actual swap when the JS context
+// reloads. Reload also flushes any in-memory React state, which is fine since
+// the update banner only appears between user sessions.
+export async function applyUpdateNow(){
+  var Capgo = getCapgo();
+  if (Capgo && typeof Capgo.reload === 'function') {
+    try { await Capgo.reload(); return; } catch(_){}
+  }
+  // Fallback for web / older plugin versions.
+  try { window.location.reload(); } catch(_){}
 }
