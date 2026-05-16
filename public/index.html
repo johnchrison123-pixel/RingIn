@@ -99,6 +99,13 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>RingIn</title>
+    <style>
+      /* Dark page background prevents the WHITE FLASH between bundle
+         reloads (OTA update) — the WebView shows this color while the
+         new bundle's JS/CSS is parsing. Matches the app's dark theme. */
+      html, body { background:#09090E; color:#e8e8ee; margin:0; padding:0; }
+      #root { background:#09090E; }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
