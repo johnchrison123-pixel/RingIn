@@ -1,7 +1,7 @@
 ﻿{
-  "version": "2026.0516.1657",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1657.zip",
-  "published_at": "2026-05-16T16:57:09Z",
+  "version": "2026.0516.1728",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1728.zip",
+  "published_at": "2026-05-16T17:28:30Z",
   "git_sha": "manual",
-  "note": "TRUE rigid cube transition (faces on cube sides, rotate as one) + version in settings"
+  "note": "swipe direction fix + pause-on-touch + pinch-zoom upload + v3.12 label"
 }
