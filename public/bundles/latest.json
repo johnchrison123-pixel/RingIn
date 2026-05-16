@@ -1,7 +1,7 @@
 ﻿{
-    "git_sha":  "manual",
-    "url":  "https://ring-in.vercel.app/bundles/2026.0516.1158.zip",
-    "note":  "manually published while diagnosing GH Action failure",
-    "version":  "2026.0516.1158",
-    "published_at":  "2026-05-16T11:58:36Z"
+  "version": "2026.0516.1206",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1206.zip",
+  "published_at": "2026-05-16T12:06:24Z",
+  "git_sha": "manual",
+  "note": "fresh bundle with GitHub raw URL — APK v3.4 uses this"
 }
