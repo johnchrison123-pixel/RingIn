@@ -18,6 +18,14 @@
       "launchAutoHide": true,
       "backgroundColor": "#09090E",
       "launchShowDuration": 1500
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "directUpdate": false,
+      "autoSplashscreen": false,
+      "responseTimeout": 30,
+      "appReadyTimeout": 10000,
+      "resetWhenUpdate": false
     }
   }
 }
