@@ -1885,39 +1885,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       //    OTA bundle version (auto-updates without reinstalling).
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginTop:'24px',marginBottom:'10px',paddingLeft:'2px'}},'App'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'24px'}},
-        // Row 1: current bundle version (tap → manual update check)
+        // Row 1: App version (read-only display).
         React.createElement('div',{
-          onClick:function(){
-            try {
-              var verNow = (function(){ try { return localStorage.getItem('ringin_ota_current_version') || 'built-in'; } catch(_){ return 'built-in'; } })();
-              import('../utils/otaUpdater').then(function(mod){
-                if (mod && typeof mod.checkForUpdate === 'function') {
-                  mod.checkForUpdate().then(function(r){
-                    if (r && r.ok && r.installed) {
-                      alert('🎉 New version downloaded: ' + r.installed + '\n\nTap the green Update banner to apply now.');
-                    } else if (r && r.skipped && r.reason === 'already-current') {
-                      alert('✅ Up to date\n\nYour app is on the latest version (' + verNow + ').');
-                    } else if (r && r.skipped && r.reason === 'web') {
-                      alert('🌐 Web (PWA) — updates via service worker automatically.');
-                    } else if (r && r.skipped) {
-                      alert('Update check skipped: ' + r.reason);
-                    } else {
-                      alert('Update check: ' + JSON.stringify(r));
-                    }
-                  });
-                }
-              }).catch(function(){ alert('Version: ' + verNow); });
-            } catch(_) { alert('Version: unknown'); }
-          },
-          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}
+          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)'}
         },
           React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'📦'),
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              // APK release version baked in at build time (bumped each
-              // time we ship a new .apk). Constant lives in the bundle.
-              var APK_VERSION = 'v3.13';
+              var APK_VERSION = 'v3.14';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -1925,10 +1901,48 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               } catch(_){}
               return bundle ? (APK_VERSION + ' · bundle ' + bundle) : (APK_VERSION + ' · built-in');
             })())
-          ),
-          React.createElement('div',{style:{fontSize:'11px',color:'var(--ac)',fontWeight:600}},'CHECK')
+          )
         ),
-        // Row 2: app name + tagline (read-only)
+        // Row 2: Check for Updates — taps trigger the same neon-green
+        // popup the launch path uses. If nothing new, brief alert says so.
+        React.createElement('div',{
+          onClick:function(){
+            import('../utils/otaUpdater').then(function(mod){
+              if (!mod || typeof mod.checkOnly !== 'function') {
+                alert('Update checker not available.');
+                return;
+              }
+              mod.checkOnly().then(function(r){
+                if (r && r.available) {
+                  try { window.__ringinPendingOtaUpdate = r; } catch(_){}
+                  try {
+                    var ev = new CustomEvent('ringin-sw-update-available', {
+                      detail: { source: 'ota', version: r.version, title: r.title, notes: r.notes }
+                    });
+                    window.dispatchEvent(ev);
+                  } catch(_){}
+                } else if (r && r.reason === 'already-current') {
+                  alert('✅ You are on the latest version (' + (r.current || 'current') + ').');
+                } else if (r && r.reason === 'web') {
+                  alert('🌐 PWA: updates apply automatically via service worker.');
+                } else {
+                  alert('Update check: ' + (r && r.reason ? r.reason : 'unknown'));
+                }
+              }).catch(function(err){
+                alert('Update check failed: ' + (err && err.message ? err.message : err));
+              });
+            });
+          },
+          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}
+        },
+          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'🔄'),
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'Check for Updates'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Opt-in only — never auto-installs')
+          ),
+          React.createElement('div',{style:{fontSize:'11px',color:'#39FF14',fontWeight:700,textShadow:'0 0 6px rgba(57,255,20,0.5)'}},'CHECK')
+        ),
+        // Row 3: app name + tagline (read-only)
         React.createElement('div',{
           style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px'}
         },
