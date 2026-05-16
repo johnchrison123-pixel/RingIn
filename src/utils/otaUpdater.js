@@ -16,7 +16,12 @@
 // Web (PWA) does nothing — it already updates via the service worker.
 // ──────────────────────────────────────────────────────────────────────────
 
-var MANIFEST_URL = 'https://ring-in.vercel.app/bundles/latest.json';
+// IMPORTANT: We host the OTA manifest + bundle zips on raw.githubusercontent.com
+// instead of Vercel because Vercel's CDN is currently serving the React SPA
+// fallback for every URL on ring-in.vercel.app (including .json and .zip),
+// which breaks the manifest fetch (response is HTML, JSON.parse throws).
+// GitHub raw is a flat CDN — no SPA fallback, returns the file as-is.
+var MANIFEST_URL = 'https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/latest.json';
 var CURRENT_VERSION_KEY = 'ringin_ota_current_version';
 
 function isNative(){
