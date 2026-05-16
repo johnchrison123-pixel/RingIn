@@ -41,16 +41,28 @@ export default function UpdatePrompt(){
   // real percentage events — at least gives the bar something to do).
   var fakeTickerRef = useRef(null);
 
-  // On mount: check for ringin_just_updated flag → show finishing overlay briefly
+  // On mount: check for ringin_just_updated flag → show finishing
+  // overlay AND hide the inline boot overlay from index.html once
+  // we're ready to show our own. The hand-off avoids any visible gap.
+  // Progress continues from 85% (where APPLYING left off pre-reload)
+  // and animates to 100% slowly so the bar feels continuous.
   useEffect(function(){
     try {
       if (localStorage.getItem('ringin_just_updated') === '1') {
         setFinishing(true);
+        setProgress(85);  // pick up where the pre-reload APPLYING left off
         try { localStorage.removeItem('ringin_just_updated'); } catch(_){}
-        // Stay up for ~900ms then fade out — long enough to hide the
-        // tail end of the reload, short enough not to feel annoying.
-        var t = setTimeout(function(){ setFinishing(false); }, 900);
-        return function(){ clearTimeout(t); };
+        // Hide the inline boot overlay after a tiny delay so React's
+        // overlay is painted first → seamless visual hand-off.
+        setTimeout(function(){
+          try { if (typeof window.__ringinHideBootUpdating === 'function') window.__ringinHideBootUpdating(); } catch(_){}
+        }, 80);
+        // Animate progress 85 → 100 over ~1.0s — the CSS transition on
+        // the bar makes this smooth. Then hold at 100 for another ~600ms
+        // so the user perceives completion before the overlay fades.
+        var progT = setTimeout(function(){ setProgress(100); }, 200);
+        var dismissT = setTimeout(function(){ setFinishing(false); }, 1700);
+        return function(){ clearTimeout(progT); clearTimeout(dismissT); };
       }
     } catch(_){}
   }, []);
@@ -77,13 +89,15 @@ export default function UpdatePrompt(){
   function applyUpdate(){
     setApplying(true);
     setProgress(0);
-    // If Capgo doesn't fire real progress events, keep the bar moving
-    // anyway so the user knows something is happening.
+    // Slow fake ticker — caps at 85% so there's room for the real
+    // post-reload "finishing" stage to fill the rest (85 → 100).
+    // 2% every 280ms ≈ ~14s to reach 85%. Most updates land faster,
+    // and real Capgo progress events will jump ahead naturally.
     var fakeProgress = 5;
     fakeTickerRef.current = setInterval(function(){
-      fakeProgress = Math.min(90, fakeProgress + 3);
+      fakeProgress = Math.min(85, fakeProgress + 2);
       setProgress(function(p){ return Math.max(p, fakeProgress); });
-    }, 250);
+    }, 280);
 
     function done(){
       if (fakeTickerRef.current) clearInterval(fakeTickerRef.current);
@@ -126,8 +140,10 @@ export default function UpdatePrompt(){
     var label = applying ? 'Updating RingIn' : 'Almost ready';
     var sub   = applying
       ? (progress >= 95 ? 'Finishing up…' : 'Downloading the latest version')
-      : 'Loading your fresh app…';
-    var pct = applying ? Math.round(progress) : 100;
+      : (progress >= 99 ? 'You are good to go!' : 'Loading your fresh app…');
+    // Use the live progress in BOTH states — the bar animates
+    // continuously from pre-reload (~85) through to 100 post-reload.
+    var pct = Math.round(progress);
     return React.createElement('div', {
       role: 'dialog',
       'aria-label': label,

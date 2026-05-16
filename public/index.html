@@ -101,15 +101,84 @@
     <title>RingIn</title>
     <style>
       /* Dark page background prevents the WHITE FLASH between bundle
-         reloads (OTA update) — the WebView shows this color while the
-         new bundle's JS/CSS is parsing. Matches the app's dark theme. */
-      html, body { background:#09090E; color:#e8e8ee; margin:0; padding:0; }
-      #root { background:#09090E; }
+         reloads (OTA update). Body is dark from the very first byte. */
+      html, body { background:#09090E; color:#e8e8ee; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif; }
+      #root { background:#09090E; min-height:100vh; }
+      /* Inline updating overlay — rendered IMMEDIATELY when the new
+         bundle's HTML loads after an OTA reload. React's UpdatePrompt
+         takes over once it mounts. Hidden by default. */
+      #ringin-boot-updating {
+        position:fixed; top:0; left:0; width:100vw; height:100vh;
+        background:rgba(8,8,18,0.96);
+        z-index:99999999;
+        display:none;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        gap:18px;
+        color:#fff;
+        font-family:inherit;
+      }
+      #ringin-boot-updating.show { display:flex; }
+      #ringin-boot-updating .logo {
+        width:74px; height:74px; border-radius:22px;
+        background:linear-gradient(135deg,#39FF14 0%,#00FF7F 100%);
+        display:flex; align-items:center; justify-content:center;
+        font-size:36px; font-weight:800; color:#062a08;
+        box-shadow:0 0 32px rgba(57,255,20,0.55), 0 0 60px rgba(0,255,127,0.3);
+        animation:ringinBootPulse 1.4s ease-in-out infinite;
+      }
+      #ringin-boot-updating .label { font-size:19px; font-weight:700; }
+      #ringin-boot-updating .sub { font-size:13px; color:rgba(255,255,255,0.6); margin-top:-10px; }
+      #ringin-boot-updating .bar {
+        width:230px; height:5px; border-radius:3px;
+        background:rgba(255,255,255,0.1); overflow:hidden; position:relative;
+      }
+      #ringin-boot-updating .bar > span {
+        position:absolute; top:0; left:0; height:100%; width:40%;
+        background:linear-gradient(90deg,transparent,#39FF14 30%,#00FF7F 70%,transparent);
+        border-radius:3px;
+        animation:ringinBootSlide 1.2s linear infinite;
+      }
+      @keyframes ringinBootPulse { 0%,100% { transform:scale(1) } 50% { transform:scale(1.06) } }
+      @keyframes ringinBootSlide { 0% { transform:translateX(-100%) } 100% { transform:translateX(700%) } }
     </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <!-- Boot-time updating overlay. The JS below shows this within the
+         very first paint cycle if localStorage 'ringin_just_updated'
+         is set — i.e., we're reloading right after an OTA download.
+         This covers the GAP between WebView reload and React mounting,
+         so the user never sees a blank screen during an update. -->
+    <div id="ringin-boot-updating" aria-hidden="true">
+      <div class="logo">⬇</div>
+      <div class="label">Updating RingIn</div>
+      <div class="sub">Finishing up…</div>
+      <div class="bar"><span></span></div>
+    </div>
+    <script>
+      (function(){
+        try {
+          if (localStorage.getItem('ringin_just_updated') === '1') {
+            var el = document.getElementById('ringin-boot-updating');
+            if (el) el.classList.add('show');
+            // Expose a hide() helper so React can dismiss the overlay
+            // once the app is fully mounted and ready.
+            window.__ringinHideBootUpdating = function(){
+              try {
+                var el2 = document.getElementById('ringin-boot-updating');
+                if (!el2) return;
+                el2.style.transition = 'opacity 380ms ease-out';
+                el2.style.opacity = '0';
+                setTimeout(function(){ el2.classList.remove('show'); el2.style.opacity=''; el2.style.transition=''; }, 420);
+              } catch(_){}
+            };
+          }
+        } catch(e){}
+      })();
+    </script>
     <!-- ── Early PWA install-prompt capture ─────────────────────────────
          Chromium can fire `beforeinstallprompt` BEFORE React mounts (the
          event fires the moment the SW activates + engagement heuristics
