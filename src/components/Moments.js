@@ -83,33 +83,24 @@ function MomentViewer(props){
   var viewerProfilesS = useState({});
   var viewerProfiles = viewerProfilesS[0]; var setViewerProfiles = viewerProfilesS[1];
   // Refs for the press-and-hold gesture. A 220ms long-press timer flips
-  // holdPaused→true; faster taps fall through to handleTap() for nav.
+  // holdPaused→true; movement past the slop cancels it and starts a drag.
   var pressTimerRef = useRef(null);
-  var pressStartRef = useRef(null);
+  var gestureRef = useRef(null);
 
-  // Cube transition state — WhatsApp-style 3D rotation when swiping
-  // between users. cubeStateS = { phase: 'exit-next' | 'exit-prev' | null }.
-  // Exit animation: current viewer rotates out on a cube hinge; after
-  // the transition completes (~280ms), the parent swaps to the next
-  // moment, which mounts with an entry animation in the opposite phase.
-  var cubeStateS = useState({ phase: null });
-  var cubeState = cubeStateS[0]; var setCubeState = cubeStateS[1];
-
-  // Entry animation — when a NEW MomentViewer mounts after a swipe, it
-  // briefly tilts in from the opposite side, completing the cube flip.
-  // The parent passes enterDir (1 = came from a left-swipe / next user,
-  // -1 = right-swipe / previous user). Played once on mount, then idle.
-  var enterDirS = useState(props.enterDir || 0);
-  var enterDir = enterDirS[0]; var setEnterDir = enterDirS[1];
-  useEffect(function(){
-    if (enterDir !== 0) {
-      // Next tick → flip to 0 so the transform animates from the entry
-      // pose to the neutral pose with the CSS transition we set below.
-      var t = setTimeout(function(){ setEnterDir(0); }, 16);
-      return function(){ clearTimeout(t); };
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Live drag state — drives the live-follow translation/tilt of the
+  // current slide AND the adjacent-user preview slides. Re-renders on
+  // every pointermove so the slides track the finger.
+  //   kind: null | 'h' (horizontal between users) | 'v' (vertical dismiss)
+  //   dx, dy: pixels offset from gesture start
+  //   anim:  null | 'snap' | 'commit-next' | 'commit-prev' | 'commit-down'
+  //          'snap'   = release didn't hit threshold → easing back to 0
+  //          'commit-*' = release past threshold → easing to the final pose
+  var dragS = useState({ kind: null, dx: 0, dy: 0, anim: null });
+  var drag = dragS[0]; var setDrag = dragS[1];
+  // Cached on first render: how far past an edge to allow rubber-band
+  // travel before clamping. 60px is enough to feel resistance without
+  // letting the slide drift across the screen.
+  var RUBBER_BAND_MAX = 70;
 
   // Like state per slide. Persisted in localStorage keyed by
   // momentId-slideId, so reopening shows the same heart fill state.
@@ -253,18 +244,28 @@ function MomentViewer(props){
     } catch(_){}
   }
 
-  // Tap left third = back, tap right two-thirds = next. Taps on the
-  // composer / like row are stopPropagation'd so they don't navigate.
+  // Tap zones (Instagram pattern):
+  //   left 33%  → previous slide; if first slide, jump to previous user
+  //   right 67% → next slide;    if last slide,  jump to next user
+  // Tapping NEVER closes the viewer — only the × button or a vertical
+  // swipe-down can dismiss. (This is what fixes the "center tap exits and
+  // bleeds through to whatever was behind" bug — there's no exit path
+  // through center anymore.)
   function handleTap(e){
     try{
       var rect = e.currentTarget.getBoundingClientRect();
       var x = (e.clientX != null ? e.clientX : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0)) - rect.left;
       var w = rect.width;
       if (x < w * 0.33){
-        if (idx > 0) setIdx(idx - 1);
+        if (idx > 0) { setIdx(idx - 1); }
+        else if (typeof props.onNextUser === 'function') { props.onNextUser(-1); }
+        // If no previous user either, do nothing — viewer stays on
+        // the first slide (no accidental close).
       } else {
-        if (idx < slides.length - 1) setIdx(idx + 1);
-        else if (onClose) onClose();
+        if (idx < slides.length - 1) { setIdx(idx + 1); }
+        else if (typeof props.onNextUser === 'function') { props.onNextUser(1); }
+        // If no next user (we're on the last slide of the last user),
+        // do nothing. User must explicitly tap × to close.
       }
     }catch(_){}
   }
@@ -336,112 +337,205 @@ function MomentViewer(props){
     return false;
   }
 
-  // Compute the cube transform + transition based on current animation
-  // phase. The overlay rotates around its left or right edge so the
-  // motion reads as a cube face swinging out (exit) or in (entry).
-  var cubeTransform = 'none';
-  var cubeTransition = 'none';
-  var cubeOrigin = 'center center';
-  if (cubeState.phase === 'exit-next') {
-    // Swiped left → rotate out, hinge on LEFT edge (next user comes from right).
-    cubeTransform = 'perspective(1400px) translateX(-100vw) rotateY(-70deg)';
-    cubeTransition = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
-    cubeOrigin = 'left center';
-  } else if (cubeState.phase === 'exit-prev') {
-    // Swiped right → rotate out to the right, hinge on RIGHT edge.
-    cubeTransform = 'perspective(1400px) translateX(100vw) rotateY(70deg)';
-    cubeTransition = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
-    cubeOrigin = 'right center';
-  } else if (enterDir === 1) {
-    // Just mounted as next user (came from right) — start tilted right,
-    // animate to neutral. The useEffect flips enterDir→0 on next tick,
-    // so the transition triggers.
-    cubeTransform = 'perspective(1400px) translateX(100vw) rotateY(70deg)';
-    cubeOrigin = 'right center';
-  } else if (enterDir === -1) {
-    // Just mounted as prev user (came from left).
-    cubeTransform = 'perspective(1400px) translateX(-100vw) rotateY(-70deg)';
-    cubeOrigin = 'left center';
-  } else if (props.enterDir) {
-    // Settled into neutral — animate transform: none with transition.
-    cubeTransition = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
-    cubeOrigin = props.enterDir === 1 ? 'right center' : 'left center';
+  // Viewport size (used by drag math). Fallback to 360x640 for SSR.
+  var VW = typeof window !== 'undefined' ? window.innerWidth : 360;
+  var VH = typeof window !== 'undefined' ? window.innerHeight : 640;
+
+  // Adjacent moments — looked up once per render. The viewer renders the
+  // first slide of each as a peek during a horizontal drag, so both
+  // stories are visible exactly like Instagram.
+  var prevMoment = (typeof props.getAdjacent === 'function') ? props.getAdjacent(-1) : null;
+  var nextMoment = (typeof props.getAdjacent === 'function') ? props.getAdjacent(1) : null;
+
+  // Apply a soft rubber-band curve to drags past an edge. When the user
+  // tries to swipe to a non-existent neighbour, the slide can travel up
+  // to ~RUBBER_BAND_MAX with progressive resistance, then snap back on
+  // release. Implementation: f(x) = max * (1 - 1/(1 + x/max)).
+  function rubberBand(over){
+    var sign = over < 0 ? -1 : 1;
+    var v = Math.abs(over);
+    return sign * (RUBBER_BAND_MAX * (1 - 1 / (1 + v / RUBBER_BAND_MAX)));
+  }
+
+  // Tilt a slide based on where it sits on screen, in degrees.
+  // pos = -1 → fully on left, 0 → centered, 1 → fully on right.
+  // Center tilts 0°, far positions tilt up to ±MAX_TILT.
+  var MAX_TILT = 15;  // Insta-like subtle 3D, not aggressive cube
+  function tiltForPos(pos){
+    // Clamp to ±1 so off-screen previews don't over-rotate.
+    var p = Math.max(-1, Math.min(1, pos));
+    return -p * MAX_TILT;
+  }
+
+  // Compute live transform for a slide at logical position offset
+  // (-1 = prev user, 0 = current, +1 = next user).
+  function transformForOffset(offset){
+    var dx = drag.dx || 0;
+    var dy = drag.dy || 0;
+    // Horizontal contribution: each slide shifts with the finger.
+    var translateX = offset * VW + dx;
+    // Vertical contribution (dismiss drag) — only current applies it.
+    var translateY = (offset === 0) ? Math.max(0, dy) : 0;
+    // Tilt based on current screen position of THIS slide.
+    var screenPos = (translateX) / VW;  // 0=center, -1=fully left, 1=fully right
+    var rotY = tiltForPos(screenPos);
+    // Scale down + fade slightly as it falls away vertically (dismiss).
+    var dismissProgress = drag.kind === 'v' ? Math.min(1, dy / (VH * 0.6)) : 0;
+    var scale = 1 - 0.12 * dismissProgress;
+    return {
+      transform: 'perspective(1400px) translate3d(' + translateX + 'px, ' + translateY + 'px, 0) rotateY(' + rotY + 'deg) scale(' + scale + ')',
+      transformOrigin: 'center center',
+      transition: drag.anim ? 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none',
+      willChange: drag.anim || drag.kind ? 'transform' : 'auto',
+    };
+  }
+
+  // Opacity for the dismiss drag — the backdrop fades as the user pulls
+  // the slide down, hinting that release will dismiss.
+  var backdropOpacity = 1;
+  if (drag.kind === 'v') {
+    backdropOpacity = Math.max(0.25, 1 - (drag.dy / (VH * 0.6)));
   }
 
   var overlay = React.createElement('div', {
-    // Press-and-hold to pause (Insta/FB pattern). 220ms long-press triggers
-    // hold-pause; quick taps fall through to handleTap() for left/right
-    // navigation. Vertical swipe > 90px triggers dismiss (also Insta-like).
+    // Live pointer gesture handler — covers tap, press-hold, horizontal
+    // drag-between-users, and vertical drag-to-dismiss. All three drag
+    // modes follow the finger in real time and either commit (past
+    // threshold) or snap back (below threshold) on release.
     onPointerDown: function(e){
-      // Don't start the gesture when the user is interacting with a child
-      // (composer, like button, 3-dot menu, header, etc.).
       if (isInteractive(e)) return;
-      pressStartRef.current = {
+      // Capture this pointer so we keep receiving move/up events even
+      // if the finger slides outside the element.
+      try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch(_){}
+      gestureRef.current = {
         x: (e && e.clientX) || 0,
         y: (e && e.clientY) || 0,
         t: Date.now(),
         held: false,
+        moved: false,
+        kind: null,
       };
       try { clearTimeout(pressTimerRef.current); } catch(_){}
       pressTimerRef.current = setTimeout(function(){
-        if (pressStartRef.current) {
-          pressStartRef.current.held = true;
+        // Long press → pause. Skip if we've already started a drag.
+        if (gestureRef.current && !gestureRef.current.moved) {
+          gestureRef.current.held = true;
           setHoldPaused(true);
         }
       }, 220);
     },
-    onPointerUp: function(e){
-      if (isInteractive(e)) return;
-      try { clearTimeout(pressTimerRef.current); } catch(_){}
-      var data = pressStartRef.current;
-      pressStartRef.current = null;
-      if (!data) return;
-      if (data.held) { setHoldPaused(false); return; }
-      // Quick tap → decide between three gestures by inspecting deltas.
-      var dx = ((e && e.clientX) || 0) - data.x;
-      var dy = ((e && e.clientY) || 0) - data.y;
+    onPointerMove: function(e){
+      var g = gestureRef.current;
+      if (!g) return;
+      if (g.held) return;  // hold-pause mode — ignore movement
+      var dx = ((e && e.clientX) || 0) - g.x;
+      var dy = ((e && e.clientY) || 0) - g.y;
       var absDx = Math.abs(dx);
       var absDy = Math.abs(dy);
-      // 1. Vertical swipe down (>90px) → dismiss the viewer entirely.
-      if (dy > 90 && absDy > absDx) {
-        if (onClose) onClose();
-        return;
-      }
-      // 2. Horizontal swipe (>60px, mostly horizontal) → jump to the NEXT
-      //    or PREVIOUS user's moments with a smooth cube-style rotation.
-      //    Exit animation runs first (~280ms), then we call onNextUser
-      //    so the parent can mount the next viewer (which plays its own
-      //    entry animation, completing the cube flip).
-      if (absDx > 60 && absDx > absDy) {
-        if (typeof props.onNextUser === 'function') {
-          var dir = dx < 0 ? 1 : -1;  // swipe-left = next person
-          setCubeState({ phase: dir > 0 ? 'exit-next' : 'exit-prev' });
-          setHoldPaused(true);  // pause auto-advance while transitioning
-          setTimeout(function(){
-            try { props.onNextUser(dir); } catch(_) {}
-            setCubeState({ phase: null });
-          }, 280);
+      // Decide drag axis once movement crosses the slop threshold.
+      if (!g.kind && (absDx > 10 || absDy > 10)) {
+        // Cancel pending press-and-hold; we're now in drag mode.
+        try { clearTimeout(pressTimerRef.current); } catch(_){}
+        if (absDx > absDy) {
+          g.kind = 'h';
+        } else if (dy > 0) {
+          // Only vertical-DOWN triggers dismiss (Insta pattern).
+          g.kind = 'v';
+        } else {
+          // Vertical UP — ignore (no swipe-up affordance yet).
           return;
         }
-        // Fallback if parent didn't wire it: just close.
-        if (onClose) onClose();
+        g.moved = true;
+        setHoldPaused(true);
+      }
+      if (!g.kind) return;
+      // Horizontal drag: apply rubber-band when there's no neighbour.
+      if (g.kind === 'h') {
+        var effective = dx;
+        if (dx < 0 && !nextMoment) {
+          // Trying to swipe past the last user — resist.
+          effective = rubberBand(dx);
+        } else if (dx > 0 && !prevMoment) {
+          // Trying to swipe past the first user — resist.
+          effective = rubberBand(dx);
+        }
+        setDrag({ kind: 'h', dx: effective, dy: 0, anim: null });
+      } else {
+        // Vertical dismiss drag — only allow positive dy.
+        var effDy = Math.max(0, dy);
+        setDrag({ kind: 'v', dx: 0, dy: effDy, anim: null });
+      }
+    },
+    onPointerUp: function(e){
+      if (isInteractive(e)) return;
+      var g = gestureRef.current;
+      gestureRef.current = null;
+      try { clearTimeout(pressTimerRef.current); } catch(_){}
+      if (!g) return;
+      // Hold released → resume playback, no other action.
+      if (g.held) { setHoldPaused(false); return; }
+      // Was a drag — commit or snap back.
+      if (g.kind === 'h') {
+        var commitThreshold = VW * 0.22;  // 22% of viewport width
+        var dx = drag.dx;
+        var canCommit = (dx < 0 && nextMoment) || (dx > 0 && prevMoment);
+        if (Math.abs(dx) > commitThreshold && canCommit) {
+          var direction = dx < 0 ? 1 : -1;
+          // Animate to the commit position (slide all the way off), then
+          // ask the parent to mount the next user. The new viewer mounts
+          // at a translateX of (offset * VW), which means the prev/next
+          // we just animated to becomes the new current.
+          setDrag({ kind: 'h', dx: direction > 0 ? -VW : VW, dy: 0, anim: 'commit' });
+          setHoldPaused(false);
+          setTimeout(function(){
+            try { props.onNextUser(direction); } catch(_){}
+            setDrag({ kind: null, dx: 0, dy: 0, anim: null });
+          }, 260);
+          return;
+        }
+        // Snap back — animate to 0 and clear drag state.
+        setDrag({ kind: 'h', dx: 0, dy: 0, anim: 'snap' });
+        setHoldPaused(false);
+        setTimeout(function(){ setDrag({ kind: null, dx: 0, dy: 0, anim: null }); }, 260);
         return;
       }
-      // 3. Pure tap → existing left/right hit-test for within-user nav.
+      if (g.kind === 'v') {
+        var commitDownThreshold = VH * 0.18;
+        if (drag.dy > commitDownThreshold) {
+          // Commit dismiss — animate down off-screen then call onClose.
+          setDrag({ kind: 'v', dx: 0, dy: VH, anim: 'commit' });
+          setHoldPaused(false);
+          setTimeout(function(){
+            try { if (onClose) onClose(); } catch(_){}
+          }, 220);
+          return;
+        }
+        // Snap back up.
+        setDrag({ kind: 'v', dx: 0, dy: 0, anim: 'snap' });
+        setHoldPaused(false);
+        setTimeout(function(){ setDrag({ kind: null, dx: 0, dy: 0, anim: null }); }, 260);
+        return;
+      }
+      // No drag — pure tap. Run hit-test.
       handleTap(e);
     },
     onPointerCancel: function(){
       try { clearTimeout(pressTimerRef.current); } catch(_){}
-      pressStartRef.current = null;
+      gestureRef.current = null;
       setHoldPaused(false);
+      // Snap drag back to neutral.
+      if (drag.kind) {
+        setDrag({ kind: drag.kind, dx: 0, dy: 0, anim: 'snap' });
+        setTimeout(function(){ setDrag({ kind: null, dx: 0, dy: 0, anim: null }); }, 260);
+      }
     },
     onPointerLeave: function(){
       // Drag finger off the screen while holding → release pause cleanly.
       try { clearTimeout(pressTimerRef.current); } catch(_){}
-      if (pressStartRef.current && pressStartRef.current.held) {
+      if (gestureRef.current && gestureRef.current.held) {
         setHoldPaused(false);
       }
-      pressStartRef.current = null;
+      gestureRef.current = null;
     },
     // Block parent's swipe-back and scroll while the viewer is open.
     onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
@@ -473,16 +567,15 @@ function MomentViewer(props){
       touchAction:'none',
       cursor:'pointer',
       overflow:'hidden',
-      // Cube transform — applied during exit/entry animations only;
-      // 'none' the rest of the time so taps and other gestures are unaffected.
-      transform: cubeTransform,
-      transformOrigin: cubeOrigin,
-      transition: cubeTransition,
-      willChange: cubeTransform !== 'none' || cubeTransition !== 'none' ? 'transform' : 'auto',
-      // Hint the browser to render this layer on the GPU so the 3D
-      // rotation is buttery smooth even on mid-range Android.
+      // Hint the browser to render this layer on the GPU so the live
+      // drag transform is buttery smooth even on mid-range Android.
       WebkitBackfaceVisibility: 'hidden',
       backfaceVisibility: 'hidden',
+      // Apply the live-drag transform (offset 0 = current slide).
+      transform: transformForOffset(0).transform,
+      transformOrigin: 'center center',
+      transition: drag.anim ? 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none',
+      willChange: drag.kind || drag.anim ? 'transform' : 'auto',
     }
   },
     // Image layer (real moments) — rendered as a CSS background-image div
@@ -849,10 +942,99 @@ function MomentViewer(props){
     ) : null
   );
 
+  // Build a "ghost" peek for an adjacent user. Rendered as a sibling of
+  // the main overlay during a horizontal drag so both stories are
+  // visible simultaneously — the Instagram pattern. Just the first
+  // slide's background + name; no chrome / composer / timer.
+  function renderGhost(m, offset){
+    if (!m) return null;
+    // Don't bother rendering ghosts when we're not even dragging — saves
+    // a few DOM nodes and avoids paint cost on every frame.
+    if (drag.kind !== 'h' && !drag.anim) return null;
+    var first = (m.slides && m.slides[0]) || null;
+    var hasImg = !!(first && first.imageUrl);
+    var bg = hasImg ? '#000' : (first && first.bg) || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
+    var name = m.userName || '';
+    var avatar = m.userAvatar || null;
+    var t = transformForOffset(offset);
+    return React.createElement('div', {
+      key: 'ghost-' + offset,
+      'aria-hidden': 'true',
+      style: {
+        position: 'fixed',
+        top: 0, left: 0,
+        width: '100vw', height: '100dvh',
+        background: bg,
+        zIndex: 9998,
+        pointerEvents: 'none',
+        overflow: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
+        backfaceVisibility: 'hidden',
+        transform: t.transform,
+        transformOrigin: t.transformOrigin,
+        transition: t.transition,
+        willChange: t.willChange,
+      }
+    },
+      // Background image
+      hasImg ? React.createElement('div', {
+        style: {
+          position: 'absolute', top:0, left:0, width:'100%', height:'100%',
+          backgroundImage: 'url("' + first.imageUrl + '")',
+          backgroundSize: 'contain', backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat', backgroundColor: '#000',
+        }
+      }) : null,
+      // Name pill at top so the user knows whose story is peeking in
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: 'calc(24px + env(safe-area-inset-top, 0px))',
+          left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', alignItems: 'center', gap: '8px',
+          background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: '20px',
+          color: '#fff', fontSize: '13px', fontWeight: 600,
+          textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        }
+      },
+        avatar ? React.createElement('img', {
+          src: avatar, alt: '',
+          style: { width:'22px', height:'22px', borderRadius:'50%', objectFit:'cover' }
+        }) : null,
+        name
+      )
+    );
+  }
+
+  // Backdrop — sits BEHIND every slide. Fades during vertical dismiss
+  // drag so the underlying page is hinted at, matching Insta's behaviour
+  // when the user pulls a story down.
+  var backdrop = React.createElement('div', {
+    key: 'backdrop',
+    'aria-hidden': 'true',
+    style: {
+      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh',
+      background: '#000',
+      opacity: backdropOpacity,
+      zIndex: 9997,
+      pointerEvents: 'none',
+      transition: drag.anim ? 'opacity 220ms ease-out' : 'none',
+    }
+  });
+
+  // Wrap backdrop + ghosts + main overlay in a fragment for portalling.
+  var portalRoot = React.createElement(React.Fragment, null,
+    backdrop,
+    renderGhost(prevMoment, -1),
+    renderGhost(nextMoment, 1),
+    overlay
+  );
+
   // SSR guard — document is undefined during server render; we only need
   // the portal on the client anyway.
-  if (typeof document === 'undefined' || !document.body) return overlay;
-  return createPortal(overlay, document.body);
+  if (typeof document === 'undefined' || !document.body) return portalRoot;
+  return createPortal(portalRoot, document.body);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1039,6 +1221,15 @@ export default function Moments(props){
     return list;
   }
 
+  // Click-blocker — a brief transparent overlay rendered for ~400ms after
+  // the viewer closes, to absorb the synthetic `click` event that a
+  // touchscreen fires on the element underneath what was just dismissed.
+  // Without this, dismissing a moment by tapping × OR by swipe-down often
+  // accidentally taps the expert avatar / Comments button / heart tile
+  // that was sitting behind the viewer.
+  var clickGuardS = useState(false);
+  var clickGuard = clickGuardS[0]; var setClickGuard = clickGuardS[1];
+
   function openViewerFor(m, enterDir){
     // Real moments come with their own slides (image + caption); mock
     // expert moments fall back to deterministic gradient sample sets.
@@ -1050,20 +1241,21 @@ export default function Moments(props){
       // T2.5 — flag own moments so the viewer shows the "Seen by N" badge
       // and skips recording self-views.
       isOwn: !!m.isSelf,
-      // Cube transition: direction this user entered from. 0 = fresh open
-      // (no entry animation). ±1 = came from a swipe.
       enterDir: enterDir || 0,
       // Force-remount the viewer between users so its state (idx, paused,
       // viewerList) doesn't leak. We bump a key per open call.
       key: 'mv-' + m.id + '-' + Date.now(),
     });
   }
-  function closeViewer(){ setViewer(null); }
+  function closeViewer(){
+    setViewer(null);
+    // Arm the click-blocker for the first ~400ms after close.
+    setClickGuard(true);
+    setTimeout(function(){ setClickGuard(false); }, 400);
+  }
 
   // Called by MomentViewer on a horizontal swipe — moves to next/prev
   // user in the ordered list. Matches Instagram's swipe-between-stories.
-  // Passes the direction down to openViewerFor so the new viewer can
-  // play its entry animation (the second half of the cube flip).
   function jumpToUser(direction){
     if (!viewer) return;
     var list = buildOrderedList();
@@ -1074,6 +1266,22 @@ export default function Moments(props){
     var next = i + direction;
     if (next < 0 || next >= list.length) { closeViewer(); return; }
     openViewerFor(list[next], direction);
+  }
+
+  // Returns the moment object at the given offset from the currently-open
+  // viewer, or null if we're at the edge. Used by MomentViewer during a
+  // live horizontal drag so it can render the adjacent user's first slide
+  // as a peek (Instagram-style "both stories visible during the swipe").
+  function getAdjacentMoment(direction){
+    if (!viewer) return null;
+    var list = buildOrderedList();
+    var currentId = viewer.moment && viewer.moment.id;
+    var i = -1;
+    for (var k = 0; k < list.length; k++) { if (list[k].id === currentId) { i = k; break; } }
+    if (i < 0) return null;
+    var nextIdx = i + direction;
+    if (nextIdx < 0 || nextIdx >= list.length) return null;
+    return list[nextIdx];
   }
 
   // Window event hook — lets OTHER screens (e.g. ProfileScreen's avatar
@@ -1204,8 +1412,28 @@ export default function Moments(props){
       isOwn: viewer.isOwn === true,
       // Horizontal swipe → jump to next/prev user in the strip.
       onNextUser: jumpToUser,
-      // Cube transition: animate this viewer in from the side it came from.
-      enterDir: viewer.enterDir || 0,
+      // Live drag: viewer queries this during a horizontal drag to render
+      // the adjacent user's first slide as a peek. Returns null at edges.
+      getAdjacent: getAdjacentMoment,
+    }) : null,
+    // Click-blocker — absorbs the synthetic click that fires on the
+    // underlying page right after the viewer dismisses, so we don't
+    // accidentally open an expert profile / Comments / heart tile.
+    clickGuard ? React.createElement('div', {
+      'aria-hidden': 'true',
+      onClick: function(e){ e.stopPropagation(); e.preventDefault(); },
+      onPointerDown: function(e){ e.stopPropagation(); e.preventDefault(); },
+      onPointerUp: function(e){ e.stopPropagation(); e.preventDefault(); },
+      onTouchStart: function(e){ e.stopPropagation(); },
+      onTouchEnd: function(e){ e.stopPropagation(); },
+      style: {
+        position: 'fixed',
+        top: 0, left: 0,
+        width: '100vw', height: '100dvh',
+        zIndex: 99999,
+        background: 'transparent',
+        cursor: 'default',
+      }
     }) : null
   );
 }
