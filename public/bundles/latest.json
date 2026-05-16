@@ -1,7 +1,13 @@
 ﻿{
-  "version": "2026.0516.1728",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1728.zip",
-  "published_at": "2026-05-16T17:28:30Z",
+  "version": "2026.0516.1752",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1752.zip",
+  "published_at": "2026-05-16T17:52:56Z",
   "git_sha": "manual",
-  "note": "swipe direction fix + pause-on-touch + pinch-zoom upload + v3.12 label"
+  "title": "Smoother updates",
+  "notes": [
+    "New: neon green update popup with release notes",
+    "New: frosted overlay during update — no more blank screen",
+    "Fix: no more silent auto-download — you decide when to update",
+    "Fix: app refreshes seamlessly in the background"
+  ]
 }
