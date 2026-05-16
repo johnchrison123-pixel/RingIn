@@ -49,10 +49,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # Disable npm cache — it's been failing fast (~1s) suggesting a
+          # corrupted cache restore. Cold install is slower (~2-3min) but
+          # actually works.
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        # npm install (not ci) so a stale lockfile entry can't fail the
+        # whole build. --legacy-peer-deps avoids npm 10's strict peer-dep
+        # gate, which CRA 5 trips on with React 19.
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Build CRA bundle
         run: |
@@ -78,10 +83,14 @@ jobs:
 
       - name: Update manifest
         run: |
+          # Bundle URL points to GitHub raw — Vercel's CDN currently serves
+          # the React SPA fallback for every path on ring-in.vercel.app, so
+          # the manifest fetch (and bundle download) would fail there.
+          # raw.githubusercontent.com is a flat CDN and returns files as-is.
           cat > public/bundles/latest.json <<EOF
           {
             "version": "${{ steps.version.outputs.version }}",
-            "url": "https://ring-in.vercel.app/bundles/${{ steps.version.outputs.version }}.zip",
+            "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/${{ steps.version.outputs.version }}.zip",
             "published_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
             "git_sha": "${{ github.sha }}"
           }
