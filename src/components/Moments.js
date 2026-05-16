@@ -87,6 +87,30 @@ function MomentViewer(props){
   var pressTimerRef = useRef(null);
   var pressStartRef = useRef(null);
 
+  // Cube transition state — WhatsApp-style 3D rotation when swiping
+  // between users. cubeStateS = { phase: 'exit-next' | 'exit-prev' | null }.
+  // Exit animation: current viewer rotates out on a cube hinge; after
+  // the transition completes (~280ms), the parent swaps to the next
+  // moment, which mounts with an entry animation in the opposite phase.
+  var cubeStateS = useState({ phase: null });
+  var cubeState = cubeStateS[0]; var setCubeState = cubeStateS[1];
+
+  // Entry animation — when a NEW MomentViewer mounts after a swipe, it
+  // briefly tilts in from the opposite side, completing the cube flip.
+  // The parent passes enterDir (1 = came from a left-swipe / next user,
+  // -1 = right-swipe / previous user). Played once on mount, then idle.
+  var enterDirS = useState(props.enterDir || 0);
+  var enterDir = enterDirS[0]; var setEnterDir = enterDirS[1];
+  useEffect(function(){
+    if (enterDir !== 0) {
+      // Next tick → flip to 0 so the transform animates from the entry
+      // pose to the neutral pose with the CSS transition we set below.
+      var t = setTimeout(function(){ setEnterDir(0); }, 16);
+      return function(){ clearTimeout(t); };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Like state per slide. Persisted in localStorage keyed by
   // momentId-slideId, so reopening shows the same heart fill state.
   function likesKey(){ try{ return 'ringin_moment_likes'; }catch(_){ return 'ringin_moment_likes'; } }
@@ -312,6 +336,38 @@ function MomentViewer(props){
     return false;
   }
 
+  // Compute the cube transform + transition based on current animation
+  // phase. The overlay rotates around its left or right edge so the
+  // motion reads as a cube face swinging out (exit) or in (entry).
+  var cubeTransform = 'none';
+  var cubeTransition = 'none';
+  var cubeOrigin = 'center center';
+  if (cubeState.phase === 'exit-next') {
+    // Swiped left → rotate out, hinge on LEFT edge (next user comes from right).
+    cubeTransform = 'perspective(1400px) translateX(-100vw) rotateY(-70deg)';
+    cubeTransition = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
+    cubeOrigin = 'left center';
+  } else if (cubeState.phase === 'exit-prev') {
+    // Swiped right → rotate out to the right, hinge on RIGHT edge.
+    cubeTransform = 'perspective(1400px) translateX(100vw) rotateY(70deg)';
+    cubeTransition = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
+    cubeOrigin = 'right center';
+  } else if (enterDir === 1) {
+    // Just mounted as next user (came from right) — start tilted right,
+    // animate to neutral. The useEffect flips enterDir→0 on next tick,
+    // so the transition triggers.
+    cubeTransform = 'perspective(1400px) translateX(100vw) rotateY(70deg)';
+    cubeOrigin = 'right center';
+  } else if (enterDir === -1) {
+    // Just mounted as prev user (came from left).
+    cubeTransform = 'perspective(1400px) translateX(-100vw) rotateY(-70deg)';
+    cubeOrigin = 'left center';
+  } else if (props.enterDir) {
+    // Settled into neutral — animate transform: none with transition.
+    cubeTransition = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
+    cubeOrigin = props.enterDir === 1 ? 'right center' : 'left center';
+  }
+
   var overlay = React.createElement('div', {
     // Press-and-hold to pause (Insta/FB pattern). 220ms long-press triggers
     // hold-pause; quick taps fall through to handleTap() for left/right
@@ -352,12 +408,19 @@ function MomentViewer(props){
         return;
       }
       // 2. Horizontal swipe (>60px, mostly horizontal) → jump to the NEXT
-      //    or PREVIOUS user's moments, not the next slide of this user.
-      //    Matches Instagram behaviour where left/right swipes are
-      //    "next/prev person", and taps are "next/prev slide".
+      //    or PREVIOUS user's moments with a smooth cube-style rotation.
+      //    Exit animation runs first (~280ms), then we call onNextUser
+      //    so the parent can mount the next viewer (which plays its own
+      //    entry animation, completing the cube flip).
       if (absDx > 60 && absDx > absDy) {
         if (typeof props.onNextUser === 'function') {
-          props.onNextUser(dx < 0 ? 1 : -1);  // swipe-left = next person
+          var dir = dx < 0 ? 1 : -1;  // swipe-left = next person
+          setCubeState({ phase: dir > 0 ? 'exit-next' : 'exit-prev' });
+          setHoldPaused(true);  // pause auto-advance while transitioning
+          setTimeout(function(){
+            try { props.onNextUser(dir); } catch(_) {}
+            setCubeState({ phase: null });
+          }, 280);
           return;
         }
         // Fallback if parent didn't wire it: just close.
@@ -399,6 +462,10 @@ function MomentViewer(props){
       padding:'24px',
       userSelect:'none', WebkitUserSelect:'none',
       WebkitTouchCallout:'none',
+      // Tap-highlight is the grey/blue flash Chrome paints on a tapped
+      // element. Without 'transparent' it ALSO shows during a long-press
+      // and gives the impression of a selection rectangle. Killed.
+      WebkitTapHighlightColor:'transparent',
       // touch-action:none stops the browser from inventing its own gestures
       // (pull-to-refresh, double-tap zoom, text selection) so our React
       // pointer handlers get every event cleanly. Without this, Chrome
@@ -406,33 +473,40 @@ function MomentViewer(props){
       touchAction:'none',
       cursor:'pointer',
       overflow:'hidden',
+      // Cube transform — applied during exit/entry animations only;
+      // 'none' the rest of the time so taps and other gestures are unaffected.
+      transform: cubeTransform,
+      transformOrigin: cubeOrigin,
+      transition: cubeTransition,
+      willChange: cubeTransform !== 'none' || cubeTransition !== 'none' ? 'transform' : 'auto',
+      // Hint the browser to render this layer on the GPU so the 3D
+      // rotation is buttery smooth even on mid-range Android.
+      WebkitBackfaceVisibility: 'hidden',
+      backfaceVisibility: 'hidden',
     }
   },
-    // Image layer (real moments) — sits below the chrome (progress bars,
-    // header, composer). object-fit:contain so portraits/landscapes both
-    // render without cropping; black letterbox via the parent bg.
-    //
-    // CRITICAL: pointer-events:none + draggable=false + WebkitTouchCallout
-    // so the long-press CONTEXT MENU ("Save image…", "Copy image") doesn't
-    // hijack the press-and-hold gesture. Without these, on Android Chrome
-    // and iOS Safari, holding on an image triggers the system save-image
-    // sheet instead of pausing the story — which was exactly the bug the
-    // user hit on their OWN moments (others' fallback gradient slides have
-    // no <img>, so press-hold worked fine there).
-    hasImage ? React.createElement('img', {
-      src: cur.imageUrl, alt:'',
-      draggable: false,
-      onError: function(e){ try{ e.target.style.display='none'; }catch(_){} },
+    // Image layer (real moments) — rendered as a CSS background-image div
+    // instead of an <img> tag. Browsers (Chrome on Android especially)
+    // draw a blue selection rectangle when long-pressing an <img>, even
+    // with pointer-events:none and user-select:none. Background-images
+    // are immune to that — no selection UI, no save-image context menu,
+    // no drag-to-save preview. Fully transparent to the user's gestures.
+    hasImage ? React.createElement('div', {
+      'aria-label': 'moment image',
       style:{
         position:'absolute',
         top:0, left:0, width:'100%', height:'100%',
-        objectFit:'contain',
+        backgroundImage: 'url("' + cur.imageUrl + '")',
+        backgroundSize: 'contain',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundColor: '#000',
         zIndex:0,
         pointerEvents:'none',
         userSelect:'none',
         WebkitUserSelect:'none',
         WebkitTouchCallout:'none',
-        WebkitUserDrag:'none',
+        WebkitTapHighlightColor:'transparent',
       }
     }) : null,
     // Progress bars
@@ -965,7 +1039,7 @@ export default function Moments(props){
     return list;
   }
 
-  function openViewerFor(m){
+  function openViewerFor(m, enterDir){
     // Real moments come with their own slides (image + caption); mock
     // expert moments fall back to deterministic gradient sample sets.
     var slides = (m.slides && m.slides.length > 0) ? m.slides : setForId(m.id);
@@ -976,12 +1050,20 @@ export default function Moments(props){
       // T2.5 — flag own moments so the viewer shows the "Seen by N" badge
       // and skips recording self-views.
       isOwn: !!m.isSelf,
+      // Cube transition: direction this user entered from. 0 = fresh open
+      // (no entry animation). ±1 = came from a swipe.
+      enterDir: enterDir || 0,
+      // Force-remount the viewer between users so its state (idx, paused,
+      // viewerList) doesn't leak. We bump a key per open call.
+      key: 'mv-' + m.id + '-' + Date.now(),
     });
   }
   function closeViewer(){ setViewer(null); }
 
   // Called by MomentViewer on a horizontal swipe — moves to next/prev
   // user in the ordered list. Matches Instagram's swipe-between-stories.
+  // Passes the direction down to openViewerFor so the new viewer can
+  // play its entry animation (the second half of the cube flip).
   function jumpToUser(direction){
     if (!viewer) return;
     var list = buildOrderedList();
@@ -991,7 +1073,7 @@ export default function Moments(props){
     if (i < 0) { closeViewer(); return; }
     var next = i + direction;
     if (next < 0 || next >= list.length) { closeViewer(); return; }
-    openViewerFor(list[next]);
+    openViewerFor(list[next], direction);
   }
 
   // Window event hook — lets OTHER screens (e.g. ProfileScreen's avatar
@@ -1109,6 +1191,7 @@ export default function Moments(props){
     // Full-screen Insta-style viewer (rendered as last child; position:fixed
     // takes it out of flow regardless of where it sits in the DOM).
     viewer ? React.createElement(MomentViewer, {
+      key: viewer.key,
       user: viewer.user,
       slides: viewer.slides,
       moment: viewer.moment,
@@ -1121,6 +1204,8 @@ export default function Moments(props){
       isOwn: viewer.isOwn === true,
       // Horizontal swipe → jump to next/prev user in the strip.
       onNextUser: jumpToUser,
+      // Cube transition: animate this viewer in from the side it came from.
+      enterDir: viewer.enterDir || 0,
     }) : null
   );
 }
