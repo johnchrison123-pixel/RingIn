@@ -1,7 +1,6 @@
-﻿{
-  "version": "2026.0516.1336",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1336.zip",
-  "published_at": "2026-05-16T13:36:06Z",
-  "git_sha": "manual",
-  "note": "cube swipe between users + kill blue selection on press-hold"
+{
+  "version": "2026.0516.0937",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.0937.zip",
+  "published_at": "2026-05-16T09:37:15Z",
+  "git_sha": "e17696d08b0c61a13d55a20dd01eafb7d2bd0f02"
 }
