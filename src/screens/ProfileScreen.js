@@ -2058,7 +2058,23 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9998,backdropFilter:'blur(2px)'}},
       React.createElement('div',{
         onClick:function(e){e.stopPropagation();},
-        style:{position:'absolute',top:'155px',left:'14px',background:'rgba(30,30,40,0.85)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',borderRadius:'14px',minWidth:'200px',overflow:'hidden',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',border:'1px solid rgba(255,255,255,0.1)'}},
+        style:{position:'absolute',top:'155px',left:'14px',background:'rgba(30,30,40,0.85)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',borderRadius:'14px',minWidth:'220px',overflow:'hidden',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',border:'1px solid rgba(255,255,255,0.1)'}},
+        // "View My Moments" — top option, ONLY when the user has an
+        // active moment posted in the last 24h. Dispatches a window event
+        // that the home-feed Moments instance listens for; that instance
+        // owns the MomentViewer and will pop it open with the user's slides.
+        momentUserIds.has(userId) ? React.createElement('div',{onClick:function(){
+            setShowAvatarMenu(false);
+            try { window.dispatchEvent(new Event('ringin-open-own-moment')); } catch(_){}
+            // Switch to the Home tab so the viewer is visible. Without
+            // this, the event fires but the Moments instance on Home is
+            // mounted offscreen and the user just sees their own profile.
+            try { if (props.onSwitchTab) props.onSwitchTab('home'); } catch(_){}
+          },
+          style:{padding:'13px 16px',fontSize:'14px',fontWeight:600,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',gap:'10px',background:'linear-gradient(90deg, rgba(232,77,154,0.15), rgba(123,110,255,0.08))'}},
+          React.createElement('span',{style:{display:'inline-flex',width:'22px',height:'22px',borderRadius:'50%',background:'linear-gradient(135deg,#FF6B6B,#E84D9A,#7B6EFF)',alignItems:'center',justifyContent:'center',fontSize:'11px'}}, '✨'),
+          'View My Moment'
+        ) : null,
         React.createElement('div',{onClick:function(){setShowAvatarMenu(false);setShowAvatarView(true);},
           style:{padding:'13px 16px',fontSize:'14px',fontWeight:500,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)'}},'View Photo'),
         React.createElement('label',{style:{display:'block',padding:'13px 16px',fontSize:'14px',fontWeight:500,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)'}},
@@ -2131,7 +2147,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       // The ring ALSO renders even outside the cover area for the user's
       // own avatar (post headers below, etc.).
       React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',zIndex:2}},
-        React.createElement(AvatarRing,{ show: momentUserIds.has(userId), thickness: 3 },
+        React.createElement(AvatarRing,{ show: momentUserIds.has(userId), thickness: 4 },
           React.createElement('div',{onClick:function(){setShowAvatarMenu(true);},style:{width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',cursor:'pointer'}},
             avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
           )
