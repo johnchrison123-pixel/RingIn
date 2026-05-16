@@ -152,19 +152,40 @@ export async function downloadAndApply(version, url, onProgress) {
   }
 }
 
-// Convenience entry point for App.js. After 4s, checks for an update
-// and fires onAvailable(info) if there's a newer version. NO download
-// happens here — the user must tap Update in the popup.
+// Convenience entry point for App.js. Runs an opt-in check:
+//   1. 4 seconds after app start
+//   2. every 5 minutes thereafter (while online)
+//   3. when the network goes offline → online
+//   4. when the app comes from background → foreground (tab visible)
+// Each time a newer bundle exists, onAvailable(info) fires so the popup
+// can show. The popup itself only renders if not already visible — the
+// user can dismiss and it'll come back on the next check.
 export function startOtaUpdater(onAvailable){
   if (!isNative()) return;
-  setTimeout(function(){
-    checkOnly().then(function(r){
-      try { console.log('[ringin OTA] check:', JSON.stringify(r)); } catch(_){}
-      if (r && r.available && typeof onAvailable === 'function') {
-        try { onAvailable(r); } catch(_){}
-      }
+  function doCheck(){
+    try {
+      checkOnly().then(function(r){
+        try { console.log('[ringin OTA] check:', JSON.stringify(r)); } catch(_){}
+        if (r && r.available && typeof onAvailable === 'function') {
+          try { onAvailable(r); } catch(_){}
+        }
+      });
+    } catch(_){}
+  }
+  // 1) Initial check after a short delay so boot isn't blocked.
+  setTimeout(doCheck, 4000);
+  // 2) Periodic check every 5 minutes.
+  setInterval(doCheck, 5 * 60 * 1000);
+  // 3) Re-check when device goes back online.
+  try {
+    window.addEventListener('online', doCheck);
+  } catch(_){}
+  // 4) Re-check when app comes back to foreground.
+  try {
+    document.addEventListener('visibilitychange', function(){
+      if (!document.hidden) doCheck();
     });
-  }, 4000);
+  } catch(_){}
 }
 
 // Back-compat shim for the Profile screen's version pill, which calls
