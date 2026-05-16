@@ -395,13 +395,17 @@ function MomentViewer(props){
       return 'translate3d(0,' + dy + 'px,0) scale(' + dismissScale + ')';
     }
     var ratio = Math.max(-1, Math.min(1, dx / VW));
-    var rot = -ratio * 90;  // ratio<0 → rot>0 (cube turns to bring next into view)
+    // CSS rotateY direction:
+    //   Right face (next) is at +X, normal +X. To bring it into view from
+    //   the front the cube must rotate NEGATIVELY around Y (right face
+    //   swings toward viewer). So when swiping right-to-left (dx<0) we
+    //   want NEGATIVE rotation. Sign was inverted before — that's why
+    //   the user saw "swipe left goes to previous" — wrong face peeked in.
+    var rot = ratio * 90;  // dx<0 → rot<0 → next face comes forward
     // Subtle recede + zoom-out at midpoint (Insta polish).
-    var midDist = Math.abs(ratio);   // 0 at rest, 1 at full swipe
-    var scale = 1 - 0.04 * midDist;  // up to 4% smaller at midpoint
+    var midDist = Math.abs(ratio);
+    var scale = 1 - 0.04 * midDist;
     var halfDepth = Math.round(VW / 2);
-    // Compose: pull cube back by halfDepth so faces at translateZ(halfDepth)
-    // land at viewport z=0 at rest. Then rotateY. Then optional scale.
     return 'translateZ(' + (-halfDepth) + 'px) rotateY(' + rot + 'deg) scale(' + scale + ')';
   }
 
@@ -461,18 +465,13 @@ function MomentViewer(props){
         x: (e && e.clientX) || 0,
         y: (e && e.clientY) || 0,
         t: Date.now(),
-        held: false,
         moved: false,
         kind: null,
       };
       dragNowRef.current = { dx: 0, dy: 0, kind: null };
-      try { clearTimeout(pressTimerRef.current); } catch(_){}
-      pressTimerRef.current = setTimeout(function(){
-        if (gestureRef.current && !gestureRef.current.moved) {
-          gestureRef.current.held = true;
-          setHoldPaused(true);
-        }
-      }, 220);
+      // INSTANT pause — touching the slide pauses immediately (Insta pattern).
+      // Was a 220ms hold timer before; user flagged the delay as laggy.
+      setHoldPaused(true);
     },
     onPointerMove: function(e){
       var g = gestureRef.current;
@@ -520,16 +519,30 @@ function MomentViewer(props){
       if (isInteractive(e)) return;
       var g = gestureRef.current;
       gestureRef.current = null;
-      try { clearTimeout(pressTimerRef.current); } catch(_){}
       // Cancel any pending rAF write so we control the final pose.
       if (rafRef.current) {
         try { cancelAnimationFrame(rafRef.current); } catch(_){}
         rafRef.current = 0;
       }
       if (!g) return;
-      if (g.held) { setHoldPaused(false); return; }
       var d = dragNowRef.current || { dx: 0, dy: 0, kind: null };
       dragNowRef.current = null;
+      // If the user moved (drag), handle below. If they DIDN'T move:
+      //   - short touch (<300ms): treat as a tap → resume + advance
+      //   - long touch (held >300ms): pure pause-and-release → just resume
+      // setHoldPaused(false) is called at the end of each branch.
+      if (!g.kind) {
+        var heldFor = Date.now() - (g.t || 0);
+        if (heldFor < 300) {
+          // Was a tap → resume and run handleTap (advance based on zone).
+          setHoldPaused(false);
+          handleTap(e);
+          return;
+        }
+        // Was a hold-release — just resume, no advance.
+        setHoldPaused(false);
+        return;
+      }
       // Horizontal drag — commit or snap back.
       if (g.kind === 'h') {
         var commitThreshold = VW * 0.22;
@@ -563,11 +576,8 @@ function MomentViewer(props){
         setHoldPaused(false);
         return;
       }
-      // No drag — pure tap.
-      handleTap(e);
     },
     onPointerCancel: function(){
-      try { clearTimeout(pressTimerRef.current); } catch(_){}
       if (rafRef.current) { try { cancelAnimationFrame(rafRef.current); } catch(_){} rafRef.current = 0; }
       gestureRef.current = null;
       dragNowRef.current = null;
@@ -575,8 +585,8 @@ function MomentViewer(props){
       animateTo(0, 0, 'h', 200);
     },
     onPointerLeave: function(){
-      try { clearTimeout(pressTimerRef.current); } catch(_){}
-      if (gestureRef.current && gestureRef.current.held) setHoldPaused(false);
+      // Drag finger off the screen → release pause.
+      setHoldPaused(false);
     },
     // Block parent's swipe-back and scroll while the viewer is open.
     onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
