@@ -1,7 +1,6 @@
-﻿{
-  "version": "2026.0516.1206",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1206.zip",
-  "published_at": "2026-05-16T12:06:24Z",
-  "git_sha": "manual",
-  "note": "fresh bundle with GitHub raw URL — APK v3.4 uses this"
+{
+  "version": "2026.0516.0807",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.0807.zip",
+  "published_at": "2026-05-16T08:07:52Z",
+  "git_sha": "655a864d08f0f5359fb9a789d0ecf0b2a4e8d4ed"
 }
