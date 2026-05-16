@@ -740,12 +740,22 @@ function MomentViewer(props){
         textShadow:'0 1px 6px rgba(0,0,0,0.4)',
       }
     }, captionText) : React.createElement('div', {
+      // Absolute-positioned so the caption renders correctly when the
+      // parent face is 3D-rotated (cube swipe). Was position:relative
+      // inside a flex container — that combo silently dropped the
+      // caption during rotation because flex layout doesn't play well
+      // with 3D-transformed ancestors.
       style:{
+        position:'absolute',
+        left:'24px', right:'24px',
+        top:'50%',
+        transform:'translateY(-50%)',
         fontSize:'26px', fontWeight:800, lineHeight:1.3,
-        textAlign:'center', maxWidth:'82%',
+        textAlign:'center',
         textShadow:'0 2px 16px rgba(0,0,0,0.35)',
         fontFamily:'Syne, DM Sans, sans-serif',
-        position:'relative', zIndex:1,
+        zIndex:1,
+        color:'#fff',
       }
     }, captionText)) : null,
     // ── Reply composer + actions row (bottom) ─────────────────────────────

@@ -101,9 +101,21 @@
     <title>RingIn</title>
     <style>
       /* Dark page background prevents the WHITE FLASH between bundle
-         reloads (OTA update). Body is dark from the very first byte. */
-      html, body { background:#09090E; color:#e8e8ee; margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif; }
-      #root { background:#09090E; min-height:100vh; }
+         reloads (OTA update). Body is dark from the very first byte.
+         html/body overflow:hidden is CRITICAL — the inner
+         .app-container scrolls via .screen-content. Without these,
+         Android tries to scroll the body itself behind the fixed
+         app shell, and vertical touch drags get "lost". */
+      html, body {
+        background:#09090E;
+        color:#e8e8ee;
+        margin:0;
+        padding:0;
+        height:100%;
+        overflow:hidden;
+        font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+      }
+      #root { background:#09090E; }
       /* Inline updating overlay — rendered IMMEDIATELY when the new
          bundle's HTML loads after an OTA reload. React's UpdatePrompt
          takes over once it mounts. Hidden by default. */
@@ -175,6 +187,20 @@
                 setTimeout(function(){ el2.classList.remove('show'); el2.style.opacity=''; el2.style.transition=''; }, 420);
               } catch(_){}
             };
+            // SAFETY NET — if React never mounts (build failure) or
+            // the hide helper isn't called for any reason, force the
+            // overlay off after 6 seconds. Without this, a failed
+            // update could leave the boot overlay covering the screen
+            // and blocking all touches forever.
+            setTimeout(function(){
+              try {
+                var el3 = document.getElementById('ringin-boot-updating');
+                if (el3 && el3.classList.contains('show')) {
+                  el3.classList.remove('show');
+                }
+                localStorage.removeItem('ringin_just_updated');
+              } catch(_){}
+            }, 6000);
           }
         } catch(e){}
       })();
