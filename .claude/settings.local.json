@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(python3 -c ' *)",
       "Read(//c/Users/johnc/Desktop/The project/RingIn/ringin2/**)",

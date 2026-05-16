@@ -29,7 +29,7 @@ var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'
 // at the bottom of the connected-call screen and logged on call start so we
 // can verify whether the user is actually running the latest code (or stuck
 // on a cached old build via service worker).
-var RINGIN_BUILD = 'v2.1-audiofix';
+var RINGIN_BUILD = 'v2.0-native-debug';
 
 // ── Module-level style constants ───────────────────────────────────────────
 // Every secs/coin tick re-renders the connected-call view. Hoisting the style
@@ -491,12 +491,8 @@ export default function CallScreen(props){
       // ignoring AudioManager (which would need a different fix).
       try{
         NativeAudio.setSpeakerphone(next).then(function(res){
-          // commDeviceType is AudioDeviceInfo.TYPE_* — 1=BUILTIN_EARPIECE, 2=BUILTIN_SPEAKER
-          // (yes, the order is "wrong" — that's Android.) If commDeviceType
-          // matches what we asked for, the modern API took effect.
-          var typeName = ({1:'EARPIECE',2:'SPEAKER',3:'WIRED_HS',4:'WIRED_HP',7:'BT_SCO',8:'BT_A2DP'})[res && res.commDeviceType] || ('t'+(res&&res.commDeviceType));
           var summary = res
-            ? ('plugin: mode=' + res.mode + ' spkrOn=' + res.isSpeakerphoneOn + ' commDev=' + typeName + ' vol=' + res.voiceCallVol + '/' + res.voiceCallMax + ' (req=' + next + ' sdk=' + res.sdk + ')')
+            ? ('plugin: mode=' + res.mode + ' speakerOn=' + res.isSpeakerphoneOn + ' (requested=' + next + ')')
             : ('plugin: NOT REGISTERED (running as web?)');
           setAudioDbg(summary);
         }).catch(function(e){ setAudioDbg('plugin error: ' + (e && e.message)); });
@@ -615,6 +611,10 @@ export default function CallScreen(props){
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
     // Tiny build stamp at bottom-left for verifying deploys.
     React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD),
+    // Audio diagnostic line — visible while debugging audio routing on
+    // native APK. Shows whether the Capacitor RingInAudio plugin is
+    // registered and what AudioManager state is after each toggle.
+    audioDbg ? React.createElement('div',{style:{position:'fixed',bottom:'20px',left:'8px',right:'8px',fontSize:'10px',color:'rgba(0,255,128,0.9)',fontFamily:'monospace',background:'rgba(0,0,0,0.7)',padding:'4px 8px',borderRadius:'4px',pointerEvents:'none',textAlign:'center',wordBreak:'break-all'}}, audioDbg) : null,
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────
