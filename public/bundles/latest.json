@@ -1,13 +1,13 @@
 ﻿{
-  "version": "2026.0516.1851",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1851.zip",
-  "published_at": "2026-05-16T18:51:16Z",
+  "version": "2026.0516.1914",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0516.1914.zip",
+  "published_at": "2026-05-16T19:14:48Z",
   "git_sha": "manual",
-  "title": "Moments swipe — really fixed this time",
+  "title": "Real OTA + ghost content + scroll fix",
   "notes": [
-    "Fix: swipe between users no longer exits the viewer",
-    "Cause: Android system back-gesture was firing on edge swipes",
-    "Now: ignores swipes that start within 22px of either screen edge",
-    "Plus: jumpToUser is defensive — never closes the viewer on edge cases"
+    "Fix: OTA actually applies the new bundle now (was a Capgo set+reload race)",
+    "Fix: vertical scroll on online experts strip no longer blocked",
+    "New: swipe between users shows real content (image + caption + name) on each side",
+    "Better: bundle download status verified before applying"
   ]
 }
