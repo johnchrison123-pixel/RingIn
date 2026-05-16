@@ -1917,7 +1917,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
               // APK release version baked in at build time (bumped each
               // time we ship a new .apk). Constant lives in the bundle.
-              var APK_VERSION = 'v3.12';
+              var APK_VERSION = 'v3.13';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

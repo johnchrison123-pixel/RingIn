@@ -2,18 +2,19 @@
 // ──────────────────────────────────────────────────────────────────────────
 // otaUpdater.js — self-hosted OTA web-bundle updates for the Capacitor APK.
 //
-// On native app start:
-//   1. Mark the currently-running bundle as "good" (notifyAppReady).
-//   2. Fetch /bundles/latest.json from ring-in.vercel.app.
-//   3. If version > current installed version:
-//        - download the bundle zip
-//        - set it as next bundle
-//        - schedule a reload on next safe moment (when user backgrounds OR
-//          after they next return)
-//   4. On any startup that crashes within 30 sec of an update, the Capgo
-//      plugin auto-rolls back to the previous bundle.
+// USER FLOW (post-rewrite, no more silent auto-download):
+//   1. On native app start, after 4s, fetch /bundles/latest.json.
+//   2. If a newer version exists, fire onAvailable(info) with title +
+//      release notes. NOTHING is downloaded yet.
+//   3. UpdatePrompt shows a neon-green popup with the notes + Update button.
+//   4. User taps Update → downloadAndApply() pulls the bundle, reports
+//      progress, sets it, sets `ringin_just_updated=1`, then reloads.
+//   5. After reload, the freshly-mounted UpdatePrompt sees the flag and
+//      shows a brief frosted "finishing up" overlay so the user never
+//      sees a blank page — then fades out once the app is interactive.
 //
-// Web (PWA) does nothing — it already updates via the service worker.
+// Web (PWA) uses the service worker for updates; native path is the
+// Capgo CapacitorUpdater plugin for binary bundle swaps.
 // ──────────────────────────────────────────────────────────────────────────
 
 // IMPORTANT: We host the OTA manifest + bundle zips on raw.githubusercontent.com
@@ -68,76 +69,126 @@ function isNewer(a, b){
   return false;
 }
 
-export async function checkForUpdate() {
-  if (!isNative()) return { skipped: true, reason: 'web' };
+// Check the manifest WITHOUT downloading. Returns the new version's
+// metadata (title, notes, url) so the popup can show release notes
+// alongside the Update button. User must tap Update to download.
+export async function checkOnly() {
+  if (!isNative()) return { available: false, reason: 'web' };
   var Capgo = getCapgo();
-  if (!Capgo) return { skipped: true, reason: 'plugin-missing' };
-
-  // Tell Capgo the current bundle is healthy (otherwise it rolls back).
+  if (!Capgo) return { available: false, reason: 'plugin-missing' };
   try { await Capgo.notifyAppReady(); } catch (_) {}
-
   var manifest;
   try {
     var res = await fetch(MANIFEST_URL, { cache: 'no-store' });
-    if (!res.ok) return { skipped: true, reason: 'manifest-' + res.status };
+    if (!res.ok) return { available: false, reason: 'manifest-' + res.status };
     manifest = await res.json();
   } catch (e) {
-    return { skipped: true, reason: 'manifest-fetch-failed', error: e && e.message };
+    return { available: false, reason: 'manifest-fetch-failed', error: e && e.message };
   }
-
   if (!manifest || !manifest.version || !manifest.url) {
-    return { skipped: true, reason: 'manifest-malformed' };
+    return { available: false, reason: 'manifest-malformed' };
   }
-
   var current = getCurrentVersion();
   if (!isNewer(manifest.version, current)) {
-    return { skipped: true, reason: 'already-current', current: current };
+    return { available: false, reason: 'already-current', current: current };
   }
+  return {
+    available: true,
+    version: manifest.version,
+    url: manifest.url,
+    title: manifest.title || 'New RingIn update',
+    notes: Array.isArray(manifest.notes) ? manifest.notes : [],
+    current: current,
+  };
+}
 
+// Download + activate + reload. Called when the user explicitly taps
+// the Update button. onProgress(percent 0-100) fires repeatedly during
+// the download so the frosted overlay can show real progress.
+//
+// Just before reload we set localStorage 'ringin_just_updated' = '1'
+// — the freshly-mounted UpdatePrompt picks this up and briefly shows a
+// "finishing up" overlay so the user never sees a blank page.
+export async function downloadAndApply(version, url, onProgress) {
+  var Capgo = getCapgo();
+  if (!Capgo) {
+    // Web fallback — just reload (SW handles bundle swap).
+    try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
+    try { window.location.reload(); } catch(_){}
+    return;
+  }
+  // Subscribe to Capgo download progress events if supported.
+  var pluginListener = null;
+  if (typeof Capgo.addListener === 'function' && typeof onProgress === 'function') {
+    try {
+      pluginListener = Capgo.addListener('download', function(info){
+        try {
+          var pct = (info && typeof info.percent === 'number') ? info.percent : 0;
+          onProgress(Math.max(0, Math.min(100, pct)));
+        } catch(_){}
+      });
+    } catch(_){}
+  }
   try {
-    try { console.log('[ringin OTA] downloading', manifest.version, 'from', manifest.url); } catch(_){}
-    var bundle = await Capgo.download({
-      url: manifest.url,
-      version: manifest.version,
-    });
+    try { console.log('[ringin OTA] downloading', version); } catch(_){}
+    var bundle = await Capgo.download({ url: url, version: version });
+    if (typeof onProgress === 'function') try { onProgress(95); } catch(_){}
     await Capgo.set({ id: bundle.id });
-    setCurrentVersion(manifest.version);
-    try { console.log('[ringin OTA] installed', manifest.version, '— will activate on next reload'); } catch(_){}
-    return { ok: true, installed: manifest.version, prev: current };
-  } catch (e) {
-    return { error: e && e.message };
+    setCurrentVersion(version);
+    if (typeof onProgress === 'function') try { onProgress(100); } catch(_){}
+    try { console.log('[ringin OTA] installed', version, '— reloading'); } catch(_){}
+    // Flag the next boot so post-reload UpdatePrompt can show a brief
+    // "finishing up" overlay instead of a flash of nothing.
+    try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
+    if (typeof Capgo.reload === 'function') {
+      await Capgo.reload();
+    } else {
+      try { window.location.reload(); } catch(_){}
+    }
+  } finally {
+    if (pluginListener && typeof pluginListener.remove === 'function') {
+      try { await pluginListener.remove(); } catch(_){}
+    }
   }
 }
 
-// Convenience entry point for App.js useEffect.
-// Pass `onReady` callback to be notified when a new bundle has finished
-// downloading and is staged for activation on reload. App.js uses this to
-// show a visible "Update ready — Tap to restart" banner instead of waiting
-// silently for the next cold start.
-export function startOtaUpdater(onReady){
+// Convenience entry point for App.js. After 4s, checks for an update
+// and fires onAvailable(info) if there's a newer version. NO download
+// happens here — the user must tap Update in the popup.
+export function startOtaUpdater(onAvailable){
   if (!isNative()) return;
-  // Defer slightly so app boot isn't blocked by network.
   setTimeout(function(){
-    checkForUpdate().then(function(r){
+    checkOnly().then(function(r){
       try { console.log('[ringin OTA] check:', JSON.stringify(r)); } catch(_){}
-      // Fire the callback once the new bundle is staged. The user can then
-      // tap "Restart" to call applyUpdateNow() (or wait for next cold start).
-      if (r && r.ok && r.installed && typeof onReady === 'function') {
-        try { onReady({ version: r.installed, prev: r.prev || null }); } catch(_){}
+      if (r && r.available && typeof onAvailable === 'function') {
+        try { onAvailable(r); } catch(_){}
       }
     });
   }, 4000);
 }
 
-// Tear down the running web view and let the native shell relaunch with the
-// new bundle. Capgo's plugin handles the actual swap when the JS context
-// reloads. Reload also flushes any in-memory React state, which is fine since
-// the update banner only appears between user sessions.
+// Back-compat shim for the Profile screen's version pill, which calls
+// checkForUpdate(). Returns the same shape as the old API so the alert
+// branches still work, but routes through checkOnly + downloadAndApply
+// when the user explicitly opts in via the alert dialog.
+export async function checkForUpdate(){
+  var r = await checkOnly();
+  if (r && r.available) {
+    // Don't auto-download here either — let the caller decide.
+    return { ok: true, installed: r.version, prev: r.current, title: r.title, notes: r.notes, pending: true };
+  }
+  return { skipped: true, reason: (r && r.reason) || 'unknown' };
+}
+
+// Back-compat shim — old UpdatePrompt path called this to apply a
+// previously-staged bundle. With the rewrite, downloadAndApply does
+// the reload itself, so this is rarely needed. Kept so existing
+// imports don't break.
 export async function applyUpdateNow(){
+  try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
   var Capgo = getCapgo();
   if (Capgo && typeof Capgo.reload === 'function') {
     try { await Capgo.reload(); return; } catch(_){}
   }
-  // Fallback for web / older plugin versions.
   try { window.location.reload(); } catch(_){}
 }

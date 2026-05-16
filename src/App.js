@@ -5,7 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
 import {loadBlocks} from './utils/blocks';
 import {startCloseFriends} from './utils/closeFriends';
-import {startOtaUpdater, applyUpdateNow} from './utils/otaUpdater';
+import {startOtaUpdater, downloadAndApply} from './utils/otaUpdater';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
 import {useFollow} from './screens/useFollow';
 import SearchScreen from './screens/SearchScreen';
@@ -117,24 +117,36 @@ export default function App() {
     // SDK is downloaded + parsed long before the user accepts a call, so call
     // accept doesn't trigger a 200-1500ms synchronous parse hang on Samsung Internet.
     try { prefetchAgora(); } catch(e){}
-    // OTA: check for a newer web bundle on app start (native only — PWA
-    // already updates via service worker). Self-hosted: manifest at
-    // ring-in.vercel.app/bundles/latest.json + bundle zips alongside,
-    // published by .github/workflows/publish-bundle.yml.
-    //
-    // When a new bundle has been downloaded and is staged for activation,
-    // we surface the same "Update available" banner the PWA SW path uses —
-    // so the user sees one consistent prompt regardless of whether they
-    // installed via APK or via Add-to-Home-Screen.
+    // OTA: check for a newer web bundle on app start. NO auto-download —
+    // we just check the manifest, then dispatch an event with the new
+    // version's release notes. UpdatePrompt renders the neon-green popup
+    // with notes + an Update button; tapping it triggers downloadAndApply
+    // which pulls the bundle, shows progress, and reloads — all while a
+    // frosted overlay covers the brief reload flash.
     try {
-      // Register a global helper that the UpdatePrompt component calls when
-      // the user taps "Update" — for native it goes through Capgo's reload,
-      // for PWA it falls back to window.location.reload().
-      try { window.__ringinApplyOtaUpdate = applyUpdateNow; } catch(_){}
+      // Global download helper that UpdatePrompt calls when user taps Update.
+      // It looks up the pending update info we stashed on window during the
+      // check, and triggers the actual download + reload.
+      try {
+        window.__ringinDownloadOtaUpdate = function(onProgress){
+          var info = window.__ringinPendingOtaUpdate;
+          if (!info) return Promise.reject(new Error('no-pending-update'));
+          return downloadAndApply(info.version, info.url, onProgress);
+        };
+      } catch(_){}
       startOtaUpdater(function(info){
-        // Dispatch the same event PWA uses so UpdatePrompt picks it up.
+        // Stash so __ringinDownloadOtaUpdate can find the version/url.
+        try { window.__ringinPendingOtaUpdate = info; } catch(_){}
+        // Dispatch event with full release-note info.
         try {
-          var ev = new CustomEvent('ringin-sw-update-available', { detail: { source: 'ota', version: info && info.version } });
+          var ev = new CustomEvent('ringin-sw-update-available', {
+            detail: {
+              source: 'ota',
+              version: info && info.version,
+              title: info && info.title,
+              notes: info && info.notes,
+            }
+          });
           window.dispatchEvent(ev);
         } catch(_){}
       });

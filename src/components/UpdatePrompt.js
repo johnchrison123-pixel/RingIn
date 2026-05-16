@@ -1,38 +1,71 @@
 /* eslint-disable */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 // ──────────────────────────────────────────────────────────────────────────
-// UpdatePrompt — a small bottom banner that appears when the service worker
-// has detected a new RingIn version (a fresh sw.js + assets are sitting in
-// the "waiting" state). User taps "Update" to apply the update — that
-// triggers SKIP_WAITING on the new SW and a reload to pick up the new code.
+// UpdatePrompt — three discrete UI states:
 //
-// The "ringin-sw-update-available" window event is fired by
-// src/utils/swRegistration.js whenever it spots a new SW in installed state
-// AND the page is already controlled by an old SW.
+//   1. AVAILABLE  — neon-green popup with release notes + "Update" button.
+//                   Triggered by the 'ringin-sw-update-available' window
+//                   event (dispatched by App.js after OTA manifest check
+//                   OR by swRegistration.js when a new service worker is
+//                   waiting in the PWA path).
 //
-// Without this banner, users would have to fully close and reopen the PWA
-// to pick up new versions — discoverable maybe to power users, missed by
-// everyone else. With the banner, it's a one-tap action.
+//   2. APPLYING   — full-screen frosted overlay. Spinner + progress bar.
+//                   Stays up across the page reload because we also
+//                   render it on mount when localStorage flag is set.
+//
+//   3. FINISHING  — same frosted overlay, briefly shown post-reload (when
+//                   ringin_just_updated=1 is in localStorage), then fades
+//                   out so user lands seamlessly in the fresh app.
+//
+// No auto-update, no white flash. User taps Update → frosted overlay
+// covers everything until the new bundle is live.
 // ──────────────────────────────────────────────────────────────────────────
 
 export default function UpdatePrompt(){
+  // AVAILABLE state — popup is showing
   var availableS = useState(false);
   var available = availableS[0]; var setAvailable = availableS[1];
+  // Pending update info from the event detail
+  var updateInfoS = useState({ version: '', title: '', notes: [], source: 'sw' });
+  var updateInfo = updateInfoS[0]; var setUpdateInfo = updateInfoS[1];
+  // APPLYING state — frosted overlay with progress
   var applyingS = useState(false);
   var applying = applyingS[0]; var setApplying = applyingS[1];
-  // Track whether the available update came from the native OTA path
-  // (Capgo bundle download) or the PWA service worker — they apply via
-  // different mechanisms, so we route accordingly when the user taps Update.
-  var sourceS = useState('sw');
-  var source = sourceS[0]; var setSource = sourceS[1];
+  var progressS = useState(0);
+  var progress = progressS[0]; var setProgress = progressS[1];
+  // FINISHING state — brief post-reload overlay
+  var finishingS = useState(false);
+  var finishing = finishingS[0]; var setFinishing = finishingS[1];
+  // Slow indeterminate progress ticker (used when Capgo doesn't fire
+  // real percentage events — at least gives the bar something to do).
+  var fakeTickerRef = useRef(null);
+
+  // On mount: check for ringin_just_updated flag → show finishing overlay briefly
+  useEffect(function(){
+    try {
+      if (localStorage.getItem('ringin_just_updated') === '1') {
+        setFinishing(true);
+        try { localStorage.removeItem('ringin_just_updated'); } catch(_){}
+        // Stay up for ~900ms then fade out — long enough to hide the
+        // tail end of the reload, short enough not to feel annoying.
+        var t = setTimeout(function(){ setFinishing(false); }, 900);
+        return function(){ clearTimeout(t); };
+      }
+    } catch(_){}
+  }, []);
 
   useEffect(function(){
     function onReady(ev){
       try {
-        var src = (ev && ev.detail && ev.detail.source) || 'sw';
-        setSource(src);
-      } catch(_) { setSource('sw'); }
+        var d = (ev && ev.detail) || {};
+        setUpdateInfo({
+          version: d.version || '',
+          title: d.title || 'A new RingIn update is ready',
+          notes: Array.isArray(d.notes) ? d.notes : [],
+          source: d.source || 'sw',
+        });
+      } catch(_){}
       setAvailable(true);
     }
     try{ window.addEventListener('ringin-sw-update-available', onReady); }catch(_){}
@@ -43,160 +76,244 @@ export default function UpdatePrompt(){
 
   function applyUpdate(){
     setApplying(true);
-    // Give the fullscreen "Updating…" splash a beat to mount so the user
-    // never sees the WhiteFlash that happens between the React tree
-    // tear-down and the new bundle's first paint. Then route to the
-    // correct apply function based on update source.
+    setProgress(0);
+    // If Capgo doesn't fire real progress events, keep the bar moving
+    // anyway so the user knows something is happening.
+    var fakeProgress = 5;
+    fakeTickerRef.current = setInterval(function(){
+      fakeProgress = Math.min(90, fakeProgress + 3);
+      setProgress(function(p){ return Math.max(p, fakeProgress); });
+    }, 250);
+
+    function done(){
+      if (fakeTickerRef.current) clearInterval(fakeTickerRef.current);
+      fakeTickerRef.current = null;
+    }
+    // Route to the correct apply function based on update source.
     setTimeout(function(){
-      try{
-        if (source === 'ota' && typeof window.__ringinApplyOtaUpdate === 'function'){
-          window.__ringinApplyOtaUpdate();
-        } else if (typeof window.__ringinApplySWUpdate === 'function'){
-          window.__ringinApplySWUpdate();
+      try {
+        if (updateInfo.source === 'ota' && typeof window.__ringinDownloadOtaUpdate === 'function') {
+          window.__ringinDownloadOtaUpdate(function(pct){
+            // Real progress from Capgo — overrides the fake ticker if higher.
+            setProgress(function(p){ return Math.max(p, pct); });
+          }).catch(function(){
+            done();
+            setApplying(false);
+          });
+          // On success, the page reloads. localStorage flag → finishing overlay on next mount.
+        } else if (typeof window.__ringinApplySWUpdate === 'function') {
+          // PWA path
+          try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
+          setProgress(100);
+          done();
+          setTimeout(function(){ window.__ringinApplySWUpdate(); }, 250);
         } else {
-          try{ window.location.reload(); }catch(_){}
+          try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
+          done();
+          setTimeout(function(){ try{ window.location.reload(); }catch(_){} }, 250);
         }
-      }catch(_){
-        try{ window.location.reload(); }catch(_){}
+      } catch(_) {
+        done();
+        try{ localStorage.setItem('ringin_just_updated', '1'); window.location.reload(); }catch(_){}
       }
-    }, 200);
+    }, 250);
   }
 
   function dismiss(){ setAvailable(false); }
 
-  // When the user has tapped Update, take over the whole screen with a
-  // dark "Updating RingIn…" splash + an indeterminate progress bar.
-  // This covers the brief window between the React unmount and the new
-  // bundle's first paint so the user never sees the white-flash that
-  // used to happen.
-  if (applying) {
+  // ── RENDER: frosted overlay (applying OR finishing) ───────────────
+  if (applying || finishing) {
+    var label = applying ? 'Updating RingIn' : 'Almost ready';
+    var sub   = applying
+      ? (progress >= 95 ? 'Finishing up…' : 'Downloading the latest version')
+      : 'Loading your fresh app…';
+    var pct = applying ? Math.round(progress) : 100;
     return React.createElement('div', {
-      role: 'dialog', 'aria-label': 'Updating RingIn',
+      role: 'dialog',
+      'aria-label': label,
       style: {
         position: 'fixed', top: 0, left: 0,
         width: '100vw', height: '100dvh',
-        background: '#09090E',
-        color: '#fff',
         zIndex: 9999999,
+        background: 'rgba(8, 8, 18, 0.78)',
+        backdropFilter: 'blur(22px) saturate(140%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(140%)',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        gap: '22px',
+        gap: '20px',
+        color: '#fff',
         fontFamily: 'DM Sans, system-ui, sans-serif',
+        opacity: finishing && !applying ? 1 : 1,
+        transition: 'opacity 380ms ease-out',
+        animation: finishing && !applying ? 'ringinFadeIn 200ms ease-out' : 'none',
       }
     },
-      // Logo / gradient mark
+      // Logo — neon green pulse during applying, brand gradient during finishing
       React.createElement('div', {
         style: {
-          width: '78px', height: '78px',
+          width: '76px', height: '76px',
           borderRadius: '22px',
-          background: 'linear-gradient(135deg,#5B4FD4,#E84D9A)',
+          background: applying
+            ? 'linear-gradient(135deg, #39FF14 0%, #00FF7F 100%)'
+            : 'linear-gradient(135deg, #5B4FD4 0%, #E84D9A 100%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '38px', fontWeight: 800,
-          color: '#fff',
-          boxShadow: '0 10px 40px rgba(232,77,154,0.35)',
-          animation: 'ringinPulseGlow 1.6s ease-in-out infinite',
+          color: applying ? '#062a08' : '#fff',
+          boxShadow: applying
+            ? '0 0 36px rgba(57,255,20,0.55), 0 0 70px rgba(0,255,127,0.35), inset 0 0 14px rgba(255,255,255,0.2)'
+            : '0 10px 40px rgba(232,77,154,0.4)',
+          animation: 'ringinUpdatePulse 1.6s ease-in-out infinite',
         }
-      }, 'R'),
-      React.createElement('div', { style: { fontSize: '20px', fontWeight: 700, letterSpacing: '-0.01em' } }, 'Updating RingIn'),
-      React.createElement('div', { style: { fontSize: '13px', color: 'rgba(255,255,255,0.55)', marginTop: '-12px' } }, 'Fetching the latest version…'),
-      // Indeterminate progress bar — looping gradient stripe
+      }, applying ? '⬇' : '✓'),
+      React.createElement('div', { style: { fontSize: '20px', fontWeight: 700, letterSpacing: '-0.01em' } }, label),
+      React.createElement('div', { style: { fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '-12px', maxWidth: '280px', textAlign: 'center' } }, sub),
+      // Progress bar
       React.createElement('div', {
         style: {
-          width: '220px', height: '4px',
-          borderRadius: '2px',
-          background: 'rgba(255,255,255,0.08)',
+          width: '240px', height: '5px',
+          borderRadius: '3px',
+          background: 'rgba(255,255,255,0.1)',
           overflow: 'hidden',
           position: 'relative',
         }
       },
         React.createElement('div', {
           style: {
-            position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
-            background: 'linear-gradient(90deg, transparent, #B44FE8 30%, #5B4FD4 70%, transparent)',
-            animation: 'ringinUpdateSlide 1.2s ease-in-out infinite',
-            borderRadius: '2px',
+            position: 'absolute', top: 0, left: 0, height: '100%',
+            width: pct + '%',
+            background: 'linear-gradient(90deg, #39FF14, #00FF7F)',
+            borderRadius: '3px',
+            boxShadow: '0 0 12px rgba(57,255,20,0.7)',
+            transition: 'width 220ms ease-out',
           }
         })
       ),
-      // Inject keyframes inline so we don't depend on an external stylesheet
-      // for the splash to animate (the new bundle's CSS won't be loaded yet).
+      React.createElement('div', { style: { fontSize: '12px', color: 'rgba(255,255,255,0.45)', fontFamily: 'ui-monospace, monospace' } }, pct + '%'),
+      // Inline keyframes — bundle CSS may not be loaded yet during finishing state.
       React.createElement('style', null,
-        '@keyframes ringinUpdateSlide { 0%{transform:translateX(-100%)} 100%{transform:translateX(550%)} }' +
-        '@keyframes ringinPulseGlow { 0%,100%{box-shadow:0 10px 40px rgba(232,77,154,0.35)} 50%{box-shadow:0 10px 60px rgba(91,79,212,0.7)} }'
+        '@keyframes ringinUpdatePulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }' +
+        '@keyframes ringinFadeIn { from{opacity:0} to{opacity:1} }'
       )
     );
   }
 
   if (!available) return null;
 
-  // Sits above the bottom-nav, slightly offset from the InstallPrompt's
-  // 76px so they don't visually overlap on the rare occasion both could
-  // show simultaneously. Uses brand gradient with a "fresh" green accent
-  // to differentiate from the install pill.
-  var pillStyle = {
-    position:'fixed',
-    left:'50%',
-    transform:'translateX(-50%)',
-    bottom:'calc(96px + env(safe-area-inset-bottom, 0px))',
-    zIndex:860,
-    width:'calc(100% - 24px)',
-    maxWidth:'420px',
-    background:'linear-gradient(135deg, #11998E 0%, #38EF7D 100%)',
-    color:'#fff',
-    borderRadius:'16px',
-    boxShadow:'0 10px 30px rgba(9,9,14,0.5), 0 0 0 1px rgba(255,255,255,0.08)',
-    padding:'12px 14px',
-    display:'flex',
-    alignItems:'center',
-    gap:'10px',
-    fontFamily:'DM Sans, system-ui, sans-serif',
-    animation:'ringinSlideUp 240ms ease-out',
+  // ── RENDER: neon-green AVAILABLE popup ─────────────────────────────
+  var notes = (updateInfo.notes && updateInfo.notes.length)
+    ? updateInfo.notes.slice(0, 4)
+    : ['Performance improvements', 'Bug fixes'];
+
+  var cardStyle = {
+    position: 'fixed',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    bottom: 'calc(100px + env(safe-area-inset-bottom, 0px))',
+    zIndex: 860,
+    width: 'calc(100% - 20px)',
+    maxWidth: '440px',
+    background: 'linear-gradient(135deg, #0d2a14 0%, #06170a 100%)',
+    color: '#eafff0',
+    borderRadius: '20px',
+    border: '1.5px solid rgba(57,255,20,0.55)',
+    boxShadow: '0 0 30px rgba(57,255,20,0.35), 0 0 60px rgba(0,255,127,0.15), 0 16px 40px rgba(0,0,0,0.5)',
+    padding: '16px 16px 14px',
+    display: 'flex', flexDirection: 'column',
+    gap: '10px',
+    fontFamily: 'DM Sans, system-ui, sans-serif',
+    animation: 'ringinSlideUp 280ms cubic-bezier(0.22,0.61,0.36,1)',
   };
 
-  return React.createElement('div', { style: pillStyle, role:'dialog', 'aria-label':'RingIn update available' },
-    // Spinning sparkle while applying, otherwise static ✨
-    React.createElement('div', {
-      style:{
-        width:'34px', height:'34px', borderRadius:'10px',
-        background:'rgba(255,255,255,0.18)',
-        display:'flex', alignItems:'center', justifyContent:'center',
-        flexShrink:0, fontSize:'18px',
-      }
-    }, applying ? '⏳' : '✨'),
-
-    React.createElement('div', { style:{flex:1, minWidth:0} },
-      React.createElement('div', { style:{fontSize:'13px', fontWeight:700, lineHeight:1.15} },
-        applying ? 'Updating…' : 'New RingIn version available'
+  return React.createElement('div', { style: cardStyle, role: 'dialog', 'aria-label': 'RingIn update available' },
+    // Header row — title + dismiss
+    React.createElement('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px' } },
+      // Sparkle badge
+      React.createElement('div', {
+        style: {
+          width: '38px', height: '38px', borderRadius: '12px',
+          background: 'linear-gradient(135deg, #39FF14, #00FF7F)',
+          color: '#062a08',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, fontSize: '20px', fontWeight: 800,
+          boxShadow: '0 0 16px rgba(57,255,20,0.5)',
+        }
+      }, '✨'),
+      // Title block
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', { style: { fontSize: '15px', fontWeight: 800, color: '#fff', textShadow: '0 0 8px rgba(57,255,20,0.4)' } },
+          updateInfo.title || 'New update available'
+        ),
+        updateInfo.version ? React.createElement('div', { style: { fontSize: '11px', color: 'rgba(195,255,210,0.6)', marginTop: '2px', fontFamily: 'ui-monospace, monospace' } },
+          'Version ' + updateInfo.version
+        ) : null
       ),
-      React.createElement('div', { style:{fontSize:'11px', opacity:0.88, marginTop:'2px', lineHeight:1.3} },
-        applying ? 'Reloading with the latest changes' : 'Tap to refresh — quick and seamless'
+      // Dismiss button
+      React.createElement('button', {
+        onClick: dismiss,
+        className: 'ringin-tap',
+        'aria-label': 'Dismiss',
+        style: {
+          background: 'transparent', color: 'rgba(195,255,210,0.6)',
+          border: 'none', padding: '4px', cursor: 'pointer',
+          fontSize: '16px', lineHeight: 0, fontFamily: 'inherit',
+        }
+      },
+        React.createElement('svg', { viewBox: '0 0 24 24', width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2.4, strokeLinecap: 'round' },
+          React.createElement('path', { d: 'M18 6L6 18M6 6l12 12' })
+        )
       )
     ),
-
-    !applying ? React.createElement('button', {
-      onClick: applyUpdate,
-      className: 'ringin-tap',
-      style:{
-        background:'#fff', color:'#11998E',
-        border:'none', borderRadius:'10px',
-        padding:'8px 14px', fontSize:'12px', fontWeight:800,
-        cursor:'pointer',
-      }
-    }, 'Update') : null,
-
-    !applying ? React.createElement('button', {
-      onClick: dismiss,
-      className: 'ringin-tap',
-      'aria-label':'Dismiss',
-      style:{
-        background:'transparent', color:'#fff',
-        border:'none', padding:'4px', cursor:'pointer',
-        opacity:0.75, lineHeight:0,
+    // Release notes list — bug fixes / new features
+    React.createElement('ul', {
+      style: {
+        margin: '4px 0 6px',
+        padding: '0 0 0 18px',
+        listStyle: 'none',
+        fontSize: '13px',
+        color: 'rgba(220,255,228,0.88)',
+        lineHeight: 1.5,
       }
     },
-      React.createElement('svg', {viewBox:'0 0 24 24', width:16, height:16, fill:'none', stroke:'currentColor', strokeWidth:2.4, strokeLinecap:'round'},
-        React.createElement('path', {d:'M18 6L6 18M6 6l12 12'})
-      )
-    ) : null
+      notes.map(function(line, i){
+        return React.createElement('li', {
+          key: i,
+          style: {
+            position: 'relative',
+            marginBottom: i < notes.length - 1 ? '4px' : 0,
+          }
+        },
+          React.createElement('span', {
+            style: {
+              position: 'absolute',
+              left: '-14px', top: '7px',
+              width: '6px', height: '6px',
+              borderRadius: '50%',
+              background: '#39FF14',
+              boxShadow: '0 0 6px rgba(57,255,20,0.7)',
+            }
+          }),
+          line
+        );
+      })
+    ),
+    // Update button — bright neon
+    React.createElement('button', {
+      onClick: applyUpdate,
+      className: 'ringin-tap',
+      style: {
+        marginTop: '4px',
+        width: '100%',
+        background: 'linear-gradient(135deg, #39FF14 0%, #00FF7F 100%)',
+        color: '#062a08',
+        border: 'none',
+        borderRadius: '12px',
+        padding: '12px 16px',
+        fontSize: '14px', fontWeight: 800,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        boxShadow: '0 0 16px rgba(57,255,20,0.5), inset 0 -2px 0 rgba(0,0,0,0.12)',
+        letterSpacing: '0.2px',
+      }
+    }, 'Update Now')
   );
 }
