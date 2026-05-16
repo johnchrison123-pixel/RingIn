@@ -67,8 +67,25 @@ function MomentViewer(props){
   var replyText = replyTextS[0]; var setReplyText = replyTextS[1];
   var pausedS = useState(false);
   var paused = pausedS[0]; var setPaused = pausedS[1];
+  // Instagram-style press-and-hold-to-pause. Separate from `paused` (which
+  // is for reply composer focus) so they OR together cleanly without
+  // accidentally resuming when the input is still focused.
+  var holdPausedS = useState(false);
+  var holdPaused = holdPausedS[0]; var setHoldPaused = holdPausedS[1];
   var sentToastS = useState('');
   var sentToast = sentToastS[0]; var setSentToast = sentToastS[1];
+  // Owner-only 3-dot menu (Delete moment, Save to phone, Copy link).
+  var ownMenuS = useState(false);
+  var ownMenu = ownMenuS[0]; var setOwnMenu = ownMenuS[1];
+  // viewer_id → profile {id, full_name, avatar_url}. Hydrated when the
+  // owner opens the "Seen by N" sheet so we render real names + avatars
+  // instead of raw UUIDs.
+  var viewerProfilesS = useState({});
+  var viewerProfiles = viewerProfilesS[0]; var setViewerProfiles = viewerProfilesS[1];
+  // Refs for the press-and-hold gesture. A 220ms long-press timer flips
+  // holdPaused→true; faster taps fall through to handleTap() for nav.
+  var pressTimerRef = useRef(null);
+  var pressStartRef = useRef(null);
 
   // Like state per slide. Persisted in localStorage keyed by
   // momentId-slideId, so reopening shows the same heart fill state.
@@ -133,18 +150,84 @@ function MomentViewer(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, slides.length]);
 
-  // Auto-advance — pauses while the user is composing a reply, and STOPS
-  // entirely once they've liked or replied to this slide.
+  // Auto-advance — pauses while the user is composing a reply, while they
+  // are press-and-holding the slide (Insta-style), and STOPS entirely once
+  // they've liked or replied to this slide.
   useEffect(function(){
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    if (paused || interacted) return;
+    if (paused || holdPaused || interacted) return;
     timerRef.current = setTimeout(function(){
       if (idx < slides.length - 1) setIdx(idx + 1);
       else if (onClose) onClose();
     }, SLIDE_MS);
     return function(){ if (timerRef.current) clearTimeout(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, slides.length, paused, interacted]);
+  }, [idx, slides.length, paused, holdPaused, interacted]);
+
+  // Hydrate viewer profile names + avatars when the owner opens the
+  // "Seen by N" sheet. JOINs moment_views.viewer_id → profiles.id. Without
+  // this we'd render raw truncated UUIDs — useless to the owner.
+  useEffect(function(){
+    if (!isOwn || !viewerList || viewerList.length === 0) return;
+    var ids = viewerList.map(function(v){ return v.viewer_id; }).filter(Boolean);
+    // Skip ids we've already cached this session.
+    var unknown = ids.filter(function(id){ return !viewerProfiles[id]; });
+    if (!unknown.length) return;
+    try {
+      sb.from('profiles').select('id, full_name, avatar_url').in('id', unknown).then(function(r){
+        if (r.error || !r.data) return;
+        setViewerProfiles(function(prev){
+          var next = Object.assign({}, prev);
+          r.data.forEach(function(p){ next[p.id] = p; });
+          return next;
+        });
+      });
+    } catch(_) {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerList, isOwn]);
+
+  // Helper — render "2h" / "3m" / "now" relative to slide.createdAt.
+  function relativeTime(iso){
+    if (!iso) return '';
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    var diff = Math.max(0, Date.now() - t);
+    var min = Math.floor(diff / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return min + 'm';
+    var hr = Math.floor(min / 60);
+    if (hr < 24) return hr + 'h';
+    var d = Math.floor(hr / 24);
+    return d + 'd';
+  }
+
+  // Send a quick emoji reaction — same payload shape as a text reply, but
+  // bypasses the composer so it's a single-tap interaction (matches the
+  // Instagram quick-reactions row).
+  function sendQuickReaction(emoji){
+    var cur = slides[idx]; if (!cur) return;
+    if (typeof onReply === 'function') {
+      try { onReply(moment, cur, emoji); } catch(_){}
+    }
+    setInteracted(true);
+    showToast(emoji + ' sent');
+  }
+
+  // Owner-only delete (matches Instagram's "Delete" option on own stories).
+  function deleteOwnMoment(){
+    setOwnMenu(false);
+    var cur = slides[idx]; if (!cur) return;
+    var ok = true;
+    try { ok = window.confirm('Delete this moment? It will disappear for everyone.'); } catch(_){}
+    if (!ok) return;
+    try {
+      sb.from('moments').delete().eq('id', cur.id).then(function(){
+        showToast('Deleted');
+        // Close the viewer — parent will re-fetch the list on next mount.
+        setTimeout(function(){ if (onClose) onClose(); }, 600);
+      });
+    } catch(_){}
+  }
 
   // Tap left third = back, tap right two-thirds = next. Taps on the
   // composer / like row are stopPropagation'd so they don't navigate.
@@ -211,8 +294,77 @@ function MomentViewer(props){
   // some browsers (iOS Safari especially), which renders the viewer at the
   // strip's bounds instead of the full viewport. Portalling sidesteps all of
   // that by mounting the overlay at document.body.
+  // Returns true if a pointer event originated from an interactive child
+  // (button / input / link). We use this to skip the press-and-hold gesture
+  // when the user is actually tapping the composer, like button, 3-dot
+  // menu, header avatar, etc. — only the bare slide area should pause/nav.
+  function isInteractive(e){
+    try {
+      var el = e && e.target;
+      var stop = e && e.currentTarget;
+      while (el && el !== stop) {
+        var tag = el.tagName;
+        if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'A' || tag === 'IMG') return true;
+        if (el.getAttribute && el.getAttribute('data-moment-skip-press') === '1') return true;
+        el = el.parentNode;
+      }
+    } catch(_){}
+    return false;
+  }
+
   var overlay = React.createElement('div', {
-    onClick: handleTap,
+    // Press-and-hold to pause (Insta/FB pattern). 220ms long-press triggers
+    // hold-pause; quick taps fall through to handleTap() for left/right
+    // navigation. Vertical swipe > 90px triggers dismiss (also Insta-like).
+    onPointerDown: function(e){
+      // Don't start the gesture when the user is interacting with a child
+      // (composer, like button, 3-dot menu, header, etc.).
+      if (isInteractive(e)) return;
+      pressStartRef.current = {
+        x: (e && e.clientX) || 0,
+        y: (e && e.clientY) || 0,
+        t: Date.now(),
+        held: false,
+      };
+      try { clearTimeout(pressTimerRef.current); } catch(_){}
+      pressTimerRef.current = setTimeout(function(){
+        if (pressStartRef.current) {
+          pressStartRef.current.held = true;
+          setHoldPaused(true);
+        }
+      }, 220);
+    },
+    onPointerUp: function(e){
+      if (isInteractive(e)) return;
+      try { clearTimeout(pressTimerRef.current); } catch(_){}
+      var data = pressStartRef.current;
+      pressStartRef.current = null;
+      if (!data) return;
+      if (data.held) { setHoldPaused(false); return; }
+      // Was a quick tap. Decide between swipe-down-dismiss and left/right
+      // navigation by comparing axis deltas.
+      var dx = ((e && e.clientX) || 0) - data.x;
+      var dy = ((e && e.clientY) || 0) - data.y;
+      if (dy > 90 && Math.abs(dy) > Math.abs(dx)) {
+        if (onClose) onClose();
+        return;
+      }
+      // Normal tap → run the existing left/right hit-test.
+      handleTap(e);
+    },
+    onPointerCancel: function(){
+      try { clearTimeout(pressTimerRef.current); } catch(_){}
+      pressStartRef.current = null;
+      setHoldPaused(false);
+    },
+    onPointerLeave: function(){
+      // Drag finger off the screen while holding → release pause cleanly.
+      try { clearTimeout(pressTimerRef.current); } catch(_){}
+      if (pressStartRef.current && pressStartRef.current.held) {
+        setHoldPaused(false);
+      }
+      pressStartRef.current = null;
+    },
     // Block parent's swipe-back and scroll while the viewer is open.
     onTouchStart: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
     onTouchMove: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
@@ -265,9 +417,10 @@ function MomentViewer(props){
               height:'100%', background:'#fff',
               width: i < idx ? '100%' : (i === idx ? '0%' : '0%'),
               animation: i === idx ? 'momentBarFill ' + SLIDE_MS + 'ms linear forwards' : 'none',
-              // Freeze the bar mid-fill when the user is composing a reply
-              // or has just liked / replied — matches the timer behaviour.
-              animationPlayState: (i === idx && (paused || interacted)) ? 'paused' : 'running',
+              // Freeze the bar mid-fill when the user is composing a reply,
+              // press-holding the slide (Insta-style), or has just liked /
+              // replied — matches the timer behaviour above.
+              animationPlayState: (i === idx && (paused || holdPaused || interacted)) ? 'paused' : 'running',
             }
           })
         );
@@ -285,26 +438,37 @@ function MomentViewer(props){
     },
       React.createElement('div', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(props.onViewProfile) props.onViewProfile(props.moment); },
-        style:{display:'flex', alignItems:'center', gap:'10px', flex:1, cursor:'pointer'},
+        style:{display:'flex', alignItems:'center', gap:'10px', flex:1, cursor:'pointer', minWidth:0},
       },
         user.avatar ? React.createElement('img', {
           src: user.avatar, alt:'',
-          style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)'}
+          style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)',flexShrink:0}
         }) : React.createElement('div', {
-          style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700}
+          style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}
         }, (user.name||'?').charAt(0).toUpperCase()),
-        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)'}}, user.name || '')
+        React.createElement('div', {style:{display:'flex',alignItems:'baseline',gap:'7px',minWidth:0,overflow:'hidden'}},
+          React.createElement('div', {style:{fontSize:'14px',fontWeight:700,textShadow:'0 1px 4px rgba(0,0,0,0.3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, user.name || ''),
+          // Story timestamp ("2h", "now") — Instagram pattern, sits next to name.
+          React.createElement('div', {style:{fontSize:'12px',color:'rgba(255,255,255,0.75)',fontWeight:500,textShadow:'0 1px 3px rgba(0,0,0,0.3)',flexShrink:0}}, relativeTime(cur.createdAt))
+        )
       ),
-      // T2.5 — "Seen by N" badge for own moments. Tappable, opens viewer list.
-      // Sibling of the inner clickable header so tapping doesn't open profile.
-      (isOwn && viewCount > 0) ? React.createElement('button',{
+      // T2.5 — "Seen by N" badge for own moments. ALWAYS visible on own
+      // moments (even with 0 views) so the owner can open the sheet and see
+      // "No one has viewed this yet." — matches Instagram's behaviour.
+      isOwn ? React.createElement('button',{
         onClick:function(e){ if(e&&e.stopPropagation) e.stopPropagation(); setShowViewers(true); },
-        style:{display:'inline-flex',alignItems:'center',gap:'4px',background:'rgba(0,0,0,0.4)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:'12px',padding:'4px 10px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',marginRight:'8px',fontFamily:'inherit'}
+        style:{display:'inline-flex',alignItems:'center',gap:'4px',background:'rgba(0,0,0,0.4)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:'12px',padding:'4px 10px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',marginRight:'6px',fontFamily:'inherit',flexShrink:0}
       }, '👁 ', viewCount) : null,
+      // 3-dot menu for own moments — Delete / Save / Copy link (Insta-style).
+      isOwn ? React.createElement('button', {
+        onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); setOwnMenu(true); },
+        className:'ringin-tap',
+        style:{background:'transparent',border:'none',color:'#fff',fontSize:'22px',lineHeight:1,cursor:'pointer',padding:'4px 8px',fontWeight:700,flexShrink:0}
+      }, '⋯') : null,
       React.createElement('button', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(onClose) onClose(); },
         className:'ringin-tap',
-        style:{background:'transparent',border:'none',color:'#fff',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'4px 6px',fontWeight:300}
+        style:{background:'transparent',border:'none',color:'#fff',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'4px 6px',fontWeight:300,flexShrink:0}
       }, '×')
     ),
     // Caption — gradient slides: big centred text. Image slides: smaller
@@ -417,27 +581,125 @@ function MomentViewer(props){
         pointerEvents:'none',
       }
     }, sentToast) : null,
+    // Quick emoji reactions row (Insta-style). Sits just above the reply
+    // composer. Single tap → fires onReply with the emoji as the message.
+    // Hidden when the user has already liked/replied (interacted) so it
+    // doesn't compete with the toast.
+    !interacted ? React.createElement('div', {
+      onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style:{
+        position:'absolute',
+        left:'14px', right:'14px',
+        bottom:'calc(70px + env(safe-area-inset-bottom, 0px))',
+        display:'flex', justifyContent:'space-between',
+        gap:'4px', zIndex:3,
+      }
+    },
+      ['❤️','😂','😮','😢','👍','🔥'].map(function(em){
+        return React.createElement('button', {
+          key: em,
+          onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); sendQuickReaction(em); },
+          className: 'ringin-tap',
+          style:{
+            flex:1,
+            background:'rgba(0,0,0,0.35)',
+            border:'1px solid rgba(255,255,255,0.18)',
+            borderRadius:'50%',
+            aspectRatio:'1 / 1',
+            maxWidth:'46px',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:'20px', cursor:'pointer',
+            backdropFilter:'blur(4px)',
+            WebkitBackdropFilter:'blur(4px)',
+          }
+        }, em);
+      })
+    ) : null,
+    // Owner-only 3-dot menu. Slides up from bottom with Delete / Save options.
+    ownMenu ? React.createElement('div', {
+      onClick: function(){ setOwnMenu(false); },
+      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style:{position:'absolute', inset:0, zIndex:11, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'flex-end', justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style:{background:'#0c0c12', borderTopLeftRadius:'18px', borderTopRightRadius:'18px', width:'100%', maxWidth:'460px', color:'#fff', padding:'8px 0 calc(20px + env(safe-area-inset-bottom, 0px))', display:'flex', flexDirection:'column', boxShadow:'0 -8px 30px rgba(0,0,0,0.5)'}
+      },
+        React.createElement('div', {style:{width:'40px', height:'4px', background:'rgba(255,255,255,0.25)', borderRadius:'2px', margin:'4px auto 12px'}}),
+        React.createElement('button', {
+          onClick: deleteOwnMoment,
+          style:{background:'none', border:'none', color:'#FF5C7A', fontSize:'15px', fontWeight:600, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
+        }, '🗑  Delete moment'),
+        React.createElement('button', {
+          onClick: function(){
+            setOwnMenu(false);
+            var cur2 = slides[idx];
+            if (cur2 && cur2.imageUrl) {
+              try { window.open(cur2.imageUrl, '_blank'); } catch(_){}
+              showToast('Opening image…');
+            }
+          },
+          style:{background:'none', border:'none', color:'#fff', fontSize:'15px', fontWeight:500, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
+        }, '💾  Save / open image'),
+        React.createElement('button', {
+          onClick: function(){
+            setOwnMenu(false);
+            var cur3 = slides[idx];
+            if (cur3) {
+              var link = 'https://ring-in.vercel.app/?moment=' + encodeURIComponent(cur3.id);
+              try { navigator.clipboard.writeText(link); } catch(_){}
+              showToast('Link copied');
+            }
+          },
+          style:{background:'none', border:'none', color:'#fff', fontSize:'15px', fontWeight:500, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
+        }, '🔗  Copy link'),
+        React.createElement('button', {
+          onClick: function(){ setOwnMenu(false); },
+          style:{background:'none', border:'none', color:'rgba(255,255,255,0.55)', fontSize:'14px', fontWeight:500, padding:'14px 18px', textAlign:'center', cursor:'pointer', fontFamily:'inherit', borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:'6px'}
+        }, 'Cancel')
+      )
+    ) : null,
     // T2.5 — viewer list popup. Owner-only, opened by tapping "👁 N" badge.
+    // Now shows the viewer's actual name + avatar (hydrated from profiles
+    // table) and has a friendly empty state when no one has viewed yet.
     showViewers ? React.createElement('div',{
       onClick:function(){ setShowViewers(false); },
-      style:{position:'absolute',inset:0,zIndex:10,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(8px)',display:'flex',alignItems:'flex-end',justifyContent:'center'}
+      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style:{position:'absolute',inset:0,zIndex:10,background:'rgba(0,0,0,0.72)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',display:'flex',alignItems:'flex-end',justifyContent:'center'}
     },
       React.createElement('div',{
         onClick:function(e){ e.stopPropagation(); },
-        style:{background:'#0c0c12',borderTopLeftRadius:'18px',borderTopRightRadius:'18px',width:'100%',maxWidth:'460px',maxHeight:'70%',display:'flex',flexDirection:'column',color:'#fff',padding:'14px 16px 24px',boxShadow:'0 -8px 30px rgba(0,0,0,0.5)'}
+        style:{background:'#0c0c12',borderTopLeftRadius:'18px',borderTopRightRadius:'18px',width:'100%',maxWidth:'460px',maxHeight:'72%',display:'flex',flexDirection:'column',color:'#fff',padding:'14px 16px calc(20px + env(safe-area-inset-bottom, 0px))',boxShadow:'0 -8px 30px rgba(0,0,0,0.5)'}
       },
-        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}},
-          React.createElement('div',{style:{fontSize:'14px',fontWeight:700}}, 'Seen by ' + viewerList.length),
-          React.createElement('button',{onClick:function(){ setShowViewers(false); },style:{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:'22px',cursor:'pointer',fontFamily:'inherit'}},'×')
+        React.createElement('div', {style:{width:'40px', height:'4px', background:'rgba(255,255,255,0.25)', borderRadius:'2px', margin:'0 auto 10px'}}),
+        React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}},
+          React.createElement('div',{style:{fontSize:'15px',fontWeight:700}}, viewerList.length === 0 ? 'Views' : ('Seen by ' + viewerList.length)),
+          React.createElement('button',{onClick:function(){ setShowViewers(false); },style:{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:'22px',cursor:'pointer',fontFamily:'inherit',padding:'0 4px'}},'×')
         ),
         viewerList.length === 0
-          ? React.createElement('div',{style:{textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:'12px',padding:'20px'}}, 'No views yet.')
-          : React.createElement('div',{style:{overflowY:'auto',flex:1}},
+          ? React.createElement('div',{style:{textAlign:'center',padding:'30px 16px 18px',display:'flex',flexDirection:'column',alignItems:'center',gap:'8px'}},
+              React.createElement('div',{style:{width:'56px',height:'56px',borderRadius:'50%',background:'rgba(255,255,255,0.07)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px'}}, '👁'),
+              React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'#fff'}}, 'No one has viewed this yet'),
+              React.createElement('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.55)',maxWidth:'260px',lineHeight:1.4}}, 'When someone watches your moment, their name will appear here.')
+            )
+          : React.createElement('div',{style:{overflowY:'auto',flex:1,WebkitOverflowScrolling:'touch'}},
               viewerList.map(function(v){
-                return React.createElement('div',{key:v.viewer_id,style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid rgba(255,255,255,0.08)'}},
-                  React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700}}, (v.viewer_id||'?').substring(0,2).toUpperCase()),
-                  React.createElement('div',{style:{flex:1,fontSize:'12px',color:'rgba(255,255,255,0.85)'}}, (v.viewer_id||'').substring(0, 8) + '…'),
-                  React.createElement('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.45)'}}, v.viewed_at ? new Date(v.viewed_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '')
+                var prof = viewerProfiles[v.viewer_id] || {};
+                var displayName = prof.full_name || (v.viewer_id ? v.viewer_id.substring(0, 8) + '…' : 'Anonymous');
+                var avatar = prof.avatar_url || null;
+                var initial = (prof.full_name || v.viewer_id || '?').charAt(0).toUpperCase();
+                return React.createElement('div',{key:v.viewer_id,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}},
+                  avatar
+                    ? React.createElement('img', {src: avatar, alt:'', style:{width:'38px',height:'38px',borderRadius:'50%',objectFit:'cover',flexShrink:0,border:'1px solid rgba(255,255,255,0.1)'}})
+                    : React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}}, initial),
+                  React.createElement('div',{style:{flex:1,minWidth:0}},
+                    React.createElement('div',{style:{fontSize:'13.5px',color:'#fff',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, displayName),
+                    React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginTop:'1px'}}, v.viewed_at ? relativeTime(v.viewed_at) + ' ago' : 'recently')
+                  )
                 );
               })
             )
