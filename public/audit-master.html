@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RingIn — Master Bug Audit (5 parallel agents)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5;font-size:10.5pt}
+.wrap{max-width:920px;margin:0 auto;padding:24px 18px 80px}
+h1{font-size:21pt;font-weight:800;color:#1D9E75;margin-bottom:4px;letter-spacing:-0.5px}
+h1 span{color:#1a1a1f;font-weight:600}
+.subhead{font-size:9.5pt;color:#666;margin-bottom:14px}
+h2{font-size:13pt;font-weight:800;color:#1a1a1f;margin:22px 0 8px;padding-bottom:6px;border-bottom:2px solid #ECECF2;display:flex;align-items:center;gap:8px}
+h2 .sev{display:inline-block;padding:2px 8px;border-radius:99px;font-size:9pt;font-weight:700}
+h2.p0 .sev{background:#FFE0E0;color:#9b1a1a}
+h2.p1 .sev{background:#FFEDD0;color:#8a4a08}
+h2.p2 .sev{background:#FFF6D0;color:#7e5c0a}
+h2.p3 .sev{background:#E8F2EE;color:#3a6a55}
+h3{font-size:11pt;font-weight:700;color:#5746af;margin:14px 0 6px}
+.summary{background:#F8F8FC;border:1px solid #E0E0EA;border-radius:10px;padding:14px 16px;margin:12px 0 18px;font-size:10pt}
+.summary table{width:100%;border-collapse:collapse;margin-top:8px}
+.summary td{padding:3px 9px}
+.banner{background:linear-gradient(135deg,#FFEFEF,#FFE8D8);border:1.5px solid #d97757;border-radius:12px;padding:14px 16px;margin:0 0 18px;font-size:10pt}
+.banner h2{border:none;margin:0 0 4px;padding:0;color:#7c2510;font-size:12pt}
+.banner p{margin:0;color:#7c2510;font-size:9.5pt}
+ol{margin:6px 0 10px 22px;padding:0;list-style-position:outside}
+ol li{margin-bottom:4px;font-size:9.5pt;line-height:1.45}
+.loc{font-family:ui-monospace,Menlo,monospace;color:#5746af;font-weight:600;font-size:9pt;background:#F0F0F8;padding:1px 5px;border-radius:3px}
+.tag{display:inline-block;padding:1px 6px;border-radius:99px;font-size:8.5pt;font-weight:700;letter-spacing:0.2px;margin-right:4px}
+.tag.scope{background:#FFE0E0;color:#9b1a1a}
+.tag.coin{background:#FFF1D6;color:#7e5c0a}
+.tag.race{background:#E8E0FF;color:#5746af}
+.tag.security{background:#1a1a1f;color:#fff}
+.tag.dummy{background:#F0F0F4;color:#666;border:1px solid #DDD}
+.tag.sync{background:#D0F0EE;color:#106058}
+footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;color:#888;text-align:center}
+@media print{
+  @page{size:A4;margin:11mm 10mm}
+  body{font-size:8.5pt;line-height:1.35}
+  h1{font-size:16pt}
+  h2{font-size:11pt;margin-top:14px}
+  h3{font-size:10pt}
+  ol li{font-size:8.5pt}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>RingIn <span>— Master Bug Audit</span></h1>
+<p class="subhead">5 specialized agents ran in parallel · ~250 unique findings de-duped &amp; ranked · No fixes applied · 2026-05-18</p>
+
+<div class="banner">
+<h2>📋 Listing only — no fixes applied per your instruction</h2>
+<p>This is the synthesized output of 5 deep audits (HomeScreen+Moments / Messages+Chat / Call+Wallet+CoinSync / Profile+Settings+Search+Workshops / App.js+OTA+Back+Realtime). Tell me which subset to tackle and I'll work through them with the same audit-after-each-batch discipline.</p>
+</div>
+
+<div class="summary">
+<b>By severity</b>
+<table>
+<tr><td><span class="tag" style="background:#FFE0E0;color:#9b1a1a">P0</span></td><td><b>40</b> crash / data loss / silent corruption</td></tr>
+<tr><td><span class="tag" style="background:#FFEDD0;color:#8a4a08">P1</span></td><td><b>60</b> broken features, missing functionality, race conditions</td></tr>
+<tr><td><span class="tag" style="background:#FFF6D0;color:#7e5c0a">P2</span></td><td><b>43</b> polish, edge cases, hygiene</td></tr>
+<tr><td><span class="tag" style="background:#E8F2EE;color:#3a6a55">P3</span></td><td><b>9</b> cosmetic / dead code</td></tr>
+</table>
+<br>
+<b>Repeated patterns to watch:</b><br>
+<span class="tag scope">scope-leak</span> 3 instances · same pattern as recent <code>mutedConvos</code> regression — vars used in one component but declared in another. Will crash on tap.<br>
+<span class="tag coin">coin-bypass</span> Hardcoded <code>useState(50)</code> in MessagesScreen + SearchScreen → calls initiated from those tabs bypass the new useCoinBalance hook entirely.<br>
+<span class="tag race">race</span> Stale closures in setInterval/setTimeout across CallScreen (hangup is the worst), MessagesScreen (read receipts + restrict set), App.js (poll fallback). Capacitor backButton + UpdatePrompt have unmount races.<br>
+<span class="tag dummy">dummy</span> 6 settings toggles save to localStorage with NO consumer. 3 dummy alert() menu items. 8+ hardcoded mock arrays.<br>
+<span class="tag sync">sync</span> No realtime DELETE/UPDATE subs in chat. ChatBox mute/restrict toggles don't notify inbox (storage event doesn't fire same-tab).<br>
+<span class="tag security">security</span> Firebase keys hardcoded across 3 files including committed CLAUDE.md. No OTA bundle signature check.
+</div>
+
+<h2 class="p0"><span class="sev">P0</span> Crash, data loss, or silent corruption RIGHT NOW</h2>
+
+<h3>Scope leaks (same pattern as the mutedConvos regression — will throw ReferenceError on tap)</h3>
+<ol>
+<li><span class="loc">HomeScreen.js:430-431</span> — UserProfileView menu calls <code>setEditPostData</code>, <code>setShowEditPost</code>, <code>mutedPosts.includes</code>, <code>toggleMutePost</code>. ALL four declared only in HomeScreen scope. Tap Edit Post or notification mute from another user's profile → crash.</li>
+<li><span class="loc">ProfileScreen.js:2150</span> — Likers popup calls <code>props.onViewUser(...)</code> but ProfileScreen is destructured <code>{session, supabase, onOpenWallet}</code> — <b>props doesn't exist</b>. Tap a liker → ReferenceError.</li>
+<li><span class="loc">ProfileScreen.js:2282</span> — Avatar menu "View My Moment" calls <code>props.onSwitchTab(...)</code> — same destructure → ReferenceError.</li>
+</ol>
+
+<h3>Destructive saves — wipes user data on every save</h3>
+<ol start="4">
+<li><span class="loc">ProfileScreen.js:1071-1074</span> Account Settings "Save All" — rebuilds bio JSON from form fields only, overwriting the existing bio object. <b>Every save wipes</b>: cover_url, notif_prefs, sound_prefs, location, expert_request, etc.</li>
+<li><span class="loc">ProfileScreen.js:1900</span> Expert Application submit — same destructive Object.assign pattern. <b>Submitting expert app wipes</b> cover_url, location, notif_prefs, sound_prefs.</li>
+</ol>
+
+<h3>Coin system — silent money loss</h3>
+<ol start="6">
+<li><span class="loc">CallScreen.js:108, 455</span> + <span class="loc">App.js:762</span> — <code>coins</code> prop captured at mount. On first cold launch, useCoinBalance returns cached <code>0</code> (no fetch yet); CallScreen mounts with <code>localCoins=0</code>; tick fires <code>nc&lt;=0</code> → <code>hangup('no_coins')</code> instantly + writes negative <code>deducted</code> to transactions.</li>
+<li><span class="loc">WalletScreen.js:63-88</span> — Purchase write NOT atomic. <code>newBalance = balance + addedCoins</code> overwrites a concurrent in-flight call deduction → <b>calls silently REFUNDED by purchases</b>. Needs server-side <code>coins = coins + N</code>.</li>
+<li><span class="loc">MessagesScreen.js:1338</span> — <code>useState(50)</code> for coins passed to CallScreen at :1705. Whole coin sync hook bypassed for calls from Messages tab.</li>
+<li><span class="loc">SearchScreen.js:75, 129</span> — Same <code>useState(50)</code> stub passed to CallScreen for calls from Search tab.</li>
+<li><span class="loc">CallScreen.js:362-371</span> — <code>setSharedCoinBalance(...)</code> called INSIDE setLocalCoins updater. React StrictMode runs updater twice → broadcast twice → double-deduct in listeners.</li>
+<li><span class="loc">coinBalance.js:144</span> — Channel name <code>'coin-balance-' + userId</code> collides across 5 components. Unmount one → tears down siblings' subscriptions silently.</li>
+<li><span class="loc">coinBalance.js:28</span> — <code>STORAGE_KEY = 'ringin_coin_balance'</code> is GLOBAL not per-user. Multi-user device: sign in as B shows A's balance until fetch.</li>
+<li><span class="loc">WalletScreen.js:55-89</span> — 1200ms setTimeout never cancelled on unmount. Back out during processing → phantom transaction lands in DB.</li>
+</ol>
+
+<h3>Call lifecycle / Agora</h3>
+<ol start="14">
+<li><span class="loc">CallScreen.js:382-476</span> — <code>hangup()</code> captured by ≥6 stale closures (onRemoteLeft, 3s poll, 35s timer, per-min tick, user-click, start-fail timer). Each fires with different snapshot of phase/coins/secs. DB gets wrong duration_secs, wrong newStatus, wrong coin total.</li>
+<li><span class="loc">CallScreen.js:401-411</span> — Fallback "cancel ringing invites in last 30s" UPDATE matches ANY ringing invite from me. User cancels then re-dials within 30s → new active call gets marked cancelled.</li>
+<li><span class="loc">App.js:81-90</span> — <code>goBack()</code> for activeCall just sets activeCall=null. CallScreen unmounts without calling hangup() → Agora session leaks, call_invites row stuck "ringing" forever, no in-chat log.</li>
+<li><span class="loc">CallScreen.js:212-285</span> — startCallSession useEffect has stale inviteId closure; StrictMode re-mount runs two Agora joins before first cleanup → orphan session.</li>
+</ol>
+
+<h3>Messages</h3>
+<ol start="18">
+<li><span class="loc">MessagesScreen.js:1593</span> — Inbox realtime captures inboxRestrictedSet at subscribe time. Set arrives async at :1359. <b>New restrict enforcement at inbox layer silently no-ops</b> until hot reload.</li>
+<li><span class="loc">MessagesScreen.js:1482, 1608</span> — <code>conversation_id && !startsWith('e')</code> drops every real UUID starting with 'e' (~6%).</li>
+<li><span class="loc">MessagesScreen.js:1554-1591</span> — Inbox INSERT handler runs setUserConvos + setTotalUnread INSIDE setActive updater → React updater purity violation. StrictMode double-fires → unread count doubles, sound plays twice.</li>
+<li><span class="loc">MessagesScreen.js:1217-1220</span> — Photo compression FAIL path uploads raw but <b>never inserts message row</b>. Optimistic blob bubble stays in UI forever; other party never gets the photo.</li>
+<li><span class="loc">MessagesScreen.js:1191</span> — <code>getPublicUrl().data.publicUrl</code> — if bucket misconfigured, publicUrl is undefined, inserts <code>text:'[img]undefined'</code> to DB.</li>
+<li><span class="loc">MessagesScreen.js:593-606 + 653</span> — TWO parallel block systems (legacy <code>ringin_blocked</code> + new <code>blocks</code> table). ChatBox.blockUser writes only legacy; block-on-send guard reads only legacy. The new blocks.js system is bypassed.</li>
+<li><span class="loc">MessagesScreen.js:438-453</span> — Chat realtime captures restrictedSet + readReceiptsOffHere at subscribe. Toggling restrict mid-chat → silent no-op until conversation switch.</li>
+</ol>
+
+<h3>OTA / Updates</h3>
+<ol start="25">
+<li><span class="loc">otaUpdater.js:57-69</span> — <code>parseInt</code> as map callback receives <code>(value, index)</code> → treats index as radix. <code>parseInt('0516', 1)</code> → NaN. <b>Version comparison is broken</b> for any non-uniform format. Falls back to lex compare.</li>
+<li><span class="loc">otaUpdater.js:25, 112-177</span> — Bundle URL hardcoded to GitHub raw. <span class="tag security">security</span> <b>NO checksum/signature verification</b>. Compromised GitHub account can ship arbitrary JS to every APK.</li>
+<li><span class="loc">otaUpdater.js:160</span> — <code>setCurrentVersion()</code> written BEFORE reload. If reload fails, localStorage says "we're on new version" but bundle is still old → no further updates ever.</li>
+<li><span class="loc">otaUpdater.js:220-227</span> — setInterval + online + visibilitychange listeners registered with NO cleanup → leak per page mount.</li>
+</ol>
+
+<h3>Push notifications</h3>
+<ol start="29">
+<li><span class="loc">firebase-messaging-sw.js:107-111</span> — Notification body click ALWAYS tags URL with <code>action=accept</code>. <b>Tapping notification body auto-joins the call with no preview</b>. Inconsistent with App.js (which expects no-action → show modal).</li>
+<li><span class="loc">firebase.js:71-82</span> — onMessage listener attached on every auth event including TOKEN_REFRESHED (~hourly). No de-dup → handler fires N× after N refreshes.</li>
+<li><span class="loc">App.js:282-286</span> — initPushNotifications called on every onAuthStateChange → re-requests FCM token, may show permission dialog on token refresh.</li>
+</ol>
+
+<h3>App.js / back button / global</h3>
+<ol start="32">
+<li><span class="loc">App.js:113-128</span> — Capacitor backButton listener registered with <code>[]</code> deps. StrictMode mount→unmount→mount attaches TWO listeners → each Android back fires goBack() twice.</li>
+<li><span class="loc">App.js:170-192</span> — Lock-screen deep-link <code>?invite=…&amp;action=accept</code> bypasses block check, dismissedInvitesRef guard, AND "active call in progress" guard.</li>
+</ol>
+
+<h3>Workshops &amp; Moments</h3>
+<ol start="34">
+<li><span class="loc">WorkshopsScreen.js:54</span> — "Join Live" opens for ANY workshop including paid ones. <b>Zero coin deduction, zero payment flow</b>.</li>
+<li><span class="loc">Moments.js:319-337</span> — <code>sendMomentToUser</code> uses Supabase <code>.or()</code> syntax requiring PostgREST 11+ — silent fail on older Supabase.</li>
+</ol>
+
+<h3>HomeScreen edge cases</h3>
+<ol start="36">
+<li><span class="loc">HomeScreen.js:1655</span> — submitPost retry-on-missing-audience-column double-wraps Promise → success path never fires → setPosting(false) never called → UI stuck "posting…".</li>
+<li><span class="loc">HomeScreen.js:2643-2672</span> — IntersectionObserver leak: ref callback creates NEW observer every render. Old observers retain stale <code>hasMoreH=true</code> → infinite loadMoreFeed loop.</li>
+<li><span class="loc">HomeScreen.js:1241-1258</span> — loadMoreFeed <code>oldest</code> derived from typeof p.id==='string'. If user has only optimistic posts → oldest undefined → oldestDate=now → query returns nothing → infinite loop with observer.</li>
+</ol>
+
+<h3>Security (committed to public repo)</h3>
+<ol start="39">
+<li><span class="loc">firebase.js:5-11</span> + <span class="loc">firebase-messaging-sw.js:21-27</span> + <span class="loc">CLAUDE.md</span> — Firebase API key, sender ID, app ID, VAPID key all hardcoded as fallbacks AND in committed CLAUDE.md. <span class="tag security">security</span> Public repo.</li>
+<li><span class="loc">capacitor.config.json:10-12</span> — <code>limitsNavigationsToAppBoundDomains:false</code> bypasses iOS App-Bound Domains.</li>
+</ol>
+
+<h2 class="p1"><span class="sev">P1</span> Broken/missing features, real user impact</h2>
+
+<h3>Settings that don't actually do anything (dummy)</h3>
+<ol start="41">
+<li><span class="loc">ProfileScreen.js:1456, 1511, 1527, 1233, 1284</span> — <code>profile_vis</code>, <code>profile_locked</code>, <code>mute_activity</code>, <code>notif_workshops</code>, <code>notif_promo</code>, <code>notif_email</code> save to localStorage. <b>Nothing in the codebase ever reads them</b>. No RLS gate, no consumer.</li>
+<li><span class="loc">ProfileScreen.js:212-217</span> — Account Settings fields init from localStorage only. Never loads from server. Fresh install → empty → user saves empties → wipes real profile.</li>
+<li><span class="loc">ProfileScreen.js:1029</span> — Help &amp; Support "Send Message" — flips supportSent=true, never emails, never persists.</li>
+<li><span class="loc">ProfileScreen.js:2443</span> — "Edit Post" menu item: <code>alert('Edit coming soon')</code> — dummy. (HomeScreen edit works.)</li>
+<li><span class="loc">ProfileScreen.js:2444</span> — "Turn off notifications" menu: <code>alert('Notifications paused')</code> — not wired to ringin_muted_posts.</li>
+<li><span class="loc">ProfileScreen.js:2424-2426</span> — Composer 🖼️ Photo + 🎞️ GIF buttons: <code>alert('coming soon')</code>.</li>
+<li><span class="loc">WorkshopsScreen.js:72</span> — "Set Reminder" button has NO onClick handler.</li>
+<li><span class="loc">AnonymousConnect.js:88</span> — "Connect Voice" toast 'coming soon!'.</li>
+<li><span class="loc">SavedPostsScreen.js:111</span> — Saved posts list has NO clickable opener. You can save but can't open.</li>
+<li><span class="loc">SavedPostsScreen.js:75, 81</span> — Error branches call <code>toastSuccess('Failed to unsave')</code> — GREEN toast for error.</li>
+<li><span class="loc">LiveWorkshopScreen</span> — Chat is in-memory with seed messages. No realtime, no Supabase. <b>No actual workshop session</b> — just a fake chat UI.</li>
+<li>MessagesScreen <b>Experts tab</b> — 3 hardcoded mock convos; Call doesn't fire real call_invites row → callee never sees ring.</li>
+<li>MessagesScreen <b>Groups + Business tabs</b> — Placeholder UI only.</li>
+<li><span class="loc">ProfileScreen.js:2376</span> Edit Profile modal — Only saves name/tag/about/website. Touches same bio JSON as Account Settings → both paths wipe each other.</li>
+</ol>
+
+<h3>Hardcoded mock data leaking through</h3>
+<ol start="55">
+<li><span class="loc">ProfileScreen.js:2374</span> — "Member since April 2026" hardcoded.</li>
+<li><span class="loc">ProfileScreen.js:2381-2389, 1917</span> — Profile + Settings stats "12 Calls / 0 Reviews / 4.8★" hardcoded.</li>
+<li><span class="loc">ProfileScreen.js:2554-2599</span> — Friends/Skills/Reviews tabs — all hardcoded arrays.</li>
+<li><span class="loc">HomeScreen.js:29</span> — EXPERTS array (6 mock entries) — not fetched from Supabase.</li>
+<li><span class="loc">SearchScreen.js:10-17</span> — Same EXPERTS mock; follow stores <code>String(e.id)</code> as "1"..."6" → will collide with real UUID follows.</li>
+<li><span class="loc">HomeScreen.js:1387-1393</span> — NOTIFS mock array (dead code).</li>
+<li><span class="loc">HomeScreen.js:1633</span> — notification_settings.select runs per-follower (N+1 query). 1000 followers = 1000 queries.</li>
+</ol>
+
+<h3>Sync gaps</h3>
+<ol start="62">
+<li><span class="loc">MessagesScreen.js:1554</span> — Inbox INSERT filter is <code>receiver_id=eq.myId</code> — messages I SEND don't fire handler. Device A send → device B inbox preview not updated until refresh.</li>
+<li>MessagesScreen chat realtime — No <b>UPDATE/DELETE</b> sub → remote unsends + read-receipts don't propagate live. No <b>message_reactions</b> sub → reactions from others don't appear until reload. No <b>profiles</b> sub → other user's avatar/name/online change doesn't reflect in open chats.</li>
+<li><span class="loc">MessagesScreen.js:148-155 vs :1359</span> — Two separate restricted_users fetches (ChatBox + MessagesScreen). Toggling restrict in chat does NOT update inbox copy.</li>
+<li>MessagesScreen mute icon sync — Same-tab storage event doesn't fire → inbox 🔕 icon stays stale until tab switch.</li>
+<li><span class="loc">HomeScreen.js:910-920</span> loadComments — Overwrites local cache with server data; can wipe optimistic comment if server fetch lands first.</li>
+<li><span class="loc">HomeScreen.js:971-989</span> comment count update — SELECT+UPDATE race with concurrent commenter → count can go backwards.</li>
+<li><span class="loc">HomeScreen.js:1212-1232</span> saveEditPost — Updates posts only; UserProfileView stays stale until reload.</li>
+<li><span class="loc">HomeScreen.js:340-343</span> UserProfileView — Own-profile views subscribe to BOTH userprofile-posts AND public-posts → row update echoes.</li>
+<li><span class="loc">Moments.js:347-359</span> — muteThisContact writes ringin_muted_moment_users; <b>nothing reads it</b>. Mute does nothing.</li>
+<li><span class="loc">Moments.js</span> view-count tracking — UPSERTs on every advance with no debounce → DB write amplification.</li>
+<li><span class="loc">momentUsers.js:74</span> — Module singleton never cleared on sign-out → cross-account leakage on same browser.</li>
+<li><span class="loc">closeFriends.js:88</span> — Module mutable cache; initial useCloseFriends render may show empty Set even if startCloseFriends already populated it.</li>
+</ol>
+
+<h3>Memory / resource leaks</h3>
+<ol start="74">
+<li><span class="loc">HomeScreen.js:1728-1739</span> handleVideoUpload — createObjectURL NEVER revoked. Same for setCompVideo(null) on cancel.</li>
+<li><span class="loc">HomeScreen.js:829-907</span> postMoment — Object URL leak in upload path.</li>
+<li><span class="loc">HomeScreen.js:1080-1100</span> carouselIdx — localStorage write on EVERY swipe with no debounce. Hundreds of sync writes block render.</li>
+<li><span class="loc">Moments.js:646</span> — willChange='transform' set during drag, never reset to 'auto'. Permanent GPU layer.</li>
+<li><span class="loc">lastSeen.js:24, 63</span> — 60s heartbeat writes profiles row every minute → noisy logs. <code>sendBeacon('')</code> is no-op (empty URL).</li>
+<li><span class="loc">lastSeen.js:43</span> — window addEventListener focus/blur NEVER removed → leak per session.</li>
+<li><span class="loc">CallScreen.js:295-300</span> — 3s invite-status poll fires entire call duration, no early-out after terminal status.</li>
+<li><span class="loc">App.js:432</span> — 4s polling fallback runs indefinitely while signed in, even with tab hidden.</li>
+</ol>
+
+<h3>Capacitor / native</h3>
+<ol start="82">
+<li><span class="loc">capacitor.config.json:16-30</span> — Plugin config doesn't list @capacitor/app (just added) or RingInAudio. Both rely on auto-registration via cap sync; if cap sync wasn't re-run, backButton + native audio silently do nothing.</li>
+<li><span class="loc">IncomingCallModal.js:55-77</span> — Token prefetch uses RELATIVE <code>/api/agora-token</code>. On Capacitor native (WebView at https://localhost) → 404. Token prefetch silently fails on APK.</li>
+<li><span class="loc">IncomingCallModal.js:81-93</span> — No double-click guard on Accept/Reject; double-tap accept fires acceptIncomingCall twice → double setActiveCall + double DB UPDATE.</li>
+</ol>
+
+<h3>Race conditions</h3>
+<ol start="85">
+<li><span class="loc">WalletScreen.js:38-43</span> — Initial transactions fetch no cancelled guard → setState on unmounted.</li>
+<li><span class="loc">coinBalance.js:92-168</span> — Sign-out + sign-in-as-different-user during fetch → previous user's response can land and write to NEW user's cache.</li>
+<li><span class="loc">coinBalance.js:122</span> — Uses .single() not .maybeSingle(). New users with no profiles row → error → balance stays 0 forever.</li>
+<li><span class="loc">MessagesScreen.js:438-472</span> — Channel <code>chat-&lt;convId&gt;</code>. Switching A→B→A rapidly → cleanup race → Supabase silently drops new sub.</li>
+<li><span class="loc">MessagesScreen.js:683-688</span> — Optimistic+realtime collision: realtime appends, insert.then dedupes — render frame can show message twice.</li>
+<li><span class="loc">agora.js:172-176</span> — Back-to-back calls (call 1 end → call 2 start same tick) → cleanup of 1 resets audioSession to 'auto' AFTER call 2 set play-and-record.</li>
+</ol>
+
+<h3>Auth / first-time signup</h3>
+<ol start="91">
+<li><span class="loc">App.js:236-251 vs :252-288</span> — First-time signup via onAuthStateChange doesn't run loadBlocks or startCloseFriends. Blocks empty until full reload.</li>
+<li><span class="loc">App.js:621-634</span> handleAuth — No email format check, no min password length, no rate-limit, no signup-confirmation handling. Sign-up message says "you can now log in" but Supabase requires email confirmation by default.</li>
+</ol>
+
+<h3>Other</h3>
+<ol start="93">
+<li><span class="loc">HomeScreen.js:1147-1172</span> back handler — Dep array MISSING postMenu, showLikers, pendingMomentFile, compAudienceMenu, selectedUser. Back doesn't consume those.</li>
+<li><span class="loc">HomeScreen.js:2218-2222</span> — Moments key collision possible if real user's numeric id equals mock expert.id (1-6).</li>
+<li><span class="loc">HomeScreen.js:1554-1556</span> submitPost — No button lock → Enter + tap can fire twice.</li>
+<li><span class="loc">HomeScreen.js:1689-1720</span> handleImageUpload — Array.from(files) with no count cap; user can queue 50 parallel uploads.</li>
+<li><span class="loc">HomeScreen.js:1583</span> — Hashtag extraction doesn't normalize → #Health and #health are different tags.</li>
+<li><span class="loc">ProfileScreen.js:441-446</span> login log — push after JSON.parse without isArray check → throws if corrupted.</li>
+<li><span class="loc">ProfileScreen.js:1696-1704</span> — Volume slider onTouchEnd uses STALE closure pref.volume not e.target.value → mobile preview wrong.</li>
+<li><span class="loc">ProfileScreen.js:1644</span> — "Test Sound" calls forceSound('notification', 0) ignoring user's selected variant.</li>
+</ol>
+
+<h2 class="p2"><span class="sev">P2</span> Polish, edge cases, hygiene</h2>
+
+<h3>Selection of 43 items — see full list in chat. Top highlights:</h3>
+<ol start="101">
+<li><span class="loc">CallScreen.js:526</span> Speaker toggle on web is purely cosmetic (mode ignored by setAudioOutputMode).</li>
+<li><span class="loc">CallScreen.js:33</span> Production users see <code>RINGIN_BUILD='v2.0-native-debug'</code>.</li>
+<li><span class="loc">WalletScreen.js:48-50</span> Card validation length-only (no Luhn). CVV maxLength=3 breaks Amex 4-digit. UPI just checks includes('@').</li>
+<li><span class="loc">WalletScreen.js:159</span> "≈ ₹X value" claims 1 coin = 1 rupee but packages aren't priced 1:1.</li>
+<li><span class="loc">WalletScreen.js:73-83</span> Transactions insert fails → no rollback of profiles balance.</li>
+<li><span class="loc">MessagesScreen.js:19-31</span> timeAgo appends 'Z' — if original is local time without TZ marker, shifts display by hours.</li>
+<li><span class="loc">MessagesScreen.js:485</span> scrollIntoView fires on every msgs change — yanks down when user is reading history.</li>
+<li><span class="loc">MessagesScreen.js:432</span> markRead doesn't filter .eq('read', false) → updates every old message on every chat open.</li>
+<li><span class="loc">UpdatePrompt.js:218</span> Default notes fallback ("Performance improvements", "Bug fixes") shown when notes empty.</li>
+<li><span class="loc">InstallPrompt.js:147</span> Accept AND dismiss set same flag → dismissed user must wait 14 days to install.</li>
+<li><span class="loc">firebase-messaging-sw.js:17</span> firebase-app-compat@9.0.0 pinned; fetched from gstatic on every SW startup. Old version.</li>
+<li><span class="loc">App.js:380-612</span> Many console.log debug lines shipped to production.</li>
+<li><span class="loc">App.js:515-567</span> Multiple alert() calls (UUID validation, self-call, "Could not start call") — should be toasts.</li>
+<li><span class="loc">App.js:617</span> openWallet — If activeTab is 'wallet' (deep-link), prevTab becomes 'wallet' → back loops wallet↔wallet.</li>
+<li><span class="loc">App.js:672</span> MessagesScreen key includes msgResetKey → tap Messages tab while ON Messages tab forces full re-mount, loses scroll + draft + open chat.</li>
+<li><span class="loc">App.js:706-717</span> Edge-swipe uses getComputedStyle inside touchstart → forced layout flush on every touch.</li>
+<li><span class="loc">public/index.html:174-206</span> Boot overlay 6s safety net — backgrounded tab during reload → JS timer pauses → overlay stays forever.</li>
+<li><span class="loc">public/index.html:240-241</span> ringin_debug=1 persists Eruda forever once enabled. No off switch in UI.</li>
+</ol>
+
+<h2 class="p3"><span class="sev">P3</span> Minor / cosmetic / dead code</h2>
+<ol start="144">
+<li>Module-level mock arrays (EMOJIS, FRIENDS, SKILLS, REVIEWS, EXPERTS, LIVE, UPCOMING, SUGGESTED) allocated outside useMemo/module scope mix.</li>
+<li><code>/* eslint-disable */</code> at top of HomeScreen.js, Moments.js, MessagesScreen.js silences linter — many of these bugs would have been caught.</li>
+<li>Multiple alert() calls scattered where toasts exist.</li>
+<li>A11y gaps: no aria-label on icon-only buttons (× ⋯ → ♥ 🔕), no role="dialog"/focus trap on modals, no aria-pressed on toggles, placeholder-as-only-label, hidden progress bars lack role="progressbar".</li>
+<li><span class="loc">WorkshopsScreen.js</span> uses JSX (only screen) — inconsistent with CLAUDE.md "NO JSX" rule.</li>
+<li>Misleading sound type strings (<code>playSound('emoji')</code> not in documented list).</li>
+<li>Hardcoded "v2.0-native-debug", "Member since April 2026" visible to users.</li>
+</ol>
+
+<footer>
+RingIn master bug audit · 5 agents · 250 unique findings de-duped · 2026-05-18 · Webstreax Technologies Pvt Ltd
+</footer>
+</div>
+</body>
+</html>
