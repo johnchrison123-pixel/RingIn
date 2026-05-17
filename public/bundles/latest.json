@@ -1,12 +1,13 @@
 ﻿{
-  "version": "2026.0517.1158",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1158.zip",
-  "published_at": "2026-05-17T11:58:56Z",
+  "version": "2026.0517.1228",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1228.zip",
+  "published_at": "2026-05-17T12:28:44Z",
   "git_sha": "manual",
-  "title": "Caption now visible on both swipe sides",
+  "title": "Full chrome on swipe ghosts",
   "notes": [
-    "Fix: text caption renders reliably on the current slide during cube swipe",
-    "Fix: ghost slides on both sides show name + caption + image consistently",
-    "New robust pattern: absolute wrapper fills face, flex-centers caption inside"
+    "Fix: ghost slides now show the user's actual gradient color (not default pink-purple)",
+    "Added: progress bar segments at top (one per slide)",
+    "Added: caption text on ghosts (text + image variants)",
+    "Added: reply input + heart + share placeholders on ghosts"
   ]
 }
