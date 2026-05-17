@@ -55,6 +55,84 @@ export default function App() {
   // hardcoded 1240. The hook itself keeps every screen's chip in sync.
   var appCoinBal = useCoinBalance(appUserId, supabase);
 
+  // ── Centralized back-navigation (Android hardware back + edge-swipe) ──
+  // Priority chain (most specific → least):
+  //   1. Sub-screens can intercept via the cancelable 'ringin:back' window
+  //      event (e.g. MessagesScreen closes the open chat). If a listener
+  //      calls preventDefault, we stop here.
+  //   2. Incoming-call modal → dismiss
+  //   3. Active in-call screen → end the call gracefully (let CallScreen do it)
+  //   4. UserProfileView stack → pop one
+  //   5. Search tab with selected expert → clear the expert (back to list)
+  //   6. Modal-ish tabs (wallet/saved/connect) → return to prevTab
+  //   7. Any non-home top-level tab → go home
+  //   8. Already on home → let the OS exit the app
+  // We stash this in a ref so the Capacitor backButton listener (which is
+  // registered once with empty deps) always reads the latest state.
+  var goBackRef = useRef(null);
+  function goBack(){
+    // 1. Try to let an active sub-screen consume it (cancelable event).
+    try {
+      var ev = new CustomEvent('ringin:back', { cancelable: true });
+      var notConsumed = window.dispatchEvent(ev);
+      if (!notConsumed || ev.defaultPrevented) return true;
+    } catch(_) {}
+    // 2-7. App-level nav
+    if (incomingCall) { setIncomingCall(null); return true; }
+    if (activeCall) { setActiveCall(null); return true; }
+    if (viewUserStack && viewUserStack.length > 0) { popViewUser(); return true; }
+    if (activeTab === 'search' && selectedExpert) { setSelectedExpert(null); return true; }
+    if (activeTab === 'wallet') { setActiveTab(prevTab); return true; }
+    if (activeTab === 'saved') { setActiveTab(prevTab); return true; }
+    if (activeTab === 'connect') { setActiveTab(prevTab); return true; }
+    if (activeTab !== 'home') { setActiveTab('home'); return true; }
+    // 8. Nothing to pop — caller decides whether to exit.
+    return false;
+  }
+  // Keep the ref current so the back-button listener (registered once)
+  // always invokes the latest goBack — avoids stale state closures.
+  goBackRef.current = goBack;
+
+  // Register the Android hardware back button listener.
+  // Capacitor v6: import('@capacitor/app').App.addListener('backButton', ...)
+  // Without this, the default behavior is to exit the app on every back press.
+  useEffect(function(){
+    // Use a cancelled flag + ref so the cleanup can also tear down a
+    // handle that gets assigned AFTER the cleanup fires (otherwise an
+    // unmount during the dynamic-import resolve window leaks a listener).
+    var cancelled = false;
+    var handleRef = { current: null };
+    var Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return; // web/PWA path uses popstate naturally
+    try {
+      // Dynamic import so web builds don't blow up if the module isn't bundled.
+      import('@capacitor/app').then(function(mod){
+        if (cancelled) return; // unmounted before import resolved
+        var CapApp = mod && (mod.App || mod.default || mod);
+        if (!CapApp || !CapApp.addListener) return;
+        CapApp.addListener('backButton', function(){
+          var consumed = goBackRef.current ? goBackRef.current() : false;
+          if (!consumed) {
+            // Truly at root — exit the app.
+            try { CapApp.exitApp(); } catch(_) {}
+          }
+        }).then(function(h){
+          if (cancelled) {
+            // Unmounted between addListener and its promise resolving —
+            // remove immediately so the listener doesn't leak.
+            try { if (h && h.remove) h.remove(); } catch(_){}
+            return;
+          }
+          handleRef.current = h;
+        }).catch(function(){});
+      }).catch(function(){});
+    } catch(_) {}
+    return function(){
+      cancelled = true;
+      try { if (handleRef.current && handleRef.current.remove) handleRef.current.remove(); } catch(_){}
+    };
+  }, []);
+
   // PWA shortcut deep-link — manifest.json advertises `/?tab=messages` and
   // `/?tab=search` as home-screen long-press shortcuts. Read the query once on
   // mount and jump to the requested tab. Pure additive: if there's no `?tab=`
@@ -657,19 +735,9 @@ export default function App() {
       if(dx < MIN_DX) return;          // didn't swipe far enough right
       if(dy > 80) return;              // too vertical — was probably a scroll
 
-      // Back navigation order (most specific → least):
-      //   1. If we're viewing a user profile (viewUserStack has items) → pop it
-      //   2. If we're on Search and have an expert selected → clear expert
-      //   3. Modal-ish tabs (wallet/saved/connect) → return to prevTab
-      //   4. Top-level tabs (search/workshops/messages/profile) → home
-      if (viewUserStack && viewUserStack.length > 0){
-        popViewUser();
-      } else if (activeTab === 'search' && selectedExpert){
-        setSelectedExpert(null);
-      } else if (activeTab === 'wallet'){ setActiveTab(prevTab); }
-      else if (activeTab === 'saved'){ setActiveTab(prevTab); }
-      else if (activeTab === 'connect'){ setActiveTab(prevTab); }
-      else if (activeTab !== 'home'){ setActiveTab('home'); }
+      // Delegate to the single source of truth — same priority chain the
+      // Android hardware back button uses.
+      goBack();
     }
   },
     // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar

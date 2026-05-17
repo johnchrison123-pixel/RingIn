@@ -1451,6 +1451,19 @@ export default function MessagesScreen(props){
     }
   },[props.initConvo]);
 
+  // Android back / edge-swipe handler — if a chat is open, close it back
+  // to the inbox before App.js's goBack moves us off the Messages tab.
+  // Consumes the cancelable 'ringin:back' event so the tab nav doesn't fire.
+  useEffect(function(){
+    function onBack(ev){
+      if (active) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setActive(null);
+      }
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [active]);
 
   // Refresh conversations when user comes back to tab (don't remove channels — ChatBox manages its own)
   useEffect(function(){

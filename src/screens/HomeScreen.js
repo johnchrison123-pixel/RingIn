@@ -1141,6 +1141,36 @@ export default function HomeScreen(props){
     });
   },[currentUserId]);
 
+  // Android back / edge-swipe handler — close any open overlay
+  // (post detail, edit-post modal, notifications panel, comments) before
+  // App.js falls through to tab-level back nav. Innermost first.
+  useEffect(function(){
+    function onBack(ev){
+      if (showEditPost) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setShowEditPost(false); setEditPostData(null);
+        return;
+      }
+      if (postDetail) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setPostDetail(null); setPostDetailIdx(0);
+        return;
+      }
+      if (showNotifs) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setShowNotifs(false);
+        return;
+      }
+      if (openComments) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setOpenComments(null);
+        return;
+      }
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [showEditPost, postDetail, showNotifs, openComments]);
+
   // Listen for the bell-click event from the App-level top bar to open notifications panel
   useEffect(function(){
     var handler=function(){

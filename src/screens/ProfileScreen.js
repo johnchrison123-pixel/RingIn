@@ -446,6 +446,28 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     }catch(e){}
   },[userId]);
 
+  // Android back / edge-swipe handler — close any open modal/panel
+  // before App.js falls through to its tab nav. Consumes the cancelable
+  // 'ringin:back' event in priority order (innermost overlay first).
+  useEffect(function(){
+    function onBack(ev){
+      // Edit Profile modal (top-most)
+      if (showEditProfile) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setShowEditProfile(false);
+        return;
+      }
+      // Settings panel
+      if (showSettings) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setShowSettings(false);
+        return;
+      }
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [showEditProfile, showSettings]);
+
   useEffect(function(){
     if(!userId) return;
     sbProfile.from('profiles').select('full_name,bio').eq('id',userId).single().then(function(res){
@@ -1906,7 +1928,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.25';
+              var APK_VERSION = 'v3.26';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
