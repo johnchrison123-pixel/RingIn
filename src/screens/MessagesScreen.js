@@ -1645,8 +1645,8 @@ export default function MessagesScreen(props){
         borderBottom:'1px solid var(--border)',
       }
     },
-      ['friends','experts','business'].map(function(tab){
-        var labels = { friends:'Friends', experts:'Experts', business:'Business' };
+      ['friends','experts','groups','business'].map(function(tab){
+        var labels = { friends:'Friends', experts:'Experts', groups:'Groups', business:'Business' };
         var isActive = activeTab === tab;
         return React.createElement('button',{
           key:tab,
@@ -1795,6 +1795,17 @@ export default function MessagesScreen(props){
           )
         );
       }) : null,
+      // Empty state for Groups tab (group conversations not wired up yet).
+      activeTab === 'groups' ? React.createElement('div',{
+        style:{
+          textAlign:'center', padding:'60px 24px',
+          display:'flex', flexDirection:'column', alignItems:'center', gap:'10px',
+        }
+      },
+        React.createElement('div',{style:{width:'56px',height:'56px',borderRadius:'16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px'}}, '👥'),
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)'}}, 'Groups coming soon'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',maxWidth:'260px',lineHeight:1.5}}, 'Chat with multiple people at once. Sit tight — group chats are on the way.')
+      ) : null,
       // Empty state for Business tab (no business accounts wired up yet).
       activeTab === 'business' ? React.createElement('div',{
         style:{
