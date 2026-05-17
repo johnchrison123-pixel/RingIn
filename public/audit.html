@@ -3,62 +3,442 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>RingIn — Comprehensive Audit</title>
+<title>RingIn — Comprehensive Audit Report</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55;font-size:14pt}
-.wrap{max-width:760px;margin:0 auto;padding:30px 24px 60px}
-h1{font-size:24pt;font-weight:800;color:#5B4FD4;margin-bottom:6px;letter-spacing:-0.5px}
-.sub{font-size:11pt;color:#666;margin-bottom:24px}
-.status{background:linear-gradient(135deg,#FFF4D6,#FFE4B5);border:1.5px solid #F5A623;border-radius:14px;padding:18px 20px;margin-bottom:24px}
-.status .badge{display:inline-block;padding:3px 10px;background:#F5A623;color:#fff;font-size:10pt;font-weight:700;border-radius:99px;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
-.status h2{font-size:14pt;font-weight:700;color:#7A4E00;margin-bottom:6px}
-.status p{font-size:11pt;color:#7A4E00}
-.section h2{font-size:14pt;font-weight:700;color:#1a1a1f;margin:24px 0 10px;letter-spacing:-0.3px}
-.item{background:#FAFAFC;border:1px solid #e2e2ea;border-radius:10px;padding:12px 14px;margin:8px 0;page-break-inside:avoid}
-.item h3{font-size:11pt;font-weight:700;color:#1a1a1f;margin-bottom:4px}
-.item p{font-size:10pt;color:#555;line-height:1.5}
-.item .num{display:inline-block;width:20px;height:20px;border-radius:50%;background:#5B4FD4;color:#fff;text-align:center;line-height:20px;font-size:10pt;font-weight:700;margin-right:8px}
-.lead{font-size:11pt;color:#333;background:#F6F4FF;border-left:3px solid #5B4FD4;padding:10px 14px;border-radius:0 10px 10px 0;margin-bottom:14px}
-footer{margin-top:30px;padding-top:18px;border-top:1px solid #ddd;font-size:9pt;color:#888;text-align:center}
-@media print{@page{size:A4;margin:14mm 12mm}body{font-size:10.5pt}h1{font-size:18pt}h2{font-size:13pt}}
+html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5;font-size:11.5pt}
+.wrap{max-width:920px;margin:0 auto;padding:24px 18px 80px}
+h1{font-size:22pt;font-weight:800;color:#5B4FD4;margin-bottom:4px;letter-spacing:-0.5px}
+h1 span{color:#1a1a1f;font-weight:600}
+.subhead{font-size:10pt;color:#666;margin-bottom:18px}
+h2{font-size:14pt;font-weight:800;color:#1a1a1f;margin:28px 0 12px;padding-bottom:6px;border-bottom:2px solid #ECECF2;letter-spacing:-0.3px}
+h3{font-size:11.5pt;font-weight:700;color:#1a1a1f;margin:16px 0 6px}
+p{margin-bottom:8px}
+.exec{background:linear-gradient(135deg,#FFF4F2,#FFE8E0);border:1.5px solid #FF7755;border-radius:12px;padding:14px 16px;margin-bottom:18px}
+.exec h2{border:none;color:#9C2410;font-size:13pt;margin-top:0;padding:0;margin-bottom:6px}
+.exec p{font-size:10pt;color:#5C1A0E;margin:0}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin:12px 0 20px}
+.stat{background:#F8F8FC;border:1px solid #E0E0EA;border-radius:10px;padding:10px 8px;text-align:center}
+.stat .n{font-size:18pt;font-weight:800;display:block;line-height:1}
+.stat .l{font-size:9pt;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px}
+.stat.r .n{color:#D93030}
+.stat.o .n{color:#E07A1F}
+.stat.y .n{color:#B08020}
+.stat.g .n{color:#1D9E75}
+.sev{display:inline-block;padding:1px 7px;border-radius:99px;font-size:8.5pt;font-weight:700;letter-spacing:0.2px;white-space:nowrap;vertical-align:middle}
+.sev.r{background:#FFE8E8;color:#9C0E0E;border:1px solid #FFB0B0}
+.sev.o{background:#FFEFDC;color:#7E3E0A;border:1px solid #FFC890}
+.sev.y{background:#FFF9D6;color:#7E5C0A;border:1px solid #F0D880}
+.sev.g{background:#E8F8EE;color:#0E5A2E;border:1px solid #A0E0BC}
+table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:9.5pt;background:#fff}
+thead{background:#F2F2F8}
+th{font-weight:700;text-align:left;padding:7px 9px;font-size:9pt;color:#444;border-bottom:1.5px solid #E0E0EA;text-transform:uppercase;letter-spacing:0.4px}
+td{padding:7px 9px;border-bottom:1px solid #ECECF2;vertical-align:top}
+td.loc{font-family:ui-monospace,monospace;font-size:8.5pt;color:#5746af;font-weight:600;white-space:nowrap}
+td.sev-cell{white-space:nowrap;width:60px}
+td.desc{line-height:1.45}
+td.fix{font-size:9pt;color:#444;font-style:italic;line-height:1.4}
+.toc{background:#F6F4FF;border:1px solid #D8D0FF;border-radius:10px;padding:12px 16px;margin:0 0 20px;font-size:10pt}
+.toc h3{margin:0 0 8px;font-size:10pt;color:#5746af;text-transform:uppercase;letter-spacing:0.5px;font-weight:800}
+.toc ul{list-style:none;margin:0;padding:0;columns:2;column-gap:18px}
+.toc li{padding:3px 0;font-size:10pt}
+.toc a{color:#5746af;text-decoration:none}
+.toc a::before{content:"→ ";color:#999}
+.ok{background:#F0F9F4;border:1px solid #BFE5D0;border-radius:10px;padding:12px 14px;margin:14px 0 24px}
+.ok h3{color:#0E5A2E;font-size:11pt;margin:0 0 6px}
+.ok ul{margin:0;padding-left:20px;font-size:10pt;color:#274D38;line-height:1.5}
+.ok li{padding:1px 0}
+.top5{background:linear-gradient(135deg,#F2EEFF,#E8E2FF);border:1.5px solid #B0A0FF;border-radius:12px;padding:14px 16px;margin:18px 0}
+.top5 h3{color:#5746af;font-size:13pt;margin:0 0 10px}
+.top5 ol{margin:0;padding-left:22px;font-size:10.5pt;line-height:1.6}
+.top5 ol li{padding:4px 0;color:#3A2F70}
+.top5 ol li b{color:#1a1a1f}
+.kv{font-size:10pt;color:#666}
+footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;color:#888;text-align:center}
+@media print{
+  @page{size:A4;margin:11mm 10mm}
+  body{font-size:9.5pt;line-height:1.4}
+  h1{font-size:17pt}
+  h2{font-size:12pt;margin-top:18pt;page-break-after:avoid}
+  h3{font-size:10pt;page-break-after:avoid}
+  table{font-size:8.5pt;page-break-inside:avoid}
+  th,td{padding:5px 7px}
+  td.loc{font-size:7.5pt}
+  .stats{margin:8pt 0 14pt}
+  .stat .n{font-size:14pt}
+  .toc{page-break-after:avoid}
+  .top5,.ok,.exec{page-break-inside:avoid}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>RingIn — Comprehensive App Audit</h1>
-<p class="sub">Generated 2026-05-17 · refreshes as agents complete</p>
 
-<div class="status">
-<span class="badge">🔄 In Progress</span>
-<h2>Multiple agents auditing the app right now</h2>
-<p>This document will be populated with findings over the next 30–60 minutes. Refresh the link periodically to see results.</p>
+<h1>RingIn <span>— Comprehensive Audit</span></h1>
+<p class="subhead">Generated 2026-05-17 · 5 agents + supervisor · Covers HomeScreen, Messages, Calls, Profile, Settings, SearchScreen, OTA, Security, and Social-media comparison</p>
+
+<div class="exec">
+<h2>⚠️ Executive Summary — 9 CRITICAL issues need immediate attention</h2>
+<p>The app's features and UX are solid. But there are <b>9 RED criticals</b> spanning security and data integrity that should be fixed before any paid marketing. Top 3:
+(1) <b>WalletScreen lets any user self-credit unlimited coins</b> via browser console.
+(2) <b>Agora token endpoint + call_invites RLS</b> together allow anonymous strangers to join active call channels and eavesdrop on private conversations.
+(3) <b>ProfileScreen saveEditProfile</b> overwrites your bio JSON every time you edit name/about — silently wipes cover_url, notification prefs, sound prefs, expert application.</p>
 </div>
 
-<div class="section">
-<h2>What's being checked (in parallel, supervised)</h2>
-<p class="lead">A supervisor agent reviews every report to make sure no screen or feature is missed.</p>
+<div class="stats">
+<div class="stat r"><span class="n">9</span><div class="l">🔴 Critical</div></div>
+<div class="stat o"><span class="n">21</span><div class="l">🟠 High</div></div>
+<div class="stat y"><span class="n">47</span><div class="l">🟡 Medium</div></div>
+<div class="stat g"><span class="n">15</span><div class="l">🟢 Low</div></div>
+</div>
 
-<div class="item"><h3><span class="num">1</span>HomeScreen</h3><p>Feed scrolling, post composer, comments, likes, moments strip, hashtag filter, online experts strip, post detail viewer, share/save buttons.</p></div>
+<div class="toc">
+<h3>Contents</h3>
+<ul>
+<li><a href="#top5">Top 5 fixes to ship first</a></li>
+<li><a href="#critical">All critical issues</a></li>
+<li><a href="#home">HomeScreen + Feed</a></li>
+<li><a href="#moments">Moments</a></li>
+<li><a href="#messages">Messages + Chat</a></li>
+<li><a href="#calls">Calls + Agora</a></li>
+<li><a href="#profile">Profile + Settings</a></li>
+<li><a href="#search">SearchScreen</a></li>
+<li><a href="#ota">OTA + Update flow</a></li>
+<li><a href="#security">Security findings</a></li>
+<li><a href="#social">Social-media comparison</a></li>
+<li><a href="#recommendations">Recommendations</a></li>
+<li><a href="#ok">What works well</a></li>
+</ul>
+</div>
 
-<div class="item"><h3><span class="num">2</span>MessagesScreen</h3><p>Inbox list, chat box, message reactions, typing indicators, photo attachment, unsend, mute conversation, blocked users, new Friends / Experts / Groups / Business tabs.</p></div>
+<h2 id="top5">⭐ Top 5 fixes to ship first</h2>
+<div class="top5">
+<ol>
+<li><b>Lock down the coin economy</b> — Move all coin grants/debits behind a server-side SECURITY DEFINER RPC tied to a real Stripe/Razorpay webhook. Right now anyone can <code>sb.from('profiles').update({coins:999999})</code> from devtools. (~1 day)</li>
+<li><b>Authenticate the Agora token + send-call-push endpoints</b> — Both API routes mint tokens / fire pushes with no auth check. Add Supabase JWT verification + validate against the <code>call_invites</code> row. Also revert <code>AGORA_RLS_LOOSEN.sql</code>. (~half day)</li>
+<li><b>Stop wiping the profile bio</b> — In ProfileScreen.js fix saveEditProfile (L431), Save Profile Info (L978), and Expert App submit (L1805) to re-fetch + merge before writing the bio JSON. Currently every edit silently wipes notif_prefs, sound_prefs, cover_url. (~1 hour)</li>
+<li><b>Wire Profile's onViewUser / onSwitchTab props</b> — ProfileScreen body uses <code>props.onViewUser</code> + <code>props.onSwitchTab</code> but only destructures <code>{session, supabase, onOpenWallet}</code>. Tapping a liker name or "View My Moment" throws ReferenceError. (~5 minutes)</li>
+<li><b>Public post / expert pages + invite-friend loop</b> — Without <code>/post/:id</code> and <code>/expert/:id</code> SSR routes, every share link returns the SPA shell and breaks the share-back loop. This is the biggest growth blocker. (~2 days)</li>
+</ol>
+</div>
 
-<div class="item"><h3><span class="num">3</span>CallScreen + voice/video</h3><p>Agora integration, ringtone, accept / decline buttons, in-call controls (mute, speaker, end), call timer, missed call notifications, lock-screen push.</p></div>
+<h2 id="critical">🔴 All 9 critical issues</h2>
+<table>
+<thead><tr><th>Area</th><th>Location</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Security</td><td class="loc">python-service/.env:4</td><td class="desc">Committed admin API key <code>ringin-admin-secret-2026</code> grants full access to analytics endpoints. Public repo.</td><td class="fix">git rm --cached, rotate key, add to .gitignore.</td></tr>
+<tr><td>Security</td><td class="loc">api/agora-token.js</td><td class="desc">No auth. Any anonymous client can mint a PUBLISHER token for any channel + join active calls + inject audio.</td><td class="fix">Verify Supabase JWT + check caller is participant on call_invites row.</td></tr>
+<tr><td>Security</td><td class="loc">AGORA_RLS_LOOSEN.sql</td><td class="desc">call_invites RLS is <code>USING(true) WITH CHECK(true)</code> — anyone can read every invite, update peer's status, force a peer's call to accepted.</td><td class="fix">Revert to AGORA_MIGRATION.sql policies (auth.uid() = caller/callee).</td></tr>
+<tr><td>Security</td><td class="loc">WalletScreen.js:40-75</td><td class="desc">"processPayment" runs entirely client-side. Any user can self-credit unlimited coins via dev console.</td><td class="fix">Move to SECURITY DEFINER RPC; revoke client UPDATE on profiles.coins.</td></tr>
+<tr><td>HomeScreen</td><td class="loc">HomeScreen.js:392,1787,2451</td><td class="desc">Edit Post seeds modal from p.content, but posts use p.text. Opens empty, overwrites real text with empty string on Save.</td><td class="fix">Read/write p.text consistently.</td></tr>
+<tr><td>Profile</td><td class="loc">ProfileScreen.js:130</td><td class="desc">Props destructure missing onViewUser + onSwitchTab → ReferenceError when tapping liker names or "View My Moment".</td><td class="fix">Add to destructure, change calls to bare onViewUser(...) / onSwitchTab(...).</td></tr>
+<tr><td>Profile</td><td class="loc">ProfileScreen.js:431-447,978-988,1805-1812</td><td class="desc">saveEditProfile + Save Info + Expert App all rewrite bio JSON with only 4-5 keys → wipes cover_url, notif_prefs, sound_prefs, location, expert_request on every edit.</td><td class="fix">Re-fetch bio, Object.assign(existing, {…}), then write.</td></tr>
+<tr><td>Profile</td><td class="loc">ProfileScreen.js:905-957</td><td class="desc">Help & Support "Send Message" button just toggles supportSent=true. No Supabase write, no email API. "Message Sent!" screen is a lie.</td><td class="fix">Insert into support_tickets table OR post to a real endpoint.</td></tr>
+<tr><td>Search</td><td class="loc">SearchScreen.js:237-240</td><td class="desc">List-view Call button uses setActiveCall(e) directly, bypassing __ringInStartCall pipeline → callee never rings or gets push.</td><td class="fix">Use window.__ringInStartCall(e) like the detail page does.</td></tr>
+</tbody>
+</table>
 
-<div class="item"><h3><span class="num">4</span>SearchScreen</h3><p>Experts list, search FTS (people + posts), follow / call buttons, trending hashtags, expert profile view, message-expert button.</p></div>
+<h2 id="home">HomeScreen + Feed</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">HomeScreen.js:1818</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Wallet coin chip in header hardcoded "1,240"</td><td class="fix">Wire to live wallet query</td></tr>
+<tr><td class="loc">HomeScreen.js:1904-1909</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Location filter chips have no onClick — purely decorative</td><td class="fix">Wire to filter or remove</td></tr>
+<tr><td class="loc">HomeScreen.js:2070</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">"See all" next to Online Now has no onClick</td><td class="fix">Navigate to Search tab</td></tr>
+<tr><td class="loc">HomeScreen.js (none)</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">No pull-to-refresh — feed only refetches on remount</td><td class="fix">Wire touch-y drag → re-run initial query</td></tr>
+<tr><td class="loc">HomeScreen.js:1479,2267</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Audience selector writes to DB but feed never filters on read — followers/private posts visible to everyone</td><td class="fix">Apply p.audience filter or enforce via RLS</td></tr>
+<tr><td class="loc">HomeScreen.js:1142,2437</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Infinite scroll is a manual "Load more" button; no IntersectionObserver</td><td class="fix">Auto-trigger loadMoreFeed at sentinel</td></tr>
+<tr><td class="loc">HomeScreen.js:1185-1210</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Initial feed fetch refetches on every HomeScreen remount, ignoring cache</td><td class="fix">Skip fetch when cache &lt;30s old</td></tr>
+<tr><td class="loc">HomeScreen.js:1492-1511</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Per-follower notification settings query is N+1 (one-at-a-time loop)</td><td class="fix">Batch via .in('follower_id', ids)</td></tr>
+<tr><td class="loc">HomeScreen.js:29</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">EXPERTS array entirely hardcoded mock data; online:true is static</td><td class="fix">Fetch from profiles where role=expert AND last_seen &lt;5min</td></tr>
+<tr><td class="loc">HomeScreen.js:166-171</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Comments refetched on every comment-panel open — no TTL on cache</td><td class="fix">Skip if cached &lt;30s</td></tr>
+<tr><td class="loc">HomeScreen.js:155,642</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="desc">commentLoading state defined but never set/read</td><td class="fix">Delete</td></tr>
+<tr><td class="loc">HomeScreen.js:1265</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="desc">Mock NOTIFS array still defined but never rendered (real notifs took over)</td><td class="fix">Delete</td></tr>
+<tr><td class="loc">HomeScreen.js (multi)</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="desc">8 alert('Link copied!') sites fire even when clipboard.writeText throws</td><td class="fix">Use toast, only on success</td></tr>
+<tr><td class="loc">HomeScreen.js:2423</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="desc">Typing-sound timer never cleared on unmount</td><td class="fix">Add useEffect cleanup</td></tr>
+</tbody>
+</table>
 
-<div class="item"><h3><span class="num">5</span>ProfileScreen + Settings</h3><p>Every toggle (sound, haptics, privacy, notifications), blocked users list, muted words, delete account flow, expert application, auto-update toggle, version display, sign out, footer.</p></div>
+<h2 id="moments">Moments</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">Moments.js:330-336</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">"Mute Status" writes to ringin_muted_moment_users but NOTHING reads it — muted users still appear in the strip</td><td class="fix">Filter moments prop by this list at the call site</td></tr>
+<tr><td class="loc">Moments.js:292-320</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">sendMomentToUser uses conversations schema (user1_id/user2_id) that doesn't match the real MessagesScreen flow — silently fails</td><td class="fix">Match the existing convo-creation pattern</td></tr>
+<tr><td class="loc">Moments.js:265-282</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Share-sheet contacts fetched every time sheet opens, no dedup</td><td class="fix">Cache contacts in module-level ref</td></tr>
+<tr><td class="loc">Moments.js:1335-1340</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">"Save / open image" just opens URL in new tab — doesn't download as the label implies</td><td class="fix">Use anchor with download attr, or relabel to "Open image"</td></tr>
+<tr><td class="loc">Moments.js:9-32</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Mock SAMPLE_SETS rendered for fake "expert" moments — users see fake "3 callers helped today" cards</td><td class="fix">Hide moments for mock experts or label clearly</td></tr>
+<tr><td class="loc">Moments.js:170-174</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">View upsert error silently swallowed — no warning if moment_views table missing</td><td class="fix">Log RLS/missing-table errors once</td></tr>
+<tr><td class="loc">HomeScreen.js:750-776</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">loadRealMoments() always fetches on currentUserId change with no TTL/dedup</td><td class="fix">Reuse momentUsers shared cache</td></tr>
+<tr><td class="loc">HomeScreen.js:2037</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Mock expert moments injected with hasNew:true forever — never resets</td><td class="fix">Track viewed state or remove "new" badge for mocks</td></tr>
+<tr><td class="loc">Moments.js:419-422</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="desc">Liking shows "Liked ❤️" toast; UNliking shows nothing</td><td class="fix">Add "Unliked" toast for symmetry</td></tr>
+</tbody>
+</table>
 
-<div class="item"><h3><span class="num">6</span>Security</h3><p>RLS policies on every Supabase table, exposed secrets in repo (.env, service-role keys), API endpoint authentication, OTA bundle integrity, CORS settings.</p></div>
+<h2 id="messages">Messages + Chat</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">MessagesScreen.js:1607-1610</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Coin chip in Messages header hardcoded "1,240"</td><td class="fix">Pipe live wallet balance</td></tr>
+<tr><td class="loc">MessagesScreen.js:1273-1274</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Pull-to-refresh indicator UI exists but NO touch handlers update its state — purely decorative</td><td class="fix">Wire onTouchStart/Move/End or delete indicator</td></tr>
+<tr><td class="loc">MessagesScreen.js:1648,1762-1797</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Experts tab always shows 3 hardcoded mock conversations (e1/e2/e3). Call on these falls to local-only CallScreen (no Agora, no ring)</td><td class="fix">Either populate from real experts in Supabase, or show empty state</td></tr>
+<tr><td class="loc">MessagesScreen.js:144-181,803</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Restrict toggle writes to restricted_users table but has ZERO downstream enforcement — messages from restricted users still play sound, increment badge, show typing</td><td class="fix">Filter restricted set out of realtime push paths</td></tr>
+<tr><td class="loc">MessagesScreen.js:594-604</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Block-on-send compares conversation_id (uuid_uuid string) against ringin_blocked (list of UUIDs) — never matches. Blocked users still receive messages</td><td class="fix">Use convo.otherId fallback chain; check blocked_users table too</td></tr>
+<tr><td class="loc">MessagesScreen.js:1799-1818</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Groups + Business tabs are permanent "coming soon" placeholders — implies parity with Friends</td><td class="fix">Hide tabs until features exist, or behind feature flag</td></tr>
+<tr><td class="loc">MessagesScreen.js:1696-1759</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Muted conversations don't show a mute icon in the inbox list</td><td class="fix">Render bell-with-slash when convId in mutedConvos</td></tr>
+<tr><td class="loc">MessagesScreen</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">"Last seen" never surfaced in chat — heartbeat is running but unused</td><td class="fix">When !isOnline, fetch profiles.last_seen_at and render</td></tr>
+<tr><td class="loc">MessagesScreen.js:254-271</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Reactions effect depends on [msgs.length] only — switching to a chat with same count briefly shows stale reactions</td><td class="fix">Depend on [convId, msgs.length]; clear on convId change</td></tr>
+<tr><td class="loc">MessagesScreen.js:1107</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Photo optimistic message createObjectURL never revoked — small memory leak per photo</td><td class="fix">Track URL + revoke when real msg arrives</td></tr>
+<tr><td class="loc">MessagesScreen.js:1330</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="desc">No typing indicator surfaced in inbox row — only inside open chat</td><td class="fix">Broadcast per-user, reflect in inbox preview</td></tr>
+</tbody>
+</table>
 
-<div class="item"><h3><span class="num">7</span>Dummy buttons + non-saving + non-caching</h3><p>Every clickable element traced to its actual handler. localStorage and Supabase persistence verified per feature. Caches that should expire but don't.</p></div>
+<h2 id="calls">Calls + Agora</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">api/agora-token.js</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="desc">No auth, CORS *. Anyone mints publisher tokens for any channel + joins active calls + injects audio</td><td class="fix">Verify Supabase JWT, validate against call_invites participants</td></tr>
+<tr><td class="loc">api/send-call-push.js</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">No auth. Anyone fires FCM "Incoming Call from &lt;arbitrary&gt;" push to any user with FCM token</td><td class="fix">Verify JWT; re-fetch invite server-side, derive callee/name from DB not body</td></tr>
+<tr><td class="loc">CallScreen.js:108-111</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">PWA Speaker toggle only swaps Agora volume 50→100 — label says "loudspeaker" but acts like volume boost (native plugin not yet shipped)</td><td class="fix">Hide on web or relabel "Boost volume"</td></tr>
+<tr><td class="loc">App.js:689-690</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">CallScreen started with literal coins:1240, onCoinsChange:noop. Per-minute deduction is purely cosmetic — wallet never debited</td><td class="fix">Wire to real wallet hook + RPC</td></tr>
+<tr><td class="loc">CallScreen.js:102,213-218,617</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">audioDbg + RINGIN_BUILD label visible to end users in production</td><td class="fix">Gate on NODE_ENV !== production</td></tr>
+<tr><td class="loc">CallScreen.js:312-317</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">"No answer" auto-hangup uses functional setRingSecs to fire hangup — could double-fire in StrictMode/double-render</td><td class="fix">Track ringSecs in ref, hangup outside setter</td></tr>
+<tr><td class="loc">CallScreen.js:404-428</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Only caller writes in-chat call log. If caller's PWA closes before insert, callee has no record</td><td class="fix">Both sides write idempotently, dedupe on deterministic id</td></tr>
+<tr><td class="loc">IncomingCallModal.js:118-125</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Decline button has NO icon — empty red circle, looks broken</td><td class="fix">Add phone-down / cross icon</td></tr>
+<tr><td class="loc">App.js:512</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">window.__ringInStartCall global — any third-party script in page can initiate calls from user's account</td><td class="fix">Use React context instead</td></tr>
+</tbody>
+</table>
 
-<div class="item"><h3><span class="num">8</span>Social-media comparison</h3><p>Instagram, Facebook, LinkedIn, Twitter, WhatsApp standard patterns vs what RingIn implements. Gaps and recommendations.</p></div>
+<h2 id="profile">Profile + Settings</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">ProfileScreen.js:130</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="desc">Props missing onViewUser + onSwitchTab → ReferenceError on liker tap / "View My Moment"</td><td class="fix">Add to destructure</td></tr>
+<tr><td class="loc">ProfileScreen.js:431,978,1805</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="desc">3 paths rewrite bio JSON without merge → wipes cover_url, notif_prefs, sound_prefs, location every save</td><td class="fix">Re-fetch + Object.assign + write</td></tr>
+<tr><td class="loc">ProfileScreen.js:905-957</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="desc">Help & Support "Send Message" is purely UI — no DB write, no email — "Message Sent!" is a lie</td><td class="fix">Insert into support_tickets table</td></tr>
+<tr><td class="loc">ProfileScreen.js:1457</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Blocked Users still uses localStorage('ringin_blocked'), not the server-backed blocks util. Cross-device sync broken</td><td class="fix">Use loadBlocks() + render via profiles fetch</td></tr>
+<tr><td class="loc">ProfileScreen.js:1457</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Blocked Users list renders truncated UUIDs (meaningless to user)</td><td class="fix">Bulk-fetch profiles, show name + avatar</td></tr>
+<tr><td class="loc">ProfileScreen.js:1186</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Email notifications toggle ONLY writes localStorage — never sent to Supabase, email service can't honor it</td><td class="fix">Mirror push-toggle persistence</td></tr>
+<tr><td class="loc">ProfileScreen.js:1365,1414,1436</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Profile Visibility, Lock My Profile, Mute Activity Feed — all localStorage-only, no server-side effect</td><td class="fix">Persist to profiles columns + enforce in queries/RLS</td></tr>
+<tr><td class="loc">ProfileScreen.js:1221</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Close Friends list renders truncated UUIDs instead of names + avatars</td><td class="fix">Bulk-fetch profiles for closeFriendsList</td></tr>
+<tr><td class="loc">ProfileScreen.js</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">No "Hide last seen" toggle — heartbeat runs but users can't opt out</td><td class="fix">Add toggle → profiles.last_seen_visible</td></tr>
+<tr><td class="loc">ProfileScreen.js:2333-2334</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Composer Photo + GIF buttons alert("coming soon!") even though HomeScreen has working photo upload</td><td class="fix">Port the HomeScreen flow or remove</td></tr>
+<tr><td class="loc">ProfileScreen.js:2350,2353</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Post 3-dot menu Edit + Turn-off-notifications are alert() stubs</td><td class="fix">Wire to existing flows or remove menu entries</td></tr>
+<tr><td class="loc">ProfileScreen.js:1826,2292</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Stats tiles all hardcoded: 12 Calls, 1,240 Coins, 4.8★, 0 Reviews — pure fiction</td><td class="fix">Pull real counts from Supabase</td></tr>
+<tr><td class="loc">ProfileScreen.js:2283</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">"Member since April 2026" is hardcoded — doesn't reflect actual created_at</td><td class="fix">Read session.user.created_at</td></tr>
+<tr><td class="loc">ProfileScreen.js:1808</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Expert App allows blank exp/rate; allows resubmit without warning</td><td class="fix">Validate non-empty + check pending status</td></tr>
+<tr><td class="loc">ProfileScreen.js:2462</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">Friends/Skills/Reviews tabs render hardcoded mock arrays — no real data ever appears</td><td class="fix">Pull from follows/skills/reviews tables or hide tabs</td></tr>
+<tr><td class="loc">ProfileScreen.js:1976</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Rate the App is pure dummy — Submit just shows ✓; never logged or deep-linked to store</td><td class="fix">Wire to Play/App Store + Supabase log, or remove</td></tr>
+<tr><td class="loc">ProfileScreen.js:1880-1916</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">"Check for Updates" with auto-update ON doesn't actually auto-apply — contradicts toggle label</td><td class="fix">Auto-apply on manual check too, or relabel</td></tr>
+<tr><td class="loc">ProfileScreen.js:1304</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Reset Password redirectTo hardcoded to web URL — Capacitor APK won't deep-link back</td><td class="fix">Detect Capacitor, use ringin:// scheme</td></tr>
+</tbody>
+</table>
+
+<h2 id="search">SearchScreen</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">SearchScreen.js:237</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="desc">List Call button bypasses __ringInStartCall → callee never rings</td><td class="fix">Use the same fallback the detail page uses</td></tr>
+<tr><td class="loc">SearchScreen.js:9-16</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">All 6 experts are hardcoded JS literals. Real expert applications never appear</td><td class="fix">Fetch from profiles where is_expert=true</td></tr>
+<tr><td class="loc">SearchScreen.js:228</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Every expert gets a "Verified" badge regardless of real verification</td><td class="fix">Read profiles.verified column</td></tr>
+<tr><td class="loc">SearchScreen.js:156-159</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Coin tile "1,240" hardcoded (third copy of this issue)</td><td class="fix">Single wallet hook</td></tr>
+</tbody>
+</table>
+
+<h2 id="ota">OTA + Update flow</h2>
+<table>
+<thead><tr><th>Location</th><th>Sev</th><th>Description</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="loc">otaUpdater.js:75-103</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">notifyAppReady only called inside checkOnly (~4s after boot). If user is offline or manifest is slow, Capgo's failsafe rollback may fire before notifyAppReady → reverts to previous bundle</td><td class="fix">Call notifyAppReady synchronously at App.js boot before any setTimeout</td></tr>
+<tr><td class="loc">otaUpdater.js:25</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="desc">OTA bundle download has NO integrity verification — checksum/signature missing. If GitHub creds leak OR manifest is MITM'd OR malicious bundle uploaded, every device silently swaps to attacker JS on next 5-min poll</td><td class="fix">Add SHA-256 / Ed25519 signature to manifest; verify before set()</td></tr>
+<tr><td class="loc">otaUpdater.js:132-156</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">After Capgo.next({id}), reload via setTimeout 120ms — if next() is async-pending, reload may fire before bundle is staged → runs against OLD bundle</td><td class="fix">await staged-complete event OR increase delay to 500ms</td></tr>
+<tr><td class="loc">otaUpdater.js:46-52</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Version tracking in localStorage only. If cleared, app forgets → "always offer update"</td><td class="fix">Read from Capgo.current() with localStorage fallback</td></tr>
+<tr><td class="loc">UpdatePrompt.js:96-105</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">Fake progress ticker has no .then(done) — if __ringinDownloadOtaUpdate resolves without reloading, bar stuck at 85% forever</td><td class="fix">Add .then(done)</td></tr>
+<tr><td class="loc">UpdatePrompt.js:139-214</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="desc">style.opacity ternary "finishing && !applying ? 1 : 1" both branches are 1 — dead code</td><td class="fix">Remove ternary or set intended fade-in target</td></tr>
+</tbody>
+</table>
+
+<h2 id="security">Security findings (full)</h2>
+<table>
+<thead><tr><th>Issue</th><th>Sev</th><th>File</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Committed admin secret</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="loc">python-service/.env:4</td><td class="desc">ADMIN_API_KEY=ringin-admin-secret-2026 publicly readable in repo</td></tr>
+<tr><td>Anon key committed</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">.env, python-service/.env</td><td class="desc">Supabase anon key in committed env files</td></tr>
+<tr><td>Agora token endpoint unauth</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="loc">api/agora-token.js</td><td class="desc">No JWT check, CORS *, anyone joins any call</td></tr>
+<tr><td>call_invites RLS disabled</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="loc">AGORA_RLS_LOOSEN.sql</td><td class="desc">USING(true) WITH CHECK(true) — anyone reads/writes any invite</td></tr>
+<tr><td>send-call-push unauth</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">api/send-call-push.js</td><td class="desc">Spoofable caller_name in lock-screen push</td></tr>
+<tr><td>notifications spoofable</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">SUPABASE_MIGRATIONS.sql:90</td><td class="desc">INSERT policy doesn't gate from_user_id or user_id — phishing/harassment</td></tr>
+<tr><td>Wallet client-self-credit</td><td class="sev-cell"><span class="sev r">CRIT</span></td><td class="loc">WalletScreen.js:40-75</td><td class="desc">Coins updatable from browser console</td></tr>
+<tr><td>JSON-LD XSS</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">api/preview.js:86</td><td class="desc">User-controlled post.text in &lt;script&gt; block without escape</td></tr>
+<tr><td>Storage bucket overwrites</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">SUPABASE_MIGRATIONS.sql:146</td><td class="desc">Any auth user can overwrite anyone's avatar/cover</td></tr>
+<tr><td>OTA no signature</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">otaUpdater.js:25</td><td class="desc">No checksum on bundle download — MITM / repo compromise risk</td></tr>
+<tr><td>Hardcoded env fallbacks</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="loc">multiple</td><td class="desc">process.env.X || '&lt;real-prod-value&gt;' defeats key rotation</td></tr>
+<tr><td>Eruda debug in prod</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="loc">index.html:237</td><td class="desc">?debug=1 enables Eruda + persistent flag — phishing link → debug forever</td></tr>
+<tr><td>last-seen view not security_barrier</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="loc">0006_last_seen.sql</td><td class="desc">View leak via query patterns; cross-user blocks not checked</td></tr>
+<tr><td>Restrict comments client-only</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="loc">0003_restrict.sql</td><td class="desc">pending_approval enforced only in React — REST endpoint sees them all</td></tr>
+<tr><td>messages/comments no RLS migration</td><td class="sev-cell"><span class="sev o">HIGH</span></td><td class="loc">supabase/migrations/*</td><td class="desc">No RLS file for either table — either dashboard-only (unauditable) or wide open</td></tr>
+<tr><td>Notification action consent</td><td class="sev-cell"><span class="sev y">MED</span></td><td class="loc">App.js:101-108</td><td class="desc">Lock-screen "Accept" → mic publishes with no in-app confirm</td></tr>
+<tr><td>profiles UPDATE unscoped</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="loc">profiles policy</td><td class="desc">If UPDATE is auth.uid()=id, user can write coins/is_admin/etc</td></tr>
+<tr><td>purge_deleted_accounts incomplete</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="loc">0011_account_deletion.sql</td><td class="desc">auth.users row never deleted — fails GDPR Art. 17</td></tr>
+<tr><td>is_admin on profiles</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="loc">0002_reports.sql</td><td class="desc">User could self-promote if profiles UPDATE allows arbitrary cols</td></tr>
+<tr><td>reports no rate-limit</td><td class="sev-cell"><span class="sev g">LOW</span></td><td class="loc">0002_reports.sql</td><td class="desc">Malicious reporter can spam unbounded</td></tr>
+</tbody>
+</table>
+
+<h2 id="social">Social-media comparison (what's missing vs Insta/FB/WhatsApp/LinkedIn/X)</h2>
+
+<h3>Status / Moments</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>Photo Moments + cube transition</td><td>✅ HAS</td><td>On par with Instagram. No change.</td></tr>
+<tr><td>Video Moments</td><td>❌ MISSING</td><td>ADD ~2-3 days. MediaRecorder + 15s cap + Supabase upload.</td></tr>
+<tr><td>Moment polls (binary tap)</td><td>❌ MISSING</td><td>ADD ~1 day. High engagement, one new table.</td></tr>
+<tr><td>Text overlay / sticker / draw</td><td>❌ MISSING</td><td>DEFER. Heavy canvas editor (1-2 weeks).</td></tr>
+<tr><td>Music overlay</td><td>🚫 SKIP</td><td>Licensing nightmare for small app, not core to thesis.</td></tr>
+<tr><td>@mentions in reply</td><td>⚠ PARTIAL</td><td>UPGRADE ~1 day. Add picker.</td></tr>
+<tr><td>"Seen by" viewer list</td><td>✅ HAS</td><td>Already wired (T2.5).</td></tr>
+<tr><td>Highlights pinned to profile</td><td>❌ MISSING</td><td>ADD ~2 days. Promotes expert credibility.</td></tr>
+</tbody>
+</table>
+
+<h3>Chat</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>1:1 chat, reactions, unsend, mute, block</td><td>✅ HAS</td><td>Solid baseline.</td></tr>
+<tr><td>Group chat</td><td>❌ MISSING</td><td>ADD ~1 week. Schema refactor needed. Highest-value missing feature.</td></tr>
+<tr><td>Voice notes</td><td>❌ MISSING</td><td>ADD ~2 days. Mobile expectation. MediaRecorder → bucket → audio bubble.</td></tr>
+<tr><td>Reply-to / quote message</td><td>❌ MISSING</td><td>ADD ~1 day. reply_to_message_id column.</td></tr>
+<tr><td>Forward message</td><td>❌ MISSING</td><td>ADD ~1 day.</td></tr>
+<tr><td>Message search</td><td>❌ MISSING</td><td>ADD ~1 day. Extend existing post FTS to messages.</td></tr>
+<tr><td>Pinned messages</td><td>❌ MISSING</td><td>~1 day. Low urgency.</td></tr>
+<tr><td>Disappearing messages</td><td>❌ MISSING</td><td>DEFER ~2 days. Privacy story is secondary to growth.</td></tr>
+<tr><td>GIF picker (Tenor)</td><td>❌ MISSING</td><td>ADD ~1 day. Trivial API. Huge perceived polish.</td></tr>
+</tbody>
+</table>
+
+<h3>Calls</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>1:1 voice with Agora + push + native audio</td><td>✅ HAS</td><td>Excellent foundation.</td></tr>
+<tr><td>Video calls</td><td>❌ MISSING</td><td>ADD ~3-4 days. Agora SDK already loaded; just UI. Transforms RingIn into the go-to expert face-time app.</td></tr>
+<tr><td>Group calls</td><td>❌ MISSING</td><td>DEFER until video 1:1 ships.</td></tr>
+<tr><td>Screen share</td><td>❌ MISSING</td><td>ADD ~1-2 days. getDisplayMedia + Agora track. Killer for tech/legal experts.</td></tr>
+<tr><td>Call recording (with consent)</td><td>❌ MISSING</td><td>ADD ~3 days. Major trust signal for paying users.</td></tr>
+<tr><td>Low-bandwidth audio mode</td><td>❌ MISSING</td><td>~2 hours. Agora.setAudioProfile.</td></tr>
+</tbody>
+</table>
+
+<h3>Profile / Identity</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>Verified badge</td><td>⚠ PARTIAL</td><td>UPGRADE ~1 day. Badge visual exists in SearchScreen but no real flow. Major trust signal.</td></tr>
+<tr><td>Profile QR code</td><td>❌ MISSING</td><td>ADD ~3 hours. Big in-person growth boost.</td></tr>
+<tr><td>Multi-link bio (Linktree)</td><td>❌ MISSING</td><td>ADD ~half day. Critical for experts.</td></tr>
+</tbody>
+</table>
+
+<h3>Discovery</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>Explore / suggested feed</td><td>❌ MISSING</td><td>ADD ~2 days. Top-engagement posts last 24h grid.</td></tr>
+<tr><td>"Who to follow"</td><td>⚠ PARTIAL</td><td>UPGRADE ~half day. mlService exists but not surfaced.</td></tr>
+</tbody>
+</table>
+
+<h3>Monetization</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>Coin tipping on posts/Moments</td><td>❌ MISSING</td><td>ADD ~2 days. Strong fit — wallet rails exist. Heart-burst UI on tap.</td></tr>
+<tr><td>Creator subscriptions</td><td>❌ MISSING</td><td>DEFER. Worth it at 20+ active experts.</td></tr>
+</tbody>
+</table>
+
+<h3>Safety + Growth</h3>
+<table>
+<thead><tr><th>Feature</th><th>Status</th><th>Recommendation</th></tr></thead>
+<tbody>
+<tr><td>Admin moderation dashboard</td><td>❌ MISSING</td><td>ADD ~2 days. Reports are saved but no admin tool. Legal cover.</td></tr>
+<tr><td>Two-factor auth (TOTP)</td><td>❌ MISSING</td><td>ADD ~1 day. Supabase Auth native support.</td></tr>
+<tr><td>Public post/expert pages</td><td>❌ MISSING</td><td>CRITICAL ~2 days. Without this, all shares break.</td></tr>
+<tr><td>Invite a friend (bonus coins)</td><td>❌ MISSING</td><td>ADD ~1-2 days. Cheapest growth channel.</td></tr>
+<tr><td>Deep-link routing</td><td>⚠ PARTIAL</td><td>UPGRADE ~half day. ?tab= works but no ?post= or ?expert=.</td></tr>
+</tbody>
+</table>
+
+<h2 id="recommendations">Top 5 highest-ROI additions</h2>
+<div class="top5">
+<ol>
+<li><b>Video calls</b> (~3-4 days) — Agora already wired, mostly UI. Transforms RingIn from "voice consultation" to "real expert face-time" — competes with Zoom/FaceTime.</li>
+<li><b>Public post pages + share-back loop</b> (~2 days) — /post/:id SSR route on Vercel + working share + invite-friend bonus. Biggest growth blocker right now.</li>
+<li><b>Voice notes in chat</b> (~2 days) — Universal mobile expectation. Missing it makes RingIn feel incomplete next to WhatsApp.</li>
+<li><b>Coin tipping on posts / Moments</b> (~2 days) — Wallet + billing rails exist. Monetizes free creators. Heart-burst viral moment.</li>
+<li><b>Verified badge + admin moderation dashboard</b> (~3 days combined) — Badge UI is fake right now. Real verification + /admin page gives trust posture for payments to scale.</li>
+</ol>
+</div>
+
+<h2 id="ok">What works well (so you know the audit was thorough)</h2>
+<div class="ok">
+<h3>HomeScreen + Moments</h3>
+<ul>
+<li><b>AvatarRing component</b> — clean conditional wrapper, gracefully degrades</li>
+<li><b>ReportModal</b> — real Supabase insert with localStorage queue fallback</li>
+<li><b>Optimistic-with-snapshot-rollback</b> on every mutation (toggleLike, submitComment, deletePost, saveEditPost)</li>
+<li><b>Notification batching</b> — collapses same-type same-post within 30-min window</li>
+<li><b>Feed diversity cap</b> — breaks up consecutive same-author posts</li>
+<li><b>Moments cube transition</b> — single per-frame transform on cube wrapper, GPU-composited</li>
+<li><b>MomentComposer pinch-zoom</b> — direct-DOM transform writes via ref, 60fps</li>
+<li><b>Android back-button handling</b> — popstate guard via __ringinMomentDragTime</li>
+</ul>
+</div>
+<div class="ok">
+<h3>Messages + Calls</h3>
+<ul>
+<li><b>Realtime subscription hygiene</b> — every sb.channel has a matching removeChannel cleanup</li>
+<li><b>iOS Safari user-activation</b> — mic track created before token roundtrip preserves tap activation</li>
+<li><b>Token pre-fetch on incoming ring</b> — cuts ~200-500ms accept latency</li>
+<li><b>Conv list caching</b> — localStorage with stale detection</li>
+<li><b>Race-condition fix for outgoing channel</b> — pre-generates invite UUID client-side, doc'd clearly</li>
+<li><b>CallScreen unmount cleanup</b> — wake lock, listener (refed not lambda), timeouts, audioSession restoration</li>
+<li><b>setMuted vs setEnabled</b> — peers don't see user-unpublished which would have ended the call</li>
+<li><b>FCM token cleanup on invalid-token</b> — blanks bad tokens automatically</li>
+</ul>
+</div>
+<div class="ok">
+<h3>Profile + Settings</h3>
+<ul>
+<li><b>Sound & Haptics screen</b> — toggles, sliders all persist correctly</li>
+<li><b>Hide Like Counts</b> — updates instantly across tabs via storage event</li>
+<li><b>Close Friends add/remove</b> — server-backed, optimistic, debounced FTS</li>
+<li><b>Notification toggles → push types</b> — write to localStorage + bio + notification_prefs table</li>
+<li><b>Password Change</b> — verifies current password via re-signIn before update</li>
+<li><b>Delete Account flow</b> — confirm + RPC + signOut + 30-day cooling-off copy</li>
+<li><b>Download My Data</b> — real JSON export of posts + comments via Blob download</li>
+<li><b>Activity Log</b> — real Supabase fetches + realtime channel with cleanup</li>
+</ul>
+</div>
+<div class="ok">
+<h3>Security (secure-by-default)</h3>
+<ul>
+<li><b>Agora App Certificate kept server-side</b> — only App ID exposed (correct)</li>
+<li><b>Firebase Admin lazily initialized</b> — service-account never echoed to client</li>
+<li><b>Most migrations 0001-0015</b> correctly enable RLS + gate on auth.uid()</li>
+<li><b>purge_deleted_accounts, refresh_trending_tags</b> — SECURITY DEFINER with revoke from public/authenticated</li>
+<li><b>Service worker</b> bypasses caching for Supabase/Agora/Firebase/api — protects auth and prevents poisoning</li>
+<li><b>capacitor.config.json</b> — cleartext:false, autoUpdate:false (user approves every OTA)</li>
+<li><b>vercel.json</b> — X-Content-Type-Options: nosniff + Referrer-Policy global headers</li>
+<li><b>Expand-contract migration pattern</b> documented in CLAUDE.md is properly followed (try/catch around new column reads)</li>
+</ul>
 </div>
 
 <footer>
 RingIn audit · Webstreax Technologies Pvt Ltd<br>
-Refresh this URL to see the latest findings · Full report posts here when agents finish
+9 critical · 21 high · 47 medium · 15 low (92 findings total) · 5 agents + supervisor · Generated 2026-05-17
 </footer>
 </div>
 </body>
