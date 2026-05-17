@@ -20,6 +20,43 @@ import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlServic
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
 function playPostSound(){playSound('send');}
+
+// Copy a URL to the clipboard and toast ONLY on real success. Pre-fix,
+// every Copy Link / Share fallback fired `alert('Link copied!')` even when
+// the clipboard API silently failed (no permission, http://, iframe).
+// Now: success → toast, failure → "Couldn't copy" error so users know to
+// long-press the URL.
+function copyToClipboardWithToast(url, successMsg){
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){
+        toastSuccess(successMsg || '🔗 Link copied!');
+      }).catch(function(){
+        // Try the legacy execCommand fallback before reporting failure
+        if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+        else toastError('Couldn\'t copy — long-press the link to copy');
+      });
+      return;
+    }
+    if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+    else toastError('Couldn\'t copy — long-press the link to copy');
+  } catch(e) {
+    if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+    else toastError('Couldn\'t copy — long-press the link to copy');
+  }
+  function legacyCopy(t){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch(_) { return false; }
+  }
+}
 function playLikeSound(liked){
   if(liked){ playSound('like'); hapticPulse([18, 12, 30]); }
   else { playUnlikeSound(); hapticPulse([20]); }
@@ -388,8 +425,8 @@ export function UserProfileView(props){
           var isOwn=p.userId===currentUserId;
           var items=isOwn?[
             {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){var snapU2=userPosts.slice();setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);alert('Failed to delete post.');}});}}},
-            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuU(null);}},
-            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.content});setShowEditPost(true);setPostMenuU(null);}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuU(null);}},
+            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.text||p.content||''});setShowEditPost(true);setPostMenuU(null);}},
             {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenuU(null);}}
           ]:[
             {icon:'🔖',label:'Save Post',fn:function(){
@@ -553,8 +590,8 @@ export function UserProfileView(props){
             React.createElement('button',{
               onClick:function(){
                 var url='https://ring-in.vercel.app/post/'+p.id;
-                if(navigator.share){navigator.share({title:'Check this out on RingIn',text:p.text.substring(0,100),url:url});}
-                else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+                if(navigator.share){navigator.share({title:'Check this out on RingIn',text:p.text.substring(0,100),url:url}).catch(function(){});}
+                else{copyToClipboardWithToast(url,'🔗 Link copied to clipboard');}
               },
               style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
             },'↗ Share')
@@ -1027,6 +1064,7 @@ export default function HomeScreen(props){
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
+  var coinBalS=useState(function(){try{var v=localStorage.getItem('ringin_coin_balance');return v?Number(v)||0:0;}catch(e){return 0;}}); var coinBal=coinBalS[0]; var setCoinBal=coinBalS[1];
   var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
   var compImgsS=useState([]); var compImgs=compImgsS[0]; var setCompImgs=compImgsS[1];
   var compVideoS=useState(null); var compVideo=compVideoS[0]; var setCompVideo=compVideoS[1];
@@ -1059,6 +1097,10 @@ export default function HomeScreen(props){
   var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
   var compEmojiS=useState(false); var compEmoji=compEmojiS[0]; var setCompEmoji=compEmojiS[1];
   var loadingS=useState(_cachedPosts.length===0); var loading=loadingS[0]; var setLoading=loadingS[1];
+  // Pull-to-refresh state (new — was missing from HomeScreen).
+  var refreshingHS=useState(false); var refreshingH=refreshingHS[0]; var setRefreshingH=refreshingHS[1];
+  var pullStartHS=useState(0); var pullStartH=pullStartHS[0]; var setPullStartH=pullStartHS[1];
+  var pullDistHS=useState(0); var pullDistH=pullDistHS[0]; var setPullDistH=pullDistHS[1];
   var fileInputRef=useRef(null);
   var typingTimerRef=useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
@@ -1112,17 +1154,24 @@ export default function HomeScreen(props){
 
   function saveEditPost(){
     if(!editPostData||!editPostData.content||!editPostData.content.trim()) return;
+    var newText = editPostData.content;
+    var pid = editPostData.id;
     var snapPosts = posts.slice();
-    sbHome.from('posts').update({text:editPostData.content}).eq('id',editPostData.id).then(function(r){
+    var snapUserPosts = userPosts.slice();
+    // Optimistic update on both arrays
+    setPosts(function(prev){return prev.map(function(x){return x.id===pid?Object.assign({},x,{text:newText}):x;});});
+    setUserPosts(function(prev){return prev.map(function(x){return x.id===pid?Object.assign({},x,{text:newText}):x;});});
+    setShowEditPost(false);
+    setEditPostData(null);
+    sbHome.from('posts').update({text:newText}).eq('id',pid).then(function(r){
       if(r.error){
         console.error('RingIn Error [saveEditPost]:', r.error && r.error.message ? r.error.message : 'Unknown error');
         setPosts(snapPosts);
-        alert('Something went wrong. Please try again.');
+        setUserPosts(snapUserPosts);
+        try{toastError('Failed to edit. Try again.');}catch(e){alert('Something went wrong. Please try again.');}
         return;
       }
-      setPosts(function(prev){return prev.map(function(x){return x.id===editPostData.id?Object.assign({},x,{text:editPostData.content}):x;});});
-      setShowEditPost(false);
-      setEditPostData(null);
+      try{toastSuccess('✏️ Post updated');}catch(e){}
     });
   }
   function toggleMutePost(pid){
@@ -1178,10 +1227,45 @@ export default function HomeScreen(props){
       postImg:p.images&&p.images.length>0?p.images[0]:null,
       extraImgs:p.images&&p.images.length>1?p.images.slice(1):[],
       video_url:p.video_url||null,
+      audience:p.audience||'public',
       isUserPost:true
     };
   }
 
+  // Load coin balance once on mount so the top-bar chip shows the real value
+  // (previously hardcoded to "1,240"). Cached in localStorage for instant
+  // paint on next mount; refreshed from Supabase on every mount.
+  useEffect(function(){
+    if(!currentUserId) return;
+    sbHome.from('profiles').select('coins').eq('id',currentUserId).single().then(function(r){
+      if(r && r.data && r.data.coins != null){
+        var b = Number(r.data.coins) || 0;
+        setCoinBal(b);
+        try{ localStorage.setItem('ringin_coin_balance', String(b)); }catch(e){}
+      }
+    });
+  },[currentUserId]);
+
+  // Refetch the feed from Supabase — used by initial mount AND
+  // pull-to-refresh.
+  function refreshFeed(){
+    return sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
+      setLoading(false);
+      if(res.error){ console.error('Error fetching posts:', res.error); return; }
+      if(res.data&&res.data.length>0){
+        var dbPosts = res.data.map(mapPost);
+        // Replace server posts with the fresh list, preserve any optimistic
+        // (numeric-id) drafts the user hasn't published yet.
+        setPosts(function(prev){
+          var optimistic = prev.filter(function(p){return typeof p.id === 'number';});
+          return dbPosts.concat(optimistic);
+        });
+        setHasMoreH(res.data.length===12);
+        try{localStorage.setItem('feed_posts_cache',JSON.stringify(dbPosts));}catch(e){}
+        prefetchLikerNames(dbPosts, {});
+      }
+    });
+  }
   useEffect(function(){
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).limit(12).then(function(res){
       setLoading(false);
@@ -1225,6 +1309,7 @@ export default function HomeScreen(props){
   var searchResS=useState(null); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var searchingS=useState(false); var searching=searchingS[0]; var setSearching=searchingS[1];
   var selUserS=useState(null); var selectedUser=selUserS[0]; var setSelectedUser=selUserS[1];
+  var locFilterS=useState('all'); var locFilter=locFilterS[0]; var setLocFilter=locFilterS[1];
   var supabase = props.supabase;
 
   var ALL_EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,img:'https://i.pravatar.cc/150?img=47',type:'expert'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,img:'https://i.pravatar.cc/150?img=12',type:'expert'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,img:'https://i.pravatar.cc/150?img=23',type:'expert'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,img:'https://i.pravatar.cc/150?img=33',type:'expert'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,img:'https://i.pravatar.cc/150?img=44',type:'expert'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness Coach',rate:50,rating:4.7,img:'https://i.pravatar.cc/150?img=15',type:'expert'}];
@@ -1295,8 +1380,8 @@ export default function HomeScreen(props){
     }
     function sharePhoto(){
       var url=curImg||window.location.href;
-      if(navigator.share){navigator.share({title:'Check this on RingIn',url:url});}
-      else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');}
+      if(navigator.share){navigator.share({title:'Check this on RingIn',url:url}).catch(function(){});}
+      else{copyToClipboardWithToast(url,'🔗 Link copied!');}
       setPdMenuOpen(false);
     }
     function toggleCommentLike(cid){
@@ -1410,6 +1495,16 @@ export default function HomeScreen(props){
   }
   if(activeLive) return React.createElement(LiveWorkshopScreen,{workshop:activeLive,onLeave:function(){setActiveLive(null);}});
   var fe = ac==='all' ? EXPERTS : EXPERTS.filter(function(e){return e.category===ac;});
+  // Location filter (wired from .frow chips above)
+  if(locFilter && locFilter!=='all'){
+    fe = fe.filter(function(e){
+      var l = (e.loc||'').toLowerCase();
+      if(locFilter==='dubai') return l.indexOf('dubai')>=0;
+      if(locFilter==='abudhabi') return l.indexOf('abu dhabi')>=0;
+      if(locFilter==='online') return l.indexOf('remote')>=0 || l.indexOf('online')>=0;
+      return true;
+    });
+  }
   var onlineExperts = fe.filter(function(e){return e.online===true;});
 
   function submitPost(){
@@ -1703,7 +1798,50 @@ export default function HomeScreen(props){
   var ownMomentForStrip = realMoments.find(function(m){ return m.isSelf; }) || null;
   var otherRealMoments = realMoments.filter(function(m){ return !m.isSelf; });
 
-  return React.createElement('div', {className:'hc'},
+  return React.createElement('div', {
+    className:'hc',
+    // ── Pull-to-refresh ──
+    // Reads scroll position from the .feed-scroll wrapper (App.js owns
+    // the actual scroll container). We only arm when the user is already
+    // at the top, so a downward gesture mid-feed still scrolls normally.
+    onTouchStart:function(e){
+      if(refreshingH) return;
+      // Find the nearest scrollable ancestor and bail if not at top.
+      var el = e.target;
+      while (el && el !== document.body) {
+        var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
+        var ov = cs && (cs.overflowY||cs.overflow);
+        if (ov && (ov === 'auto' || ov === 'scroll')) {
+          if (el.scrollTop > 0) return;
+          break;
+        }
+        el = el.parentNode;
+      }
+      var t = e.touches && e.touches[0]; if(!t) return;
+      setPullStartH(t.clientY);
+    },
+    onTouchMove:function(e){
+      if(refreshingH||!pullStartH) return;
+      var t = e.touches && e.touches[0]; if(!t) return;
+      var d = t.clientY - pullStartH;
+      if (d > 0) setPullDistH(Math.min(d, 120));
+    },
+    onTouchEnd:function(){
+      if(refreshingH) return;
+      if (pullDistH > 50) {
+        setRefreshingH(true);
+        try { hapticPulse([20]); } catch(_){}
+        Promise.resolve(refreshFeed()).finally(function(){ setRefreshingH(false); });
+      }
+      setPullStartH(0);
+      setPullDistH(0);
+    },
+  },
+    // Pull-to-refresh indicator
+    pullDistH>20||refreshingH ? React.createElement('div',{key:'ptr-h',style:{textAlign:'center',padding:'8px',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}},
+      refreshingH ? React.createElement('div',{style:{width:'16px',height:'16px',borderRadius:'50%',border:'2px solid var(--ac)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite'}}) : '↓',
+      refreshingH ? 'Refreshing feed…' : pullDistH>50 ? 'Release to refresh' : 'Pull to refresh'
+    ) : null,
     // Report modal — replaces the previously fake alert("Thank you for reporting...").
     React.createElement(ReportModal,{target:reportTarget,onClose:function(){setReportTarget(null);},session:props.session}),
     // Likes popup
@@ -1783,8 +1921,8 @@ export default function HomeScreen(props){
           var isOwn=p.userId===currentUserId;
           var items=isOwn?[
             {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){var snapBefore=posts.slice();setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePost]:', r.error);setPosts(snapBefore);alert('Failed to delete post.');}});}}},
-            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenu(null);}},
-            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.content});setShowEditPost(true);setPostMenu(null);}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenu(null);}},
+            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.text||p.content||''});setShowEditPost(true);setPostMenu(null);}},
             {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenu(null);}}
           ]:[
             {icon:'🔖',label:'Save Post',fn:function(){
@@ -1815,7 +1953,7 @@ export default function HomeScreen(props){
       React.createElement('div', {className:'tbr'},
         React.createElement('div', {className:'wchip', onClick:function(){if(onOpenWallet)onOpenWallet();}, style:{cursor:'pointer'}},
           React.createElement('div', {className:'wc'}, 'C'),
-          React.createElement('span', null, '1,240')
+          React.createElement('span', null, (Number(coinBal)||0).toLocaleString())
         ),
         React.createElement('div', {className:'ibt', onClick:function(){
           setShowNotifs(!showNotifs);
@@ -1902,10 +2040,10 @@ export default function HomeScreen(props){
         })
       ),
       React.createElement('div', {className:'frow'},
-        React.createElement('div', {className:'ftag on'}, 'All Locations'),
-        React.createElement('div', {className:'ftag'}, 'Dubai'),
-        React.createElement('div', {className:'ftag'}, 'Abu Dhabi'),
-        React.createElement('div', {className:'ftag'}, 'Online Only')
+        React.createElement('div', {className:'ftag'+(locFilter==='all'?' on':''),onClick:function(){setLocFilter('all');}}, 'All Locations'),
+        React.createElement('div', {className:'ftag'+(locFilter==='dubai'?' on':''),onClick:function(){setLocFilter('dubai');}}, 'Dubai'),
+        React.createElement('div', {className:'ftag'+(locFilter==='abudhabi'?' on':''),onClick:function(){setLocFilter('abudhabi');}}, 'Abu Dhabi'),
+        React.createElement('div', {className:'ftag'+(locFilter==='online'?' on':''),onClick:function(){setLocFilter('online');}}, 'Online Only')
       )
     ),
     searchQ && searchQ.trim() ? React.createElement('div',{style:{padding:'0 18px',marginBottom:'8px'}},
@@ -2067,7 +2205,7 @@ export default function HomeScreen(props){
 
     React.createElement('div', {className:'sh'},
       React.createElement('div', {className:'st'}, 'Online Now'),
-      React.createElement('div', {className:'sa'}, 'See all')
+      React.createElement('div', {className:'sa',onClick:function(){if(props.onGoToSearch)props.onGoToSearch();},style:{cursor:'pointer'}}, 'See all')
     ),
     // NOTE: removed onMouseDown:preventDefault — it blocked vertical
     // scroll on Android Webview when user touched a card and tried to
@@ -2268,6 +2406,17 @@ export default function HomeScreen(props){
         var src = selectedTag
           ? posts.filter(function(p){ return Array.isArray(p.tags) && p.tags.indexOf(selectedTag) >= 0; })
           : posts.slice();
+        // Audience filter (server has audience column; client enforces visibility too).
+        // 'public' → everyone | 'followers' → only follower-of-author | 'only_me' → only author
+        src = src.filter(function(p){
+          var aud = p.audience || 'public';
+          if (aud === 'public') return true;
+          if (!currentUserId) return false;
+          if (p.userId === currentUserId) return true;
+          if (aud === 'followers') return !!(following && following[p.userId]);
+          if (aud === 'only_me') return false;
+          return true;
+        });
         // Diversity cap: stop the same author from dominating the feed via
         // 4+ consecutive posts. Pulls a same-author run > 3 down past the
         // next available different-author post. Preserves overall ordering;
@@ -2393,8 +2542,8 @@ export default function HomeScreen(props){
             }}, '💬 '+(commentsCache[p.id]?commentsCache[p.id].length:p.comments||0)),
             React.createElement('button', {className:'pa', onClick:function(){
               var url='https://ring-in.vercel.app/post/'+p.id;
-              if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url});}
-              else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+              if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url}).catch(function(){});}
+              else{copyToClipboardWithToast(url,'🔗 Link copied to clipboard');}
             }}, '↗ Share')
           ),
           // Comment section

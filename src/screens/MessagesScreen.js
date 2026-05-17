@@ -249,8 +249,14 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     } catch (_) {}
   }
 
+  // Clear reactions immediately on chat switch — otherwise the new chat
+  // briefly shows the previous chat's reactions until the fetch lands.
+  useEffect(function(){
+    setReactionsByMsg({});
+  }, [convId]);
+
   // Load reactions for all currently-loaded messages whenever the message
-  // list changes. Cheap query, single round-trip.
+  // list changes or the active chat changes. Cheap query, single round-trip.
   useEffect(function(){
     if (!msgs || msgs.length === 0) return;
     var ids = msgs.map(function(m){ return m.id; }).filter(function(x){ return x != null && (typeof x === 'number' || (typeof x === 'string' && x.indexOf('tmp_') !== 0)); });
@@ -268,7 +274,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       });
     } catch (_) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msgs.length]);
+  }, [msgs.length, convId]);
   var fileInputRef=useRef(null);
   var chatTypingTimerRef=useRef(null);
 
@@ -363,24 +369,55 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var _initialOtherName = (convo && convo.name) || 'User';
   var otherAvatarS = useState(_initialOtherAvatar); var otherAvatar = otherAvatarS[0]; var setOtherAvatar = otherAvatarS[1];
   var otherNameS = useState(_initialOtherName); var otherName = otherNameS[0]; var setOtherName = otherNameS[1];
+  // "Last seen" + live online state — surfaced in the chat header subtitle
+  // when convo.isOnline is false (matches WhatsApp / Instagram pattern).
+  var otherLastSeenS = useState(null); var otherLastSeen = otherLastSeenS[0]; var setOtherLastSeen = otherLastSeenS[1];
+  var otherOnlineS = useState(!!(convo && convo.isOnline)); var otherOnline = otherOnlineS[0]; var setOtherOnline = otherOnlineS[1];
 
   // Fetch fresh profile for the other user — covers cases where convo was passed in
   // stale (e.g., entering chat from a notification or a UserProfileView message button).
   useEffect(function(){
     var otherId = convo && (convo.receiverId || convo.other_user_id || convo.id);
     if (!otherId || (typeof otherId === 'string' && otherId.indexOf('_') >= 0)) return; // not a UUID
-    sb.from('profiles').select('id,full_name,email,avatar_url,is_online').eq('id', otherId).single().then(function(r){
-      if (!r || !r.data) return;
-      if (r.data.avatar_url) {
-        setOtherAvatar(r.data.avatar_url);
-        try { localStorage.setItem('avatar_'+otherId, r.data.avatar_url); } catch(e){}
+    // Try with last_seen first; fall back if the column doesn't exist yet.
+    sb.from('profiles').select('id,full_name,email,avatar_url,is_online,last_seen').eq('id', otherId).single().then(function(r){
+      var row = r && r.data ? r.data : null;
+      if (!row && r && r.error && /last_seen/i.test(r.error.message||'')) {
+        // Column missing — retry without it.
+        sb.from('profiles').select('id,full_name,email,avatar_url,is_online').eq('id', otherId).single().then(function(r2){
+          if (r2 && r2.data) applyProfile(r2.data, false);
+        });
+        return;
       }
-      var fresh = (r.data.full_name && r.data.full_name.trim()) ||
-                  (r.data.email && r.data.email.indexOf('@')>=0 ? r.data.email.split('@')[0] : r.data.email) ||
-                  null;
-      if (fresh) setOtherName(fresh);
+      if (row) applyProfile(row, true);
+      function applyProfile(d, withLastSeen){
+        if (d.avatar_url) {
+          setOtherAvatar(d.avatar_url);
+          try { localStorage.setItem('avatar_'+otherId, d.avatar_url); } catch(e){}
+        }
+        var fresh = (d.full_name && d.full_name.trim()) ||
+                    (d.email && d.email.indexOf('@')>=0 ? d.email.split('@')[0] : d.email) ||
+                    null;
+        if (fresh) setOtherName(fresh);
+        setOtherOnline(!!d.is_online);
+        if (withLastSeen && d.last_seen) setOtherLastSeen(d.last_seen);
+      }
     });
   }, [convo && convo.receiverId, convo && convo.id]);
+
+  // Format "last seen" timestamp for the header subtitle.
+  function formatLastSeen(iso){
+    if (!iso) return null;
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return null;
+    var diff = Date.now() - t;
+    if (diff < 60*1000) return 'last seen just now';
+    if (diff < 60*60*1000) return 'last seen '+Math.floor(diff/60000)+'m ago';
+    if (diff < 24*60*60*1000) return 'last seen '+Math.floor(diff/3600000)+'h ago';
+    if (diff < 7*24*60*60*1000) return 'last seen '+Math.floor(diff/86400000)+'d ago';
+    var d = new Date(iso);
+    return 'last seen ' + d.toLocaleDateString([], {month:'short', day:'numeric'});
+  }
 
   useEffect(function(){
     // Load messages
@@ -402,19 +439,24 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           if(prev.find(function(m){return m.id===p.new.id;})) return prev;
           return prev.concat([p.new]);
         });
-        // Mark received messages as read + play notification sound
+        // Mark received messages as read + play notification sound.
+        // RESTRICT enforcement: when the sender is in restrictedSet,
+        // suppress notification sound (Instagram-style silent delivery).
         if(p.new.sender_id!==myId){
           if (!readReceiptsOffHere) {
             sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
           }
           var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-          if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
+          var senderRestricted = restrictedSet && restrictedSet.has && restrictedSet.has(p.new.sender_id);
+          if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
         }
       })
       .on('broadcast', { event: 'typing' }, function(msg){
         // Ignore my own echoes (Supabase broadcasts include the sender by default).
         var pl = msg && msg.payload;
         if (!pl || !pl.user_id || pl.user_id === myId) return;
+        // RESTRICT enforcement: hide typing indicator from restricted users.
+        if (restrictedSet && restrictedSet.has && restrictedSet.has(pl.user_id)) return;
         if (pl.typing) {
           setOtherTyping(true);
           if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
@@ -593,11 +635,21 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
 
   function send(){
     if(!txt.trim()) return;
-    // Check if other user is blocked
+    // Check if other user is blocked.
+    // BUG (pre-fix): used convo.id as a fallback for otherId. But convo.id
+    // here is the conversation_id (`uuid1_uuid2`), NOT a single UUID — it
+    // would never match anything in the blocked list, so the guard was a
+    // no-op for older convo objects loaded from the cache.
+    // FIX: derive otherId from convo.other_user_id OR convo.otherId OR
+    // convo.receiverId OR by splitting convId and removing myId.
     var blockedList=[];
     try{var bs=localStorage.getItem('ringin_blocked');if(bs)blockedList=JSON.parse(bs);}catch(e){}
-    var otherId=convo.other_user_id||convo.id;
-    if(blockedList.includes(String(otherId))){
+    var otherId = convo.other_user_id || convo.otherId || convo.receiverId || null;
+    if (!otherId && convId && typeof convId === 'string' && myId) {
+      var parts = convId.split('_').filter(function(s){ return s && s !== myId; });
+      if (parts.length) otherId = parts[0];
+    }
+    if(otherId && blockedList.includes(String(otherId))){
       setToast('You have blocked this user');
       setTimeout(function(){setToast('');},2500);
       return;
@@ -703,9 +755,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             ),
             React.createElement('div',{key:'nm',onClick:openProfile,style:{flex:1,minWidth:0,cursor:otherUid?'pointer':'default'}},
               React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
-              convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
-                React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
-              ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
+              // Subtitle priority: typing → Online dot → "last seen Xm ago" → role.
+              otherTyping ? React.createElement('div',{style:{fontSize:'10px',color:'var(--ac)',fontStyle:'italic'}},'typing…')
+                : (otherOnline||convo.isOnline) ? React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
+                    React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
+                  )
+                : formatLastSeen(otherLastSeen) ? React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},formatLastSeen(otherLastSeen))
+                : React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
             )
           ];
         })(),
@@ -1118,10 +1174,16 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                       uploadFile.type === 'image/gif'  ? 'gif' :
                       uploadFile.type === 'image/webp' ? 'webp' : 'jpg';
             var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+          // Helper — revokes the blob URL we created for the optimistic
+          // preview, so the browser can free the underlying File memory.
+          // Without this, every chat photo leaks ~size-of-photo until the
+          // tab is closed. Especially bad on Android with large camera shots.
+          function revokeLocal(){ try{ URL.revokeObjectURL(localUrl); }catch(e){} }
           sb.storage.from('chat-images').upload(fileName,uploadFile,{contentType:uploadFile.type}).then(function(r){
             if(r.error){
               console.error('RingIn Error [chatPhotoUpload]:', r.error&&r.error.message?r.error.message:'Unknown error');
               setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+              revokeLocal();
               alert('Photo upload failed: '+r.error.message);
               return;
             }
@@ -1130,6 +1192,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               if(mr.error){
                 console.error('RingIn Error [chatPhotoInsert]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
                 setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                revokeLocal();
                 return;
               }
               if(mr.data&&mr.data[0]){
@@ -1139,6 +1202,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                   return prev.map(function(msg){return msg.id===tempId?mr.data[0]:msg;});
                 });
               }
+              // Real CDN URL now in the message — the blob preview is no
+              // longer rendered, safe to release the local object.
+              revokeLocal();
               if(onMessageSent) onMessageSent(convo,'📷 Photo');
             });
           });
@@ -1147,7 +1213,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             console.warn('[ringin] image compress failed, uploading raw', err);
             var ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'webp';
             var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
-            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(){});
+            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(){
+              try{ URL.revokeObjectURL(localUrl); }catch(e){}
+            });
           });
           ev.target.value='';
         }
@@ -1266,6 +1334,7 @@ export default function MessagesScreen(props){
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  var coinBalS=useState(function(){try{var v=localStorage.getItem('ringin_coin_balance');return v?Number(v)||0:0;}catch(e){return 0;}}); var coinBal=coinBalS[0]; var setCoinBal=coinBalS[1];
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
@@ -1352,6 +1421,20 @@ export default function MessagesScreen(props){
       if(props.onConvoConsumed) props.onConvoConsumed();
     }
   },[props.initConvo]);
+
+  // Real coin balance from profiles.coins — replaces hardcoded "1,240".
+  // Cached in localStorage so the chip paints with the last-known value
+  // before Supabase round-trip lands.
+  useEffect(function(){
+    if(!myId) return;
+    sb.from('profiles').select('coins').eq('id',myId).single().then(function(r){
+      if(r && r.data && r.data.coins != null){
+        var b = Number(r.data.coins) || 0;
+        setCoinBal(b);
+        try{ localStorage.setItem('ringin_coin_balance', String(b)); }catch(e){}
+      }
+    });
+  },[myId]);
 
   // Refresh conversations when user comes back to tab (don't remove channels — ChatBox manages its own)
   useEffect(function(){
@@ -1443,22 +1526,28 @@ export default function MessagesScreen(props){
         // Use functional setActive to read current active convo without stale closure
         setActive(function(currentActive){
           var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
+          // RESTRICT enforcement at inbox layer — silent badge bump only,
+          // no badge/sound for messages from restricted users.
+          var senderRestricted = restrictedSet && restrictedSet.has && restrictedSet.has(p.new.sender_id);
           if(!isViewingThisConvo){
-            // Not viewing this chat — increment badge and unread count
-            setTotalUnread(function(t){return t+1;});
-            if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
+            // Not viewing this chat — increment badge and unread count (skip if restricted)
+            if(!senderRestricted){
+              setTotalUnread(function(t){return t+1;});
+              if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
+            }
             setUserConvos(function(prev){
               var exists=prev.find(function(c){return c.convId===p.new.conversation_id;});
               if(exists){
                 return prev.map(function(c){
                   if(c.convId!==p.new.conversation_id) return c;
-                  return Object.assign({},c,{lastMsg:p.new.text,unreadCount:(c.unreadCount||0)+1});
+                  // For restricted users, update preview but don't increment unread count
+                  return Object.assign({},c,{lastMsg:p.new.text,unreadCount:senderRestricted?(c.unreadCount||0):((c.unreadCount||0)+1)});
                 });
               }
               return prev;
             });
             var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-            if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
+            if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
           } else {
             // Already viewing this chat — just update last message preview, no badge
             setUserConvos(function(prev){
@@ -1597,6 +1686,30 @@ export default function MessagesScreen(props){
 
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
+    // Pull-to-refresh — touch handlers wired to the existing pullDist /
+    // refreshing state (previously decorative-only; "Pull to refresh"
+    // never actually fired refreshConvos).
+    onTouchStart:function(e){
+      if(refreshing) return;
+      // Only arm PTR when we're already scrolled to the very top of the
+      // inbox container. Otherwise swipe-down should keep scrolling content.
+      var sc = e.currentTarget;
+      if (sc && sc.scrollTop > 0) return;
+      var t = e.touches && e.touches[0]; if(!t) return;
+      setPullStart(t.clientY);
+    },
+    onTouchMove:function(e){
+      if(refreshing||!pullStart) return;
+      var t = e.touches && e.touches[0]; if(!t) return;
+      var d = t.clientY - pullStart;
+      if (d > 0) setPullDist(Math.min(d, 120));
+    },
+    onTouchEnd:function(){
+      if(refreshing) return;
+      if (pullDist > 50) { refreshConvos(); }
+      setPullStart(0);
+      setPullDist(0);
+    },
   },
     // Header
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
@@ -1606,7 +1719,7 @@ export default function MessagesScreen(props){
         React.createElement('button',{onClick:function(){setShowNew(!showNew);},title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
         React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
-          React.createElement('span',null,'1,240')
+          React.createElement('span',null,(Number(coinBal)||0).toLocaleString())
         ),
         React.createElement(TopBarAvatar, {
           session: props.session,
@@ -1722,9 +1835,14 @@ export default function MessagesScreen(props){
               c.isOnline ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)',zIndex:1}}) : null
             ),
             React.createElement('div',{style:{flex:1,minWidth:0}},
-              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px'}},
-                React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer'}},c.name),
-                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?timeAgo(c.lastTime):'')
+              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',alignItems:'center'}},
+                React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'5px',minWidth:0}},
+                  React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.name),
+                  // Mute icon — shows when this conversation is in ringin_muted_convos.
+                  // Matches Instagram / WhatsApp inbox convention.
+                  mutedConvos.indexOf(c.convId||c.id) >= 0 ? React.createElement('span',{title:'Notifications muted',style:{fontSize:'11px',color:'var(--t3)',flexShrink:0,lineHeight:1}},'🔕') : null
+                ),
+                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)',flexShrink:0,marginLeft:'6px'}},c.lastTime?timeAgo(c.lastTime):'')
               ),
               React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
                 (function(){

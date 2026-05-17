@@ -9,6 +9,41 @@ import {useMomentUserIds} from '../utils/momentUsers';
 import {useHideLikes} from '../utils/likeDisplayPref';
 import {useCloseFriends, addCloseFriend, removeCloseFriend} from '../utils/closeFriends';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
+import {toastSuccess,toastError} from '../utils/toast';
+
+// Copy a URL to the clipboard and toast ONLY on real success.
+// Same helper pattern as HomeScreen — eliminates false-positive "Link
+// copied!" alerts when the clipboard API silently fails.
+function copyToClipboardWithToast(url, successMsg){
+  function legacyCopy(t){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch(_) { return false; }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){
+        toastSuccess(successMsg || '🔗 Link copied!');
+      }).catch(function(){
+        if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+        else toastError('Couldn\'t copy — long-press the link to copy');
+      });
+      return;
+    }
+    if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+    else toastError('Couldn\'t copy — long-press the link to copy');
+  } catch(e) {
+    if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+    else toastError('Couldn\'t copy — long-press the link to copy');
+  }
+}
 
 var COUNTRIES=[
   ['AF','Afghanistan','+93'],['AL','Albania','+355'],['DZ','Algeria','+213'],['AD','Andorra','+376'],['AO','Angola','+244'],
@@ -2348,7 +2383,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               if(!p) return null;
               var items=[
                 {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){sbProfile.from('posts').delete().eq('id',p.id).then(function(){});setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
-                {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuProf(null);}},
+                {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuProf(null);}},
                 {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenuProf(null);}},
                 {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenuProf(null);}}
               ];
@@ -2404,8 +2439,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               React.createElement('button',{
                 onClick:function(){
                   var url='https://ring-in.vercel.app/post/'+p.id;
-                  if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url});}
-                  else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+                  if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url}).catch(function(){});}
+                  else{copyToClipboardWithToast(url,'🔗 Link copied to clipboard');}
                 },
                 style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
               },'↗ Share')

@@ -26,7 +26,7 @@ th{font-weight:700;text-align:left;padding:7px 9px;font-size:9pt;color:#444;bord
 td{padding:7px 9px;border-bottom:1px solid #ECECF2;vertical-align:top}
 td.loc{font-family:ui-monospace,monospace;font-size:8.5pt;color:#5746af;font-weight:600}
 td.bug{line-height:1.4}
-td.fix{font-style:italic;color:#1D9E75;font-size:9pt}
+td.fix{font-style:italic;color:#1D9E75;font-size:9pt;line-height:1.45}
 .status{display:inline-block;padding:2px 8px;border-radius:99px;font-size:8.5pt;font-weight:700;letter-spacing:0.3px;white-space:nowrap}
 .status.done{background:#E8F8EE;color:#0E5A2E;border:1px solid #A0E0BC}
 .status.prog{background:#FFF9D6;color:#7E5C0A;border:1px solid #F0D880}
@@ -51,58 +51,58 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>🚧 Work in progress</h2>
-<p>Fixing HomeScreen + Feed and Messages + Chat right now. Refresh this PDF to see status flip from TODO → IN PROGRESS → DONE.</p>
+<h2>✅ 13 of 25 fixes shipped — HomeScreen + Messages critical bugs all done</h2>
+<p>Code changes are in. Building APK v3.25 + publishing OTA bundle now. Refresh in a few minutes for build/publish status.</p>
 </div>
 
 <div class="stats">
-<div class="stat done"><span class="n">0</span><div class="l">Done</div></div>
-<div class="stat prog"><span class="n">0</span><div class="l">In Progress</div></div>
-<div class="stat todo"><span class="n">25</span><div class="l">To Do</div></div>
+<div class="stat done"><span class="n">13</span><div class="l">Done</div></div>
+<div class="stat prog"><span class="n">1</span><div class="l">In Progress</div></div>
+<div class="stat todo"><span class="n">11</span><div class="l">To Do</div></div>
 <div class="stat skip"><span class="n">0</span><div class="l">Skipped</div></div>
 </div>
 
-<h2>📺 HomeScreen + Feed (14 bugs)</h2>
+<h2>📺 HomeScreen + Feed</h2>
 <table>
-<thead><tr><th>Bug</th><th>Status</th><th>Fix</th></tr></thead>
+<thead><tr><th>Bug</th><th>Status</th><th>Fix shipped</th></tr></thead>
 <tbody>
-<tr><td class="bug">Edit Post broken — uses p.content but posts use p.text</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Location filter chips have no onClick</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Audience filter not enforced on feed read</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">No pull-to-refresh</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
+<tr><td class="bug">Edit Post broken — uses p.content but posts use p.text → modal opened empty</td><td><span class="status done">DONE</span></td><td class="fix">Now reads p.text||p.content||''. saveEditPost also updates userPosts array + optimistic write + rollback on error + success toast</td></tr>
+<tr><td class="bug">Location filter chips (Dubai / Abu Dhabi / Online Only / All Locations) have no onClick</td><td><span class="status done">DONE</span></td><td class="fix">Added locFilter state, wired all 4 chips, filter EXPERTS by loc field (Dubai / Abu Dhabi / Remote)</td></tr>
+<tr><td class="bug">Audience selector saved to DB but never enforced on feed read</td><td><span class="status done">DONE</span></td><td class="fix">Client-side filter on src array: public→all, followers→only-if-follower-of-author, only_me→only-author</td></tr>
+<tr><td class="bug">No pull-to-refresh on feed</td><td><span class="status done">DONE</span></td><td class="fix">Added pullDistH/refreshingH state + onTouchStart/Move/End on wrapper; only arms when scrolled to top; haptic on release</td></tr>
+<tr><td class="bug">"See all" link on Online Now strip has no onClick</td><td><span class="status done">DONE</span></td><td class="fix">Added onGoToSearch prop in App.js; wired the sa span onClick to switch to Experts tab</td></tr>
+<tr><td class="bug">Wallet coin chip hardcoded "1,240" — never read real balance</td><td><span class="status done">DONE</span></td><td class="fix">Added coinBal state, useEffect loads profiles.coins on mount, localStorage cache for instant paint</td></tr>
+<tr><td class="bug">alert('Link copied') fires even when clipboard fails (8 call sites)</td><td><span class="status done">DONE</span></td><td class="fix">New copyToClipboardWithToast helper in HomeScreen + ProfileScreen: toast on real success, "Couldn't copy" on failure, legacy execCommand fallback</td></tr>
 <tr><td class="bug">EXPERTS array hardcoded mock data</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Wallet coin chip hardcoded "1,240"</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">"See all" link has no onClick</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Manual "Load more" button vs auto-load</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Feed cache ignored on remount</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Carousel idx resets on every scroll</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">N+1 follower notif query</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Comments cache has no TTL</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Online experts strip has no quick-message button</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">alert('Link copied') fires even when clipboard fails</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 </tbody>
 </table>
 
-<h2>💬 Messages + Chat (11 bugs)</h2>
+<h2>💬 Messages + Chat</h2>
 <table>
-<thead><tr><th>Bug</th><th>Status</th><th>Fix</th></tr></thead>
+<thead><tr><th>Bug</th><th>Status</th><th>Fix shipped</th></tr></thead>
 <tbody>
-<tr><td class="bug">Coin chip hardcoded "1,240"</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Pull-to-refresh decorative — touch handlers missing</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
+<tr><td class="bug">Coin chip hardcoded "1,240"</td><td><span class="status done">DONE</span></td><td class="fix">Added coinBal state + useEffect that loads profiles.coins, falls back to localStorage cache, locale-formatted</td></tr>
+<tr><td class="bug">Block-on-send broken — used convo.id (which is `uuid1_uuid2`), never matched blocked list</td><td><span class="status done">DONE</span></td><td class="fix">otherId derivation now falls through other_user_id → otherId → receiverId → splits convId by myId. Guard only fires when otherId is a real UUID</td></tr>
+<tr><td class="bug">Restrict toggle does NOTHING — writes table but no downstream enforcement</td><td><span class="status done">DONE</span></td><td class="fix">Realtime listener checks restrictedSet.has(sender_id): suppresses notification sound (chat+inbox), unread badge bump, typing indicator broadcast</td></tr>
+<tr><td class="bug">Photo optimistic createObjectURL never revoked → memory leak</td><td><span class="status done">DONE</span></td><td class="fix">Added revokeLocal() helper; URL.revokeObjectURL fires after CDN URL replaces blob (success path) + all error paths + compression-failure fallback</td></tr>
+<tr><td class="bug">Reactions briefly show stale data when switching chats</td><td><span class="status done">DONE</span></td><td class="fix">Added effect that resets reactionsByMsg={} on convId change; load-effect dep array now includes convId</td></tr>
+<tr><td class="bug">No mute icon in inbox list for muted convos</td><td><span class="status done">DONE</span></td><td class="fix">Added 🔕 next to convo name when mutedConvos.includes(convId) — Instagram/WhatsApp convention</td></tr>
+<tr><td class="bug">"Last seen" never surfaced in chat header</td><td><span class="status done">DONE</span></td><td class="fix">Added otherLastSeen state, fetched alongside avatar/name with graceful fallback if column missing; header subtitle now priority-chains typing→Online→last seen Xm ago→role</td></tr>
+<tr><td class="bug">Pull-to-refresh decorative — touch handlers missing</td><td><span class="status done">DONE</span></td><td class="fix">Wired onTouchStart/Move/End on the wrapper div; calls refreshConvos() if pullDist > 50; only arms when scrolled to top</td></tr>
 <tr><td class="bug">Experts tab — 3 hardcoded mock convos, Call doesn't ring</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Restrict toggle does NOTHING — no downstream enforcement</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Block-on-send broken — wrong UUID lookup</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Groups + Business tabs are coming-soon placeholders</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">No mute icon in inbox list for muted convos</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">"Last seen" never surfaced in chat header</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Reactions briefly show stale data when switching chats</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Photo optimistic createObjectURL never revoked → leak</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">No typing indicator in inbox row</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 </tbody>
 </table>
 
 <footer>
-RingIn fix tracker · Webstreax Technologies Pvt Ltd · Updated as fixes ship
+RingIn fix tracker · Webstreax Technologies Pvt Ltd · Updated as fixes ship · Next: APK v3.25 build + OTA bundle
 </footer>
 </div>
 </body>
