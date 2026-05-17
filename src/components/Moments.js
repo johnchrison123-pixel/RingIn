@@ -719,45 +719,63 @@ function MomentViewer(props){
         style:{background:'transparent',border:'none',color:'#fff',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'4px 6px',fontWeight:300,flexShrink:0}
       }, '×')
     ),
-    // Caption — gradient slides: big centred text. Image slides: smaller
-    // text sitting above the composer with a subtle dark backdrop so it
-    // stays legible over any photo.
+    // Caption — image slides get a small blur card above the composer,
+    // text-only slides get big centered text. Both use a position:absolute
+    // wrapper that fills the face + flex-centers the caption inside.
+    // This pattern is rock-solid under 3D-transformed parents (cube swipe)
+    // where the previous flex/transform-translateY approaches silently
+    // dropped the caption from the render.
     captionText ? (hasImage ? React.createElement('div', {
+      // Image caption: wrapper anchored to BOTTOM of the face. Inner
+      // blur-card is in normal flow inside the wrapper.
       style:{
         position:'absolute',
         left:'14px', right:'14px',
         bottom:'calc(74px + env(safe-area-inset-bottom, 0px))',
-        background:'rgba(0,0,0,0.42)',
-        backdropFilter:'blur(4px)',
-        WebkitBackdropFilter:'blur(4px)',
-        borderRadius:'14px',
-        padding:'10px 14px',
-        fontSize:'14px',
-        fontWeight:600,
-        lineHeight:1.35,
-        textAlign:'center',
         zIndex:2,
-        textShadow:'0 1px 6px rgba(0,0,0,0.4)',
+        pointerEvents:'none',
       }
-    }, captionText) : React.createElement('div', {
-      // Absolute-positioned so the caption renders correctly when the
-      // parent face is 3D-rotated (cube swipe). Was position:relative
-      // inside a flex container — that combo silently dropped the
-      // caption during rotation because flex layout doesn't play well
-      // with 3D-transformed ancestors.
+    },
+      React.createElement('div', {
+        style:{
+          background:'rgba(0,0,0,0.42)',
+          backdropFilter:'blur(4px)',
+          WebkitBackdropFilter:'blur(4px)',
+          borderRadius:'14px',
+          padding:'10px 14px',
+          fontSize:'14px',
+          fontWeight:600,
+          lineHeight:1.35,
+          textAlign:'center',
+          color:'#fff',
+          textShadow:'0 1px 6px rgba(0,0,0,0.4)',
+        }
+      }, captionText)
+    ) : React.createElement('div', {
+      // Text caption: wrapper FILLS the face (inset:0), flex-centers
+      // the inner text block. No transform on the inner element so
+      // 3D-transformed ancestors don't break it.
       style:{
         position:'absolute',
-        left:'24px', right:'24px',
-        top:'50%',
-        transform:'translateY(-50%)',
-        fontSize:'26px', fontWeight:800, lineHeight:1.3,
-        textAlign:'center',
-        textShadow:'0 2px 16px rgba(0,0,0,0.35)',
-        fontFamily:'Syne, DM Sans, sans-serif',
+        top:0, right:0, bottom:0, left:0,
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        padding:'24px',
         zIndex:1,
-        color:'#fff',
+        pointerEvents:'none',
       }
-    }, captionText)) : null,
+    },
+      React.createElement('div', {
+        style:{
+          fontSize:'26px', fontWeight:800, lineHeight:1.3,
+          textAlign:'center', maxWidth:'82%',
+          color:'#fff',
+          textShadow:'0 2px 16px rgba(0,0,0,0.35)',
+          fontFamily:'Syne, DM Sans, sans-serif',
+        }
+      }, captionText)
+    )) : null,
     // ── Reply composer + actions row (bottom) ─────────────────────────────
     // Sits above the home-indicator safe area. Tapping anywhere here MUST
     // NOT trigger the tap-navigate handler on the parent, so every event
@@ -1064,30 +1082,49 @@ function MomentViewer(props){
         }, (name || '?').charAt(0).toUpperCase()),
         React.createElement('div', null, name)
       ),
-      // Caption — same look as current slide so the transition is seamless.
+      // Caption — same wrapper+flex pattern as the current slide so the
+      // transition is seamless. The flex-centered inner element renders
+      // reliably under the parent face's 3D rotation.
       caption ? (hasImg ? React.createElement('div', {
         style: {
           position: 'absolute',
           left: '14px', right: '14px',
           bottom: 'calc(74px + env(safe-area-inset-bottom, 0px))',
-          background: 'rgba(0,0,0,0.42)',
-          backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-          borderRadius: '14px',
-          padding: '10px 14px',
-          fontSize: '14px', fontWeight: 600, lineHeight: 1.35,
-          textAlign: 'center', color: '#fff',
-          textShadow: '0 1px 6px rgba(0,0,0,0.4)',
+          zIndex: 2,
         }
-      }, caption) : React.createElement('div', {
+      },
+        React.createElement('div', {
+          style: {
+            background: 'rgba(0,0,0,0.42)',
+            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+            borderRadius: '14px',
+            padding: '10px 14px',
+            fontSize: '14px', fontWeight: 600, lineHeight: 1.35,
+            textAlign: 'center', color: '#fff',
+            textShadow: '0 1px 6px rgba(0,0,0,0.4)',
+          }
+        }, caption)
+      ) : React.createElement('div', {
         style: {
-          position: 'absolute', left: '24px', right: '24px', top: '50%',
-          transform: 'translateY(-50%)',
-          fontSize: '24px', fontWeight: 800, lineHeight: 1.3,
-          textAlign: 'center', color: '#fff',
-          textShadow: '0 2px 16px rgba(0,0,0,0.35)',
-          fontFamily: 'Syne, DM Sans, sans-serif',
+          position: 'absolute',
+          top: 0, right: 0, bottom: 0, left: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          zIndex: 1,
         }
-      }, caption)) : null,
+      },
+        React.createElement('div', {
+          style: {
+            fontSize: '24px', fontWeight: 800, lineHeight: 1.3,
+            textAlign: 'center', maxWidth: '82%',
+            color: '#fff',
+            textShadow: '0 2px 16px rgba(0,0,0,0.35)',
+            fontFamily: 'Syne, DM Sans, sans-serif',
+          }
+        }, caption)
+      )) : null,
       // Simple progress bar placeholder so the chrome matches the current slide
       React.createElement('div', {
         style: {
