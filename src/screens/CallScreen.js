@@ -5,6 +5,7 @@ import * as NativeAudio from '../utils/nativeAudio';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
+import {setSharedCoinBalance} from '../utils/coinBalance';
 
 // ── Module-level SVG nodes ─────────────────────────────────────────────────
 // React.createElement creates a fresh object on every render. Hoisting the
@@ -354,6 +355,10 @@ export default function CallScreen(props){
           setLocalCoins(function(c){
             var nc = c - rate;
             if(onCoinsChange) onCoinsChange(nc);
+            // Broadcast the new balance to every chip in the app so the
+            // user sees the deduction in real time on Home / Messages /
+            // Search even before the call ends.
+            try { setSharedCoinBalance(Math.max(0, nc)); } catch(_) {}
             if(nc <= 0){ hangup('no_coins'); return 0; }
             return nc;
           });
@@ -425,6 +430,32 @@ export default function CallScreen(props){
           });
         }
       } catch(e){ console.error('[ringin] call log error:', e); }
+    }
+
+    // Persist the final coin total to Supabase (caller only — callees
+    // don't get charged). The realtime UPDATE listener in useCoinBalance
+    // will then push the new value to every other open device.
+    if (!isIncoming && session && session.user) {
+      try {
+        var finalCoins = Math.max(0, Number(localCoins) || 0);
+        sb.from('profiles').update({ coins: finalCoins }).eq('id', session.user.id).then(function(r){
+          if (r && r.error) console.warn('[ringin] coin persist failed:', r.error.message || r.error);
+        });
+        // Log the deduction so the user can see it in Wallet transactions.
+        var deducted = (Number(coins) || 0) - finalCoins;
+        if (deducted > 0) {
+          sb.from('transactions').insert([{
+            user_id: session.user.id,
+            type: 'call',
+            label: 'Call with ' + (expert && expert.name ? expert.name : 'expert'),
+            coins: -deducted,
+            amount: 0,
+          }]).then(function(){});
+        }
+        // Broadcast one last time in case the per-minute tick missed a
+        // partial-minute deduction at the very end.
+        setSharedCoinBalance(finalCoins);
+      } catch(_) {}
     }
 
     setPhase('ended');

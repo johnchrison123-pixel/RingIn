@@ -16,6 +16,7 @@ import compressImage from '../utils/compressImage';
 import {useHideLikes} from '../utils/likeDisplayPref';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
+import {useCoinBalance} from '../utils/coinBalance';
 
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
@@ -1064,7 +1065,9 @@ export default function HomeScreen(props){
   var loadMoreHS=useState(false); var loadMoreH=loadMoreHS[0]; var setLoadMoreH=loadMoreHS[1];
   var notifsS=useState([]); var notifs=notifsS[0]; var setNotifs=notifsS[1];
   var unreadNotifS=useState(0); var unreadNotif=unreadNotifS[0]; var setUnreadNotif=unreadNotifS[1];
-  var coinBalS=useState(function(){try{var v=localStorage.getItem('ringin_coin_balance');return v?Number(v)||0:0;}catch(e){return 0;}}); var coinBal=coinBalS[0]; var setCoinBal=coinBalS[1];
+  // Shared coin balance — synced across HomeScreen / Messages / Search /
+  // Wallet via the useCoinBalance hook. Single source of truth, realtime.
+  var coinBal = useCoinBalance(currentUserId, sbHome);
   var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
   var compImgsS=useState([]); var compImgs=compImgsS[0]; var setCompImgs=compImgsS[1];
   var compVideoS=useState(null); var compVideo=compVideoS[0]; var setCompVideo=compVideoS[1];
@@ -1157,17 +1160,16 @@ export default function HomeScreen(props){
     var newText = editPostData.content;
     var pid = editPostData.id;
     var snapPosts = posts.slice();
-    var snapUserPosts = userPosts.slice();
-    // Optimistic update on both arrays
+    // Optimistic update on the main feed only — userPosts (UserProfileView)
+    // is in a sibling component scope, refreshes via the realtime
+    // 'public-posts' channel listener after the DB write lands.
     setPosts(function(prev){return prev.map(function(x){return x.id===pid?Object.assign({},x,{text:newText}):x;});});
-    setUserPosts(function(prev){return prev.map(function(x){return x.id===pid?Object.assign({},x,{text:newText}):x;});});
     setShowEditPost(false);
     setEditPostData(null);
     sbHome.from('posts').update({text:newText}).eq('id',pid).then(function(r){
       if(r.error){
         console.error('RingIn Error [saveEditPost]:', r.error && r.error.message ? r.error.message : 'Unknown error');
         setPosts(snapPosts);
-        setUserPosts(snapUserPosts);
         try{toastError('Failed to edit. Try again.');}catch(e){alert('Something went wrong. Please try again.');}
         return;
       }
@@ -1232,19 +1234,6 @@ export default function HomeScreen(props){
     };
   }
 
-  // Load coin balance once on mount so the top-bar chip shows the real value
-  // (previously hardcoded to "1,240"). Cached in localStorage for instant
-  // paint on next mount; refreshed from Supabase on every mount.
-  useEffect(function(){
-    if(!currentUserId) return;
-    sbHome.from('profiles').select('coins').eq('id',currentUserId).single().then(function(r){
-      if(r && r.data && r.data.coins != null){
-        var b = Number(r.data.coins) || 0;
-        setCoinBal(b);
-        try{ localStorage.setItem('ringin_coin_balance', String(b)); }catch(e){}
-      }
-    });
-  },[currentUserId]);
 
   // Refetch the feed from Supabase — used by initial mount AND
   // pull-to-refresh.

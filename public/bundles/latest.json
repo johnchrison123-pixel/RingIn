@@ -1,13 +1,13 @@
 {
-  "version": "2026.0517.2348",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.2348.zip",
-  "published_at": "2026-05-17T23:48:00Z",
+  "version": "2026.0518.0001",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0001.zip",
+  "published_at": "2026-05-18T00:01:00Z",
   "git_sha": "manual",
-  "title": "Hotfix — Messages tab crash (mutedConvos / restrictedSet)",
+  "title": "Coin balance now syncs everywhere + Edit Post crash fix",
   "notes": [
-    "CRITICAL FIX: Messages + Connect + other tabs no longer crash with 'mutedConvos is not defined'",
-    "Root cause: yesterday's mute-icon + restrict-enforcement patch referenced ChatBox-scoped variables from MessagesScreen scope",
-    "Fix: inbox now has its own mutedConvos + restrictedSet state, kept in sync via storage events",
-    "All 13 earlier audit fixes (Edit Post, location chips, audience filter, etc.) still in this bundle"
+    "FIX: Coin chip on Home / Messages / Search / Wallet now shows the same balance — any change (purchase, call deduct, promo) propagates everywhere instantly",
+    "FIX: Edit Post no longer crashes the feed tab — saveEditPost was referencing variables only available on user-profile views",
+    "NEW: Calls deduct coins live (every 60s) and persist the final total to your profile on hang-up — works across devices via Supabase realtime",
+    "NEW: Wallet purchase instantly updates every chip in the app, no more stale 1,240"
   ]
 }

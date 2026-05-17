@@ -5,6 +5,7 @@ import {sb} from '../utils/supabase';
 import {useFollow} from './useFollow';
 import {playSound} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
+import {useCoinBalance} from '../utils/coinBalance';
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
@@ -100,6 +101,8 @@ export default function SearchScreen(props){
   var following = followHook.following;
   var toggleFollow = followHook.toggleFollow;
   var followLoaded = followHook.loaded;
+  // Shared coin balance — synced with HomeScreen / Messages / Wallet.
+  var coinBal = useCoinBalance(currentUserId, sb);
   // useEffect LAST
   useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
 
@@ -155,7 +158,7 @@ export default function SearchScreen(props){
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
         React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
-          React.createElement('span',null,'1,240')
+          React.createElement('span',null,(Number(coinBal)||0).toLocaleString())
         ),
         React.createElement(TopBarAvatar, {
           session: props.session,

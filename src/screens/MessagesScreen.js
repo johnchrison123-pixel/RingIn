@@ -8,6 +8,7 @@ import AvatarRing from '../components/AvatarRing';
 import {useMomentUserIds} from '../utils/momentUsers';
 import compressImage from '../utils/compressImage';
 import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
+import {useCoinBalance} from '../utils/coinBalance';
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -1334,7 +1335,9 @@ export default function MessagesScreen(props){
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
-  var coinBalS=useState(function(){try{var v=localStorage.getItem('ringin_coin_balance');return v?Number(v)||0:0;}catch(e){return 0;}}); var coinBal=coinBalS[0]; var setCoinBal=coinBalS[1];
+  // Shared coin balance — synced across all screens. Replaces the
+  // per-screen local cache that didn't update after a wallet purchase.
+  var coinBal = useCoinBalance(myId, sb);
   // Muted conversations list — read at MessagesScreen scope so the inbox
   // can render the 🔕 icon next to muted convos. (ChatBox has its own copy
   // for the chat-header mute menu.)
@@ -1448,19 +1451,6 @@ export default function MessagesScreen(props){
     }
   },[props.initConvo]);
 
-  // Real coin balance from profiles.coins — replaces hardcoded "1,240".
-  // Cached in localStorage so the chip paints with the last-known value
-  // before Supabase round-trip lands.
-  useEffect(function(){
-    if(!myId) return;
-    sb.from('profiles').select('coins').eq('id',myId).single().then(function(r){
-      if(r && r.data && r.data.coins != null){
-        var b = Number(r.data.coins) || 0;
-        setCoinBal(b);
-        try{ localStorage.setItem('ringin_coin_balance', String(b)); }catch(e){}
-      }
-    });
-  },[myId]);
 
   // Refresh conversations when user comes back to tab (don't remove channels — ChatBox manages its own)
   useEffect(function(){

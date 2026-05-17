@@ -2,6 +2,7 @@
 import React,{useState,useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import {toastSuccess,toastError} from '../utils/toast';
+import {useCoinBalance, setSharedCoinBalance} from '../utils/coinBalance';
 
 var PACKAGES=[
   {id:1,coins:100,price:100,label:'Starter',bonus:0,popular:false},
@@ -17,7 +18,11 @@ export default function WalletScreen(props){
   var session = props.session;
   var userId = session && session.user ? session.user.id : null;
 
-  var balS=useState(0); var balance=balS[0]; var setBalance=balS[1];
+  // Balance comes from the shared hook so any change here (purchase)
+  // propagates instantly to HomeScreen / Messages / Search chips, and
+  // any change there (call deduct, promo) lands here too.
+  var balance = useCoinBalance(userId, sb);
+  function setBalance(n){ setSharedCoinBalance(n); } // local helper that broadcasts
   var selS=useState(null); var selected=selS[0]; var setSelected=selS[1];
   var payS=useState('card'); var payMethod=payS[0]; var setPayMethod=payS[1];
   var upiS=useState(''); var upiId=upiS[0]; var setUpiId=upiS[1];
