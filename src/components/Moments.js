@@ -77,6 +77,16 @@ function MomentViewer(props){
   // Owner-only 3-dot menu (Delete moment, Save to phone, Copy link).
   var ownMenuS = useState(false);
   var ownMenu = ownMenuS[0]; var setOwnMenu = ownMenuS[1];
+  // Share sheet — bottom popup with frosted glass. Two sections:
+  //   1) "Send to" — horizontal scroll of people you follow / who follow you
+  //   2) "More" — native share (WhatsApp / system share sheet) + copy link
+  var shareSheetS = useState(false);
+  var shareSheet = shareSheetS[0]; var setShareSheet = shareSheetS[1];
+  var shareContactsS = useState([]);   // [{id, full_name, avatar_url}]
+  var shareContacts = shareContactsS[0]; var setShareContacts = shareContactsS[1];
+  var shareSentRef = useRef({});       // {userId: true} — to mark "Sent" pill on tap
+  var shareSentRevS = useState(0);     // bump to force re-render after ref change
+  var shareSentRev = shareSentRevS[0]; var setShareSentRev = shareSentRevS[1];
   // viewer_id → profile {id, full_name, avatar_url}. Hydrated when the
   // owner opens the "Seen by N" sheet so we render real names + avatars
   // instead of raw UUIDs.
@@ -236,6 +246,70 @@ function MomentViewer(props){
     showToast(emoji + ' sent');
   }
 
+  // Fetch the people you can DM (followers + following, deduped) when
+  // the share sheet opens. Cached for the session — re-fetching every
+  // time would be wasteful.
+  useEffect(function(){
+    if (!shareSheet || !myUserId) return;
+    if (shareContacts && shareContacts.length > 0) return; // already loaded
+    try {
+      // Following list (users I follow)
+      var pFollowing = sb.from('follows').select('following_id').eq('follower_id', myUserId);
+      // Followers list (users who follow me)
+      var pFollowers = sb.from('follows').select('follower_id').eq('following_id', myUserId);
+      Promise.all([pFollowing, pFollowers]).then(function(results){
+        var ids = {};
+        if (results[0] && results[0].data) results[0].data.forEach(function(r){ if (r.following_id) ids[r.following_id] = true; });
+        if (results[1] && results[1].data) results[1].data.forEach(function(r){ if (r.follower_id) ids[r.follower_id] = true; });
+        var idList = Object.keys(ids);
+        if (!idList.length) { setShareContacts([]); return; }
+        sb.from('profiles').select('id, full_name, avatar_url').in('id', idList).then(function(r){
+          if (r && r.data) setShareContacts(r.data);
+          else setShareContacts([]);
+        });
+      });
+    } catch(_){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareSheet, myUserId]);
+
+  // Build a share link for the current slide.
+  function buildShareLink(){
+    var c = slides[idx];
+    if (!c) return 'https://ring-in.vercel.app/';
+    return 'https://ring-in.vercel.app/?moment=' + encodeURIComponent(c.id);
+  }
+
+  // Send the moment to a specific person as a chat message.
+  function sendMomentToUser(u){
+    if (!u || !u.id || !myUserId) return;
+    var link = buildShareLink();
+    var payload = '[mshare]' + link + '|' + (captionText || 'Shared a moment');
+    try {
+      // First check for existing conversation between the two users.
+      sb.from('conversations').select('id').or('and(user1_id.eq.' + myUserId + ',user2_id.eq.' + u.id + '),and(user1_id.eq.' + u.id + ',user2_id.eq.' + myUserId + ')').limit(1).then(function(rConv){
+        function send(convId){
+          if (!convId) return;
+          sb.from('messages').insert([{
+            conversation_id: convId,
+            sender_id: myUserId,
+            content: payload,
+          }]).then(function(){}).catch(function(){});
+        }
+        if (rConv && rConv.data && rConv.data[0]) {
+          send(rConv.data[0].id);
+        } else {
+          // Create a new conversation
+          sb.from('conversations').insert([{ user1_id: myUserId, user2_id: u.id }]).select('id').single().then(function(r){
+            if (r && r.data) send(r.data.id);
+          });
+        }
+      });
+    } catch(_){}
+    // Mark as sent in the UI immediately (optimistic)
+    shareSentRef.current[u.id] = true;
+    setShareSentRev(function(n){ return n + 1; });
+  }
+
   // Owner-only delete (matches Instagram's "Delete" option on own stories).
   function deleteOwnMoment(){
     setOwnMenu(false);
@@ -289,10 +363,8 @@ function MomentViewer(props){
     var nowLiked = !likedNow;
     setLikedFor(cur.id, nowLiked);
     setLikedNow(nowLiked);
-    // Liking pins the slide — viewer stays still and auto-advance halts.
-    setInteracted(true);
-    // Only drop a chat message on the transition from unliked → liked, so
-    // toggling on/off doesn't spam the recipient's chat.
+    // Liking no longer pins the slide — user complained that the viewer
+    // would get "stuck" after a like. Auto-advance continues normally.
     if(nowLiked && typeof onLike === 'function'){
       try{ onLike(moment, cur); }catch(_){}
       showToast('Liked ❤️');
@@ -309,9 +381,9 @@ function MomentViewer(props){
     }
     setReplyText('');
     setPaused(false);
-    // Pin the slide after sending — don't auto-advance, don't auto-close.
-    // The user taps to move on when they're ready.
-    setInteracted(true);
+    // Auto-advance resumes naturally — user complained that the viewer
+    // got "stuck" after sending a reply. Previously setInteracted(true)
+    // halted the timer; removed.
     showToast('Sent ✓');
   }
 
@@ -870,27 +942,18 @@ function MomentViewer(props){
             cursor:'pointer', flexShrink:0,
           }
         }, likedNow ? '❤️' : '🤍'),
-        // Share button (right of heart). Uses the Web Share API where
-        // available (native Android share sheet, iOS PWA share sheet);
-        // falls back to copying a link to the clipboard.
+        // Share button (right of heart). Opens the frosted bottom sheet
+        // with "Send to" (followers + following) + "More" (system share,
+        // copy link). The bottom sheet is rendered below in the overlay.
         React.createElement('button', {
           key:'share',
           onClick: function(e){
             if (e && e.stopPropagation) e.stopPropagation();
-            var cur4 = slides[idx]; if (!cur4) return;
-            var link = 'https://ring-in.vercel.app/?moment=' + encodeURIComponent(cur4.id);
-            var shareData = { title: 'Moment on RingIn', text: captionText || 'Check this moment on RingIn', url: link };
-            try {
-              if (navigator.share) {
-                navigator.share(shareData).then(function(){ showToast('Shared'); }).catch(function(){});
-              } else {
-                try { navigator.clipboard.writeText(link); } catch(_){}
-                showToast('Link copied');
-              }
-            } catch(_) {
-              try { navigator.clipboard.writeText(link); } catch(_){}
-              showToast('Link copied');
-            }
+            // Reset the "Sent" indicators each time the sheet opens.
+            shareSentRef.current = {};
+            setShareSentRev(0);
+            setShareSheet(true);
+            setHoldPaused(true);  // pause auto-advance while picking
           },
           className:'ringin-tap',
           title:'Share',
@@ -931,6 +994,171 @@ function MomentViewer(props){
     // (Quick-emoji-reactions row removed per user feedback — the bottom
     // composer now has just the Eye/Reply/Like/Share row, matching the
     // requested Instagram-like layout.)
+    // ── Share sheet (frosted bottom sheet) ──────────────────────────
+    // Opens when user taps the paper-plane share button. Two sections:
+    //   "Send to" — horizontal scroll of avatars (followers + following).
+    //                Tap an avatar → moment link is DMed to that user.
+    //   "More"    — Share to apps (system share sheet for WhatsApp etc.)
+    //                + Copy link.
+    shareSheet ? React.createElement('div', {
+      onClick: function(){ setShareSheet(false); setHoldPaused(false); },
+      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style: {
+        position: 'absolute', inset: 0, zIndex: 12,
+        background: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style: {
+          width: '100%',
+          maxWidth: '480px',
+          // Frosted glass — translucent dark + heavy blur for the
+          // "frosty" look the user asked for.
+          background: 'rgba(20,18,32,0.78)',
+          backdropFilter: 'blur(48px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(48px) saturate(160%)',
+          borderTopLeftRadius: '24px',
+          borderTopRightRadius: '24px',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderBottom: 'none',
+          padding: '10px 0 calc(20px + env(safe-area-inset-bottom, 0px))',
+          color: '#fff',
+          fontFamily: 'DM Sans, system-ui, sans-serif',
+          maxHeight: '78%',
+          overflowY: 'auto',
+          boxShadow: '0 -10px 40px rgba(0,0,0,0.45)',
+          animation: 'ringinSlideUp 280ms cubic-bezier(0.22,0.61,0.36,1)',
+        }
+      },
+        // Drag handle
+        React.createElement('div', {
+          style: { width: '42px', height: '4px', background: 'rgba(255,255,255,0.28)', borderRadius: '2px', margin: '4px auto 16px' }
+        }),
+        // ── SEND TO section ────────────────────────────────────────
+        React.createElement('div', { style: { padding: '0 18px 6px' } },
+          React.createElement('div', {
+            style: { fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px' }
+          }, 'Send to')
+        ),
+        shareContacts && shareContacts.length > 0 ? React.createElement('div', {
+          style: {
+            display: 'flex', gap: '14px',
+            overflowX: 'auto', overflowY: 'hidden',
+            padding: '4px 18px 14px',
+            scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+          }
+        },
+          shareContacts.map(function(u){
+            var nameText = u.full_name || 'User';
+            var initials = (nameText || '?').charAt(0).toUpperCase();
+            var sent = !!shareSentRef.current[u.id];
+            return React.createElement('div', {
+              key: u.id,
+              onClick: function(e){ e.stopPropagation(); sendMomentToUser(u); },
+              style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0, cursor: 'pointer', minWidth: '64px' }
+            },
+              React.createElement('div', {
+                style: {
+                  width: '58px', height: '58px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '18px', fontWeight: 700, color: '#fff',
+                  overflow: 'hidden',
+                  border: sent ? '2.5px solid #39FF14' : '2.5px solid transparent',
+                  boxShadow: sent ? '0 0 12px rgba(57,255,20,0.6)' : 'none',
+                  transition: 'border 200ms, box-shadow 200ms',
+                }
+              },
+                u.avatar_url ? React.createElement('img', { src: u.avatar_url, alt: '', style: { width: '100%', height: '100%', objectFit: 'cover' } }) : initials
+              ),
+              React.createElement('div', {
+                style: { fontSize: '11px', color: sent ? '#39FF14' : 'rgba(255,255,255,0.85)', fontWeight: 600, maxWidth: '64px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+              }, sent ? 'Sent ✓' : (nameText.split(' ')[0]))
+            );
+          })
+        ) : React.createElement('div', {
+          style: { padding: '8px 18px 18px', fontSize: '13px', color: 'rgba(255,255,255,0.55)', textAlign: 'center' }
+        }, 'No contacts yet — follow some people to send moments here.'),
+        // Divider
+        React.createElement('div', { style: { height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 18px 14px' } }),
+        // ── MORE section ───────────────────────────────────────────
+        React.createElement('div', { style: { padding: '0 18px 6px' } },
+          React.createElement('div', {
+            style: { fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px' }
+          }, 'More')
+        ),
+        React.createElement('div', {
+          style: {
+            display: 'flex', gap: '14px',
+            overflowX: 'auto', overflowY: 'hidden',
+            padding: '4px 18px 8px',
+            scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+          }
+        },
+          // System share (opens WhatsApp / iMessage / Twitter / etc.)
+          React.createElement('div', {
+            onClick: function(e){
+              e.stopPropagation();
+              var link = buildShareLink();
+              var shareData = { title: 'Moment on RingIn', text: captionText || 'Check this moment on RingIn', url: link };
+              try {
+                if (navigator.share) {
+                  navigator.share(shareData).then(function(){ showToast('Shared'); }).catch(function(){});
+                } else {
+                  try { navigator.clipboard.writeText(link); } catch(_){}
+                  showToast('Link copied');
+                }
+              } catch(_){
+                try { navigator.clipboard.writeText(link); } catch(_){}
+                showToast('Link copied');
+              }
+              setShareSheet(false); setHoldPaused(false);
+            },
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', minWidth: '64px' }
+          },
+            React.createElement('div', {
+              style: { width: '58px', height: '58px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }
+            }, '📲'),
+            React.createElement('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 600 } }, 'Share to apps')
+          ),
+          // Copy link
+          React.createElement('div', {
+            onClick: function(e){
+              e.stopPropagation();
+              var link = buildShareLink();
+              try { navigator.clipboard.writeText(link); } catch(_){}
+              showToast('Link copied');
+              setShareSheet(false); setHoldPaused(false);
+            },
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', minWidth: '64px' }
+          },
+            React.createElement('div', {
+              style: { width: '58px', height: '58px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }
+            }, '🔗'),
+            React.createElement('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 600 } }, 'Copy link')
+          )
+        ),
+        // Cancel button
+        React.createElement('button', {
+          onClick: function(e){ e.stopPropagation(); setShareSheet(false); setHoldPaused(false); },
+          style: {
+            margin: '14px 18px 0', padding: '14px 16px',
+            background: 'rgba(255,255,255,0.08)', border: 'none',
+            borderRadius: '14px',
+            color: '#fff', fontSize: '14px', fontWeight: 600,
+            cursor: 'pointer', fontFamily: 'inherit',
+            width: 'calc(100% - 36px)',
+          }
+        }, 'Cancel'),
+        // Inline keyframe for slide-up animation
+        React.createElement('style', null, '@keyframes ringinSlideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }')
+      )
+    ) : null,
     // Owner-only 3-dot menu. Slides up from bottom with Delete / Save options.
     ownMenu ? React.createElement('div', {
       onClick: function(){ setOwnMenu(false); },
