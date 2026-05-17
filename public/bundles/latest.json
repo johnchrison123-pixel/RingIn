@@ -1,13 +1,20 @@
-﻿{
-  "version": "2026.0517.1443",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1443.zip",
-  "published_at": "2026-05-17T14:43:15Z",
+{
+  "version": "2026.0517.1547",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1547.zip",
+  "published_at": "2026-05-17T15:47:00Z",
   "git_sha": "manual",
-  "title": "Auto-update toggle + Groups tab + WhatsApp-style updates",
+  "title": "Bug-fix sweep — feed, messages & chat polish",
   "notes": [
-    "New: Automatic Update toggle in Profile — flip on to silently apply updates",
-    "New: Groups tab in Messages (Friends / Experts / Groups / Business)",
-    "Fix: OTA now uses Capgo.next() + reload — actually swaps the bundle",
-    "Polish: App Version + Check for Updates moved above Sign Out; Webstreax footer added"
+    "Fix: Edit Post now actually shows your post text (was opening empty)",
+    "New: Location chips on home actually filter the experts list",
+    "New: Audience selector (Public / Followers / Only me) now filters feed reads",
+    "New: Pull-to-refresh on home feed AND inbox — drag down to refresh",
+    "New: Coin chip shows your real balance (was stuck on 1,240)",
+    "New: 'Last seen' in chat header, 🔕 icon in inbox for muted convos",
+    "Fix: Block-on-send now actually checks blocked list correctly",
+    "Fix: Restrict mode silences notifications, badges & typing from restricted users",
+    "Fix: Photo uploads no longer leak memory after sending",
+    "Fix: Reactions no longer briefly flash stale data when switching chats",
+    "Polish: Copy-link gives real success/failure toast instead of false 'copied' alert"
   ]
 }
