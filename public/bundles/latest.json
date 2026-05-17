@@ -1,20 +1,13 @@
 {
-  "version": "2026.0517.1547",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1547.zip",
-  "published_at": "2026-05-17T15:47:00Z",
+  "version": "2026.0517.2348",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.2348.zip",
+  "published_at": "2026-05-17T23:48:00Z",
   "git_sha": "manual",
-  "title": "Bug-fix sweep — feed, messages & chat polish",
+  "title": "Hotfix — Messages tab crash (mutedConvos / restrictedSet)",
   "notes": [
-    "Fix: Edit Post now actually shows your post text (was opening empty)",
-    "New: Location chips on home actually filter the experts list",
-    "New: Audience selector (Public / Followers / Only me) now filters feed reads",
-    "New: Pull-to-refresh on home feed AND inbox — drag down to refresh",
-    "New: Coin chip shows your real balance (was stuck on 1,240)",
-    "New: 'Last seen' in chat header, 🔕 icon in inbox for muted convos",
-    "Fix: Block-on-send now actually checks blocked list correctly",
-    "Fix: Restrict mode silences notifications, badges & typing from restricted users",
-    "Fix: Photo uploads no longer leak memory after sending",
-    "Fix: Reactions no longer briefly flash stale data when switching chats",
-    "Polish: Copy-link gives real success/failure toast instead of false 'copied' alert"
+    "CRITICAL FIX: Messages + Connect + other tabs no longer crash with 'mutedConvos is not defined'",
+    "Root cause: yesterday's mute-icon + restrict-enforcement patch referenced ChatBox-scoped variables from MessagesScreen scope",
+    "Fix: inbox now has its own mutedConvos + restrictedSet state, kept in sync via storage events",
+    "All 13 earlier audit fixes (Edit Post, location chips, audience filter, etc.) still in this bundle"
   ]
 }

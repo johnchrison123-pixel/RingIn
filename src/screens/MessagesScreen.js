@@ -1335,6 +1335,32 @@ export default function MessagesScreen(props){
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
   var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
   var coinBalS=useState(function(){try{var v=localStorage.getItem('ringin_coin_balance');return v?Number(v)||0:0;}catch(e){return 0;}}); var coinBal=coinBalS[0]; var setCoinBal=coinBalS[1];
+  // Muted conversations list — read at MessagesScreen scope so the inbox
+  // can render the 🔕 icon next to muted convos. (ChatBox has its own copy
+  // for the chat-header mute menu.)
+  var inboxMutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var inboxMutedConvos=inboxMutedConvosS[0]; var setInboxMutedConvos=inboxMutedConvosS[1];
+  // Keep inboxMutedConvos in sync with localStorage whenever the
+  // active chat's mute state changes (ChatBox writes the key on toggle).
+  useEffect(function(){
+    function reload(){
+      try{var s=localStorage.getItem('ringin_muted_convos');setInboxMutedConvos(s?JSON.parse(s):[]);}catch(e){}
+    }
+    window.addEventListener('storage', reload);
+    return function(){ window.removeEventListener('storage', reload); };
+  },[]);
+  // Inbox-scope restricted-users set — the inbox realtime handler reads
+  // it to suppress notification badge bumps + sounds for restricted
+  // senders. (ChatBox has its own copy for the chat-header restrict
+  // toggle + chat-message realtime handler.)
+  var inboxRestrictedSetS=useState(new Set()); var inboxRestrictedSet=inboxRestrictedSetS[0]; var setInboxRestrictedSet=inboxRestrictedSetS[1];
+  useEffect(function(){
+    if(!myId) return;
+    try {
+      sb.from('restricted_users').select('restricted_id').eq('restrictor_id', myId).then(function(r){
+        if (r && !r.error && r.data) setInboxRestrictedSet(new Set(r.data.map(function(row){ return row.restricted_id; })));
+      });
+    } catch(_) {}
+  },[myId]);
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
@@ -1528,7 +1554,7 @@ export default function MessagesScreen(props){
           var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
           // RESTRICT enforcement at inbox layer — silent badge bump only,
           // no badge/sound for messages from restricted users.
-          var senderRestricted = restrictedSet && restrictedSet.has && restrictedSet.has(p.new.sender_id);
+          var senderRestricted = inboxRestrictedSet && inboxRestrictedSet.has && inboxRestrictedSet.has(p.new.sender_id);
           if(!isViewingThisConvo){
             // Not viewing this chat — increment badge and unread count (skip if restricted)
             if(!senderRestricted){
@@ -1840,7 +1866,7 @@ export default function MessagesScreen(props){
                   React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.name),
                   // Mute icon — shows when this conversation is in ringin_muted_convos.
                   // Matches Instagram / WhatsApp inbox convention.
-                  mutedConvos.indexOf(c.convId||c.id) >= 0 ? React.createElement('span',{title:'Notifications muted',style:{fontSize:'11px',color:'var(--t3)',flexShrink:0,lineHeight:1}},'🔕') : null
+                  inboxMutedConvos.indexOf(c.convId||c.id) >= 0 ? React.createElement('span',{title:'Notifications muted',style:{fontSize:'11px',color:'var(--t3)',flexShrink:0,lineHeight:1}},'🔕') : null
                 ),
                 React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)',flexShrink:0,marginLeft:'6px'}},c.lastTime?timeAgo(c.lastTime):'')
               ),
