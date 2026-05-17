@@ -1,12 +1,12 @@
 ﻿{
-  "version": "2026.0517.0033",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.0033.zip",
-  "published_at": "2026-05-17T00:33:48Z",
+  "version": "2026.0517.1158",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1158.zip",
+  "published_at": "2026-05-17T11:58:56Z",
   "git_sha": "manual",
-  "title": "Caption + scroll fixes",
+  "title": "Caption now visible on both swipe sides",
   "notes": [
-    "Fix: text caption on current moment now visible during cube swipe",
-    "Fix: vertical scroll on home screen restored (body overflow:hidden)",
-    "Safety: boot overlay can never block touches for more than 6s"
+    "Fix: text caption renders reliably on the current slide during cube swipe",
+    "Fix: ghost slides on both sides show name + caption + image consistently",
+    "New robust pattern: absolute wrapper fills face, flex-centers caption inside"
   ]
 }
