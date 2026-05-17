@@ -1,13 +1,13 @@
 ﻿{
-  "version": "2026.0517.1308",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1308.zip",
-  "published_at": "2026-05-17T13:08:19Z",
+  "version": "2026.0517.1343",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1343.zip",
+  "published_at": "2026-05-17T13:44:02Z",
   "git_sha": "manual",
-  "title": "Stuck fix + new share sheet",
+  "title": "WhatsApp share + mute/block + edge swipe",
   "notes": [
-    "Fix: viewer no longer freezes after liking or replying",
-    "New: tap share button — frosted bottom sheet pops up",
-    "Send to followers/following with one tap",
-    "Then Share to apps (WhatsApp etc.) or Copy link"
+    "New: 3-dot menu (top-right) on other users moments — Mute Status / Block",
+    "New: share sheet now has WhatsApp, Share, Clipboard buttons with icons",
+    "Fix: swipe from screen edge now navigates between users (popstate guarded)",
+    "Polish: share sheet more transparent for stronger frosty glass effect"
   ]
 }
