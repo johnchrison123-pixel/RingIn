@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ 16 audit fixes shipped — feed UX polish + carousel memory + quick-message</h2>
-<p>Bundle <code>2026.0518.0014</code> live with auto-load feed (no more "Load more" tap), carousel slide position remembers across tab switches, and 💬 quick-message button on each online expert. All audit-agent verified. APK at <code>~/Desktop/ringin-v3.25.apk</code> rebuilt with everything.</p>
+<h2>✅ Coin sync now ACTUALLY everywhere (bundle 2026.0518.0021)</h2>
+<p>You reported Workshops coin chip stuck on 1,240. Found 4 more hardcoded sites the first sweep missed: <b>Workshops topbar</b>, <b>Profile stats card</b>, <b>Profile Settings stats card</b>, and <b>App.js → CallScreen `coins` prop</b> — that last one was the silent killer: every call timer was starting from a fake 1240 balance, so call deductions persisted the wrong number to your wallet. All 5 chips now hooked + App feeds real balance to CallScreen + Wallet broadcasts purchases + Calls broadcast deductions. APK rebuilt on Desktop.</p>
 </div>
 
 <div class="stats">
