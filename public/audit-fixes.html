@@ -51,14 +51,14 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ Coin sync + call-deduct DB persist fixed (hardened)</h2>
-<p>Second audit pass found a critical stale-closure in CallScreen.hangup() that would have UNDONE every per-minute deduction in the DB write — fixed with a ref mirror. Also patched Wallet purchase race (broadcast now waits for DB write success) and removed Wallet's duplicate balance fetch. Bundle <code>2026.0518.0007</code> live — refresh app, accept green Update prompt. APK on Desktop also rebuilt.</p>
+<h2>✅ 16 audit fixes shipped — feed UX polish + carousel memory + quick-message</h2>
+<p>Bundle <code>2026.0518.0014</code> live with auto-load feed (no more "Load more" tap), carousel slide position remembers across tab switches, and 💬 quick-message button on each online expert. All audit-agent verified. APK at <code>~/Desktop/ringin-v3.25.apk</code> rebuilt with everything.</p>
 </div>
 
 <div class="stats">
-<div class="stat done"><span class="n">13</span><div class="l">Done</div></div>
-<div class="stat prog"><span class="n">1</span><div class="l">In Progress</div></div>
-<div class="stat todo"><span class="n">11</span><div class="l">To Do</div></div>
+<div class="stat done"><span class="n">16</span><div class="l">Done</div></div>
+<div class="stat prog"><span class="n">0</span><div class="l">In Progress</div></div>
+<div class="stat todo"><span class="n">9</span><div class="l">To Do</div></div>
 <div class="stat skip"><span class="n">0</span><div class="l">Skipped</div></div>
 </div>
 
@@ -74,12 +74,12 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <tr><td class="bug">Wallet coin chip hardcoded "1,240" — never read real balance</td><td><span class="status done">DONE</span></td><td class="fix">Added coinBal state, useEffect loads profiles.coins on mount, localStorage cache for instant paint</td></tr>
 <tr><td class="bug">alert('Link copied') fires even when clipboard fails (8 call sites)</td><td><span class="status done">DONE</span></td><td class="fix">New copyToClipboardWithToast helper in HomeScreen + ProfileScreen: toast on real success, "Couldn't copy" on failure, legacy execCommand fallback</td></tr>
 <tr><td class="bug">EXPERTS array hardcoded mock data</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Manual "Load more" button vs auto-load</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
+<tr><td class="bug">Manual "Load more" button vs auto-load</td><td><span class="status done">DONE</span></td><td class="fix">Replaced with IntersectionObserver-backed sentinel that auto-fires loadMoreFeed() when it enters viewport (300px root margin). Spinner shown while loading.</td></tr>
 <tr><td class="bug">Feed cache ignored on remount</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Carousel idx resets on every scroll</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
+<tr><td class="bug">Carousel idx resets on every scroll</td><td><span class="status done">DONE</span></td><td class="fix">carouselIdx now persisted to localStorage 'ringin_carousel_idx' (cap 200 entries) — tab switches preserve which slide you were on.</td></tr>
 <tr><td class="bug">N+1 follower notif query</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
 <tr><td class="bug">Comments cache has no TTL</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
-<tr><td class="bug">Online experts strip has no quick-message button</td><td><span class="status todo">TODO</span></td><td class="fix">—</td></tr>
+<tr><td class="bug">Online experts strip has no quick-message button</td><td><span class="status done">DONE</span></td><td class="fix">Added 💬 button next to Call on each expert in the Online Now strip; opens Messages tab with the expert's convo (same convo id pattern SearchScreen uses).</td></tr>
 </tbody>
 </table>
 

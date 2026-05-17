@@ -1,14 +1,13 @@
 {
-  "version": "2026.0518.0007",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0007.zip",
-  "published_at": "2026-05-18T00:07:00Z",
+  "version": "2026.0518.0014",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0014.zip",
+  "published_at": "2026-05-18T00:14:00Z",
   "git_sha": "manual",
-  "title": "Coin sync hardening — call-deduct DB write fixed",
+  "title": "Auto-load feed + carousel memory + quick-message",
   "notes": [
-    "CRITICAL FIX: Call hang-up now persists the correct deducted balance (was overwriting with original at-mount value, undoing all per-minute deductions)",
-    "FIX: Wallet purchase now waits for the DB write to succeed before broadcasting — failed payments no longer leave every chip showing a phantom balance",
-    "FIX: Removed Wallet's duplicate balance fetch that was racing CallScreen broadcasts (could revive a deducted value)",
-    "POLISH: Hook offline-safe — Supabase fetch + write now have proper .catch handlers, no unhandled rejections when offline",
-    "Built on top of 2026.0518.0001 — all earlier 13 audit fixes + Edit Post crash patch + coin sync still in this bundle"
+    "New: Feed auto-loads more posts as you scroll — no more tapping 'Load more posts'",
+    "New: Multi-image post carousels remember which slide you were on across tab switches",
+    "New: 💬 quick-message button next to Call on each online expert — skip the profile page",
+    "Built on top of 2026.0518.0007 — all earlier fixes (coin sync, restrict, edit post, last seen, mute icons, etc) still in this bundle"
   ]
 }

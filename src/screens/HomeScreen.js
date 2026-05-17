@@ -1073,7 +1073,31 @@ export default function HomeScreen(props){
   var compVideoS=useState(null); var compVideo=compVideoS[0]; var setCompVideo=compVideoS[1];
   var compMediaTypeS=useState('photo'); var compMediaType=compMediaTypeS[0]; var setCompMediaType=compMediaTypeS[1];
   var uploadingMediaS=useState(false); var uploadingMedia=uploadingMediaS[0]; var setUploadingMedia=uploadingMediaS[1];
-  var carouselIdxS=useState({}); var carouselIdx=carouselIdxS[0]; var setCarouselIdx=carouselIdxS[1];
+  // Carousel index keyed by post id. Persisted to localStorage so a tab
+  // switch (Home → Messages → Home) doesn't reset every multi-image post
+  // back to the first slide. Capped to 200 entries so the storage blob
+  // can't grow unbounded over months of use.
+  var carouselIdxS=useState(function(){
+    try { var raw = localStorage.getItem('ringin_carousel_idx'); return raw ? (JSON.parse(raw) || {}) : {}; } catch(_) { return {}; }
+  });
+  var carouselIdx=carouselIdxS[0];
+  var setCarouselIdxRaw=carouselIdxS[1];
+  function setCarouselIdx(updater){
+    setCarouselIdxRaw(function(prev){
+      var next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        // Trim to the 200 most-recently-touched post ids to bound storage.
+        var keys = Object.keys(next);
+        if (keys.length > 200) {
+          var trimmed = {};
+          keys.slice(-200).forEach(function(k){ trimmed[k] = next[k]; });
+          next = trimmed;
+        }
+        localStorage.setItem('ringin_carousel_idx', JSON.stringify(next));
+      } catch(_) {}
+      return next;
+    });
+  }
   var postDetailS=useState(null); var postDetail=postDetailS[0]; var setPostDetail=postDetailS[1];
   var postDetailIdxS=useState(0); var postDetailIdx=postDetailIdxS[0]; var setPostDetailIdx=postDetailIdxS[1];
   var pdMenuOpenS=useState(false); var pdMenuOpen=pdMenuOpenS[0]; var setPdMenuOpen=pdMenuOpenS[1];
@@ -2223,7 +2247,21 @@ export default function HomeScreen(props){
           ),
           React.createElement('div', {className:'erl'}, e.role),
           React.createElement('div', {style:{fontSize:'9px',color:'#F5A623',marginBottom:'5px'}}, '⭐ '+e.rating+' · '+e.rate+' c/min'),
-          React.createElement('button', {className:'cbtn', onClick:function(ev){ev.stopPropagation();setActiveCall(e);}}, 'Call Now')
+          React.createElement('div', {style:{display:'flex',gap:'4px'}},
+            // Quick-message: opens Messages tab with this expert's convo.
+            // Same pattern SearchScreen uses for its expert Message button.
+            React.createElement('button', {
+              onClick:function(ev){
+                ev.stopPropagation();
+                if (props.onGoToMessages) {
+                  props.onGoToMessages({id:'expert_'+e.id, name:e.name, avatar:e.img, role:e.role, online:!!e.online, rate:e.rate});
+                }
+              },
+              title:'Message '+e.name,
+              style:{flex:'0 0 28px',height:'24px',padding:0,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'12px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}
+            }, '💬'),
+            React.createElement('button', {className:'cbtn', style:{flex:1}, onClick:function(ev){ev.stopPropagation();setActiveCall(e);}}, 'Call')
+          )
         );
       })
     ),
@@ -2572,11 +2610,35 @@ export default function HomeScreen(props){
         );
       })
     ),
-    hasMoreH ? React.createElement('div',{style:{textAlign:'center',padding:'16px 0'}},
-      React.createElement('button',{
-        onClick:loadMoreFeed,
-        style:{padding:'10px 28px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}
-      }, loadMoreH?'Loading...':'Load more posts')
+    // Auto-load sentinel — IntersectionObserver (wired via ref callback)
+    // triggers loadMoreFeed() as soon as this div enters the viewport.
+    // The old "Load more posts" button is preserved as a visible spinner
+    // so the user knows more is coming, but no tap is required.
+    hasMoreH ? React.createElement('div',{
+      ref:function(el){
+        if (!el || !window.IntersectionObserver) return;
+        // Re-using a single observer per mount; we just (re)observe when
+        // the sentinel mounts. The browser auto-disconnects when the
+        // element unmounts so no manual cleanup needed.
+        try {
+          var obs = new IntersectionObserver(function(entries){
+            entries.forEach(function(en){
+              if (en.isIntersecting && hasMoreH && !loadMoreH) {
+                loadMoreFeed();
+              }
+            });
+          }, { rootMargin: '300px 0px' });
+          obs.observe(el);
+          // Stash on the element so a later GC of the observer doesn't kill it early.
+          el.__ringinObs = obs;
+        } catch(_) {}
+      },
+      style:{textAlign:'center',padding:'16px 0'}
+    },
+      React.createElement('div',{style:{display:'inline-flex',alignItems:'center',gap:'8px',color:'var(--t2)',fontSize:'12px'}},
+        React.createElement('div',{style:{width:'14px',height:'14px',borderRadius:'50%',border:'2px solid var(--ac)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite'}}),
+        'Loading more posts…'
+      )
     ) : null,
     React.createElement('div', {style:{height:'12px'}}),
     showEditPost&&editPostData ? React.createElement('div',{
