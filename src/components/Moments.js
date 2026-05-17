@@ -77,6 +77,9 @@ function MomentViewer(props){
   // Owner-only 3-dot menu (Delete moment, Save to phone, Copy link).
   var ownMenuS = useState(false);
   var ownMenu = ownMenuS[0]; var setOwnMenu = ownMenuS[1];
+  // Other-user 3-dot menu (Mute Status for this contact, Block this contact).
+  var otherMenuS = useState(false);
+  var otherMenu = otherMenuS[0]; var setOtherMenu = otherMenuS[1];
   // Share sheet — bottom popup with frosted glass. Two sections:
   //   1) "Send to" — horizontal scroll of people you follow / who follow you
   //   2) "More" — native share (WhatsApp / system share sheet) + copy link
@@ -96,6 +99,12 @@ function MomentViewer(props){
   // holdPaused→true; movement past the slop cancels it and starts a drag.
   var pressTimerRef = useRef(null);
   var gestureRef = useRef(null);
+  // Timestamp of the last drag activity. The popstate handler checks
+  // this — if a drag was active within the last 600ms, we IGNORE the
+  // popstate event (it was almost certainly Android's system back
+  // gesture firing on an edge swipe, not a real user-back). Prevents
+  // edge swipes between users from accidentally closing the viewer.
+  var dragActivityRef = useRef(0);
 
   // Direct-DOM refs for live drag. The viewer used to re-render on every
   // pointermove via setState, which on mid-range Android pushed render
@@ -308,6 +317,48 @@ function MomentViewer(props){
     // Mark as sent in the UI immediately (optimistic)
     shareSentRef.current[u.id] = true;
     setShareSentRev(function(n){ return n + 1; });
+  }
+
+  // Other-user actions — mute the poster's future moments (per-device,
+  // localStorage), or block the user entirely (uses server-side blocks
+  // via utils/blocks.js where available).
+  function muteThisContact(){
+    setOtherMenu(false);
+    var posterId = moment && moment.userId;
+    if (!posterId) { showToast('Cannot mute'); return; }
+    try {
+      var raw = localStorage.getItem('ringin_muted_moment_users');
+      var arr = raw ? JSON.parse(raw) : [];
+      if (arr.indexOf(posterId) < 0) arr.push(posterId);
+      localStorage.setItem('ringin_muted_moment_users', JSON.stringify(arr));
+    } catch(_){}
+    showToast('Status muted');
+    setTimeout(function(){ if (onClose) onClose(); }, 700);
+  }
+  function blockThisContact(){
+    setOtherMenu(false);
+    var posterId = moment && moment.userId;
+    if (!posterId) { showToast('Cannot block'); return; }
+    var ok = true;
+    try { ok = window.confirm('Block ' + (user.name || 'this user') + '?\n\nThey will no longer see your posts, moments, or messages.'); } catch(_){}
+    if (!ok) return;
+    // Try server-side block via blocks util. Fall back to localStorage if
+    // the util or the migration isn't available.
+    try {
+      import('../utils/blocks').then(function(mod){
+        if (mod && typeof mod.blockUser === 'function' && myUserId) {
+          mod.blockUser(myUserId, posterId).catch(function(){});
+        }
+      }).catch(function(){});
+    } catch(_){}
+    try {
+      var raw = localStorage.getItem('ringin_blocked');
+      var arr = raw ? JSON.parse(raw) : [];
+      if (arr.indexOf(posterId) < 0) arr.push(posterId);
+      localStorage.setItem('ringin_blocked', JSON.stringify(arr));
+    } catch(_){}
+    showToast('Blocked');
+    setTimeout(function(){ if (onClose) onClose(); }, 700);
   }
 
   // Owner-only delete (matches Instagram's "Delete" option on own stories).
@@ -532,16 +583,13 @@ function MomentViewer(props){
     // smooth instead of the laggy state-driven version the user flagged.
     onPointerDown: function(e){
       if (isInteractive(e)) return;
-      // EDGE REJECTION — on Android phones with gesture navigation,
-      // swipes that start within ~22px of the screen edge trigger the
-      // SYSTEM BACK gesture (which closes the viewer via popstate).
-      // Ignore those: let Android handle them. The user can still
-      // swipe between users — they just need to start further inside.
+      // EDGE SWIPE NOW ALLOWED — user wants to start swipes from the
+      // edge of the screen to navigate prev/next user. Previously we
+      // rejected edge swipes to dodge Android's system back gesture;
+      // now we capture them and rely on a popstate guard
+      // (dragActivityRef) to ignore the back event if it fires during
+      // or just after an active drag.
       var startX = (e && e.clientX) || 0;
-      var EDGE_REJECT = 22;
-      if (startX < EDGE_REJECT || startX > (VW - EDGE_REJECT)) {
-        return;  // do not capture, do not pause — system handles it
-      }
       try { e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); } catch(_){}
       gestureRef.current = {
         x: startX,
@@ -587,6 +635,11 @@ function MomentViewer(props){
         dy = Math.max(0, dy);
       }
       dragNowRef.current = { dx: dx, dy: dy, kind: g.kind };
+      // Record activity timestamp on a SHARED window slot so the
+      // parent Moments' popstate handler can see it (different
+      // component scope but same JS context).
+      dragActivityRef.current = Date.now();
+      try { window.__ringinMomentDragTime = Date.now(); } catch(_){}
       // Coalesce multiple events fired in the same frame.
       if (rafRef.current) return;
       rafRef.current = (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : function(cb){ return setTimeout(cb, 16); })(function(){
@@ -779,12 +832,25 @@ function MomentViewer(props){
       ),
       // (T2.5 "👁 N" badge moved out of the header — it now lives in the
       // bottom row, left of the reply composer, per user feedback.)
-      // 3-dot menu for own moments — Delete / Save / Copy link (Insta-style).
-      isOwn ? React.createElement('button', {
-        onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); setOwnMenu(true); },
+      // 3-dot menu — for OWN moments: Delete / Save / Copy link.
+      //              for OTHER moments: Mute Status / Block this Contact.
+      // Always shown top-right (left of close button).
+      React.createElement('button', {
+        onClick: function(e){
+          if(e && e.stopPropagation) e.stopPropagation();
+          if (isOwn) setOwnMenu(true); else setOtherMenu(true);
+        },
         className:'ringin-tap',
+        title:'More',
         style:{background:'transparent',border:'none',color:'#fff',fontSize:'22px',lineHeight:1,cursor:'pointer',padding:'4px 8px',fontWeight:700,flexShrink:0}
-      }, '⋯') : null,
+      },
+        // 3 VERTICAL dots SVG (per user request — vertical, not horizontal)
+        React.createElement('svg', {viewBox:'0 0 24 24', width:'4', height:'18', fill:'currentColor', style:{display:'block'}},
+          React.createElement('circle', {cx:12, cy:5, r:2}),
+          React.createElement('circle', {cx:12, cy:12, r:2}),
+          React.createElement('circle', {cx:12, cy:19, r:2})
+        )
+      ),
       React.createElement('button', {
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(onClose) onClose(); },
         className:'ringin-tap',
@@ -1016,14 +1082,15 @@ function MomentViewer(props){
         style: {
           width: '100%',
           maxWidth: '480px',
-          // Frosted glass — translucent dark + heavy blur for the
-          // "frosty" look the user asked for.
-          background: 'rgba(20,18,32,0.78)',
-          backdropFilter: 'blur(48px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(48px) saturate(160%)',
+          // Frosted glass — MORE TRANSPARENT per user feedback for a
+          // crisper "frosty" effect. Heavier blur compensates so the
+          // bg behind is just a soft impression of colour, not detail.
+          background: 'rgba(20,18,32,0.42)',
+          backdropFilter: 'blur(60px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(60px) saturate(180%)',
           borderTopLeftRadius: '24px',
           borderTopRightRadius: '24px',
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.12)',
           borderBottom: 'none',
           padding: '10px 0 calc(20px + env(safe-area-inset-bottom, 0px))',
           color: '#fff',
@@ -1086,21 +1153,58 @@ function MomentViewer(props){
         }, 'No contacts yet — follow some people to send moments here.'),
         // Divider
         React.createElement('div', { style: { height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 18px 14px' } }),
-        // ── MORE section ───────────────────────────────────────────
-        React.createElement('div', { style: { padding: '0 18px 6px' } },
-          React.createElement('div', {
-            style: { fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px' }
-          }, 'More')
-        ),
+        // ── 3 actions: WhatsApp / Share / Clipboard ──────────────────
         React.createElement('div', {
           style: {
-            display: 'flex', gap: '14px',
-            overflowX: 'auto', overflowY: 'hidden',
+            display: 'flex',
+            justifyContent: 'space-around',
+            alignItems: 'flex-start',
             padding: '4px 18px 8px',
-            scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+            gap: '14px',
           }
         },
-          // System share (opens WhatsApp / iMessage / Twitter / etc.)
+          // WhatsApp — opens WhatsApp with the link pre-filled.
+          // Uses the whatsapp:// scheme on mobile (deep link); falls
+          // back to wa.me universal link if scheme isn't registered.
+          React.createElement('div', {
+            onClick: function(e){
+              e.stopPropagation();
+              var link = buildShareLink();
+              var text = (captionText || 'Check this moment on RingIn') + ' ' + link;
+              var encoded = encodeURIComponent(text);
+              try {
+                // Try the native scheme first (instant on Android/iOS
+                // with WhatsApp installed). If it fails, fall back to
+                // the wa.me universal link which opens WhatsApp Web
+                // or the app via the system handler.
+                window.location.href = 'whatsapp://send?text=' + encoded;
+                setTimeout(function(){
+                  // If still here after 600ms, scheme didn't fire — try web link.
+                  try { window.open('https://wa.me/?text=' + encoded, '_blank'); } catch(_){}
+                }, 600);
+              } catch(_){
+                try { window.open('https://wa.me/?text=' + encoded, '_blank'); } catch(_2){}
+              }
+              setShareSheet(false); setHoldPaused(false);
+            },
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', flex: 1, minWidth: 0 }
+          },
+            React.createElement('div', {
+              style: {
+                width: '58px', height: '58px', borderRadius: '50%',
+                background: 'linear-gradient(135deg,#25D366,#128C7E)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 16px rgba(37,211,102,0.35)',
+              }
+            },
+              // WhatsApp glyph (simplified SVG — recognizable phone-in-bubble)
+              React.createElement('svg', { viewBox: '0 0 32 32', width: 32, height: 32, fill: '#fff' },
+                React.createElement('path', { d: 'M16 3C9.4 3 4 8.4 4 15c0 2.3.6 4.5 1.8 6.5L4 29l7.7-1.8c1.9 1 4.1 1.6 6.3 1.6 6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.7c-1.9 0-3.7-.5-5.3-1.4l-.4-.2-4.6 1.1 1.1-4.5-.3-.4c-1-1.6-1.5-3.5-1.5-5.3 0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 9.7-10 9.7zm5.5-7.3c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8.9-1 1.1-.2.2-.4.2-.7.1-1.6-.8-2.7-1.5-3.8-3.3-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5 0-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.2 3.4 5.4 4.7 2 .8 2.8 1 3.8.8.6-.1 1.8-.7 2-1.5.2-.7.2-1.3.2-1.5-.1-.2-.3-.2-.6-.4z' })
+              )
+            ),
+            React.createElement('div', { style: { fontSize: '12px', color: '#fff', fontWeight: 700, textAlign: 'center' } }, 'WhatsApp')
+          ),
+          // System share (opens other apps via system share sheet)
           React.createElement('div', {
             onClick: function(e){
               e.stopPropagation();
@@ -1119,14 +1223,28 @@ function MomentViewer(props){
               }
               setShareSheet(false); setHoldPaused(false);
             },
-            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', minWidth: '64px' }
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', flex: 1, minWidth: 0 }
           },
             React.createElement('div', {
-              style: { width: '58px', height: '58px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }
-            }, '📲'),
-            React.createElement('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 600 } }, 'Share to apps')
+              style: {
+                width: '58px', height: '58px', borderRadius: '50%',
+                background: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 16px rgba(123,110,255,0.3)',
+              }
+            },
+              // Share icon (three dots connected to a node)
+              React.createElement('svg', { viewBox: '0 0 24 24', width: 28, height: 28, fill: 'none', stroke: '#fff', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                React.createElement('circle', { cx: 18, cy: 5, r: 3 }),
+                React.createElement('circle', { cx: 6, cy: 12, r: 3 }),
+                React.createElement('circle', { cx: 18, cy: 19, r: 3 }),
+                React.createElement('line', { x1: 8.59, y1: 13.51, x2: 15.42, y2: 17.49 }),
+                React.createElement('line', { x1: 15.41, y1: 6.51, x2: 8.59, y2: 10.49 })
+              )
+            ),
+            React.createElement('div', { style: { fontSize: '12px', color: '#fff', fontWeight: 700, textAlign: 'center' } }, 'Share')
           ),
-          // Copy link
+          // Clipboard — copy link to clipboard
           React.createElement('div', {
             onClick: function(e){
               e.stopPropagation();
@@ -1135,12 +1253,23 @@ function MomentViewer(props){
               showToast('Link copied');
               setShareSheet(false); setHoldPaused(false);
             },
-            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', minWidth: '64px' }
+            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', flex: 1, minWidth: 0 }
           },
             React.createElement('div', {
-              style: { width: '58px', height: '58px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }
-            }, '🔗'),
-            React.createElement('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.85)', fontWeight: 600 } }, 'Copy link')
+              style: {
+                width: '58px', height: '58px', borderRadius: '50%',
+                background: 'linear-gradient(135deg,#5A6C7C,#3A4756)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 16px rgba(58,71,86,0.4)',
+              }
+            },
+              // Clipboard icon SVG
+              React.createElement('svg', { viewBox: '0 0 24 24', width: 26, height: 26, fill: 'none', stroke: '#fff', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                React.createElement('path', { d: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2' }),
+                React.createElement('rect', { x: 8, y: 2, width: 8, height: 4, rx: 1, ry: 1 })
+              )
+            ),
+            React.createElement('div', { style: { fontSize: '12px', color: '#fff', fontWeight: 700, textAlign: 'center' } }, 'Clipboard')
           )
         ),
         // Cancel button
@@ -1157,6 +1286,32 @@ function MomentViewer(props){
         }, 'Cancel'),
         // Inline keyframe for slide-up animation
         React.createElement('style', null, '@keyframes ringinSlideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }')
+      )
+    ) : null,
+    // Other-user 3-dot menu (Mute Status, Block this Contact).
+    otherMenu ? React.createElement('div', {
+      onClick: function(){ setOtherMenu(false); },
+      onPointerDown: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      onPointerUp: function(e){ if(e && e.stopPropagation) e.stopPropagation(); },
+      style:{position:'absolute', inset:0, zIndex:11, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'flex-end', justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style:{background:'#0c0c12', borderTopLeftRadius:'18px', borderTopRightRadius:'18px', width:'100%', maxWidth:'460px', color:'#fff', padding:'8px 0 calc(20px + env(safe-area-inset-bottom, 0px))', display:'flex', flexDirection:'column', boxShadow:'0 -8px 30px rgba(0,0,0,0.5)'}
+      },
+        React.createElement('div', {style:{width:'40px', height:'4px', background:'rgba(255,255,255,0.25)', borderRadius:'2px', margin:'4px auto 12px'}}),
+        React.createElement('button', {
+          onClick: muteThisContact,
+          style:{background:'none', border:'none', color:'#fff', fontSize:'15px', fontWeight:600, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
+        }, '🔕  Mute Status for this contact'),
+        React.createElement('button', {
+          onClick: blockThisContact,
+          style:{background:'none', border:'none', color:'#FF5C7A', fontSize:'15px', fontWeight:600, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
+        }, '🚫  Block this contact'),
+        React.createElement('button', {
+          onClick: function(){ setOtherMenu(false); },
+          style:{background:'none', border:'none', color:'rgba(255,255,255,0.55)', fontSize:'14px', fontWeight:500, padding:'14px 18px', textAlign:'center', cursor:'pointer', fontFamily:'inherit', borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:'6px'}
+        }, 'Cancel')
       )
     ) : null,
     // Owner-only 3-dot menu. Slides up from bottom with Delete / Save options.
@@ -1753,9 +1908,24 @@ export default function Moments(props){
 
   // Popstate listener — mounted once. Fires when the user (or Android
   // hardware back) navigates back. Closes viewer if it's open.
+  //
+  // GUARD: if MomentViewer recorded a drag activity in the last 600ms,
+  // this popstate event is almost certainly Android's system-back
+  // gesture firing because the user swiped from an edge to navigate
+  // between users. Ignore it — restore the history entry we lost and
+  // keep the viewer open.
   useEffect(function(){
     function onPopState(){
       if (viewerOpenRef.current) {
+        try {
+          var lastDrag = (window.__ringinMomentDragTime || 0);
+          if (lastDrag && (Date.now() - lastDrag) < 600) {
+            // Edge swipe collateral — re-push our history entry so the
+            // back stack reflects the still-open viewer.
+            try { history.pushState({ ringinMomentViewer: 1 }, '', ''); } catch(_){}
+            return;
+          }
+        } catch(_){}
         viewerOpenRef.current = false;
         setViewer(null);
         setClickGuard(true);
