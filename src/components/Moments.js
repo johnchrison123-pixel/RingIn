@@ -1028,12 +1028,21 @@ function MomentViewer(props){
   // is set once at mount and never touched again.
   function renderGhost(m, offset, refToAttach, halfDepthPx){
     if (!m) return null;
-    var first = (m.slides && m.slides[0]) || null;
+    // Use the SAME slide-resolution as openViewerFor so mock-expert
+    // moments (without real slides) get their gradient + text from
+    // setForId(). Without this, ghosts showed a generic pink-purple
+    // gradient instead of the user's actual colour.
+    var slides = (m.slides && m.slides.length > 0) ? m.slides : setForId(m.id);
+    var first = (slides && slides[0]) || null;
     var hasImg = !!(first && first.imageUrl);
-    var bg = hasImg ? '#000' : (first && first.bg) || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
+    var bg = hasImg ? '#000'
+                    : (first && first.bg)
+                    || m.color
+                    || 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
     var name = m.userName || '';
     var avatar = m.userAvatar || null;
-    var caption = first ? (first.caption || first.text || '') : '';
+    var caption = first ? (first.caption != null ? first.caption : (first.text || '')) : '';
+    var slideCount = (slides && slides.length) || 1;
     // Position on the cube surface.
     var faceRot = offset > 0 ? 90 : -90;
     var faceTransform = 'rotateY(' + faceRot + 'deg) translateZ(' + halfDepthPx + 'px)';
@@ -1053,8 +1062,7 @@ function MomentViewer(props){
         transform: faceTransform,
       }
     },
-      // Image layer — same renderer as current slide (background-image
-      // div, not <img>) so the visual matches exactly during the swipe.
+      // Image layer (same background-image div approach as current slide).
       hasImg ? React.createElement('div', {
         style: {
           position: 'absolute', top:0, left:0, width:'100%', height:'100%',
@@ -1063,28 +1071,44 @@ function MomentViewer(props){
           backgroundRepeat: 'no-repeat', backgroundColor: '#000',
         }
       }) : null,
-      // User name pill at the TOP (same place as the current slide)
+      // Progress-bar segments — one per slide. Empty (the ghost isn't
+      // playing, just previewing) but matches the current slide's chrome.
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: 'calc(10px + env(safe-area-inset-top, 0px))',
+          left: 8, right: 8,
+          display: 'flex', gap: '4px',
+          zIndex: 2,
+        }
+      },
+        Array.apply(null, { length: slideCount }).map(function(_, i){
+          return React.createElement('div', {
+            key: 'seg-' + i,
+            style: { flex: 1, height: '3px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px' }
+          });
+        })
+      ),
+      // Header — avatar + name (matches current slide layout exactly).
       React.createElement('div', {
         style: {
           position: 'absolute',
           top: 'calc(24px + env(safe-area-inset-top, 0px))',
-          left: '14px',
+          left: '14px', right: '14px',
           display: 'flex', alignItems: 'center', gap: '10px',
-          color: '#fff', fontSize: '14px', fontWeight: 700,
-          textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+          color: '#fff',
+          zIndex: 2,
         }
       },
         avatar ? React.createElement('img', {
           src: avatar, alt: '',
-          style: { width:'32px', height:'32px', borderRadius:'50%', objectFit:'cover', border:'1.5px solid rgba(255,255,255,0.5)' }
+          style: { width:'32px', height:'32px', borderRadius:'50%', objectFit:'cover', border:'1.5px solid rgba(255,255,255,0.5)', flexShrink:0 }
         }) : React.createElement('div', {
-          style: { width:'32px', height:'32px', borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', fontWeight:700 }
+          style: { width:'32px', height:'32px', borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', fontWeight:700, flexShrink:0 }
         }, (name || '?').charAt(0).toUpperCase()),
-        React.createElement('div', null, name)
+        React.createElement('div', { style: { fontSize:'14px', fontWeight:700, textShadow:'0 1px 4px rgba(0,0,0,0.3)' } }, name)
       ),
-      // Caption — same wrapper+flex pattern as the current slide so the
-      // transition is seamless. The flex-centered inner element renders
-      // reliably under the parent face's 3D rotation.
+      // Caption — wrapper+flex pattern (image: blur card bottom; text: big centered).
       caption ? (hasImg ? React.createElement('div', {
         style: {
           position: 'absolute',
@@ -1117,7 +1141,7 @@ function MomentViewer(props){
       },
         React.createElement('div', {
           style: {
-            fontSize: '24px', fontWeight: 800, lineHeight: 1.3,
+            fontSize: '26px', fontWeight: 800, lineHeight: 1.3,
             textAlign: 'center', maxWidth: '82%',
             color: '#fff',
             textShadow: '0 2px 16px rgba(0,0,0,0.35)',
@@ -1125,16 +1149,58 @@ function MomentViewer(props){
           }
         }, caption)
       )) : null,
-      // Simple progress bar placeholder so the chrome matches the current slide
+      // Reply composer — non-interactive placeholders so the chrome looks
+      // identical to the current slide. Reply input + Like + Share.
       React.createElement('div', {
         style: {
           position: 'absolute',
-          top: 'calc(10px + env(safe-area-inset-top, 0px))',
-          left: 8, right: 8, height: '3px',
-          background: 'rgba(255,255,255,0.3)',
-          borderRadius: '2px',
+          left: '14px', right: '14px',
+          bottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
+          display: 'flex', alignItems: 'center', gap: '8px',
+          zIndex: 3,
         }
-      })
+      },
+        // Reply input placeholder
+        React.createElement('div', {
+          style: {
+            flex: 1,
+            background: 'rgba(0,0,0,0.32)',
+            border: '1px solid rgba(255,255,255,0.35)',
+            borderRadius: '24px',
+            padding: '11px 15px',
+            fontSize: '14px',
+            color: 'rgba(255,255,255,0.55)',
+          }
+        }, 'Reply to ' + (name ? name.split(' ')[0] : 'this moment') + '…'),
+        // Heart button
+        React.createElement('div', {
+          style: {
+            background: 'rgba(0,0,0,0.32)',
+            border: '1px solid rgba(255,255,255,0.35)',
+            width: '44px', height: '44px',
+            borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '22px', lineHeight: 1,
+            flexShrink: 0,
+          }
+        }, '🤍'),
+        // Share button (paper plane svg)
+        React.createElement('div', {
+          style: {
+            background: 'rgba(0,0,0,0.32)',
+            border: '1px solid rgba(255,255,255,0.35)',
+            width: '44px', height: '44px',
+            borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }
+        },
+          React.createElement('svg', { viewBox: '0 0 24 24', width: '19', height: '19', fill: 'none', stroke: '#fff', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+            React.createElement('line', { x1: 22, y1: 2, x2: 11, y2: 13 }),
+            React.createElement('polygon', { points: '22 2 15 22 11 13 2 9 22 2' })
+          )
+        )
+      )
     );
   }
 
