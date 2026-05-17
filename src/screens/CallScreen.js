@@ -106,6 +106,13 @@ export default function CallScreen(props){
   var secsS = useState(0); var secs = secsS[0]; var setSecs = secsS[1];
   var ringSecsS = useState(0); var ringSecs = ringSecsS[0]; var setRingSecs = ringSecsS[1];
   var localCoinsS = useState(coins); var localCoins = localCoinsS[0]; var setLocalCoins = localCoinsS[1];
+  // Ref mirror of localCoins — needed because hangup() is a plain
+  // function (not memoized) and the per-minute interval captures it via
+  // stale closure. Reading `localCoins` directly inside hangup would
+  // return the at-render value, so the final DB write would undo every
+  // deduction. The ref is updated in a useEffect below.
+  var localCoinsRef = useRef(coins);
+  useEffect(function(){ localCoinsRef.current = localCoins; }, [localCoins]);
   var mutedS = useState(false); var muted = mutedS[0]; var setMuted = mutedS[1];
   // Speaker off = normal call volume (100). Speaker on = loudspeaker boost (250).
   // Browser can't actually route to earpiece — this is volume-based "loudspeaker" mode.
@@ -435,9 +442,12 @@ export default function CallScreen(props){
     // Persist the final coin total to Supabase (caller only — callees
     // don't get charged). The realtime UPDATE listener in useCoinBalance
     // will then push the new value to every other open device.
+    // CRITICAL: read from localCoinsRef.current (NOT the captured
+    // `localCoins` const) so we get the latest deducted value rather
+    // than the at-render value from when this hangup closure was built.
     if (!isIncoming && session && session.user) {
       try {
-        var finalCoins = Math.max(0, Number(localCoins) || 0);
+        var finalCoins = Math.max(0, Number(localCoinsRef.current) || 0);
         sb.from('profiles').update({ coins: finalCoins }).eq('id', session.user.id).then(function(r){
           if (r && r.error) console.warn('[ringin] coin persist failed:', r.error.message || r.error);
         });

@@ -1,13 +1,14 @@
 {
-  "version": "2026.0518.0001",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0001.zip",
-  "published_at": "2026-05-18T00:01:00Z",
+  "version": "2026.0518.0007",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0007.zip",
+  "published_at": "2026-05-18T00:07:00Z",
   "git_sha": "manual",
-  "title": "Coin balance now syncs everywhere + Edit Post crash fix",
+  "title": "Coin sync hardening — call-deduct DB write fixed",
   "notes": [
-    "FIX: Coin chip on Home / Messages / Search / Wallet now shows the same balance — any change (purchase, call deduct, promo) propagates everywhere instantly",
-    "FIX: Edit Post no longer crashes the feed tab — saveEditPost was referencing variables only available on user-profile views",
-    "NEW: Calls deduct coins live (every 60s) and persist the final total to your profile on hang-up — works across devices via Supabase realtime",
-    "NEW: Wallet purchase instantly updates every chip in the app, no more stale 1,240"
+    "CRITICAL FIX: Call hang-up now persists the correct deducted balance (was overwriting with original at-mount value, undoing all per-minute deductions)",
+    "FIX: Wallet purchase now waits for the DB write to succeed before broadcasting — failed payments no longer leave every chip showing a phantom balance",
+    "FIX: Removed Wallet's duplicate balance fetch that was racing CallScreen broadcasts (could revive a deducted value)",
+    "POLISH: Hook offline-safe — Supabase fetch + write now have proper .catch handlers, no unhandled rejections when offline",
+    "Built on top of 2026.0518.0001 — all earlier 13 audit fixes + Edit Post crash patch + coin sync still in this bundle"
   ]
 }

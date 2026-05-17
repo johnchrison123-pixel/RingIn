@@ -70,7 +70,9 @@ export function setSharedCoinBalance(newBalance, opts){
   if (opts.writeToDb && opts.userId) {
     var client = opts.supabase || defaultClient;
     try {
-      client.from('profiles').update({ coins: n }).eq('id', opts.userId).then(function(){});
+      var p = client.from('profiles').update({ coins: n }).eq('id', opts.userId);
+      if (p && p.then) p.then(function(){});
+      if (p && p.catch) p.catch(function(){});
     } catch (_) {}
   }
 }
@@ -117,14 +119,20 @@ export function useCoinBalance(userId, supabase){
   useEffect(function(){
     if (!userId) return;
     var cancelled = false;
-    client.from('profiles').select('coins').eq('id', userId).single().then(function(r){
-      if (cancelled) return;
-      if (r && r.data && r.data.coins != null) {
-        var n = Number(r.data.coins) || 0;
-        writeCachedBalance(n);
-        setBalance(n);
+    var fetchPromise = client.from('profiles').select('coins').eq('id', userId).single();
+    if (fetchPromise && fetchPromise.then) {
+      fetchPromise.then(function(r){
+        if (cancelled) return;
+        if (r && r.data && r.data.coins != null) {
+          var n = Number(r.data.coins) || 0;
+          writeCachedBalance(n);
+          setBalance(n);
+        }
+      });
+      if (fetchPromise.catch) {
+        fetchPromise.catch(function(){ /* offline / network — keep cached value */ });
       }
-    });
+    }
 
     // Realtime — listen for any UPDATE on this user's profile row and
     // pull the new coins value if it changed. This catches:

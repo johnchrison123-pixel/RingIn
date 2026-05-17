@@ -20,9 +20,12 @@ export default function WalletScreen(props){
 
   // Balance comes from the shared hook so any change here (purchase)
   // propagates instantly to HomeScreen / Messages / Search chips, and
-  // any change there (call deduct, promo) lands here too.
+  // any change there (call deduct, promo) lands here too. We DO NOT
+  // also fetch profiles.coins ourselves — the hook already does that on
+  // mount and again via realtime UPDATE, and the duplicate fetch was
+  // racing with CallScreen broadcasts (overwriting the deducted value
+  // with the stale DB value).
   var balance = useCoinBalance(userId, sb);
-  function setBalance(n){ setSharedCoinBalance(n); } // local helper that broadcasts
   var selS=useState(null); var selected=selS[0]; var setSelected=selS[1];
   var payS=useState('card'); var payMethod=payS[0]; var setPayMethod=payS[1];
   var upiS=useState(''); var upiId=upiS[0]; var setUpiId=upiS[1];
@@ -31,12 +34,9 @@ export default function WalletScreen(props){
   var txS=useState([]); var transactions=txS[0]; var setTransactions=txS[1];
   var payingS=useState(false); var paying=payingS[0]; var setPaying=payingS[1];
 
-  // Load balance + transactions from Supabase
+  // Load transactions only — balance comes from the shared hook above.
   useEffect(function(){
     if(!userId) return;
-    sb.from('profiles').select('coins').eq('id',userId).single().then(function(r){
-      if(r.data && r.data.coins != null) setBalance(Number(r.data.coins) || 0);
-    }).catch(function(){toastError('Failed to load balance');});
     sb.from('transactions').select('*').eq('user_id',userId).order('created_at',{ascending:false}).limit(20).then(function(r){
       if(r.data) setTransactions(r.data);
     }).catch(function(){});
@@ -54,28 +54,38 @@ export default function WalletScreen(props){
     // Simulate payment processing
     setTimeout(function(){
       var addedCoins = selected.coins + (selected.bonus || 0);
-      var newBalance = balance + addedCoins;
-      setBalance(newBalance);
+      var prevBalance = balance;
+      var newBalance = prevBalance + addedCoins;
 
-      // Update profile in DB
-      sb.from('profiles').update({coins:newBalance}).eq('id',userId).then(function(){});
-
-      // Insert transaction
-      sb.from('transactions').insert([{
-        user_id:userId,
-        type:'purchase',
-        label:'Purchased '+selected.coins+(selected.bonus?'+'+selected.bonus+' bonus':'')+' coins',
-        coins:addedCoins,
-        amount:selected.price,
-      }]).select().then(function(r){
-        if(r.data && r.data[0]){
-          setTransactions(function(prev){return [r.data[0]].concat(prev);});
+      // Write to DB FIRST. Only broadcast the new balance to other
+      // screens after the write succeeds — otherwise a failed write
+      // leaves every chip showing the wrong number.
+      sb.from('profiles').update({coins:newBalance}).eq('id',userId).then(function(r){
+        if(r && r.error){
+          setPaying(false);
+          toastError('Payment failed — try again. ('+(r.error.message||'')+')');
+          return;
         }
-      });
+        // DB write succeeded — broadcast to every chip in the app.
+        setSharedCoinBalance(newBalance);
 
-      setDone(true);
-      setPaying(false);
-      toastSuccess('🎉 Payment successful! +'+addedCoins+' coins');
+        // Insert transaction row for the Wallet history list.
+        sb.from('transactions').insert([{
+          user_id:userId,
+          type:'purchase',
+          label:'Purchased '+selected.coins+(selected.bonus?'+'+selected.bonus+' bonus':'')+' coins',
+          coins:addedCoins,
+          amount:selected.price,
+        }]).select().then(function(tr){
+          if(tr && tr.data && tr.data[0]){
+            setTransactions(function(prev){return [tr.data[0]].concat(prev);});
+          }
+        });
+
+        setDone(true);
+        setPaying(false);
+        toastSuccess('🎉 Payment successful! +'+addedCoins+' coins');
+      });
     },1200);
   }
 

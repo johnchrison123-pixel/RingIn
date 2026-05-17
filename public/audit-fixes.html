@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ Coin sync fixed + Edit Post crash patched</h2>
-<p>New shared <code>useCoinBalance</code> hook means HomeScreen / Messages / Search / Wallet chips all show the SAME balance, in real time. Wallet purchase, call deduction, promo credit — they all propagate instantly across every screen and across devices via Supabase realtime. Also patched a latent Edit Post crash the audit agent caught (saveEditPost referenced UserProfileView vars from HomeScreen scope). Bundle <code>2026.0518.0001</code> live — refresh app → accept green Update prompt.</p>
+<h2>✅ Coin sync + call-deduct DB persist fixed (hardened)</h2>
+<p>Second audit pass found a critical stale-closure in CallScreen.hangup() that would have UNDONE every per-minute deduction in the DB write — fixed with a ref mirror. Also patched Wallet purchase race (broadcast now waits for DB write success) and removed Wallet's duplicate balance fetch. Bundle <code>2026.0518.0007</code> live — refresh app, accept green Update prompt. APK on Desktop also rebuilt.</p>
 </div>
 
 <div class="stats">
