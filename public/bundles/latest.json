@@ -1,13 +1,13 @@
 ﻿{
-  "version": "2026.0517.1343",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1343.zip",
-  "published_at": "2026-05-17T13:44:02Z",
+  "version": "2026.0517.1443",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0517.1443.zip",
+  "published_at": "2026-05-17T14:43:15Z",
   "git_sha": "manual",
-  "title": "WhatsApp share + mute/block + edge swipe",
+  "title": "Auto-update toggle + Groups tab + WhatsApp-style updates",
   "notes": [
-    "New: 3-dot menu (top-right) on other users moments — Mute Status / Block",
-    "New: share sheet now has WhatsApp, Share, Clipboard buttons with icons",
-    "Fix: swipe from screen edge now navigates between users (popstate guarded)",
-    "Polish: share sheet more transparent for stronger frosty glass effect"
+    "New: Automatic Update toggle in Profile — flip on to silently apply updates",
+    "New: Groups tab in Messages (Friends / Experts / Groups / Business)",
+    "Fix: OTA now uses Capgo.next() + reload — actually swaps the bundle",
+    "Polish: App Version + Check for Updates moved above Sign Out; Webstreax footer added"
   ]
 }
