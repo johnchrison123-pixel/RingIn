@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RingIn — Comprehensive Audit</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55;font-size:14pt}
+.wrap{max-width:760px;margin:0 auto;padding:30px 24px 60px}
+h1{font-size:24pt;font-weight:800;color:#5B4FD4;margin-bottom:6px;letter-spacing:-0.5px}
+.sub{font-size:11pt;color:#666;margin-bottom:24px}
+.status{background:linear-gradient(135deg,#FFF4D6,#FFE4B5);border:1.5px solid #F5A623;border-radius:14px;padding:18px 20px;margin-bottom:24px}
+.status .badge{display:inline-block;padding:3px 10px;background:#F5A623;color:#fff;font-size:10pt;font-weight:700;border-radius:99px;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
+.status h2{font-size:14pt;font-weight:700;color:#7A4E00;margin-bottom:6px}
+.status p{font-size:11pt;color:#7A4E00}
+.section h2{font-size:14pt;font-weight:700;color:#1a1a1f;margin:24px 0 10px;letter-spacing:-0.3px}
+.item{background:#FAFAFC;border:1px solid #e2e2ea;border-radius:10px;padding:12px 14px;margin:8px 0;page-break-inside:avoid}
+.item h3{font-size:11pt;font-weight:700;color:#1a1a1f;margin-bottom:4px}
+.item p{font-size:10pt;color:#555;line-height:1.5}
+.item .num{display:inline-block;width:20px;height:20px;border-radius:50%;background:#5B4FD4;color:#fff;text-align:center;line-height:20px;font-size:10pt;font-weight:700;margin-right:8px}
+.lead{font-size:11pt;color:#333;background:#F6F4FF;border-left:3px solid #5B4FD4;padding:10px 14px;border-radius:0 10px 10px 0;margin-bottom:14px}
+footer{margin-top:30px;padding-top:18px;border-top:1px solid #ddd;font-size:9pt;color:#888;text-align:center}
+@media print{@page{size:A4;margin:14mm 12mm}body{font-size:10.5pt}h1{font-size:18pt}h2{font-size:13pt}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>RingIn — Comprehensive App Audit</h1>
+<p class="sub">Generated 2026-05-17 · refreshes as agents complete</p>
+
+<div class="status">
+<span class="badge">🔄 In Progress</span>
+<h2>Multiple agents auditing the app right now</h2>
+<p>This document will be populated with findings over the next 30–60 minutes. Refresh the link periodically to see results.</p>
+</div>
+
+<div class="section">
+<h2>What's being checked (in parallel, supervised)</h2>
+<p class="lead">A supervisor agent reviews every report to make sure no screen or feature is missed.</p>
+
+<div class="item"><h3><span class="num">1</span>HomeScreen</h3><p>Feed scrolling, post composer, comments, likes, moments strip, hashtag filter, online experts strip, post detail viewer, share/save buttons.</p></div>
+
+<div class="item"><h3><span class="num">2</span>MessagesScreen</h3><p>Inbox list, chat box, message reactions, typing indicators, photo attachment, unsend, mute conversation, blocked users, new Friends / Experts / Groups / Business tabs.</p></div>
+
+<div class="item"><h3><span class="num">3</span>CallScreen + voice/video</h3><p>Agora integration, ringtone, accept / decline buttons, in-call controls (mute, speaker, end), call timer, missed call notifications, lock-screen push.</p></div>
+
+<div class="item"><h3><span class="num">4</span>SearchScreen</h3><p>Experts list, search FTS (people + posts), follow / call buttons, trending hashtags, expert profile view, message-expert button.</p></div>
+
+<div class="item"><h3><span class="num">5</span>ProfileScreen + Settings</h3><p>Every toggle (sound, haptics, privacy, notifications), blocked users list, muted words, delete account flow, expert application, auto-update toggle, version display, sign out, footer.</p></div>
+
+<div class="item"><h3><span class="num">6</span>Security</h3><p>RLS policies on every Supabase table, exposed secrets in repo (.env, service-role keys), API endpoint authentication, OTA bundle integrity, CORS settings.</p></div>
+
+<div class="item"><h3><span class="num">7</span>Dummy buttons + non-saving + non-caching</h3><p>Every clickable element traced to its actual handler. localStorage and Supabase persistence verified per feature. Caches that should expire but don't.</p></div>
+
+<div class="item"><h3><span class="num">8</span>Social-media comparison</h3><p>Instagram, Facebook, LinkedIn, Twitter, WhatsApp standard patterns vs what RingIn implements. Gaps and recommendations.</p></div>
+</div>
+
+<footer>
+RingIn audit · Webstreax Technologies Pvt Ltd<br>
+Refresh this URL to see the latest findings · Full report posts here when agents finish
+</footer>
+</div>
+</body>
+</html>
