@@ -23,6 +23,7 @@ import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
 import {prefetchAgora} from './utils/agora';
+import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -49,6 +50,10 @@ export default function App() {
   var appFollowHook = useFollow(supabase, appUserId);
   var appFollowing = appFollowHook.following;
   var appToggleFollow = appFollowHook.toggleFollow;
+  // App-level coin balance — passed to CallScreen as the starting `coins`
+  // prop so the call timer charges against the user's real balance, not a
+  // hardcoded 1240. The hook itself keeps every screen's chip in sync.
+  var appCoinBal = useCoinBalance(appUserId, supabase);
 
   // PWA shortcut deep-link — manifest.json advertises `/?tab=messages` and
   // `/?tab=search` as home-screen long-press shortcuts. Read the query once on
@@ -686,7 +691,7 @@ export default function App() {
           inviteId: activeCall.inviteId,
           channel: activeCall.channel,
           isIncoming: !!activeCall.isIncoming,
-          coins: 1240, // TODO: pull live coin balance via wallet hook
+          coins: appCoinBal || getCachedCoinBalance() || 0,
           onCoinsChange: function(){},
           onEnd: function(){ setActiveCall(null); },
         })

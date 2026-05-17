@@ -1,13 +1,13 @@
 {
-  "version": "2026.0518.0014",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0014.zip",
-  "published_at": "2026-05-18T00:14:00Z",
+  "version": "2026.0518.0021",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0021.zip",
+  "published_at": "2026-05-18T00:21:00Z",
   "git_sha": "manual",
-  "title": "Auto-load feed + carousel memory + quick-message",
+  "title": "Coin sync — Workshops, Profile, and call timer",
   "notes": [
-    "New: Feed auto-loads more posts as you scroll — no more tapping 'Load more posts'",
-    "New: Multi-image post carousels remember which slide you were on across tab switches",
-    "New: 💬 quick-message button next to Call on each online expert — skip the profile page",
-    "Built on top of 2026.0518.0007 — all earlier fixes (coin sync, restrict, edit post, last seen, mute icons, etc) still in this bundle"
+    "FIX: Workshops tab coin chip now shows your real balance (was hardcoded 1,240)",
+    "FIX: Profile stats card (under your avatar) + Settings stats card both show real coins",
+    "CRITICAL FIX: Call timer now uses your REAL coin balance as the starting value (was hardcoded 1,240) — every call you've made since v3.25 launched was charging against a fake 1240, so deductions never matched your actual wallet",
+    "All 5 coin chips across the app now sync via the same useCoinBalance hook + Supabase realtime"
   ]
 }

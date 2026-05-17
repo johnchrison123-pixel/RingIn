@@ -10,6 +10,8 @@ import {useHideLikes} from '../utils/likeDisplayPref';
 import {useCloseFriends, addCloseFriend, removeCloseFriend} from '../utils/closeFriends';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
 import {toastSuccess,toastError} from '../utils/toast';
+import {useCoinBalance} from '../utils/coinBalance';
+import {sb as sbProfileCoin} from '../utils/supabase';
 
 // Copy a URL to the clipboard and toast ONLY on real success.
 // Same helper pattern as HomeScreen — eliminates false-positive "Link
@@ -166,6 +168,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var email = session && session.user ? session.user.email : '';
   var initials = email ? email.substring(0,2).toUpperCase() : 'ME';
   var userId = session && session.user ? session.user.id : null;
+  // Shared coin balance — same hook every other screen uses, so the
+  // Settings page stats card and own-profile stats card both show the
+  // live balance instead of the hardcoded "1,240".
+  var profileCoinBal = useCoinBalance(userId, sbProfileCoin);
 
   // Shared moments registry — drives the Instagram-style avatar ring on
   // the profile cover avatar and on each post header.
@@ -1858,7 +1864,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ),
     React.createElement('div',{style:{padding:'14px 18px'}},
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
-        [{v:'12',l:'Calls Made',icon:'📞'},{v:'1,240',l:'Coins',icon:'🪙'},{v:'4.8★',l:'Rating',icon:'⭐'}].map(function(s){
+        [{v:'12',l:'Calls Made',icon:'📞'},{v:(Number(profileCoinBal)||0).toLocaleString(),l:'Coins',icon:'🪙'},{v:'4.8★',l:'Rating',icon:'⭐'}].map(function(s){
           return React.createElement('div',{key:s.l,
             onClick:function(){if(s.l==='Coins'&&onOpenWallet){setShowSettings(false);onOpenWallet();}},
             style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',textAlign:'center',cursor:s.l==='Coins'?'pointer':'default'}},
@@ -2324,7 +2330,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ),
     // Stats
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',padding:'0 18px 12px'}},
-      [{v:'12',l:'Calls'},{v:'1,240',l:'Coins'},{v:'0',l:'Reviews'}].map(function(s){
+      [{v:'12',l:'Calls'},{v:(Number(profileCoinBal)||0).toLocaleString(),l:'Coins'},{v:'0',l:'Reviews'}].map(function(s){
         return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
           React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:'var(--text)'}},s.v),
           React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)

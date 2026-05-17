@@ -2,6 +2,8 @@ import React,{useState} from 'react';
 import LiveWorkshopScreen from './LiveWorkshopScreen';
 import '../styles/HomeScreen.css';
 import TopBarAvatar from '../components/TopBarAvatar';
+import {sb} from '../utils/supabase';
+import {useCoinBalance} from '../utils/coinBalance';
 
 const LIVE = [
   {id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},
@@ -14,6 +16,12 @@ const UPCOMING = [
 
 export default function WorkshopsScreen(props){
   var lS=useState(null); var live=lS[0]; var setLive=lS[1];
+  // Shared coin balance — synced with Home / Messages / Search / Wallet.
+  // Hooks MUST be called before any conditional return, so this lives
+  // above the live-workshop early return below.
+  var session = props && props.session;
+  var userId = session && session.user ? session.user.id : null;
+  var coinBal = useCoinBalance(userId, sb);
   if(live) return React.createElement(LiveWorkshopScreen,{workshop:live,onLeave:function(){setLive(null);}});
   return(
     <div className="hc">
@@ -21,7 +29,7 @@ export default function WorkshopsScreen(props){
         <div className="brand">Workshops</div>
         <div className="tbr">
           <div className="wchip" onClick={function(){if(props&&props.onOpenWallet)props.onOpenWallet();}} style={{cursor:'pointer'}}>
-            <div className="wc">C</div><span>1,240</span>
+            <div className="wc">C</div><span>{(Number(coinBal)||0).toLocaleString()}</span>
           </div>
           <TopBarAvatar
             session={props.session}
