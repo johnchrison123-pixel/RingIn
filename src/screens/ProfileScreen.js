@@ -234,6 +234,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var rateS=useState(0); var rateVal=rateS[0]; var setRateVal=rateS[1];
   var rateDoneS=useState(false); var rateDone=rateDoneS[0]; var setRateDone=rateDoneS[1];
   var showRateS=useState(false); var showRate=showRateS[0]; var setShowRate=showRateS[1];
+  // Auto-update toggle — persists in localStorage. When on, OTA bundles
+  // download + apply silently. When off (default), the neon-green popup
+  // appears every 5 min while online.
+  var autoUpdateS = useState(function(){
+    try { return localStorage.getItem('ringin_ota_auto_update') === '1'; } catch(_){ return false; }
+  });
+  var autoUpdate = autoUpdateS[0]; var setAutoUpdate = autoUpdateS[1];
   var avatarS=useState(null); var avatarUrl=avatarS[0]; var setAvatarUrl=avatarS[1];
   var coverS=useState(null); var coverUrl=coverS[0]; var setCoverUrl=coverS[1];
   var uploadingS=useState(false); var uploading=uploadingS[0]; var setUploading=uploadingS[1];
@@ -1846,6 +1853,114 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           );
         })
       ),
+      // ── App / version section — sits ABOVE Become an Expert + Sign Out
+      // per user request. Two rows: App Version (read-only), Check for
+      // Updates (tap to manually check, toggle for auto-update).
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'16px'}},
+        // Row 1: App version (read-only)
+        React.createElement('div',{
+          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)'}
+        },
+          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'📦'),
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
+              var APK_VERSION = 'v3.24';
+              var bundle = '';
+              try {
+                var v = localStorage.getItem('ringin_ota_current_version');
+                if (v && v !== '0.0.0') bundle = v;
+              } catch(_){}
+              return bundle ? (APK_VERSION + ' · bundle ' + bundle) : (APK_VERSION + ' · built-in');
+            })())
+          )
+        ),
+        // Row 2: Check for Updates (tappable) + Automatic Update (toggle)
+        React.createElement('div',{
+          onClick:function(){
+            import('../utils/otaUpdater').then(function(mod){
+              if (!mod || typeof mod.checkOnly !== 'function') { alert('Update checker not available.'); return; }
+              mod.checkOnly().then(function(r){
+                if (r && r.available) {
+                  // If auto-update is ON, apply silently. Otherwise show popup.
+                  if (mod.getAutoUpdate && mod.getAutoUpdate()) {
+                    if (mod.downloadAndApply) {
+                      try { window.__ringinPendingOtaUpdate = r; } catch(_){}
+                      // Surface the same neon green popup so user sees the
+                      // updating overlay flow (even with auto on).
+                      try {
+                        var ev = new CustomEvent('ringin-sw-update-available', {
+                          detail: { source:'ota', version:r.version, title:r.title, notes:r.notes }
+                        });
+                        window.dispatchEvent(ev);
+                      } catch(_){}
+                    }
+                  } else {
+                    try { window.__ringinPendingOtaUpdate = r; } catch(_){}
+                    try {
+                      var ev2 = new CustomEvent('ringin-sw-update-available', {
+                        detail: { source:'ota', version:r.version, title:r.title, notes:r.notes }
+                      });
+                      window.dispatchEvent(ev2);
+                    } catch(_){}
+                  }
+                } else if (r && r.reason === 'already-current') {
+                  alert('✅ You are on the latest version (' + (r.current || 'current') + ').');
+                } else if (r && r.reason === 'web') {
+                  alert('🌐 PWA: updates apply automatically via service worker.');
+                } else {
+                  alert('Update check: ' + (r && r.reason ? r.reason : 'unknown'));
+                }
+              }).catch(function(err){ alert('Update check failed: ' + (err && err.message ? err.message : err)); });
+            });
+          },
+          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}
+        },
+          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'🔄'),
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'Check for Updates'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Tap to check now')
+          ),
+          React.createElement('div',{style:{fontSize:'11px',color:'#39FF14',fontWeight:700,textShadow:'0 0 6px rgba(57,255,20,0.5)'}},'CHECK')
+        ),
+        // Row 3: Automatic Update toggle
+        React.createElement('div',{
+          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px'}
+        },
+          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'⚙️'),
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'Automatic Update'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}}, autoUpdate ? 'Updates download in background' : 'Shows a popup when updates are ready')
+          ),
+          // iOS-style toggle switch
+          React.createElement('div',{
+            onClick:function(e){
+              e.stopPropagation();
+              var next = !autoUpdate;
+              setAutoUpdate(next);
+              try { localStorage.setItem('ringin_ota_auto_update', next ? '1' : '0'); } catch(_){}
+            },
+            style:{
+              width:'46px', height:'26px', borderRadius:'13px',
+              background: autoUpdate ? 'linear-gradient(135deg,#39FF14,#00FF7F)' : 'rgba(255,255,255,0.15)',
+              position:'relative', cursor:'pointer',
+              transition:'background 200ms',
+              boxShadow: autoUpdate ? '0 0 10px rgba(57,255,20,0.4)' : 'none',
+            }
+          },
+            React.createElement('div',{
+              style:{
+                position:'absolute', top:'2px',
+                left: autoUpdate ? '22px' : '2px',
+                width:'22px', height:'22px', borderRadius:'50%',
+                background:'#fff',
+                boxShadow:'0 1px 4px rgba(0,0,0,0.3)',
+                transition:'left 200ms',
+              }
+            })
+          )
+        )
+      ),
       // Become an Expert card
       React.createElement('div',{
         onClick:function(){setShowExpertApp(true);},
@@ -1879,80 +1994,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         onClick:function(){supabase.auth.signOut();},
         style:{width:'100%',padding:'13px',background:'rgba(239,71,71,.1)',border:'1px solid rgba(239,71,71,.3)',borderRadius:'12px',color:'#ef4747',fontSize:'14px',fontWeight:600,cursor:'pointer'}
       },'Sign Out'),
-      // ── App / version section — sits BELOW Sign Out, styled like the
-      //    other settings rows above. Shows BOTH the APK release version
-      //    (v3.x — bumped each time you reinstall the APK) AND the live
-      //    OTA bundle version (auto-updates without reinstalling).
-      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginTop:'24px',marginBottom:'10px',paddingLeft:'2px'}},'App'),
-      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'24px'}},
-        // Row 1: App version (read-only display).
-        React.createElement('div',{
-          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)'}
-        },
-          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'📦'),
-          React.createElement('div',{style:{flex:1,minWidth:0}},
-            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
-            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.23';
-              var bundle = '';
-              try {
-                var v = localStorage.getItem('ringin_ota_current_version');
-                if (v && v !== '0.0.0') bundle = v;
-              } catch(_){}
-              return bundle ? (APK_VERSION + ' · bundle ' + bundle) : (APK_VERSION + ' · built-in');
-            })())
-          )
-        ),
-        // Row 2: Check for Updates — taps trigger the same neon-green
-        // popup the launch path uses. If nothing new, brief alert says so.
-        React.createElement('div',{
-          onClick:function(){
-            import('../utils/otaUpdater').then(function(mod){
-              if (!mod || typeof mod.checkOnly !== 'function') {
-                alert('Update checker not available.');
-                return;
-              }
-              mod.checkOnly().then(function(r){
-                if (r && r.available) {
-                  try { window.__ringinPendingOtaUpdate = r; } catch(_){}
-                  try {
-                    var ev = new CustomEvent('ringin-sw-update-available', {
-                      detail: { source: 'ota', version: r.version, title: r.title, notes: r.notes }
-                    });
-                    window.dispatchEvent(ev);
-                  } catch(_){}
-                } else if (r && r.reason === 'already-current') {
-                  alert('✅ You are on the latest version (' + (r.current || 'current') + ').');
-                } else if (r && r.reason === 'web') {
-                  alert('🌐 PWA: updates apply automatically via service worker.');
-                } else {
-                  alert('Update check: ' + (r && r.reason ? r.reason : 'unknown'));
-                }
-              }).catch(function(err){
-                alert('Update check failed: ' + (err && err.message ? err.message : err));
-              });
-            });
-          },
-          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}
-        },
-          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'🔄'),
-          React.createElement('div',{style:{flex:1,minWidth:0}},
-            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'Check for Updates'),
-            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Opt-in only — never auto-installs')
-          ),
-          React.createElement('div',{style:{fontSize:'11px',color:'#39FF14',fontWeight:700,textShadow:'0 0 6px rgba(57,255,20,0.5)'}},'CHECK')
-        ),
-        // Row 3: app name + tagline (read-only)
-        React.createElement('div',{
-          style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px'}
-        },
-          React.createElement('span',{style:{fontSize:'17px',width:'24px',textAlign:'center'}},'ℹ️'),
-          React.createElement('div',{style:{flex:1,minWidth:0}},
-            React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'RingIn'),
-            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Talk to experts, by the minute')
-          )
-        )
-      )
+      // Small company-name footer under Sign Out.
+      React.createElement('div',{
+        style:{textAlign:'center',marginTop:'14px',marginBottom:'8px',fontSize:'10px',color:'var(--t3)',letterSpacing:'0.4px',fontFamily:'inherit'}
+      }, 'Webstreax Technologies Pvt Ltd')
     )
   );
 

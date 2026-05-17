@@ -132,40 +132,43 @@ export async function downloadAndApply(version, url, onProgress) {
   try {
     try { console.log('[ringin OTA] downloading', version); } catch(_){}
     var bundle = await Capgo.download({ url: url, version: version });
-    if (typeof onProgress === 'function') try { onProgress(90); } catch(_){}
-    // CRITICAL: verify the bundle actually downloaded successfully.
-    // If status is 'error' / 'pending', set() will silently do nothing
-    // and we'll be left with the old bundle but a misleading "updated"
-    // version label.
+    if (typeof onProgress === 'function') try { onProgress(80); } catch(_){}
     if (bundle && bundle.status && bundle.status !== 'success' && bundle.status !== 'pending') {
       throw new Error('Bundle download failed: status=' + bundle.status);
     }
     try { console.log('[ringin OTA] downloaded bundle:', JSON.stringify(bundle)); } catch(_){}
-    // Set the flags BEFORE set() because set() reloads immediately and
-    // the JS context dies — anything after may never run.
+    // NEW SEQUENCE — `set()` was unreliable on Capgo 6.0.20 (the reload
+    // it triggered sometimes ran with the OLD bundle still active).
+    // Use the documented "stage + manual reload" pattern instead:
+    //   1. next({id}) marks the bundle as the one to use on next reload
+    //   2. window.location.reload() actually triggers the reload
+    // The new bundle calls Capgo.notifyAppReady() in checkOnly which
+    // confirms it; otherwise Capgo rolls back to the previous bundle.
+    if (typeof Capgo.next === 'function') {
+      try { await Capgo.next({ id: bundle.id }); } catch(eNext) {
+        // Some Capgo builds expose only set(). Fall back to that.
+        try { console.warn('[ringin OTA] next() failed, falling back to set()', eNext); } catch(_){}
+        try { await Capgo.set({ id: bundle.id }); } catch(_){}
+      }
+    } else if (typeof Capgo.set === 'function') {
+      try { await Capgo.set({ id: bundle.id }); } catch(_){}
+    }
+    if (typeof onProgress === 'function') try { onProgress(95); } catch(_){}
+    // Flag the boot overlay BEFORE reload (anything after reload runs
+    // in the new bundle).
     try { localStorage.setItem('ringin_just_updated', '1'); } catch(_){}
     setCurrentVersion(version);
-    if (typeof onProgress === 'function') try { onProgress(95); } catch(_){}
-    // Capgo's set() docs (line 230 of definitions.d.ts):
-    //   "Set the current bundle and immediately reloads the app."
-    // So we DON'T call reload() separately — set() does both. The
-    // previous bug was calling reload() right after set() which sometimes
-    // caused the reload to happen with the OLD bundle still active
-    // (race between set's reload trigger and our explicit reload).
-    await Capgo.set({ id: bundle.id });
-    // If we get here without the app reloading, something went wrong.
-    // Force a reload as a fallback.
-    try { console.log('[ringin OTA] set() did not reload — forcing'); } catch(_){}
     if (typeof onProgress === 'function') try { onProgress(100); } catch(_){}
+    try { console.log('[ringin OTA] installed, reloading'); } catch(_){}
+    // Reload — use window.location for maximum reliability. Capgo's
+    // own reload() can fail silently on some Android Webview builds.
     setTimeout(function(){
-      if (typeof Capgo.reload === 'function') {
-        Capgo.reload().catch(function(){
-          try { window.location.reload(); } catch(_){}
-        });
-      } else {
-        try { window.location.reload(); } catch(_){}
+      try { window.location.reload(); } catch(_){
+        if (Capgo && typeof Capgo.reload === 'function') {
+          try { Capgo.reload(); } catch(_2){}
+        }
       }
-    }, 100);
+    }, 120);
   } finally {
     if (pluginListener && typeof pluginListener.remove === 'function') {
       try { await pluginListener.remove(); } catch(_){}
@@ -173,35 +176,50 @@ export async function downloadAndApply(version, url, onProgress) {
   }
 }
 
+// Get / set the auto-update toggle (localStorage). When true, OTA
+// updates are downloaded + applied automatically with no popup.
+// When false (default), the user sees the neon green popup and
+// has to tap Update Now.
+var AUTO_UPDATE_KEY = 'ringin_ota_auto_update';
+export function getAutoUpdate(){
+  try { return localStorage.getItem(AUTO_UPDATE_KEY) === '1'; } catch(_){ return false; }
+}
+export function setAutoUpdate(on){
+  try { localStorage.setItem(AUTO_UPDATE_KEY, on ? '1' : '0'); } catch(_){}
+}
+
 // Convenience entry point for App.js. Runs an opt-in check:
 //   1. 4 seconds after app start
 //   2. every 5 minutes thereafter (while online)
 //   3. when the network goes offline → online
 //   4. when the app comes from background → foreground (tab visible)
-// Each time a newer bundle exists, onAvailable(info) fires so the popup
-// can show. The popup itself only renders if not already visible — the
-// user can dismiss and it'll come back on the next check.
+// Behaviour on update available:
+//   - If autoUpdate=true → call downloadAndApply silently (no popup)
+//   - If autoUpdate=false → fire onAvailable(info) so popup shows
 export function startOtaUpdater(onAvailable){
   if (!isNative()) return;
   function doCheck(){
     try {
       checkOnly().then(function(r){
         try { console.log('[ringin OTA] check:', JSON.stringify(r)); } catch(_){}
-        if (r && r.available && typeof onAvailable === 'function') {
-          try { onAvailable(r); } catch(_){}
+        if (r && r.available) {
+          if (getAutoUpdate()) {
+            // Silent auto-apply path. No popup; downloadAndApply
+            // reloads when done.
+            try { console.log('[ringin OTA] auto-update on — downloading silently'); } catch(_){}
+            downloadAndApply(r.version, r.url, null).catch(function(err){
+              try { console.warn('[ringin OTA] silent download failed', err); } catch(_){}
+            });
+          } else if (typeof onAvailable === 'function') {
+            try { onAvailable(r); } catch(_){}
+          }
         }
       });
     } catch(_){}
   }
-  // 1) Initial check after a short delay so boot isn't blocked.
   setTimeout(doCheck, 4000);
-  // 2) Periodic check every 5 minutes.
   setInterval(doCheck, 5 * 60 * 1000);
-  // 3) Re-check when device goes back online.
-  try {
-    window.addEventListener('online', doCheck);
-  } catch(_){}
-  // 4) Re-check when app comes back to foreground.
+  try { window.addEventListener('online', doCheck); } catch(_){}
   try {
     document.addEventListener('visibilitychange', function(){
       if (!document.hidden) doCheck();
