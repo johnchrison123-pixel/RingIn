@@ -446,27 +446,55 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     }catch(e){}
   },[userId]);
 
-  // Android back / edge-swipe handler — close any open modal/panel
-  // before App.js falls through to its tab nav. Consumes the cancelable
-  // 'ringin:back' event in priority order (innermost overlay first).
+  // Android back / edge-swipe handler — walks UP the settings hierarchy
+  // one step at a time. Order is innermost overlay → outermost:
+  //   sub-picker (country/phone/timezone) → sub-page (Account/Privacy/…)
+  //   → Settings panel itself → Profile tab (then App.js takes over).
+  // Each press closes ONE level so the user can navigate back up the
+  // same path they came down. Consumes the cancelable 'ringin:back'
+  // event so App.js's tab-level fallback doesn't fire prematurely.
   useEffect(function(){
     function onBack(ev){
-      // Edit Profile modal (top-most)
-      if (showEditProfile) {
+      function consume(close){
         if (ev && ev.preventDefault) ev.preventDefault();
-        setShowEditProfile(false);
-        return;
+        close();
       }
-      // Settings panel
-      if (showSettings) {
-        if (ev && ev.preventDefault) ev.preventDefault();
-        setShowSettings(false);
-        return;
-      }
+      // ─── Modals (highest priority — always-on-top overlays) ───
+      if (showEditProfile) return consume(function(){ setShowEditProfile(false); });
+      if (showAvatarView) return consume(function(){ setShowAvatarView(false); });
+      if (showAvatarMenu) return consume(function(){ setShowAvatarMenu(false); });
+      if (showCoverAdjust) return consume(function(){ setShowCoverAdjust(false); });
+      if (showAdjust) return consume(function(){ setShowAdjust(false); });
+      if (showEmoji) return consume(function(){ setShowEmoji(false); });
+      // Likers list popup from Profile post grid
+      if (showLikersProf) return consume(function(){ setShowLikersProf(null); });
+      // ─── Sub-pickers INSIDE Account Settings (innermost) ───
+      if (showCountryPicker) return consume(function(){ setShowCountryPicker(false); });
+      if (showPhoneCodePicker) return consume(function(){ setShowPhoneCodePicker(false); });
+      if (showTzPicker) return consume(function(){ setShowTzPicker(false); });
+      // ─── Settings sub-pages — each closes back to the main Settings panel ───
+      if (showCloseFriends) return consume(function(){ setShowCloseFriends(false); });
+      if (showAcct) return consume(function(){ setShowAcct(false); });
+      if (showPrivacy) return consume(function(){ setShowPrivacy(false); });
+      if (showSupport) return consume(function(){ setShowSupport(false); });
+      if (showNotif) return consume(function(){ setShowNotif(false); });
+      if (showActivityLog) return consume(function(){ setShowActivityLog(false); });
+      if (showSound) return consume(function(){ setShowSound(false); });
+      if (showBlocked) return consume(function(){ setShowBlocked(false); });
+      if (showMuted) return consume(function(){ setShowMuted(false); });
+      if (showExpertApp) return consume(function(){ setShowExpertApp(false); });
+      if (showRate) return consume(function(){ setShowRate(false); });
+      // ─── Settings panel itself — closes back to the Profile screen ───
+      if (showSettings) return consume(function(){ setShowSettings(false); });
     }
     window.addEventListener('ringin:back', onBack);
     return function(){ window.removeEventListener('ringin:back', onBack); };
-  }, [showEditProfile, showSettings]);
+  }, [
+    showEditProfile, showAvatarView, showAvatarMenu, showCoverAdjust, showAdjust, showEmoji, showLikersProf,
+    showCountryPicker, showPhoneCodePicker, showTzPicker,
+    showCloseFriends, showAcct, showPrivacy, showSupport, showNotif, showActivityLog, showSound, showBlocked, showMuted, showExpertApp, showRate,
+    showSettings,
+  ]);
 
   useEffect(function(){
     if(!userId) return;

@@ -206,6 +206,28 @@ function MomentViewer(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, slides.length, paused, holdPaused, interacted]);
 
+  // Android back / edge-swipe — close innermost overlay first, then
+  // dismiss the moment viewer itself. Consumes the cancelable
+  // 'ringin:back' event so App.js's tab nav doesn't fire while the
+  // viewer is open.
+  useEffect(function(){
+    function onBack(ev){
+      function consume(close){
+        if (ev && ev.preventDefault) ev.preventDefault();
+        close();
+      }
+      if (ownMenu) return consume(function(){ setOwnMenu(false); });
+      if (otherMenu) return consume(function(){ setOtherMenu(false); });
+      if (shareSheet) return consume(function(){ setShareSheet(false); });
+      if (showViewers) return consume(function(){ setShowViewers(false); });
+      // No sub-overlay open → close the moments viewer itself.
+      if (ev && ev.preventDefault) ev.preventDefault();
+      if (onClose) onClose();
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [ownMenu, otherMenu, shareSheet, showViewers, onClose]);
+
   // Hydrate viewer profile names + avatars when the owner opens the
   // "Seen by N" sheet. JOINs moment_views.viewer_id → profiles.id. Without
   // this we'd render raw truncated UUIDs — useless to the owner.

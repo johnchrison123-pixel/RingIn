@@ -1,13 +1,14 @@
 {
-  "version": "2026.0518.0102",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0102.zip",
-  "published_at": "2026-05-18T01:02:00Z",
+  "version": "2026.0518.0118",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0118.zip",
+  "published_at": "2026-05-18T01:18:00Z",
   "git_sha": "manual",
-  "title": "Android back button + last bug-fix bundle for v3.25",
+  "title": "Back button walks UP every settings hierarchy",
   "notes": [
-    "JS-side back button logic now in place — close innermost overlay first (Edit Post → post detail → notifications → comments → chat → expert profile → user stack), then tab nav, then exit only at root",
-    "Note: full Android back button fix requires APK v3.26 (sideload ~/Desktop/ringin-v3.25.apk to upgrade) — it ships the @capacitor/app native plugin needed for the hardware back event",
-    "On v3.25 OTA users still get: same priority chain on the left-edge swipe-back gesture",
-    "All earlier fixes (coin sync everywhere, edit post, last seen, mute icons, autoload, carousel memory, quick-message) still in this bundle"
+    "Account Settings (and Privacy, Notifications, Sound, Blocked, Muted, Activity Log, Expert App, Help, Rate, Close Friends) → back returns to Settings, then to Profile, then to previous tab, then to home, then exits",
+    "Country / Phone code / Timezone pickers inside Account Settings → back returns to Account Settings (one level at a time)",
+    "Edit Profile, Avatar viewer, Avatar menu, Cover adjust, Crop, Emoji picker, Likers list → back closes the modal",
+    "Moments viewer: back closes sub-overlays first (own/other menu → share sheet → viewers list → close viewer), one level per press",
+    "Audit-agent verified 22 ProfileScreen state vars + Moments deps before ship"
   ]
 }
