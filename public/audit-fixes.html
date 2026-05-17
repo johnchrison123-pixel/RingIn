@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>⚠️ Hotfix shipped — Messages tab crash fixed</h2>
-<p>You hit "mutedConvos is not defined" → tabs not loading. Root cause: yesterday's mute-icon + restrict-enforcement patch referenced ChatBox-scoped variables from MessagesScreen scope. Hotfix bundle <code>2026.0517.2348</code> live on GitHub raw — relaunch the app, accept the green update prompt, all 13 audit fixes + this crash fix go live in one shot. New APK rebuilding now.</p>
+<h2>✅ Coin sync fixed + Edit Post crash patched</h2>
+<p>New shared <code>useCoinBalance</code> hook means HomeScreen / Messages / Search / Wallet chips all show the SAME balance, in real time. Wallet purchase, call deduction, promo credit — they all propagate instantly across every screen and across devices via Supabase realtime. Also patched a latent Edit Post crash the audit agent caught (saveEditPost referenced UserProfileView vars from HomeScreen scope). Bundle <code>2026.0518.0001</code> live — refresh app → accept green Update prompt.</p>
 </div>
 
 <div class="stats">
