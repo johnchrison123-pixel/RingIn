@@ -2030,7 +2030,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           value:mutedInput,
           onChange:function(e){setMutedInput(e.target.value);},
           onKeyDown:function(e){
-            if(e.key==='Enter'&&mutedInput.trim()){
+            /* FIX #2: IME composition guard */
+            if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && mutedInput.trim()){
               var word=mutedInput.trim().toLowerCase();
               if(!mutedWords.includes(word)){
                 var newList=mutedWords.concat([word]);
@@ -2234,7 +2235,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.34';
+              var APK_VERSION = 'v3.35';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -2830,7 +2831,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                 React.createElement('input',{
                   value:commentInputProf,
                   onChange:function(e){playProfKeyClick();setCommentInputProf(e.target.value);},
-                  onKeyDown:function(e){if(e.key==='Enter'&&commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}},
+                  onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}}, /* FIX #2: IME composition guard */
                   placeholder:'Write a comment...',
                   style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
                 }),

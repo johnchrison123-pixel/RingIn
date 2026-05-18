@@ -27,6 +27,7 @@ import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
 // Final polish: native alert() blocks the JS thread + looks system-y on Android.
 // Replaced with non-blocking toasts via the existing toast utility.
 import {toastError, toastWarn} from './utils/toast';
+import {safeInitials} from './utils/initials'; /* FIX #10: UTF-16 safe initials */
 
 // ROUND-9 FIX #6: getComputedStyle in the swipe-back touchstart walker
 // was running for every node on every touch — measurable jank on big
@@ -585,7 +586,7 @@ export default function App() {
         id: inv.caller_id,
         name: inv.caller_name || 'User',
         img: inv.caller_avatar,
-        initials: (inv.caller_name||'?').substring(0,2).toUpperCase(),
+        initials: safeInitials(inv.caller_name), /* FIX #10 */
         color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
         role: 'Member',
         rate: inv.rate_per_min || 30,

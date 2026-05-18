@@ -47,7 +47,7 @@ export default function LiveWorkshopScreen({workshop,onLeave}){
       React.createElement('div',{ref:bottomRef})
     ),
     React.createElement('div',{style:{padding:'10px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',background:'var(--bg)'}},
-      React.createElement('input',{value:text,onChange:function(e){setText(e.target.value);},onKeyDown:function(e){if(e.key==='Enter')send();},placeholder:'Say something...',style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'9px 14px',fontSize:'12px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}}),
+      React.createElement('input',{value:text,onChange:function(e){setText(e.target.value);},onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229)send();},placeholder:'Say something...',style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'9px 14px',fontSize:'12px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}}), /* FIX #2: IME composition guard */
       React.createElement('button',{onClick:send,style:{width:'36px',height:'36px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'16px',cursor:'pointer',flexShrink:0}},'>') 
     )
   );

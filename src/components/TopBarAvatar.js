@@ -67,6 +67,12 @@ export default function TopBarAvatar(props) {
   var momentUserIds = useMomentUserIds();
   var hasMoment = userId ? momentUserIds.has(userId) : false;
 
+  // FIX #5: image-load failure fallback — if the avatar URL 404s / fails to
+  // decode, drop to the initial letter instead of rendering a broken-image icon.
+  var imgFailedS = useState(false); var imgFailed = imgFailedS[0]; var setImgFailed = imgFailedS[1];
+  // Reset failure flag whenever the avatar URL changes (new upload / cross-tab sync)
+  useEffect(function(){ setImgFailed(false); }, [avatar]);
+
   return React.createElement(AvatarRing, { show: hasMoment, thickness: 1.5 },
     React.createElement('button', {
       onClick: onClick,
@@ -79,8 +85,8 @@ export default function TopBarAvatar(props) {
         color: '#fff', fontWeight: 700, fontSize: '12px', flexShrink: 0,
       },
     },
-      avatar
-        ? React.createElement('img', {src: avatar, alt: 'profile', style: {width:'100%', height:'100%', objectFit:'cover'}})
+      (avatar && !imgFailed)
+        ? React.createElement('img', {src: avatar, alt: 'profile', onError: function(){ setImgFailed(true); }, style: {width:'100%', height:'100%', objectFit:'cover'}})
         : initial
     )
   );

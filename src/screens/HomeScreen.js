@@ -18,6 +18,7 @@ import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 // Final polish: dropped unused getRecommendedExperts from the destructure.
 import {detectContent,autoTagPost} from '../utils/mlService';
 import {useCoinBalance} from '../utils/coinBalance';
+import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
@@ -105,7 +106,7 @@ function renderCommentThread(nodes,depth,opts){
       React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'6px',marginLeft:indent+'px',position:'relative'}},
         depth>0?React.createElement('div',{style:{position:'absolute',left:'-22px',top:'4px',bottom:0,width:'2px',background:'rgba(255,255,255,0.08)',borderRadius:'1px'}}):null,
         React.createElement('div',{style:{width:avSize+'px',height:avSize+'px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:depth===0?'11px':'9px',fontWeight:700,color:'#fff',marginTop:'2px'}},
-          c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+          c.user_avatar?React.createElement('img',{src:c.user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):safeInitials(c.user_name) /* FIX #10 */
         ),
         React.createElement('div',{style:{flex:1,minWidth:0}},
           React.createElement('div',{style:{background:depth===0?'var(--bg3)':'rgba(255,255,255,0.06)',borderRadius:'14px',padding:'8px 12px',marginBottom:'4px'}},
@@ -136,14 +137,36 @@ function renderCommentThread(nodes,depth,opts){
   });
 }
 
+// FIX #6/#7: shared <img> wrapper with onError fallback. Renders props.fallback
+// (typically the initials bubble) when the source 404s / decode fails OR is
+// empty. Accepts every native <img> prop (style, alt, loading, etc.) — they
+// pass through verbatim. Defined as a proper component so we can use useState
+// inside (a plain helper can't hold per-instance state).
+function ImgWithFallback(props){
+  var failedS = useState(false); var failed = failedS[0]; var setFailed = failedS[1];
+  if (failed || !props.src) return props.fallback || null;
+  // Strip "fallback" from the props passed to <img> — it's not a valid DOM attr.
+  var rest = {};
+  for (var k in props) { if (k !== 'fallback' && k !== 'onError') rest[k] = props[k]; }
+  rest.onError = function(e){ setFailed(true); if (props.onError) props.onError(e); };
+  return React.createElement('img', rest);
+}
+
 // Feed post image — 4:5 ratio (Instagram standard), objectFit:cover centers subject, crops dark edges
+// FIX #9: add loading:'lazy' so feed images below the fold don't all decode
+// eagerly on first paint (huge first-load win for users with long feeds).
 function PostImage(props){
   var src=props.src; var onClick=props.onClick;
   return React.createElement('div',{
     style:{width:'100%',aspectRatio:'4/5',overflow:'hidden',background:'#111',cursor:onClick?'pointer':'default'},
     onClick:onClick
   },
-    React.createElement('img',{src:src,style:{width:'100%',height:'100%',objectFit:'cover',objectPosition:'center',display:'block'}})
+    React.createElement(ImgWithFallback,{
+      src:src,
+      loading:'lazy',
+      fallback: React.createElement('div',{style:{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--t3)',fontSize:'12px'}},'Image unavailable'),
+      style:{width:'100%',height:'100%',objectFit:'cover',objectPosition:'center',display:'block'},
+    })
   );
 }
 
@@ -407,7 +430,7 @@ export function UserProfileView(props){
 
   var displayName = profileInfo.name || (user.full_name||(user.email||'?').split('@')[0]);
   var avatarUrl = user.avatar_url || localStorage.getItem('avatar_'+user.id) || null;
-  var initials = displayName.substring(0,2).toUpperCase();
+  var initials = safeInitials(displayName); /* FIX #10 */
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     // Report modal — replaces previously fake alert("Thank you for reporting...").
@@ -446,7 +469,7 @@ export function UserProfileView(props){
                 onClick:function(){if(canNav&&props.onViewUser){setShowLikersU(null);props.onViewUser({id:uid,full_name:nm,avatar_url:av,email:''});}},
                 style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:canNav?'pointer':'default'}
               },
-                av?React.createElement('img',{src:av,alt:nm,style:{width:'100%',height:'100%',objectFit:'cover'}}):nm.substring(0,2).toUpperCase()
+                av?React.createElement('img',{src:av,alt:nm,style:{width:'100%',height:'100%',objectFit:'cover'}}):safeInitials(nm) /* FIX #10 */
               ),
               React.createElement('div',{
                 onClick:function(){if(canNav&&props.onViewUser){setShowLikersU(null);props.onViewUser({id:uid,full_name:nm,avatar_url:av,email:''});}},
@@ -605,7 +628,8 @@ export function UserProfileView(props){
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px 8px',position:'relative'}},
             React.createElement(AvatarRing,{ show: momentUserIds.has(user.id) },
               React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
-                pAvatar?React.createElement('img',{src:pAvatar,alt:displayName,style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
+                /* FIX #6: ImgWithFallback for post header avatar */
+                React.createElement(ImgWithFallback,{src:pAvatar,alt:displayName,fallback:initials,style:{width:'100%',height:'100%',objectFit:'cover'}})
               )
             ),
             React.createElement('div',{style:{flex:1}},
@@ -671,7 +695,7 @@ export function UserProfileView(props){
                 return React.createElement('div',{key:c.id,style:{display:'flex',gap:'8px',marginBottom:'12px'}},
                   React.createElement(AvatarRing,{ show: momentUserIds.has(c.user_id), thickness: 1.5 },
                     React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                      c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):(c.user_name||'?').substring(0,2).toUpperCase()
+                      c.user_avatar?React.createElement('img',{src:c.user_avatar,alt:c.user_name,style:{width:'100%',height:'100%',objectFit:'cover'}}):safeInitials(c.user_name) /* FIX #10 */
                     )
                   ),
                   React.createElement('div',{style:{flex:1}},
@@ -695,13 +719,13 @@ export function UserProfileView(props){
             React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
               React.createElement(AvatarRing,{ show: momentUserIds.has(currentUserId), thickness: 1.5 },
                 React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                  currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user&&session.user.email?session.user.email.substring(0,2).toUpperCase():'?')
+                  currentUserId&&localStorage.getItem('avatar_'+currentUserId)?React.createElement('img',{src:localStorage.getItem('avatar_'+currentUserId),style:{width:'100%',height:'100%',objectFit:'cover'}}):(session&&session.user&&session.user.email?safeInitials(session.user.email):'?') /* FIX #10 */
                 )
               ),
               React.createElement('input',{
                 value:commentInputU,
                 onChange:function(e){playKeyClick();setCommentInputU(e.target.value);},
-                onKeyDown:function(e){if(e.key==='Enter'&&commentInputU.trim()){submitCommentU(p.id,commentInputU);}},
+                onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && commentInputU.trim()){submitCommentU(p.id,commentInputU);}}, /* FIX #2: IME composition guard */
                 placeholder:'Write a comment...',
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
               }),
@@ -1524,7 +1548,7 @@ export default function HomeScreen(props){
     return {
       id:p.id,
       userId:p.user_id,
-      initials:(p.user_name||'?').substring(0,2).toUpperCase(),
+      initials:safeInitials(p.user_name), /* FIX #10 */
       name:p.user_name||'User',
       role:'RingIn Member',
       color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
@@ -1627,11 +1651,12 @@ export default function HomeScreen(props){
     var skills = ALL_SKILLS.filter(function(s){return s.toLowerCase().includes(ql);});
     var workshops = ALL_WORKSHOPS.filter(function(w){return w.title.toLowerCase().includes(ql)||w.host.toLowerCase().includes(ql);});
     if(supabase){
+      // FIX #3: add .catch so a rejected profile search doesn't leave the spinner stuck
       supabase.from('profiles').select('*').or('email.ilike.%'+q+'%,full_name.ilike.%'+q+'%').then(function(res){
         var users = res.data||[];
         setSearchRes({experts:experts,skills:skills,workshops:workshops,users:users});
         setSearching(false);
-      });
+      }).catch(function(e){ setSearching(false); console.warn('[ringin] doSearch reject:', e); });
     } else {
       setSearchRes({experts:experts,skills:skills,workshops:workshops,users:[]});
       setSearching(false);
@@ -1698,7 +1723,8 @@ export default function HomeScreen(props){
         pd.video_url
           ? React.createElement('video',{src:pd.video_url,controls:true,playsInline:true,autoPlay:false,onClick:function(e){e.stopPropagation();},style:{width:'100%',maxHeight:'90vh',display:'block',objectFit:'contain',background:'#000'}})
           : pdImgs.length>0
-            ? React.createElement('img',{src:pdImgs[postDetailIdx],style:{width:'100%',height:'auto',maxHeight:'90vh',display:'block',objectFit:'contain'}})
+            /* FIX #6: ImgWithFallback wraps the post-detail lightbox img */
+            ? React.createElement(ImgWithFallback,{src:pdImgs[postDetailIdx],fallback:React.createElement('div',{style:{width:'100%',height:'200px',display:'flex',alignItems:'center',justifyContent:'center',color:'#888',fontSize:'13px',background:'#111'}},'Image unavailable'),style:{width:'100%',height:'auto',maxHeight:'90vh',display:'block',objectFit:'contain'}})
             : null,
         // Floating X — top left
         React.createElement('button',{onClick:function(e){e.stopPropagation();closePd();},style:{position:'absolute',top:'48px',left:'16px',width:'36px',height:'36px',borderRadius:'50%',background:'rgba(30,30,40,0.7)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:4,opacity:pdUiVisible?1:0,visibility:pdUiVisible?'visible':'hidden',transition:uiTrans}},'✕'),
@@ -1769,10 +1795,10 @@ export default function HomeScreen(props){
           ):null,
           React.createElement('div',{style:{display:'flex',gap:'8px',padding:'10px 14px'}},
             React.createElement('div',{style:{width:'30px',height:'30px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-              currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
+              currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):safeInitials(currentUserName) /* FIX #10 */
             ),
             React.createElement('input',{value:commentInput,onChange:function(e){playKeyClick();setCommentInput(e.target.value);},autoFocus:true,
-              onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}},
+              onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && commentInput.trim()){submitComment(pd.id,commentInput);setReplyingTo(null);setPostDetail(function(prev){return prev?Object.assign({},prev,{comments:(prev.comments||0)+1}):prev;});setCommentInput('');}}, /* FIX #2: IME composition guard */
               placeholder:'Add a comment...',
               style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'8px 14px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
             }),
@@ -1958,7 +1984,7 @@ export default function HomeScreen(props){
         var newPost = {
           id:res.data[0].id,
           userId:session.user.id,
-          initials:(postData.user_name||'?').substring(0,2).toUpperCase(),
+          initials:safeInitials(postData.user_name), /* FIX #10 */
           name:postData.user_name,
           role:'RingIn Member',
           color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
@@ -2125,7 +2151,7 @@ export default function HomeScreen(props){
         img: m.userAvatar || null,
         role: m.expertRole || '',
         color: m.color || 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-        initials: (m.userName || '??').substring(0,2).toUpperCase(),
+        initials: safeInitials(m.userName, '??'), /* FIX #10 */
         isOnline: true,
         lastMsg: text,
         lastTime: nowIso,
@@ -2267,7 +2293,7 @@ export default function HomeScreen(props){
                     onClick:function(){setShowLikers(null);goToUserProfile(uid,{name:name,avatar:av});},
                     style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:'pointer'}
                   },
-                    av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):name.substring(0,2).toUpperCase()
+                    av?React.createElement('img',{src:av,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}):safeInitials(name) /* FIX #10 */
                   )
                 ),
                 React.createElement('div',{
@@ -2432,7 +2458,8 @@ export default function HomeScreen(props){
         })().map(function(n){
           return React.createElement('div', {key:n.id, style:{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 18px',borderTop:'1px solid var(--border)',background:!n.read?'rgba(123,110,255,0.06)':'transparent'}},
             React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}},
-              n.from_user_avatar ? React.createElement('img',{src:n.from_user_avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (n.from_user_name||n.message||'?').substring(0,2).toUpperCase()
+              /* FIX #6: ImgWithFallback for notification avatar */
+              React.createElement(ImgWithFallback,{src:n.from_user_avatar,fallback:safeInitials(n.from_user_name||n.message||'?'),style:{width:'100%',height:'100%',objectFit:'cover'}})
             ),
             React.createElement('div', {style:{flex:1}},
               React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.message||'New notification'),
@@ -2467,7 +2494,8 @@ export default function HomeScreen(props){
           searchRes.users.map(function(u,i){
             return React.createElement('div',{key:i,onClick:function(){setSearchQ('');if(props.session&&props.session.user&&u.id===props.session.user.id){if(props.onGoToProfile)props.onGoToProfile();}else{setSelectedUser(u);}},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-                u.avatar_url ? React.createElement('img',{src:u.avatar_url,alt:u.full_name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.full_name||u.email||'?').substring(0,2).toUpperCase()
+                /* FIX #6: ImgWithFallback for people search results avatar */
+                React.createElement(ImgWithFallback,{src:u.avatar_url,alt:u.full_name,fallback:safeInitials(u.full_name||u.email||'?'),style:{width:'100%',height:'100%',objectFit:'cover'}})
               ),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},(u.full_name||u.email||'').split('@')[0]),
@@ -2522,7 +2550,8 @@ export default function HomeScreen(props){
           searchRes.experts.map(function(e,i){
             return React.createElement('div',{key:i,onClick:function(){if(onViewExpert)onViewExpert(e);setSearchQ('');},style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0,background:e.color||'var(--ac)'}},
-                e.img ? React.createElement('img',{src:e.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : e.initials
+                /* FIX #6: ImgWithFallback for expert search result avatar */
+                React.createElement(ImgWithFallback,{src:e.img,fallback:e.initials,style:{width:'100%',height:'100%',objectFit:'cover'}})
               ),
               React.createElement('div',{style:{flex:1}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},e.name),
@@ -2637,7 +2666,8 @@ export default function HomeScreen(props){
           React.createElement('div', {style:{position:'relative',width:'48px',height:'48px',marginBottom:'6px'}},
             React.createElement(AvatarRing, { show: hasMoment },
               React.createElement('div', {style:{width:'48px',height:'48px',borderRadius:'50%',background:e.color,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff'}},
-                e.img ? React.createElement('img',{src:e.img,alt:e.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : e.initials
+                /* FIX #6: ImgWithFallback for online-experts strip avatar */
+                React.createElement(ImgWithFallback,{src:e.img,alt:e.name,fallback:e.initials,style:{width:'100%',height:'100%',objectFit:'cover'}})
               )
             ),
             React.createElement('div', {style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
@@ -2703,9 +2733,12 @@ export default function HomeScreen(props){
           className:'comp-av',
           style:{background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',padding:0,display:'flex',alignItems:'center',justifyContent:'center'}
         },
-          props.session&&props.session.user&&localStorage.getItem('avatar_'+props.session.user.id) ?
-            React.createElement('img',{src:localStorage.getItem('avatar_'+props.session.user.id),style:{width:'100%',height:'100%',objectFit:'cover'}}) :
-            (props.session&&props.session.user&&props.session.user.email ? props.session.user.email.substring(0,2).toUpperCase() : 'Y')
+          /* FIX #6: ImgWithFallback for composer your-avatar */
+          React.createElement(ImgWithFallback,{
+            src: props.session&&props.session.user ? localStorage.getItem('avatar_'+props.session.user.id) : null,
+            fallback: (props.session&&props.session.user&&props.session.user.email ? safeInitials(props.session.user.email) : 'Y'),
+            style:{width:'100%',height:'100%',objectFit:'cover'},
+          })
         ),
         showComp ?
           React.createElement('textarea', {
@@ -2992,12 +3025,12 @@ export default function HomeScreen(props){
             ):null,
             React.createElement('div',{style:{display:'flex',gap:'8px',padding:'8px 12px',borderTop:'1px solid var(--border)'}},
               React.createElement('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'#fff'}},
-                currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(currentUserName||'?').substring(0,2).toUpperCase()
+                currentUserAvatar?React.createElement('img',{src:currentUserAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):safeInitials(currentUserName) /* FIX #10 */
               ),
               React.createElement('input',{
                 value:commentInput,
                 onChange:function(e){setCommentInput(e.target.value);clearTimeout(typingTimerRef.current);typingTimerRef.current=setTimeout(function(){playKeyClick();},80);},
-                onKeyDown:function(e){if(e.key==='Enter'&&commentInput.trim()){submitComment(p.id,commentInput);}},
+                onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && commentInput.trim()){submitComment(p.id,commentInput);}}, /* FIX #2: IME composition guard */
                 placeholder:'Write a comment...',
                 style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
               }),

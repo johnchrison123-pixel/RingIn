@@ -3,6 +3,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {sb} from '../utils/supabase';
 import {playRingtone, stopRingtone, hapticPulse} from '../utils/soundEngine';
 import {hashUidToInt, prefetchAgora} from '../utils/agora';
+import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 
 // Full-screen overlay shown when someone calls this user.
 // Props:
@@ -128,7 +129,7 @@ export default function IncomingCallModal(props){
 
   var name = invite.caller_name || 'Someone';
   var avatar = invite.caller_avatar || null;
-  var initials = (name || '?').substring(0,2).toUpperCase();
+  var initials = safeInitials(name); /* FIX #10 */
 
   // Note: NO backdrop-filter — Samsung Internet/Galaxy GPUs run backdrop-filter
   // on the CPU which pegs a core during the ripple animations. Solid alpha bg

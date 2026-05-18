@@ -103,6 +103,11 @@ function MomentViewer(props){
   var holdPaused = holdPausedS[0]; var setHoldPaused = holdPausedS[1];
   var sentToastS = useState('');
   var sentToast = sentToastS[0]; var setSentToast = sentToastS[1];
+  // FIX #8: track failed header avatar load so we can fall back to the initial bubble
+  var headerImgFailedS = useState(false);
+  var headerImgFailed = headerImgFailedS[0]; var setHeaderImgFailed = headerImgFailedS[1];
+  // Reset on user/avatar change so re-opening a different moment retries
+  useEffect(function(){ setHeaderImgFailed(false); }, [user && user.avatar]);
   // Owner-only 3-dot menu (Delete moment, Save to phone, Copy link).
   var ownMenuS = useState(false);
   var ownMenu = ownMenuS[0]; var setOwnMenu = ownMenuS[1];
@@ -921,8 +926,10 @@ function MomentViewer(props){
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(props.onViewProfile) props.onViewProfile(props.moment); },
         style:{display:'flex', alignItems:'center', gap:'10px', flex:1, cursor:'pointer', minWidth:0},
       },
-        user.avatar ? React.createElement('img', {
+        /* FIX #8: fall back to initials bubble when avatar URL fails to load */
+        (user.avatar && !headerImgFailed) ? React.createElement('img', {
           src: user.avatar, alt:'',
+          onError: function(){ setHeaderImgFailed(true); },
           style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)',flexShrink:0}
         }) : React.createElement('div', {
           style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}
@@ -1067,7 +1074,7 @@ function MomentViewer(props){
         onFocus: function(){ setPaused(true); },
         onBlur: function(){ setPaused(false); },
         onChange: function(e){ setReplyText(e.target.value); },
-        onKeyDown: function(e){ if(e.key === 'Enter'){ sendReply(e); } },
+        onKeyDown: function(e){ if(e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229){ sendReply(e); } }, /* FIX #2: IME composition guard */
         style:{
           flex:1,
           background:'rgba(0,0,0,0.32)',

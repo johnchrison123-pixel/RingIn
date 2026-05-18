@@ -44,6 +44,7 @@ export default function AnonymousConnect(props) {
     // just called setExclude). Defaults to current state.
     var useExclude = Array.isArray(excludeOverride) ? excludeOverride : exclude;
 
+    // FIX #4: add .catch so a rejection (network/ML failure) doesn't leave the spinner stuck forever
     matchAnonymous({
       userId: userId,
       interests: interests,
@@ -56,7 +57,7 @@ export default function AnonymousConnect(props) {
         return;
       }
       setMatch(r.match);
-    });
+    }).catch(function(e){ setSearching(false); console.warn('[ringin] matchAnonymous reject:', e); });
   }
 
   function skip() {
@@ -119,7 +120,7 @@ export default function AnonymousConnect(props) {
         React.createElement('input', {
           value:input,
           onChange:function(e){setInput(e.target.value);},
-          onKeyDown:function(e){if(e.key==='Enter' && input.trim()){addInterest(input);}},
+          onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()){addInterest(input);}}, /* FIX #2: IME composition guard */
           placeholder:'Type and press Enter',
           style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box'},
         }),

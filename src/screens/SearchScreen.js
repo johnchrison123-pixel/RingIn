@@ -6,6 +6,7 @@ import {useFollow} from './useFollow';
 import {playSound} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
 import {useCoinBalance} from '../utils/coinBalance';
+import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
@@ -305,13 +306,13 @@ export default function SearchScreen(props){
                 if (props.onGoToMessages) {
                   // Open a 1:1 chat with this person via existing messages flow.
                   var convId = [currentUserId, p.id].sort().join('_');
-                  props.onGoToMessages({id:convId,convId:convId,otherId:p.id,receiverId:p.id,user_id:p.id,name:name,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:name.substring(0,2).toUpperCase()});
+                  props.onGoToMessages({id:convId,convId:convId,otherId:p.id,receiverId:p.id,user_id:p.id,name:name,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:safeInitials(name)}); /* FIX #10 */
                 }
               },
               style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'6px',cursor:'pointer'}
             },
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'14px',flexShrink:0}},
-                p.avatar_url ? React.createElement('img',{src:p.avatar_url,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : name.substring(0,2).toUpperCase()
+                p.avatar_url ? React.createElement('img',{src:p.avatar_url,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : safeInitials(name) /* FIX #10 */
               ),
               React.createElement('div',{style:{flex:1,minWidth:0}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),

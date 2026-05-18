@@ -1,17 +1,15 @@
 {
-  "version": "2026.0518.1125",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1125.zip",
-  "published_at": "2026-05-18T11:25:00Z",
+  "version": "2026.0518.1206",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1206.zip",
+  "published_at": "2026-05-18T12:06:00Z",
   "git_sha": "manual",
-  "title": "8 fixes — Critical incoming-call cover, Wallet UX, iOS safe-area",
+  "title": "10 fixes — IME composition, stuck spinners, broken images, lazy load",
   "notes": [
-    "CRITICAL FIX: Incoming call modal now renders ABOVE the Moments viewer (was hidden behind it — user mid-moment couldn't answer or decline a ringing call)",
-    "FIX: Wallet card inputs now bring up the numeric keyboard on mobile (was full QWERTY — major friction for 16-digit card numbers)",
-    "FIX: Install prompt + notifications panel header now respect iPhone X+ safe-area (no more overlap with home indicator / status bar)",
-    "FIX: Moment viewer close 'unresponsive feel' window cut from 400ms to 80ms — snappier feed return",
-    "UX: Chat input now shows 'Send' button on iOS keyboard return key + autoCorrect + autoCapitalize sentences (matches WhatsApp/iMessage feel)",
-    "UX: People search input shows magnifier + autoCorrect off (right keyboard for search)",
-    "POLISH: Avatar drag preventDefault on touchStart blocks iOS Safari long-press image callout",
-    "POLISH: Incoming call modal avatar falls back to initials if the image URL 404s (was showing broken-image icon)"
+    "FIX: 4 stuck-spinner spots — FollowersList modal, post search, Anonymous Connect matchmaking, all had .then() with no .catch() (rejection would leave 'Loading...' forever).",
+    "FIX: 9 Enter handlers across chat / comments / search now respect IME composition. Mandarin/Japanese/Korean users typing in their IME will no longer accidentally send a half-composed message when pressing Enter to confirm a candidate.",
+    "FIX: ~10 image sites in feed / notifications / likers / experts strip / composer now fall back to user initials when the URL 404s. New ImgWithFallback wrapper component.",
+    "PERF: Feed post images now load=lazy — faster first paint and less mobile data on long sessions.",
+    "FIX: Emoji-prefix names like '🤦‍♀️ Maria' now render correctly in initials avatars. New safeInitials utility uses Array.from for surrogate-pair-safe slicing. Applied to ~15 sites across HomeScreen, App, SearchScreen, IncomingCallModal.",
+    "POLISH: TopBarAvatar + Moments header avatar both got onError fallback to initials."
   ]
 }

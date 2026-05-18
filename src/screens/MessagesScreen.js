@@ -1469,7 +1469,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       React.createElement('input',{
         value:txt,
         onChange:function(e){setTxt(e.target.value);clearTimeout(chatTypingTimerRef.current);chatTypingTimerRef.current=setTimeout(function(){playMsKeyClick();},80);onTypingKeystroke();},
-        onKeyDown:function(e){if(e.key==='Enter')send();},
+        onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229)send();}, /* FIX #2: skip Enter while IME composing (CJK) */
         placeholder:'Type a message...',
         enterKeyHint:'send',
         autoCapitalize:'sentences',
