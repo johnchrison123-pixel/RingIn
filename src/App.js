@@ -24,6 +24,9 @@ import {initPushNotifications} from './utils/pushNotifications';
 import {playSound} from './utils/soundEngine';
 import {prefetchAgora} from './utils/agora';
 import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
+// Final polish: native alert() blocks the JS thread + looks system-y on Android.
+// Replaced with non-blocking toasts via the existing toast utility.
+import {toastError, toastWarn} from './utils/toast';
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -413,6 +416,11 @@ export default function App() {
       });
 
     function pollOnce(){
+      // FIX #12 — skip work when the tab is hidden. Polling kept running
+      // every 4s indefinitely while the user was on another tab or had
+      // the phone screen off; the visibilitychange handler below catches
+      // any missed invites the moment the tab becomes visible again.
+      if(typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       // Skip while on an active call or showing an incoming ring
       if(activeCallRef.current || incomingCallRef.current) return;
       // STRICT FILTER — only rows where I'm the callee. Combined with strict realtime,
@@ -512,10 +520,11 @@ export default function App() {
     var calleeId = null;
     for(var i=0;i<candidates.length;i++){ if(candidates[i] && UUID_RE.test(String(candidates[i]))) { calleeId = candidates[i]; break; } }
     if(!calleeId){
-      alert('Cannot start call: the other user\'s ID is not a valid UUID.\n\nThis usually happens for mock/demo experts. Calls only work with real signed-in users.');
+      // Final polish: was alert() — non-blocking toast instead.
+      toastWarn('Calls only work with real signed-in users (not demo experts).');
       return;
     }
-    if(calleeId===appUserId){ alert('Cannot start call: you cannot call yourself.'); return; }
+    if(calleeId===appUserId){ toastWarn('You cannot call yourself.'); return; }
     var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
     var callerAvatar = null;
     try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}
@@ -564,7 +573,8 @@ export default function App() {
       if(r.error){
         console.error('[ringin] call_invites insert failed:', r.error);
         setActiveCall(null);
-        alert('Could not start call: '+(r.error.message||'permission'));
+        // Final polish: was alert() — non-blocking toast.
+        toastError('Could not start call: '+(r.error.message||'permission'));
         return;
       }
       console.log('[ringin] call_invite inserted', inviteUuid);
@@ -759,7 +769,15 @@ export default function App() {
           inviteId: activeCall.inviteId,
           channel: activeCall.channel,
           isIncoming: !!activeCall.isIncoming,
-          coins: appCoinBal || getCachedCoinBalance() || 0,
+          // FIX #8: pass per-user cached balance fallback. With the
+          // per-user cache in coinBalance.js, getCachedCoinBalance(appUserId)
+          // returns the right user's last known coins even if the hook
+          // hasn't fetched yet — preventing the 0-initial coin disaster
+          // where CallScreen mounts with localCoins=0 and the per-second
+          // tick immediately fires hangup('no_coins'). CallScreen now has
+          // its own guard too, but this belt-and-braces approach gives it
+          // a real number to start with.
+          coins: appCoinBal || getCachedCoinBalance(appUserId) || 0,
           onCoinsChange: function(){},
           onEnd: function(){ setActiveCall(null); },
         })

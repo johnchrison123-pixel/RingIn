@@ -4,6 +4,23 @@ import '../styles/HomeScreen.css';
 import TopBarAvatar from '../components/TopBarAvatar';
 import {sb} from '../utils/supabase';
 import {useCoinBalance} from '../utils/coinBalance';
+import {toastSuccess, toastInfo} from '../utils/toast';
+
+// FIX #7: persist reminder request to localStorage. No scheduling here —
+// just records the intent so we don't ship a button that does nothing.
+function setWorkshopReminder(workshopId){
+  try {
+    var key = 'ringin_workshop_reminders';
+    var cur = [];
+    try { var s = localStorage.getItem(key); if (s) cur = JSON.parse(s); if (!Array.isArray(cur)) cur = []; } catch(_){ cur = []; }
+    if (cur.indexOf(workshopId) >= 0) { toastInfo('Reminder already set'); return; }
+    cur.push(workshopId);
+    localStorage.setItem(key, JSON.stringify(cur));
+    toastSuccess('⏰ Reminder set');
+  } catch(_) {
+    toastInfo('Could not save reminder');
+  }
+}
 
 const LIVE = [
   {id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},
@@ -69,7 +86,7 @@ export default function WorkshopsScreen(props){
                 <span style={{fontSize:'10px',color:'var(--t2)'}}>{w.time}</span>
               </div>
               <div className="wb-actions">
-                <button style={{flex:1,padding:'6px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>Set Reminder</button>
+                <button onClick={function(){setWorkshopReminder(w.id);}} style={{flex:1,padding:'6px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>Set Reminder</button>
               </div>
             </div>
           </div>

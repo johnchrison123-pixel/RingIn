@@ -1,14 +1,16 @@
 {
-  "version": "2026.0518.0118",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0118.zip",
-  "published_at": "2026-05-18T01:18:00Z",
+  "version": "2026.0518.0753",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0753.zip",
+  "published_at": "2026-05-18T07:53:00Z",
   "git_sha": "manual",
-  "title": "Back button walks UP every settings hierarchy",
+  "title": "83 audit fixes — feed, messages, calls, wallet, settings, sync, memory leaks",
   "notes": [
-    "Account Settings (and Privacy, Notifications, Sound, Blocked, Muted, Activity Log, Expert App, Help, Rate, Close Friends) → back returns to Settings, then to Profile, then to previous tab, then to home, then exits",
-    "Country / Phone code / Timezone pickers inside Account Settings → back returns to Account Settings (one level at a time)",
-    "Edit Profile, Avatar viewer, Avatar menu, Cover adjust, Crop, Emoji picker, Likers list → back closes the modal",
-    "Moments viewer: back closes sub-overlays first (own/other menu → share sheet → viewers list → close viewer), one level per press",
-    "Audit-agent verified 22 ProfileScreen state vars + Moments deps before ship"
+    "3 CRASH FIXES: Edit Post from your profile, tapping likers, View My Moment — were ReferenceError on tap, now safe",
+    "DATA LOSS FIX: Account Settings + Expert App saves no longer wipe your cover, location, notif prefs, sound prefs from your profile bio",
+    "Settings: new useEffect prefills Account Settings from server on open (was localStorage-only — fresh install showed empty + could save empty over real data)",
+    "Coin sync: per-user storage key (multi-user devices), maybeSingle (new users), unique realtime channel per component, Wallet purchase is now near-atomic, CallScreen StrictMode-safe broadcast",
+    "Messages: chat realtime UPDATE/DELETE/reactions now propagate live, restrict/mute sync between ChatBox and inbox, blocks unified to blocks.js, photo upload fallback now inserts message row, scroll-up guard so new messages don't yank you down",
+    "Memory: video preview blob URLs now revoked, carouselIdx debounced, IntersectionObserver disconnects properly, lastSeen listeners cleanup, willChange resets after gesture",
+    "Polish: hashtags case-insensitive, double-submit guard on post, msgMenu position clamped, Wallet Luhn check + 4-digit Amex CVV + UPI regex + real rupee conversion, timeAgo no longer shifted by TZ, debug strings hidden in prod"
   ]
 }

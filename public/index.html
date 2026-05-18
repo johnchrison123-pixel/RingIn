@@ -233,11 +233,25 @@
     </script>
     <!-- Mobile debug console (Eruda). Loads only when URL has ?debug=1
          Open ring-in.vercel.app/?debug=1 to enable.  Tap the floating button on screen,
-         then go to the Console tab — you'll see all [ringin] logs right on your phone. -->
+         then go to the Console tab — you'll see all [ringin] logs right on your phone.
+         Final polish: ?debug=0 turns it OFF and removes the localStorage flag,
+         so users who accidentally hit ?debug=1 (or got a link from us) can
+         clear it without manually editing localStorage. -->
     <script>
       (function () {
         try {
           var p = new URLSearchParams(window.location.search);
+          // Off-switch: ?debug=0 → remove flag + destroy any active Eruda instance.
+          if (p.get('debug') === '0') {
+            try { localStorage.removeItem('ringin_debug'); } catch (e) {}
+            try { if (window.eruda && window.eruda.destroy) window.eruda.destroy(); } catch (e) {}
+            // Also remove any leftover Eruda script tag (so reload doesn't re-init).
+            try {
+              var scripts = document.querySelectorAll('script[src*="eruda"]');
+              for (var i = 0; i < scripts.length; i++) scripts[i].parentNode && scripts[i].parentNode.removeChild(scripts[i]);
+            } catch (e) {}
+            return;
+          }
           if (p.get('debug') === '1' || localStorage.getItem('ringin_debug') === '1') {
             localStorage.setItem('ringin_debug', '1');
             var s = document.createElement('script');

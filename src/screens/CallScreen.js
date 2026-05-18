@@ -305,9 +305,18 @@ export default function CallScreen(props){
       })
       .subscribe();
     // 3-second poll backup in case realtime drops the UPDATE
+    // FIX #11 — once the row reaches a terminal state (accepted / ended /
+    // rejected / cancelled), tear down the interval. Previously the poll
+    // kept hammering Supabase every 3s for the entire call duration.
     var pollIv = setInterval(function(){
       sb.from('call_invites').select('status').eq('id', inviteId).single().then(function(r){
-        if(r && r.data) applyStatus(r.data.status);
+        if(r && r.data){
+          var st = r.data.status;
+          applyStatus(st);
+          if(st === 'accepted' || st === 'ended' || st === 'rejected' || st === 'cancelled'){
+            clearInterval(pollIv);
+          }
+        }
       });
     }, 3000);
     return function(){ try{ sb.removeChannel(ch); }catch(e){} clearInterval(pollIv); };
@@ -359,14 +368,36 @@ export default function CallScreen(props){
         var next = s+1;
         // Deduct rate/60 coins every second (rate per minute)
         if(next % 60 === 0){
+          // FIX #8: don't deduct if localCoins hasn't been populated yet
+          // (hook fetch hasn't landed). Skipping the deduction this
+          // minute is better than auto-hanging up "no_coins" on a user
+          // who actually has a positive balance — the next minute tick
+          // will get a real number once the prop arrives.
+          if (!localCoinsRef.current || localCoinsRef.current <= 0) {
+            return next;
+          }
           setLocalCoins(function(c){
             var nc = c - rate;
             if(onCoinsChange) onCoinsChange(nc);
-            // Broadcast the new balance to every chip in the app so the
-            // user sees the deduction in real time on Home / Messages /
-            // Search even before the call ends.
-            try { setSharedCoinBalance(Math.max(0, nc)); } catch(_) {}
-            if(nc <= 0){ hangup('no_coins'); return 0; }
+            // FIX #7: schedule the broadcast OUTSIDE the updater. React
+            // updaters must be pure — in StrictMode they run twice. The
+            // old code called setSharedCoinBalance inside the updater,
+            // broadcasting twice (and producing visible chip jitter). By
+            // deferring with Promise.resolve().then() we run the
+            // broadcast in the next microtask, after React commits, so
+            // it only fires once per real deduction.
+            Promise.resolve().then(function(){
+              try { setSharedCoinBalance(Math.max(0, nc), {userId: myUserId}); } catch(_) {}
+            });
+            if(nc <= 0){
+              // FIX #8: don't fire no_coins hangup at the very first
+              // minute tick (next === 60) if the call has barely run —
+              // gives the hook fetch one more chance to arrive with a
+              // real balance before we tear down the call.
+              if (next === 60) return 0;
+              hangup('no_coins');
+              return 0;
+            }
             return nc;
           });
         }
@@ -376,6 +407,18 @@ export default function CallScreen(props){
     return function(){ clearInterval(iv); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[phase]);
+
+  // FIX #8: when the `coins` prop changes from 0 to a real number (the
+  // useCoinBalance hook finished fetching after CallScreen already
+  // mounted), update localCoins so the call has a real balance to deduct
+  // against. Only fires when localCoins is still 0 — won't constantly
+  // overwrite the deducted value with the prop.
+  useEffect(function(){
+    if (typeof coins === 'number' && coins > 0 && localCoins === 0) {
+      setLocalCoins(coins);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coins]);
 
   function fmt(s){var m=Math.floor(s/60);var ss=s%60;return m+':'+(ss<10?'0':'')+ss;}
 
@@ -464,7 +507,8 @@ export default function CallScreen(props){
         }
         // Broadcast one last time in case the per-minute tick missed a
         // partial-minute deduction at the very end.
-        setSharedCoinBalance(finalCoins);
+        // FIX #1: pass userId so the per-user cache key gets updated.
+        setSharedCoinBalance(finalCoins, {userId: myUserId});
       } catch(_) {}
     }
 
@@ -650,12 +694,15 @@ export default function CallScreen(props){
         ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
-    // Tiny build stamp at bottom-left for verifying deploys.
-    React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD),
+    // Final polish: build stamp only renders when ringin_debug flag is set.
+    // Used to leak the internal "v2.0-native-debug" string to every prod user.
+    (function(){ try { return localStorage.getItem('ringin_debug') === '1' ? React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD) : null; } catch(_){ return null; } })(),
     // Audio diagnostic line — visible while debugging audio routing on
     // native APK. Shows whether the Capacitor RingInAudio plugin is
     // registered and what AudioManager state is after each toggle.
-    audioDbg ? React.createElement('div',{style:{position:'fixed',bottom:'20px',left:'8px',right:'8px',fontSize:'10px',color:'rgba(0,255,128,0.9)',fontFamily:'monospace',background:'rgba(0,0,0,0.7)',padding:'4px 8px',borderRadius:'4px',pointerEvents:'none',textAlign:'center',wordBreak:'break-all'}}, audioDbg) : null,
+    // Final polish: also gated on ringin_debug so prod users don't see
+    // "plugin: NOT REGISTERED" green text plastered across the call UI.
+    (function(){ try { var dbg = localStorage.getItem('ringin_debug') === '1'; return (dbg && audioDbg) ? React.createElement('div',{style:{position:'fixed',bottom:'20px',left:'8px',right:'8px',fontSize:'10px',color:'rgba(0,255,128,0.9)',fontFamily:'monospace',background:'rgba(0,0,0,0.7)',padding:'4px 8px',borderRadius:'4px',pointerEvents:'none',textAlign:'center',wordBreak:'break-all'}}, audioDbg) : null; } catch(_){ return null; } })(),
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────

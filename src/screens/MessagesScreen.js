@@ -9,6 +9,8 @@ import {useMomentUserIds} from '../utils/momentUsers';
 import compressImage from '../utils/compressImage';
 import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
 import {useCoinBalance} from '../utils/coinBalance';
+// FIX #7: server-side block list unification — see src/utils/blocks.js.
+import {blockUser as serverBlockUser, isBlockedSync, loadBlocks} from '../utils/blocks';
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -18,11 +20,15 @@ var EXPERT_CONVOS_BASE=[
 
 function timeAgo(dateStr){
   if(!dateStr) return '';
+  // Final polish: no manual 'Z' appending. The old code forced UTC
+  // interpretation by appending 'Z', which shifted display by the local TZ
+  // offset whenever the source string was already local (e.g. a Date
+  // .toString() value with no TZ marker). The Date constructor handles
+  // ISO strings with or without 'Z' correctly on its own.
   var now = new Date();
-  var str = dateStr.toString();
-  if(!str.includes('Z')&&!str.includes('+')) str = str+'Z';
-  var date = new Date(str);
-  var diff = Math.floor((now-date)/1000);
+  var date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  var diff = Math.floor((now - date)/1000);
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
@@ -165,6 +171,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         if (r && r.error) {
           var rb = new Set(restrictedSet); rb.add(otherIdForRestrict); setRestrictedSet(rb);
           alert('Failed to unrestrict: ' + r.error.message);
+        } else {
+          // FIX #5: notify MessagesScreen so its inboxRestrictedSet refetches.
+          try { window.dispatchEvent(new CustomEvent('ringin:restricted-changed')); } catch(_) {}
         }
       });
     } else {
@@ -174,6 +183,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           var rb2 = new Set(restrictedSet); rb2.delete(otherIdForRestrict); setRestrictedSet(rb2);
           alert('Failed to restrict: ' + r.error.message);
         } else {
+          // FIX #5: notify MessagesScreen so its inboxRestrictedSet refetches.
+          try { window.dispatchEvent(new CustomEvent('ringin:restricted-changed')); } catch(_) {}
           setToast('Restricted. They won\'t know.');
           setTimeout(function(){ setToast(''); }, 2200);
         }
@@ -337,6 +348,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var bottomRef=useRef(null);
   var headerRef=useRef(null);
   var chatBoxRef=useRef(null);
+  // FIX #1: msgsRef mirrors msgs so the reactions realtime handler can
+  // read the current message id list without resubscribing on every msg change.
+  var msgsRef=useRef(msgs);
+  useEffect(function(){ msgsRef.current = msgs; },[msgs]);
+  // FIX #12: track whether the user has scrolled up to read history. We use
+  // this to suppress the auto-scroll-to-bottom behaviour when new messages
+  // arrive (no more yanking the user down). Set true when not at bottom.
+  var userScrolledUpS=useState(false); var userScrolledUp=userScrolledUpS[0]; var setUserScrolledUp=userScrolledUpS[1];
+  var msgsScrollRef=useRef(null);
 
   // Keep the ChatBox header pinned to the visual viewport top, even when the mobile
   // keyboard opens. position:fixed alone isn't enough on iOS Safari — its visual
@@ -380,6 +400,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   useEffect(function(){
     var otherId = convo && (convo.receiverId || convo.other_user_id || convo.id);
     if (!otherId || (typeof otherId === 'string' && otherId.indexOf('_') >= 0)) return; // not a UUID
+    // FIX #11: clear stale last_seen / online state from the PREVIOUS chat
+    // before we fetch the new one. Otherwise the header subtitle briefly
+    // shows "last seen 2h ago" from the wrong person.
+    setOtherLastSeen(null);
+    setOtherOnline(false);
     // Try with last_seen first; fall back if the column doesn't exist yet.
     sb.from('profiles').select('id,full_name,email,avatar_url,is_online,last_seen').eq('id', otherId).single().then(function(r){
       var row = r && r.data ? r.data : null;
@@ -428,8 +453,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       // Skip the read-marking write if the user has disabled read receipts
       // for this conversation — keeps the deal reciprocal (we don't tell
       // them we read them, so we don't see their ✓✓ blue tick either).
+      // FIX #2: filter by .eq('read', false) so we don't rewrite every old
+      // message on every chat open. Reduces DB write amplification.
       if (!readReceiptsOffHere) {
-        sb.from('messages').update({read:true}).eq('conversation_id',convId).neq('sender_id',myId).then(function(){});
+        sb.from('messages').update({read:true}).eq('conversation_id',convId).neq('sender_id',myId).eq('read',false).then(function(){});
       }
     });
     // Realtime subscription — chat messages + typing broadcasts on the
@@ -451,6 +478,45 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           var senderRestricted = restrictedSet && restrictedSet.has && restrictedSet.has(p.new.sender_id);
           if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
         }
+      })
+      // FIX #1: UPDATE event — handles remote read-receipts (✓→✓✓) and edits.
+      // Replace the message in msgs array by id without re-sorting.
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'conversation_id=eq.'+convId},function(p){
+        if (!p || !p.new || p.new.id == null) return;
+        setMsgs(function(prev){
+          return prev.map(function(m){ return m.id === p.new.id ? Object.assign({}, m, p.new) : m; });
+        });
+      })
+      // FIX #1: DELETE event — handles remote unsends. Filter the message
+      // out by id (note: p.old contains the deleted row's primary key only
+      // by default on Supabase, which is sufficient here).
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'messages',filter:'conversation_id=eq.'+convId},function(p){
+        var deletedId = p && p.old && p.old.id;
+        if (deletedId == null) return;
+        setMsgs(function(prev){ return prev.filter(function(m){ return m.id !== deletedId; }); });
+      })
+      // FIX #1: reactions changes — any INSERT/UPDATE/DELETE on
+      // message_reactions triggers a refetch of reactions for the
+      // currently-loaded messages. Cheap query, single round-trip.
+      .on('postgres_changes',{event:'*',schema:'public',table:'message_reactions'},function(p){
+        try {
+          var currMsgIds = (msgsRef.current || []).map(function(m){ return m.id; })
+            .filter(function(x){ return x != null && (typeof x === 'number' || (typeof x === 'string' && x.indexOf('tmp_') !== 0)); });
+          if (currMsgIds.length === 0) return;
+          // Only refetch when the affected message is actually loaded here.
+          var affectedId = (p && (p.new && p.new.message_id)) || (p && (p.old && p.old.message_id));
+          if (affectedId != null && currMsgIds.indexOf(affectedId) < 0) return;
+          sb.from('message_reactions').select('message_id,user_id,emoji').in('message_id', currMsgIds).then(function(r){
+            if (r.error || !r.data) return;
+            var grouped = {};
+            r.data.forEach(function(row){
+              if (!grouped[row.message_id]) grouped[row.message_id] = {};
+              if (!grouped[row.message_id][row.emoji]) grouped[row.message_id][row.emoji] = [];
+              grouped[row.message_id][row.emoji].push(row.user_id);
+            });
+            setReactionsByMsg(grouped);
+          });
+        } catch(_) {}
       })
       .on('broadcast', { event: 'typing' }, function(msg){
         // Ignore my own echoes (Supabase broadcasts include the sender by default).
@@ -482,7 +548,19 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     };
   },[convId]);
 
-  useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
+  // FIX #12: only auto-scroll-to-bottom when the user is already AT the
+  // bottom of the chat, or when the newest message is from them (sending
+  // your own message always scrolls down). Otherwise reading older history
+  // gets yanked away.
+  useEffect(function(){
+    if(!bottomRef.current) return;
+    var lastMsg = msgs && msgs.length ? msgs[msgs.length-1] : null;
+    var myOwn = lastMsg && lastMsg.sender_id === myId;
+    if (!userScrolledUp || myOwn) {
+      try { bottomRef.current.scrollIntoView({behavior:'smooth'}); } catch(_){}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[msgs]);
 
   function getCY(e){
     if(e.touches&&e.touches.length)return e.touches[0].clientY;
@@ -602,6 +680,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
     }
     sb.from('blocked_users').upsert({blocker_id: myId, blocked_id: otherId}).then(function(){});
+    // FIX #7: also write to the new server-backed blocks table via blocks.js.
+    // Both legacy + new paths run — no migration data loss.
+    try { serverBlockUser(myId, otherId).catch(function(){}); } catch(_) {}
     if(onBack) onBack();
   }
 
@@ -611,6 +692,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     setMutedConvos(function(prev){
       var next = prev.includes(convId2) ? prev.filter(function(x){return x!==convId2;}) : prev.concat([convId2]);
       try{ localStorage.setItem('ringin_muted_convos', JSON.stringify(next)); }catch(e){}
+      // FIX #6: same-tab 'storage' event doesn't fire — dispatch a custom
+      // event so MessagesScreen's inbox-mute listener can re-read.
+      try{ window.dispatchEvent(new CustomEvent('ringin:muted-convos-changed')); }catch(_){}
       return next;
     });
   }
@@ -651,6 +735,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       if (parts.length) otherId = parts[0];
     }
     if(otherId && blockedList.includes(String(otherId))){
+      setToast('You have blocked this user');
+      setTimeout(function(){setToast('');},2500);
+      return;
+    }
+    // FIX #7: also consult the server-side blocks cache (blocks.js). Either
+    // path saying "blocked" is enough — keeps legacy + new in lockstep.
+    if(otherId && isBlockedSync(otherId)){
       setToast('You have blocked this user');
       setTimeout(function(){setToast('');},2500);
       return;
@@ -877,7 +968,19 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
 
     // ── Chat messages area with reaction overlay ──
     React.createElement('div',{style:{flex:1,position:'relative',overflow:'hidden'}},
-      React.createElement('div',{style:{height:'100%',overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}},
+      React.createElement('div',{
+        ref:msgsScrollRef,
+        // FIX #12: track whether the user has scrolled away from the bottom
+        // so the auto-scroll effect can stop yanking them down when new
+        // messages arrive (e.g. reading older history).
+        onScroll:function(e){
+          var el = e.currentTarget;
+          if (!el) return;
+          var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80;
+          setUserScrolledUp(!atBottom);
+        },
+        style:{height:'100%',overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}
+      },
         msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi! 👋'),
         msgs.map(function(m){
           var isMe=m.sender_id===myId;
@@ -1104,7 +1207,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         onClick:function(){setMsgMenu(null);}
       },
         React.createElement('div',{
-          style:{position:'fixed',left:Math.min(msgMenu.x,window.innerWidth-160)+'px',top:(msgMenu.y-48)+'px',
+          // Final polish: add Math.max(8, ...) left clamp so the menu
+          // doesn't get pushed offscreen-left when msgMenu.x is small
+          // (long-press near the left edge of the screen).
+          style:{position:'fixed',left:Math.max(8, Math.min(msgMenu.x, window.innerWidth-160))+'px',top:(msgMenu.y-48)+'px',
             background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',
             padding:'4px',boxShadow:'0 4px 20px rgba(0,0,0,0.4)',zIndex:201,minWidth:'140px'},
           onClick:function(e){e.stopPropagation();}
@@ -1188,7 +1294,18 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               alert('Photo upload failed: '+r.error.message);
               return;
             }
-            var url=sb.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
+            // FIX #9: getPublicUrl().data.publicUrl can be undefined — guard
+            // it and treat as upload failure (remove temp, revoke blob, toast).
+            var pub = sb.storage.from('chat-images').getPublicUrl(fileName);
+            var url = pub && pub.data && pub.data.publicUrl;
+            if(!url){
+              console.error('RingIn Error [chatPhotoUpload]: missing publicUrl');
+              setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+              revokeLocal();
+              setToast('Photo upload failed');
+              setTimeout(function(){setToast('');},2500);
+              return;
+            }
             sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
               if(mr.error){
                 console.error('RingIn Error [chatPhotoInsert]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
@@ -1210,12 +1327,51 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             });
           });
           }).catch(function(err){
-            // Compression itself failed (rare) — fall back to uploading raw.
+            // FIX #10: compression itself failed (rare) — fall back to
+            // uploading raw AND insert the messages row, otherwise the
+            // optimistic blob bubble lives forever.
             console.warn('[ringin] image compress failed, uploading raw', err);
             var ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'webp';
             var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
-            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(){
-              try{ URL.revokeObjectURL(localUrl); }catch(e){}
+            function revokeLocal2(){ try{ URL.revokeObjectURL(localUrl); }catch(e){} }
+            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(r){
+              if(r && r.error){
+                console.error('RingIn Error [chatPhotoUpload-raw]:', r.error&&r.error.message?r.error.message:'Unknown error');
+                setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                revokeLocal2();
+                setToast('Photo upload failed');
+                setTimeout(function(){setToast('');},2500);
+                return;
+              }
+              var pub = sb.storage.from('chat-images').getPublicUrl(fileName);
+              var url = pub && pub.data && pub.data.publicUrl;
+              if(!url){
+                console.error('RingIn Error [chatPhotoUpload-raw]: missing publicUrl');
+                setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                revokeLocal2();
+                setToast('Photo upload failed');
+                setTimeout(function(){setToast('');},2500);
+                return;
+              }
+              sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
+                if(mr && mr.error){
+                  console.error('RingIn Error [chatPhotoInsert-raw]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
+                  setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                  revokeLocal2();
+                  setToast('Photo upload failed');
+                  setTimeout(function(){setToast('');},2500);
+                  return;
+                }
+                if(mr.data&&mr.data[0]){
+                  setMsgs(function(prev){
+                    var hasReal=prev.find(function(msg){return msg.id===mr.data[0].id;});
+                    if(hasReal) return prev.filter(function(msg){return msg.id!==tempId;});
+                    return prev.map(function(msg){return msg.id===tempId?mr.data[0]:msg;});
+                  });
+                }
+                revokeLocal2();
+                if(onMessageSent) onMessageSent(convo,'📷 Photo');
+              });
             });
           });
           ev.target.value='';
@@ -1334,7 +1490,10 @@ export default function MessagesScreen(props){
   var expertConvosS=useState(EXPERT_CONVOS_BASE); var expertConvos=expertConvosS[0]; var setExpertConvos=expertConvosS[1];
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
-  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  // FIX #9: removed `coinsS = useState(50)` stub. That hardcoded 50-coin
+  // local state was bypassing the real wallet balance — a user with 1000
+  // coins would still see CallScreen mounted with coins=50. The
+  // useCoinBalance hook below already provides the real balance.
   // Shared coin balance — synced across all screens. Replaces the
   // per-screen local cache that didn't update after a wallet purchase.
   var coinBal = useCoinBalance(myId, sb);
@@ -1344,25 +1503,38 @@ export default function MessagesScreen(props){
   var inboxMutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var inboxMutedConvos=inboxMutedConvosS[0]; var setInboxMutedConvos=inboxMutedConvosS[1];
   // Keep inboxMutedConvos in sync with localStorage whenever the
   // active chat's mute state changes (ChatBox writes the key on toggle).
+  // FIX #6: 'storage' event only fires for OTHER tabs — add a same-tab
+  // custom-event listener that ChatBox dispatches after toggling mute.
   useEffect(function(){
     function reload(){
       try{var s=localStorage.getItem('ringin_muted_convos');setInboxMutedConvos(s?JSON.parse(s):[]);}catch(e){}
     }
     window.addEventListener('storage', reload);
-    return function(){ window.removeEventListener('storage', reload); };
+    window.addEventListener('ringin:muted-convos-changed', reload);
+    return function(){
+      window.removeEventListener('storage', reload);
+      window.removeEventListener('ringin:muted-convos-changed', reload);
+    };
   },[]);
   // Inbox-scope restricted-users set — the inbox realtime handler reads
   // it to suppress notification badge bumps + sounds for restricted
   // senders. (ChatBox has its own copy for the chat-header restrict
   // toggle + chat-message realtime handler.)
   var inboxRestrictedSetS=useState(new Set()); var inboxRestrictedSet=inboxRestrictedSetS[0]; var setInboxRestrictedSet=inboxRestrictedSetS[1];
+  // FIX #5: re-fetch when ChatBox dispatches 'ringin:restricted-changed'
+  // after its toggleRestrict completes (storage event doesn't fire same-tab).
   useEffect(function(){
     if(!myId) return;
-    try {
-      sb.from('restricted_users').select('restricted_id').eq('restrictor_id', myId).then(function(r){
-        if (r && !r.error && r.data) setInboxRestrictedSet(new Set(r.data.map(function(row){ return row.restricted_id; })));
-      });
-    } catch(_) {}
+    function load(){
+      try {
+        sb.from('restricted_users').select('restricted_id').eq('restrictor_id', myId).then(function(r){
+          if (r && !r.error && r.data) setInboxRestrictedSet(new Set(r.data.map(function(row){ return row.restricted_id; })));
+        });
+      } catch(_) {}
+    }
+    load();
+    window.addEventListener('ringin:restricted-changed', load);
+    return function(){ window.removeEventListener('ringin:restricted-changed', load); };
   },[myId]);
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
@@ -1439,6 +1611,18 @@ export default function MessagesScreen(props){
   //   'business' → business profile chats (users with role='business')
   var tabS = useState('friends'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
   var typingTimerRef=useRef(null);
+  // FIX #4: mirror `active` to a ref so the inbox INSERT realtime handler
+  // can read it synchronously without wrapping the side-effect-laden state
+  // updates inside setActive(currentActive => ...). That pattern violates
+  // updater purity and double-fires in React StrictMode.
+  var activeRef=useRef(null);
+  useEffect(function(){ activeRef.current = active; },[active]);
+  // FIX #7: warm up the server-side blocks cache (blocks.js) so the send()
+  // guard in ChatBox has fresh data the first time it runs.
+  useEffect(function(){
+    if (!myId) return;
+    try { loadBlocks(myId); } catch(_) {}
+  },[myId]);
   var totalUnreadS=useState(function(){
     try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
     return 0;
@@ -1482,8 +1666,13 @@ export default function MessagesScreen(props){
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
       setLoadingConvos(false);
       if(!res.data||res.data.length===0) return;
-      // Filter out expert fake convos
-      res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
+      // FIX #8: only drop mock expert convo IDs (e1, e2, e3…). The old
+      // startsWith('e') filter killed every UUID starting with 'e'.
+      res.data = res.data.filter(function(m){
+        if(!m.conversation_id) return false;
+        if(typeof m.conversation_id === 'string' && /^e\d+$/.test(m.conversation_id)) return false;
+        return true;
+      });
       if(!res.data) return;
       // Group by conversation_id
       var convMap = {};
@@ -1550,43 +1739,57 @@ export default function MessagesScreen(props){
     });
 
     // Realtime - new message notification
+    // FIX #4: read currentActive synchronously from activeRef instead of
+    // wrapping the side effects inside setActive(updater). The updater
+    // pattern was double-firing in React StrictMode, double-bumping unread.
     var ch = sb.channel('inbox-'+myId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+myId},function(p){
-        // Use functional setActive to read current active convo without stale closure
-        setActive(function(currentActive){
-          var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
-          // RESTRICT enforcement at inbox layer — silent badge bump only,
-          // no badge/sound for messages from restricted users.
-          var senderRestricted = inboxRestrictedSet && inboxRestrictedSet.has && inboxRestrictedSet.has(p.new.sender_id);
-          if(!isViewingThisConvo){
-            // Not viewing this chat — increment badge and unread count (skip if restricted)
-            if(!senderRestricted){
-              setTotalUnread(function(t){return t+1;});
-              if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
-            }
-            setUserConvos(function(prev){
-              var exists=prev.find(function(c){return c.convId===p.new.conversation_id;});
-              if(exists){
-                return prev.map(function(c){
-                  if(c.convId!==p.new.conversation_id) return c;
-                  // For restricted users, update preview but don't increment unread count
-                  return Object.assign({},c,{lastMsg:p.new.text,unreadCount:senderRestricted?(c.unreadCount||0):((c.unreadCount||0)+1)});
-                });
-              }
-              return prev;
-            });
-            var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-            if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
-          } else {
-            // Already viewing this chat — just update last message preview, no badge
-            setUserConvos(function(prev){
+        var currentActive = activeRef.current;
+        var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
+        // RESTRICT enforcement at inbox layer — silent badge bump only,
+        // no badge/sound for messages from restricted users.
+        var senderRestricted = inboxRestrictedSet && inboxRestrictedSet.has && inboxRestrictedSet.has(p.new.sender_id);
+        if(!isViewingThisConvo){
+          // Not viewing this chat — increment badge and unread count (skip if restricted)
+          if(!senderRestricted){
+            setTotalUnread(function(t){return t+1;});
+            if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
+          }
+          setUserConvos(function(prev){
+            var exists=prev.find(function(c){return c.convId===p.new.conversation_id;});
+            if(exists){
               return prev.map(function(c){
                 if(c.convId!==p.new.conversation_id) return c;
-                return Object.assign({},c,{lastMsg:p.new.text});
+                // For restricted users, update preview but don't increment unread count
+                return Object.assign({},c,{lastMsg:p.new.text,lastTime:p.new.created_at||c.lastTime,unreadCount:senderRestricted?(c.unreadCount||0):((c.unreadCount||0)+1)});
               });
+            }
+            return prev;
+          });
+          var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
+          if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
+        } else {
+          // Already viewing this chat — just update last message preview, no badge
+          setUserConvos(function(prev){
+            return prev.map(function(c){
+              if(c.convId!==p.new.conversation_id) return c;
+              return Object.assign({},c,{lastMsg:p.new.text,lastTime:p.new.created_at||c.lastTime});
             });
-          }
-          return currentActive; // don't change active
+          });
+        }
+      })
+      // FIX #3: messages I send don't fire the receiver_id filter above. Add
+      // a sender-side chain so when I send a message (from anywhere — chat,
+      // another device, etc.), the inbox preview updates. Never bumps unread.
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'sender_id=eq.'+myId},function(p){
+        if (!p || !p.new) return;
+        setUserConvos(function(prev){
+          var exists = prev.find(function(c){ return c.convId === p.new.conversation_id; });
+          if (!exists) return prev; // unknown convo — let the full refresh path pick it up
+          return prev.map(function(c){
+            if (c.convId !== p.new.conversation_id) return c;
+            return Object.assign({}, c, { lastMsg: p.new.text, lastTime: p.new.created_at || c.lastTime });
+          });
         });
       }).subscribe();
     return function(){sb.removeChannel(ch);};
@@ -1605,7 +1808,13 @@ export default function MessagesScreen(props){
     setRefreshing(true);
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
       if(!res.data){setRefreshing(false);return;}
-      res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
+      // FIX #8: only drop mock expert convo IDs (e1, e2, e3…). UUIDs that
+      // happen to start with 'e' must pass through.
+      res.data = res.data.filter(function(m){
+        if(!m.conversation_id) return false;
+        if(typeof m.conversation_id === 'string' && /^e\d+$/.test(m.conversation_id)) return false;
+        return true;
+      });
       var convMap={};
       res.data.forEach(function(m){
         if(!convMap[m.conversation_id]){
@@ -1702,7 +1911,13 @@ export default function MessagesScreen(props){
     });
   }
 
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  // FIX #9: pass the real `coinBal` from the hook instead of the deleted
+  // `coins` stub state. `onCoinsChange` is a no-op — CallScreen now
+  // broadcasts via setSharedCoinBalance, which the hook auto-listens for,
+  // so we don't need a setter callback. (This local CallScreen render is
+  // a fallback; the App-level path through window.__ringInStartCall is
+  // the primary one.)
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,session:session,coins:coinBal,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onViewUser:props.onViewUser,onCall:function(exp){
     // CRITICAL: prefer the actual user UUID fields (otherId/receiverId/user_id) over `id`,
     // because convo.id is the conversation_id (e.g. "userA_userB"), NOT a UUID. Using it

@@ -1,7 +1,7 @@
 /* eslint-disable */
 import React, {useState} from 'react';
 import {matchAnonymous} from '../utils/mlService';
-import {toastError, toastInfo} from '../utils/toast';
+import {toastError} from '../utils/toast';
 
 var SUGGESTED = ['tech','startups','fitness','music','travel','finance','mental health','career','parenting','design','food','movies','gaming','meditation','philosophy'];
 
@@ -84,9 +84,10 @@ export default function AnonymousConnect(props) {
           return React.createElement('span', {key:i, style:{padding:'4px 10px',borderRadius:'12px',background:'var(--acg)',color:'var(--ac)',fontSize:'11px',fontWeight:600}}, r);
         })
       ),
+      // FIX #8: removed "Connect Voice" — voice infra isn't wired up yet;
+      // shipping a button that pops a "coming soon" toast is dead UI.
       React.createElement('div', {style:{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'center'}},
-        React.createElement('button', {onClick:skip, style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, 'Skip'),
-        React.createElement('button', {onClick:function(){toastInfo('Voice call coming soon!');}, style:{padding:'10px 20px',borderRadius:'10px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, '📞 Connect Voice')
+        React.createElement('button', {onClick:skip, style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, 'Skip')
       )
     ),
 

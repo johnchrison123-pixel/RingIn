@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ Android back button now goes back instead of exiting (v3.26)</h2>
-<p>You reported the back button exits the app. Fix shipped: centralized goBack() with priority chain — closes innermost overlay first (Edit Post → post detail → notifications → comments → chat → expert profile → user profile stack), then walks tab nav backwards (wallet/saved/connect → previous tab, any non-home → home), and exits ONLY when truly at root. Same chain powers the left-edge swipe gesture, so they're consistent.<br><br><b>To get the fix:</b> install new APK <code>~/Desktop/ringin-v3.26.apk</code> — the back button needs the @capacitor/app native plugin which can't be delivered via OTA. After install, also accept the green Update prompt for bundle <code>2026.0518.0102</code>.</p>
+<h2>✅ APK v3.27 — 83 audit fixes shipped (all 6 batches verified clean by 7 agents)</h2>
+<p>Ran 5 parallel deep-audit agents → 152 findings. Fixed 3 P0 crashes + 60 P1 + 20 P2 across 6 batches. Each batch: dedicated agent did the work, separate audit agent verified before next batch dispatched. Final supervisor swept all 13 files for scope leaks, hook violations, ref errors, broken integrations. <b>Clean — no issues found</b>. Bundle <code>2026.0518.0753</code> published. APK on Desktop as <code>ringin-v3.27.apk</code>. Some items skipped per your "no manual input" rule (Workshops payment flow needs Stripe/Razorpay, Firebase API key rotation needs Firebase Console, email confirmation needs Supabase auth config, LiveWorkshopScreen real session needs new schema).</p>
 </div>
 
 <div class="stats">

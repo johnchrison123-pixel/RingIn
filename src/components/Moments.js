@@ -192,19 +192,49 @@ function MomentViewer(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, slides.length]);
 
+  // FIX #10 — auto-advance with reduced dep churn. The original effect
+  // re-ran every time `paused` / `holdPaused` / `interacted` flipped,
+  // which during a long-press is multiple times per second — tearing
+  // down + re-arming the setTimeout each time. Now those gesture flags
+  // live in refs that we read from inside the timer body, so the effect
+  // only restarts when the slide actually changes.
+  var pausedRef = useRef(paused);
+  var holdPausedRef = useRef(holdPaused);
+  var interactedRef = useRef(interacted);
+  useEffect(function(){ pausedRef.current = paused; }, [paused]);
+  useEffect(function(){ holdPausedRef.current = holdPaused; }, [holdPaused]);
+  useEffect(function(){ interactedRef.current = interacted; }, [interacted]);
+
   // Auto-advance — pauses while the user is composing a reply, while they
   // are press-and-holding the slide (Insta-style), and STOPS entirely once
   // they've liked or replied to this slide.
   useEffect(function(){
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    if (paused || holdPaused || interacted) return;
+    // Read gesture state via refs — see FIX #10 above.
+    if (pausedRef.current || holdPausedRef.current || interactedRef.current) return;
     timerRef.current = setTimeout(function(){
+      // Re-check refs at fire time in case the gesture started after
+      // the timer was armed.
+      if (pausedRef.current || holdPausedRef.current || interactedRef.current) return;
       if (idx < slides.length - 1) setIdx(idx + 1);
       else if (onClose) onClose();
     }, SLIDE_MS);
     return function(){ if (timerRef.current) clearTimeout(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, slides.length, paused, holdPaused, interacted]);
+  }, [idx, slides.length]);
+
+  // FIX #7 — unmount cleanup for the cube wrapper's GPU hint. The drag
+  // handlers reset willChange after each gesture, but if the viewer is
+  // closed mid-drag (e.g. the parent unmounts while a fling is in
+  // flight), no pointerup ever fires. Strip the hint explicitly so the
+  // composited layer can be released.
+  useEffect(function(){
+    return function(){
+      if (cubeRef.current) {
+        try { cubeRef.current.style.willChange = 'auto'; } catch(_){}
+      }
+    };
+  }, []);
 
   // Android back / edge-swipe — close innermost overlay first, then
   // dismiss the moment viewer itself. Consumes the cancelable
@@ -311,30 +341,26 @@ function MomentViewer(props){
   }
 
   // Send the moment to a specific person as a chat message.
+  // FIX #9 — switched from a Supabase `.or('and(...),and(...)')` query (which
+  // requires a recent PostgREST that supports nested boolean expressions and
+  // historically broke on RingIn's project) to the deterministic
+  // `[a,b].sort().join('_')` convId pattern that the rest of MessagesScreen
+  // already uses. No dedupe lookup needed — same two users always produce
+  // the same convId, so a straight insert into `messages` is unique by
+  // construction.
   function sendMomentToUser(u){
     if (!u || !u.id || !myUserId) return;
     var link = buildShareLink();
     var payload = '[mshare]' + link + '|' + (captionText || 'Shared a moment');
     try {
-      // First check for existing conversation between the two users.
-      sb.from('conversations').select('id').or('and(user1_id.eq.' + myUserId + ',user2_id.eq.' + u.id + '),and(user1_id.eq.' + u.id + ',user2_id.eq.' + myUserId + ')').limit(1).then(function(rConv){
-        function send(convId){
-          if (!convId) return;
-          sb.from('messages').insert([{
-            conversation_id: convId,
-            sender_id: myUserId,
-            content: payload,
-          }]).then(function(){}).catch(function(){});
-        }
-        if (rConv && rConv.data && rConv.data[0]) {
-          send(rConv.data[0].id);
-        } else {
-          // Create a new conversation
-          sb.from('conversations').insert([{ user1_id: myUserId, user2_id: u.id }]).select('id').single().then(function(r){
-            if (r && r.data) send(r.data.id);
-          });
-        }
-      });
+      var convId = [myUserId, u.id].sort().join('_');
+      sb.from('messages').insert([{
+        conversation_id: convId,
+        sender_id: myUserId,
+        receiver_id: u.id,
+        text: payload,
+        content: payload,
+      }]).then(function(){}).catch(function(){});
     } catch(_){}
     // Mark as sent in the UI immediately (optimistic)
     shareSentRef.current[u.id] = true;
@@ -683,6 +709,12 @@ function MomentViewer(props){
       if (!g) return;
       var d = dragNowRef.current || { dx: 0, dy: 0, kind: null };
       dragNowRef.current = null;
+      // FIX #7 — release the GPU promotion hint once the drag is settling
+      // so subsequent renders don't keep the compositor layer pinned. We
+      // re-arm willChange='transform' on the next drag (line ~646).
+      var releaseWillChange = function(){
+        if (cubeRef.current) cubeRef.current.style.willChange = 'auto';
+      };
       // If the user moved (drag), handle below. If they DIDN'T move:
       //   - short touch (<300ms): treat as a tap → resume + advance
       //   - long touch (held >300ms): pure pause-and-release → just resume
@@ -693,10 +725,12 @@ function MomentViewer(props){
           // Was a tap → resume and run handleTap (advance based on zone).
           setHoldPaused(false);
           handleTap(e);
+          releaseWillChange();
           return;
         }
         // Was a hold-release — just resume, no advance.
         setHoldPaused(false);
+        releaseWillChange();
         return;
       }
       // Horizontal drag — commit or snap back.
@@ -712,12 +746,14 @@ function MomentViewer(props){
           setHoldPaused(false);
           setTimeout(function(){
             try { props.onNextUser(direction); } catch(_){}
+            releaseWillChange();
           }, 260);
           return;
         }
         // Snap back — animate to neutral.
         animateTo(0, 0, 'h', 240);
         setHoldPaused(false);
+        setTimeout(releaseWillChange, 240);
         return;
       }
       if (g.kind === 'v') {
@@ -725,11 +761,12 @@ function MomentViewer(props){
         if (d.dy > commitDownThreshold) {
           animateTo(0, VH, 'v', 240);
           setHoldPaused(false);
-          setTimeout(function(){ try { if (onClose) onClose(); } catch(_){} }, 230);
+          setTimeout(function(){ try { if (onClose) onClose(); } catch(_){} releaseWillChange(); }, 230);
           return;
         }
         animateTo(0, 0, 'v', 220);
         setHoldPaused(false);
+        setTimeout(releaseWillChange, 220);
         return;
       }
     },
@@ -739,6 +776,8 @@ function MomentViewer(props){
       dragNowRef.current = null;
       setHoldPaused(false);
       animateTo(0, 0, 'h', 200);
+      // FIX #7 — release GPU hint after the snap-back animation.
+      setTimeout(function(){ if (cubeRef.current) cubeRef.current.style.willChange = 'auto'; }, 200);
     },
     onPointerLeave: function(){
       // Drag finger off the screen → release pause.
@@ -1845,7 +1884,21 @@ function HeartTile(props){
 //   onView        fn       called with a moment object when its tile is tapped
 //   compact       bool     smaller size for profile pages (default false)
 export default function Moments(props){
-  var moments = props.moments || [];
+  // FIX #8 — honour the per-device mute list that muteThisContact() writes.
+  // Read it once per render and filter the incoming moments[] so muted
+  // users' tiles disappear from the strip. Comparison covers both string
+  // user ids and numeric expert ids (we cast to String to be safe).
+  var _mutedMomentUsers = (function(){
+    try { var s = localStorage.getItem('ringin_muted_moment_users'); return s ? JSON.parse(s) : []; }
+    catch(_){ return []; }
+  })();
+  var rawMoments = props.moments || [];
+  var moments = rawMoments.filter(function(m){
+    if (!m) return false;
+    if (_mutedMomentUsers.indexOf(m.userId) >= 0) return false;
+    if (m.expertId != null && _mutedMomentUsers.indexOf(String(m.expertId)) >= 0) return false;
+    return true;
+  });
   var showAdd = props.showAdd !== false;
   var compact = !!props.compact;
   var size = compact ? 60 : 68;

@@ -15,7 +15,8 @@ import ReportModal, {flushQueuedReports} from '../components/ReportModal';
 import compressImage from '../utils/compressImage';
 import {useHideLikes} from '../utils/likeDisplayPref';
 import {toastSuccess,toastError,toastWarn} from '../utils/toast';
-import {getRecommendedExperts,detectContent,autoTagPost} from '../utils/mlService';
+// Final polish: dropped unused getRecommendedExperts from the destructure.
+import {detectContent,autoTagPost} from '../utils/mlService';
 import {useCoinBalance} from '../utils/coinBalance';
 
 function playKeyClick(){playSound('typing');}
@@ -64,6 +65,14 @@ function playLikeSound(liked){
 }
 
 var CATS=[{id:'all',icon:'All',label:'All'},{id:'medical',icon:'Med',label:'Medical'},{id:'tech',icon:'Tech',label:'Tech'},{id:'legal',icon:'Law',label:'Legal'},{id:'trades',icon:'Fix',label:'Trades'},{id:'mental',icon:'Mind',label:'Mental'}];
+// FIX #7: EXPERTS is intentionally hardcoded mock data. The "experts"
+// table does not exist in Supabase yet; migrating to a real table requires
+// schema design (rate columns, ratings, FK to profiles, RLS policies) which
+// is a separate task. Mock IDs are deliberately small INTEGERS (1..6) so
+// they never collide with real Supabase UUIDs anywhere in the app. Any
+// follow / chat / moments code path that references one of these mock IDs
+// must keep them namespaced (see SearchScreen.js "mock_" prefix, and
+// 'expert_<id>' convention for chat conversation IDs).
 var EXPERTS=[{id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,category:'medical',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine.',tags:['General Medicine','Preventive Care'],img:'https://i.pravatar.cc/150?img=47'},{id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,category:'tech',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google alumni.',tags:['System Design','React'],img:'https://i.pravatar.cc/150?img=12'},{id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,category:'mental',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience.',tags:['Career Strategy','LinkedIn'],img:'https://i.pravatar.cc/150?img=23'},{id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,category:'legal',color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},{id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,category:'mental',color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},{id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,category:'mental',color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'}];
 var WORKSHOPS=[{id:1,title:'How to Crack Google Interview',host:'Ravi Menon',viewers:847,free:true,color:'linear-gradient(135deg,#1a1a2e,#534AB7)'},{id:2,title:'Managing Anxiety in 2026',host:'Dr. Aisha Malik',viewers:312,free:false,price:20,color:'linear-gradient(135deg,#1a0a2e,#6A4C93)'}];
 
@@ -140,16 +149,17 @@ function PostImage(props){
 
 function timeAgoUtil(dateStr){
   if(!dateStr) return '';
+  // Final polish: no manual 'Z' appending — see MessagesScreen.timeAgo for
+  // the same fix. Browser handles ISO with or without TZ marker correctly.
   var now=new Date();
-  var str=dateStr.toString();
-  if(!str.includes('Z')&&!str.includes('+')) str=str+'Z';
-  var date=new Date(str);
+  var date=new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
   var diff=Math.floor((now-date)/1000);
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
   if(diff<172800) return 'Yesterday';
-  return date.toLocaleDateString([],{month:'short',day:'numeric',timeZone:localStorage.getItem('user_timezone')||'UTC'});
+  return date.toLocaleDateString([],{month:'short',day:'numeric'});
 }
 
 export function UserProfileView(props){
@@ -196,6 +206,26 @@ export function UserProfileView(props){
 
   // Post menu state
   var postMenuUS=useState(null); var postMenuU=postMenuUS[0]; var setPostMenuU=postMenuUS[1];
+  // Local edit-post state (separate from HomeScreen's — UserProfileView is
+  // a sibling component, can't reach HomeScreen's modal state). Same shape.
+  var editPostUDataS=useState(null); var editPostUData=editPostUDataS[0]; var setEditPostUData=editPostUDataS[1];
+  function saveEditPostU(){
+    if(!editPostUData||!editPostUData.content||!editPostUData.content.trim()) return;
+    var newText = editPostUData.content;
+    var pid = editPostUData.id;
+    var snap = userPosts.slice();
+    setUserPosts(function(prev){return prev.map(function(x){return x.id===pid?Object.assign({},x,{text:newText}):x;});});
+    setEditPostUData(null);
+    sbHome.from('posts').update({text:newText}).eq('id',pid).then(function(r){
+      if(r.error){
+        console.error('RingIn Error [saveEditPostU]:', r.error && r.error.message ? r.error.message : 'Unknown error');
+        setUserPosts(snap);
+        try{ toastError('Failed to edit. Try again.'); }catch(e){}
+        return;
+      }
+      try{ toastSuccess('✏️ Post updated'); }catch(e){}
+    });
+  }
 
   function loadCommentsU(postId){
     var cached=null;
@@ -424,11 +454,26 @@ export function UserProfileView(props){
           var p=userPosts.find(function(x){return x.id===postMenuU;});
           if(!p) return null;
           var isOwn=p.userId===currentUserId;
+          // UserProfileView scope: setEditPostData/setShowEditPost/mutedPosts/
+          // toggleMutePost are all declared inside HomeScreen, NOT here. So we
+          // mirror them locally — read mutedPosts straight from localStorage,
+          // open an edit modal via local state below, and toggle via a small
+          // helper. Without these mirrors, tapping the menu items crashed
+          // with ReferenceError (same regression class as the mutedConvos bug).
+          var _mutedListU = (function(){ try{ var s = localStorage.getItem('ringin_muted_posts'); return s ? JSON.parse(s) : []; }catch(e){ return []; } })();
+          function _toggleMutePostU(pid){
+            try {
+              var cur = (function(){ try{ var s = localStorage.getItem('ringin_muted_posts'); return s ? JSON.parse(s) : []; }catch(e){ return []; } })();
+              var next = cur.indexOf(pid) >= 0 ? cur.filter(function(x){ return x !== pid; }) : cur.concat([pid]);
+              localStorage.setItem('ringin_muted_posts', JSON.stringify(next));
+              try { toastSuccess(next.indexOf(pid) >= 0 ? '🔕 Notifications off' : '🔔 Notifications on'); } catch(_){}
+            } catch(_){}
+          }
           var items=isOwn?[
             {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){var snapU2=userPosts.slice();setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);alert('Failed to delete post.');}});}}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuU(null);}},
-            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.text||p.content||''});setShowEditPost(true);setPostMenuU(null);}},
-            {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenuU(null);}}
+            {icon:'✏️',label:'Edit Post',fn:function(){setEditPostUData({id:p.id,content:p.text||p.content||''});setPostMenuU(null);}},
+            {icon:'🔕',label:_mutedListU.indexOf(p.id)>=0?'Turn on notifications':'Turn off notifications',fn:function(){_toggleMutePostU(p.id);setPostMenuU(null);}}
           ]:[
             {icon:'🔖',label:'Save Post',fn:function(){
               setPostMenuU(null);
@@ -648,7 +693,25 @@ export function UserProfileView(props){
           ):null
         );
       })
-    )
+    ),
+    // Edit Post modal — UserProfileView's own (separate from HomeScreen's).
+    editPostUData ? React.createElement('div',{
+      onClick:function(){setEditPostUData(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:10000,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'16px',width:'320px',padding:'20px',boxShadow:'0 8px 40px rgba(0,0,0,0.4)'}},
+        React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)',marginBottom:'14px'}},'Edit Post'),
+        React.createElement('textarea',{
+          value:editPostUData.content,
+          onChange:function(ev){setEditPostUData(function(prev){return Object.assign({},prev,{content:ev.target.value});});},
+          style:{width:'100%',minHeight:'100px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',fontSize:'14px',color:'var(--text)',resize:'vertical',outline:'none',fontFamily:'DM Sans,sans-serif',boxSizing:'border-box'}
+        }),
+        React.createElement('div',{style:{display:'flex',gap:'10px',marginTop:'14px',justifyContent:'flex-end'}},
+          React.createElement('button',{onClick:function(){setEditPostUData(null);},style:{padding:'8px 18px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}},'Cancel'),
+          React.createElement('button',{onClick:saveEditPostU,style:{padding:'8px 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'13px',cursor:'pointer',fontWeight:600}},'Save')
+        )
+      )
+    ) : null
   );
 }
 
@@ -1071,6 +1134,26 @@ export default function HomeScreen(props){
   var showNotifsS=useState(false); var showNotifs=showNotifsS[0]; var setShowNotifs=showNotifsS[1];
   var compImgsS=useState([]); var compImgs=compImgsS[0]; var setCompImgs=compImgsS[1];
   var compVideoS=useState(null); var compVideo=compVideoS[0]; var setCompVideo=compVideoS[1];
+  // FIX #1 — track the last URL.createObjectURL we handed to <video> so we
+  // can revoke it when compVideo changes / clears / the component unmounts.
+  // Without this, every "pick video → cancel → pick video" cycle leaked
+  // the prior blob URL (and the underlying decoded frames) in memory.
+  var compVideoPrevUrlRef = useRef(null);
+  useEffect(function(){
+    var nextUrl = (compVideo && compVideo.localUrl) || null;
+    var prevUrl = compVideoPrevUrlRef.current;
+    if (prevUrl && prevUrl !== nextUrl) {
+      try { URL.revokeObjectURL(prevUrl); } catch(_){}
+    }
+    compVideoPrevUrlRef.current = nextUrl;
+  }, [compVideo]);
+  useEffect(function(){
+    // Unmount cleanup — drop any URL still held when the screen tears down.
+    return function(){
+      var u = compVideoPrevUrlRef.current;
+      if (u) { try { URL.revokeObjectURL(u); } catch(_){} compVideoPrevUrlRef.current = null; }
+    };
+  }, []);
   var compMediaTypeS=useState('photo'); var compMediaType=compMediaTypeS[0]; var setCompMediaType=compMediaTypeS[1];
   var uploadingMediaS=useState(false); var uploadingMedia=uploadingMediaS[0]; var setUploadingMedia=uploadingMediaS[1];
   // Carousel index keyed by post id. Persisted to localStorage so a tab
@@ -1082,22 +1165,37 @@ export default function HomeScreen(props){
   });
   var carouselIdx=carouselIdxS[0];
   var setCarouselIdxRaw=carouselIdxS[1];
+  // FIX #3 — debounce the localStorage write. Every carousel swipe used to
+  // synchronously stringify-and-write the entire {postId:idx} blob, which
+  // on a phone with 50+ carousel posts ran into 20-30ms main-thread stalls
+  // mid-swipe. Now we coalesce writes into 400ms windows.
+  var carouselIdxWriteTimer = useRef(null);
   function setCarouselIdx(updater){
     setCarouselIdxRaw(function(prev){
       var next = typeof updater === 'function' ? updater(prev) : updater;
+      // Trim to the 200 most-recently-touched post ids to bound storage.
       try {
-        // Trim to the 200 most-recently-touched post ids to bound storage.
         var keys = Object.keys(next);
         if (keys.length > 200) {
           var trimmed = {};
           keys.slice(-200).forEach(function(k){ trimmed[k] = next[k]; });
           next = trimmed;
         }
-        localStorage.setItem('ringin_carousel_idx', JSON.stringify(next));
       } catch(_) {}
+      if (carouselIdxWriteTimer.current) clearTimeout(carouselIdxWriteTimer.current);
+      carouselIdxWriteTimer.current = setTimeout(function(){
+        try { localStorage.setItem('ringin_carousel_idx', JSON.stringify(next)); } catch(_){}
+      }, 400);
       return next;
     });
   }
+  useEffect(function(){
+    // Clear any pending debounced write on unmount so we don't fire after
+    // the component is gone.
+    return function(){
+      if (carouselIdxWriteTimer.current) { clearTimeout(carouselIdxWriteTimer.current); carouselIdxWriteTimer.current = null; }
+    };
+  }, []);
   var postDetailS=useState(null); var postDetail=postDetailS[0]; var setPostDetail=postDetailS[1];
   var postDetailIdxS=useState(0); var postDetailIdx=postDetailIdxS[0]; var setPostDetailIdx=postDetailIdxS[1];
   var pdMenuOpenS=useState(false); var pdMenuOpen=pdMenuOpenS[0]; var setPdMenuOpen=pdMenuOpenS[1];
@@ -1130,7 +1228,41 @@ export default function HomeScreen(props){
   var pullDistHS=useState(0); var pullDistH=pullDistHS[0]; var setPullDistH=pullDistHS[1];
   var fileInputRef=useRef(null);
   var typingTimerRef=useRef(null);
+  // FIX #6 — hoisted from below so the back-handler useEffect's dep array
+  // sees a defined value on first render. Was at line ~1503 originally;
+  // moving it up keeps the same React hook call order (just earlier in
+  // the function body), which is still consistent across renders.
+  var selUserS=useState(null); var selectedUser=selUserS[0]; var setSelectedUser=selUserS[1];
+  // FIX #4 — single-instance IntersectionObserver for the infinite-scroll
+  // sentinel. The old inline ref callback was constructing a new observer
+  // on EVERY render, and each one kept a stale closure over hasMoreH /
+  // loadMoreH, so they all kept firing loadMoreFeed in a loop. Hold the
+  // observer + sentinel element in refs; recreate the observer only when
+  // the closure inputs change.
+  var obsRef = useRef(null);
+  var sentinelRef = useRef(null);
   var EMOJIS=['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','🚀','💡','🎯','😎','🙏','💯','😅','🤣'];
+  // FIX #4 (cont.) — recreate observer when hasMoreH / loadMoreH change so
+  // the entries callback closes over the latest values. Old observer is
+  // explicitly disconnected first to prevent multiple observers piling up.
+  useEffect(function(){
+    // ALWAYS disconnect any prior observer first so we never accumulate.
+    if (obsRef.current) { try { obsRef.current.disconnect(); } catch(_){} obsRef.current = null; }
+    if (typeof window === 'undefined' || !window.IntersectionObserver) return;
+    if (!hasMoreH) return; // nothing to observe
+    if (!sentinelRef.current) return; // sentinel not mounted yet
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting && hasMoreH && !loadMoreH) loadMoreFeed();
+      });
+    }, { rootMargin: '300px 0px' });
+    obs.observe(sentinelRef.current);
+    obsRef.current = obs;
+    return function(){
+      if (obsRef.current) { try { obsRef.current.disconnect(); } catch(_){} obsRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMoreH, loadMoreH]);
   useEffect(function(){
     if(!currentUserId||!currentUserName) return;
     setLikersNames(function(prev){
@@ -1144,8 +1276,29 @@ export default function HomeScreen(props){
   // Android back / edge-swipe handler — close any open overlay
   // (post detail, edit-post modal, notifications panel, comments) before
   // App.js falls through to tab-level back nav. Innermost first.
+  // FIX #6 — consume the back gesture for the additional overlays
+  // (postMenu, showLikers, selectedUser profile sub-view, the audience
+  // popover) BEFORE the existing overlays, so a back press dismisses the
+  // topmost overlay first. The Moments viewer is intentionally NOT in this
+  // list — Moments owns its own 'ringin:back' listener.
   useEffect(function(){
     function onBack(ev){
+      // Innermost transient popovers first.
+      if (postMenu) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setPostMenu(null);
+        return;
+      }
+      if (compAudienceMenu) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setCompAudienceMenu(false);
+        return;
+      }
+      if (showLikers) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setShowLikers(null);
+        return;
+      }
       if (showEditPost) {
         if (ev && ev.preventDefault) ev.preventDefault();
         setShowEditPost(false); setEditPostData(null);
@@ -1166,10 +1319,17 @@ export default function HomeScreen(props){
         setOpenComments(null);
         return;
       }
+      // selectedUser is a full sub-screen (UserProfileView); pop it last
+      // before falling through to App.js's tab-level back.
+      if (selectedUser) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setSelectedUser(null);
+        return;
+      }
     }
     window.addEventListener('ringin:back', onBack);
     return function(){ window.removeEventListener('ringin:back', onBack); };
-  }, [showEditPost, postDetail, showNotifs, openComments]);
+  }, [showEditPost, postDetail, showNotifs, openComments, postMenu, showLikers, selectedUser, compAudienceMenu]);
 
   // Listen for the bell-click event from the App-level top bar to open notifications panel
   useEffect(function(){
@@ -1240,10 +1400,16 @@ export default function HomeScreen(props){
 
   function loadMoreFeed(){
     if(loadMoreH||!hasMoreH) return;
-    setLoadMoreH(true);
+    // FIX #5 — if there are NO real (string-id, i.e. Supabase) posts, the
+    // pagination query previously used `now()` as the high-water mark and
+    // returned nothing, which left hasMoreH=true and the
+    // IntersectionObserver re-fired loadMoreFeed in a tight loop. Bail out
+    // cleanly so the observer stops trying.
     var realPosts = posts.filter(function(p){return typeof p.id==='string';});
     var oldest = realPosts[realPosts.length-1];
-    var oldestDate = oldest&&oldest.createdAt?oldest.createdAt:new Date().toISOString();
+    if (!oldest || !oldest.createdAt) { setHasMoreH(false); setLoadMoreH(false); return; }
+    setLoadMoreH(true);
+    var oldestDate = oldest.createdAt;
     sbHome.from('posts').select('*').order('created_at',{ascending:false}).lt('created_at',oldestDate).limit(12).then(function(res){
       if(res.data&&res.data.length>0){
         var morePosts=res.data.map(mapPost);
@@ -1351,7 +1517,7 @@ export default function HomeScreen(props){
   var searchQS=useState(''); var searchQ=searchQS[0]; var setSearchQ=searchQS[1];
   var searchResS=useState(null); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
   var searchingS=useState(false); var searching=searchingS[0]; var setSearching=searchingS[1];
-  var selUserS=useState(null); var selectedUser=selUserS[0]; var setSelectedUser=selUserS[1];
+  // FIX #6 — selUserS hoisted earlier (see comment near typingTimerRef).
   var locFilterS=useState('all'); var locFilter=locFilterS[0]; var setLocFilter=locFilterS[1];
   var supabase = props.supabase;
 
@@ -1383,21 +1549,15 @@ export default function HomeScreen(props){
     return function(){clearTimeout(timer);};
   },[searchQ]);
   var notifS=useState(false); var showNotif=notifS[0]; var setShowNotif=notifS[1];
-  var NOTIFS=[
-    {id:1,icon:'📞',text:'Dr. Priya Nair accepted your call request',time:'2m ago',unread:true},
-    {id:2,icon:'🪙',text:'You received 50 bonus coins! Limited offer.',time:'15m ago',unread:true},
-    {id:3,icon:'❤️',text:'Ravi Menon liked your post',time:'1h ago',unread:true},
-    {id:4,icon:'💬',text:'Sara Al Zaabi commented on your post',time:'2h ago',unread:false},
-    {id:5,icon:'🎓',text:'New workshop: Crack Google Interview — starts in 1 hour',time:'3h ago',unread:false},
-    {id:6,icon:'⭐',text:'You have a new review from a recent call',time:'Yesterday',unread:false},
-  ];
+  // Final polish: removed dead NOTIFS mock array (never read anywhere after
+  // the notifications feature switched to live Supabase data).
   var onOpenWallet2 = props.onOpenWallet;
   function timeAgo(dateStr){
     if(!dateStr) return '';
+    // Final polish: no manual 'Z' appending. See MessagesScreen.timeAgo.
     var now = new Date();
-    var str = dateStr.toString();
-    if(!str.includes('Z') && !str.includes('+')) str = str + 'Z';
-    var date = new Date(str);
+    var date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
     var diff = Math.floor((now - date) / 1000);
     if(diff < 60) return 'Just now';
     if(diff < 3600) return Math.floor(diff/60) + 'm ago';
@@ -1406,7 +1566,11 @@ export default function HomeScreen(props){
     return date.toLocaleDateString([],{month:'short',day:'numeric'});
   }
 
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:50,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
+  // Pass the real coin balance from useCoinBalance hook (was hardcoded 50,
+  // making call deduction start from a fake balance and write the wrong
+  // value back to profiles.coins on hangup — same regression already fixed
+  // in MessagesScreen + SearchScreen + App.js).
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coinBal,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);},session:props.session});
 
   if(postDetail){
     // Always derive pd from live posts array so likes/comments stay in sync
@@ -1551,6 +1715,11 @@ export default function HomeScreen(props){
   var onlineExperts = fe.filter(function(e){return e.online===true;});
 
   function submitPost(){
+    // FIX #10: guard against double-submit (Enter + Tap race). `posting` is set
+    // true at the start of an in-flight submit and only cleared on completion,
+    // error path, or moderation-cancel — so this early-return blocks the second
+    // call from ever firing the duplicate insert.
+    if(posting) return;
     if(!compText.trim()&&compImgs.length===0&&!compVideo){toastWarn('Write something or add a photo/video!');return;}
     if(compVideo&&compVideo.uploading){toastWarn('Video is still uploading, please wait...');return;}
     if(uploadingMedia){toastWarn('Media is still uploading, please wait...');return;}
@@ -1580,7 +1749,9 @@ export default function HomeScreen(props){
       }
 
       // Auto-tag posts
-      var manualTags = (compText.match(/#[a-zA-Z0-9]+/g)||[]).map(function(t){return t.replace('#','');});
+      // FIX #9: lowercase manual hashtags so `#Health` and `#health` collapse
+      // into the same tag instead of fragmenting search results.
+      var manualTags = (compText.match(/#[a-zA-Z0-9]+/g)||[]).map(function(t){return t.replace('#','').toLowerCase();});
       var autoTagPromise = compText.trim().length > 20
         ? autoTagPost(compText, 3).catch(function(){return null;})
         : Promise.resolve(null);
@@ -1627,25 +1798,59 @@ export default function HomeScreen(props){
           }
       if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');alert('Something went wrong. Please try again.');setPosting(false);return;}
       if(res.data&&res.data[0]){
+        // FIX #1: N+1 query elimination. Previously this code did a per-follower
+        // .single() lookup against notification_settings (1000 followers = 1000
+        // round-trips). Now: ONE batched .in(...) query to fetch all prefs at
+        // once, build a map, filter recipients, then ONE batched .insert(rows).
+        // Preserves the defensive try/catch in case the table doesn't exist yet.
+        var newPostRow = res.data[0];
         sbHome.from('follows').select('follower_id').eq('following_id',session.user.id).then(function(fres){
-          if(fres.data&&fres.data.length>0){
-            fres.data.forEach(function(f){
-              sbHome.from('notification_settings').select('notify_posts').eq('user_id',f.follower_id).eq('following_id',session.user.id).single().then(function(ns){
-                if(!ns.data||ns.data.notify_posts!==false){
-                  sbHome.from('notifications').insert([{
-                    user_id:f.follower_id,
-                    from_user_id:session.user.id,
-                    from_user_name:postData.user_name||'Someone',
-                    from_user_avatar:postData.user_avatar||'',
-                    type:'new_post',
-                    message:(postData.user_name||'Someone')+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
-                    post_id:res.data[0].id,
-                    read:false
-                  }]).then(function(){});
-                }
-              });
-            });
+          if(!fres.data || fres.data.length===0) return;
+          var followerIds = fres.data.map(function(f){return f.follower_id;}).filter(Boolean);
+          if(followerIds.length===0) return;
+
+          // Batch-fetch every follower's notification setting for THIS author
+          // in one round-trip. If notification_settings table/columns are
+          // missing, we still proceed and treat everyone as opted-in.
+          var prefsPromise;
+          try {
+            prefsPromise = sbHome.from('notification_settings')
+              .select('user_id, notify_posts')
+              .eq('following_id', session.user.id)
+              .in('user_id', followerIds)
+              .then(function(r){ return (r && !r.error && r.data) ? r.data : []; })
+              .catch(function(){ return []; });
+          } catch(_) {
+            prefsPromise = Promise.resolve([]);
           }
+
+          prefsPromise.then(function(prefs){
+            // Map of user_id -> notify_posts. Missing entry = default true.
+            var prefMap = {};
+            (prefs||[]).forEach(function(p){ if(p && p.user_id) prefMap[p.user_id] = p.notify_posts; });
+            var recipients = followerIds.filter(function(uid){
+              var v = prefMap[uid];
+              return v !== false; // undefined or true → include
+            });
+            if(recipients.length===0) return;
+
+            var rows = recipients.map(function(uid){
+              return {
+                user_id: uid,
+                from_user_id: session.user.id,
+                from_user_name: postData.user_name||'Someone',
+                from_user_avatar: postData.user_avatar||'',
+                type: 'new_post',
+                message: (postData.user_name||'Someone')+' posted: '+postData.text.substring(0,50)+(postData.text.length>50?'...':''),
+                post_id: newPostRow.id,
+                read: false
+              };
+            });
+            // Single batched insert (instead of N inserts).
+            try {
+              sbHome.from('notifications').insert(rows).then(function(){}).catch(function(){});
+            } catch(_) {}
+          });
         });
       }
       if(res.data&&res.data[0]){
@@ -2640,29 +2845,12 @@ export default function HomeScreen(props){
         );
       })
     ),
-    // Auto-load sentinel — IntersectionObserver (wired via ref callback)
-    // triggers loadMoreFeed() as soon as this div enters the viewport.
-    // The old "Load more posts" button is preserved as a visible spinner
-    // so the user knows more is coming, but no tap is required.
+    // Auto-load sentinel — IntersectionObserver (managed via FIX #4
+    // useEffect above) triggers loadMoreFeed() as soon as this div enters
+    // the viewport. Element ref binds the sentinel; effect handles
+    // observer lifecycle.
     hasMoreH ? React.createElement('div',{
-      ref:function(el){
-        if (!el || !window.IntersectionObserver) return;
-        // Re-using a single observer per mount; we just (re)observe when
-        // the sentinel mounts. The browser auto-disconnects when the
-        // element unmounts so no manual cleanup needed.
-        try {
-          var obs = new IntersectionObserver(function(entries){
-            entries.forEach(function(en){
-              if (en.isIntersecting && hasMoreH && !loadMoreH) {
-                loadMoreFeed();
-              }
-            });
-          }, { rootMargin: '300px 0px' });
-          obs.observe(el);
-          // Stash on the element so a later GC of the observer doesn't kill it early.
-          el.__ringinObs = obs;
-        } catch(_) {}
-      },
+      ref: sentinelRef,
       style:{textAlign:'center',padding:'16px 0'}
     },
       React.createElement('div',{style:{display:'inline-flex',alignItems:'center',gap:'8px',color:'var(--t2)',fontSize:'12px'}},

@@ -17,7 +17,13 @@ const EXPERTS = [
 ];
 
 function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded, onGoToMessages}){
-  var isFollowing = following ? !!following[String(expert.id)] : false;
+  // FIX #6: namespace mock-expert follow IDs with 'mock_' to prevent
+  // collisions with real UUID follows from the `follows` table. Numeric
+  // mock IDs (1..6) would otherwise overlap with future real UUIDs that
+  // happen to start with the same digit, or with localStorage entries
+  // that other code writes using real IDs.
+  var mockKey = 'mock_' + expert.id;
+  var isFollowing = following ? !!following[mockKey] : false;
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     React.createElement('button',{onClick:onBack,title:'Back',style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.55)',border:'none',borderRadius:'50%',width:'34px',height:'34px',color:'#fff',padding:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},
       React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
@@ -35,7 +41,9 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
       React.createElement('div',{style:{display:'flex',alignItems:'flex-end',justifyContent:'flex-end',marginBottom:'10px'}},
         React.createElement('div',{style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button',{
-            onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
+            // FIX #6: use the mockKey so the follow state lives under a
+            // dedicated namespace (matches the read above).
+            onClick:function(){toggleFollow(mockKey,expert.name,expert.img,expert.role);},
             style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px'}
           }, isFollowing ? 'Following' : '+ Follow'),
           React.createElement('button',{onClick:function(){if(onGoToMessages)onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
@@ -72,7 +80,10 @@ export default function SearchScreen(props){
   // ALL useState FIRST
   var selS = useState(props.initExpert || null); var selected = selS[0]; var setSelected = selS[1];
   var callS = useState(null); var activeCall = callS[0]; var setActiveCall = callS[1];
-  var coinsS = useState(50); var coins = coinsS[0]; var setCoins = coinsS[1];
+  // FIX #10: removed `coinsS = useState(50)` stub. Hardcoded 50-coin
+  // state was bypassing the real wallet balance — useCoinBalance hook
+  // (coinBal, below) gives the real number, and the CallScreen render
+  // now uses it.
   var acS = useState('all'); var activecat = acS[0]; var setAc = acS[1];
   var searchQS = useState(''); var searchQ = searchQS[0]; var setSearchQ = searchQS[1];
   var typingTimerRef = useRef(null);
@@ -126,7 +137,10 @@ export default function SearchScreen(props){
     return function(){ if (ftsDebounceRef.current) clearTimeout(ftsDebounceRef.current); };
   }, [searchQ]);
   // CONDITIONAL RETURNS AFTER ALL HOOKS
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  // FIX #10: pass the real `coinBal` from the hook; onCoinsChange is a
+  // no-op because CallScreen now broadcasts via setSharedCoinBalance
+  // (which the hook auto-listens for).
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,session:session,coins:coinBal,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(selected) return React.createElement(ExpertProfile,{
     expert:selected,
     following:following,
@@ -241,10 +255,16 @@ export default function SearchScreen(props){
               onClick:function(ev){ev.stopPropagation();setActiveCall(e);},
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             },'Call'),
-            React.createElement('button',{
-              onClick:function(ev){ev.stopPropagation();toggleFollow(String(e.id),e.name,e.img,e.role);},
-              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
-            }, following[String(e.id)]?'Following':'Follow')
+            // FIX #6: namespace the mock expert follow IDs with 'mock_' to
+            // avoid colliding with real UUIDs from the `follows` table.
+            (function(){
+              var ek = 'mock_' + e.id;
+              var isF = !!following[ek];
+              return React.createElement('button',{
+                onClick:function(ev){ev.stopPropagation();toggleFollow(ek,e.name,e.img,e.role);},
+                style:{padding:'5px 12px',background:isF?'var(--acg)':'var(--bg4)',border:isF?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:isF?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
+              }, isF?'Following':'Follow');
+            })()
           )
         );
       })
