@@ -1,16 +1,17 @@
 {
-  "version": "2026.0518.1310",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1310.zip",
-  "published_at": "2026-05-18T13:10:00Z",
+  "version": "2026.0518.1348",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1348.zip",
+  "published_at": "2026-05-18T13:48:00Z",
   "git_sha": "manual",
-  "title": "9 fixes — Login offline, Agora timeout, FCM token leak, push dedup",
+  "title": "8 fixes — Search race conditions, empty states, stale-write guards",
   "notes": [
-    "FIX: Login/signup button no longer stuck on 'Please wait...' if you're offline or the network drops mid-request (was requiring full app reload).",
-    "FIX: Agora token fetch now has 15s timeout — outgoing calls no longer hang on 'Connecting...' indefinitely when the API is slow.",
-    "PRIVACY FIX: Your FCM push token is now cleared on sign-out — the next user signing in on the same device won't receive your push notifications anymore.",
-    "FIX: Push notification listener was being added on every hourly token refresh — caused notification sound to fire 2x/3x/4x after long sessions. Now properly deduped.",
-    "PERF: Notifications realtime channel was rebuilding every ~1 hour on token refresh (and missing notifications during the rebuild window). Now stable across token refreshes.",
-    "FIX: Password Reset email button + Password Change button both no longer stuck on 'Sending.../Changing...' if the network drops.",
-    "POLISH: 2 typing-sound timers now properly cleared on screen exit (no more stray key-click on the next screen)."
+    "FIX: Search results no longer flicker between queries — when you type fast, the slower previous query result was overwriting the newer one. Now uses sequence guards (HomeScreen, SearchScreen, MessagesScreen).",
+    "FIX: People search in Messages now properly debounced (300ms) — no more spamming Supabase with one query per keystroke.",
+    "POLISH: People search now shows 'No people found' empty state instead of just disappearing.",
+    "POLISH: Feed empty state — when you have zero posts visible (after filters), now shows clear 'No posts to show' message instead of blank space.",
+    "POLISH: Country picker + Timezone picker now show 'No matches found' when search has no results, instead of just empty list.",
+    "POLISH: Hashtag search no-match state — clear 'No posts with #hashtag' message instead of empty feed.",
+    "FIX: Followers/Following list — when modal closes mid-search, the stale typed query no longer leaks into the next open.",
+    "FIX: New-message search panel now properly clears search state when you toggle the panel closed and reopen."
   ]
 }

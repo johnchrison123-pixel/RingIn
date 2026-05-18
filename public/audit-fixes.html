@@ -51,12 +51,12 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.37 — +9 lifecycle/network/auth fixes (170 fixes total)</h2>
-<p>Round 16 audited useEffect cleanup completeness + network resilience + auth edges. P0 wins: <b>Login/signup offline error now resets the button</b> (was stuck on 'Please wait...' requiring full reload), <b>Agora token fetch now has 15s timeout</b> (caller could hang on 'Connecting...' indefinitely on slow networks), <b>FCM token now cleared on sign-out</b> (previous user's push notifications kept hitting next user's phone). P1 wins: <b>onMessage push listener dedup</b> (was accumulating per hourly token refresh, multi-firing notification sounds), <b>HomeScreen notifs effect now stable across token refresh</b> (was rebuilding channel hourly), <b>2 password .catch handlers</b> (Reset + Change buttons no longer stuck). P2: 2 typingTimer cleanups (stray key-click on next screen). Bundle <code>2026.0518.1310</code> + APK <code>ringin-v3.37.apk</code>.</p>
+<h2>✅ APK v3.38 — +8 search/empty-state/race-condition fixes (178 fixes total · 17 rounds)</h2>
+<p>Round 17 audited search-input race conditions + missing empty states + stale-write guards. P1 wins: <b>3 sequence-guards on search results</b> (HomeScreen + SearchScreen + MessagesScreen — fast typing no longer flickers stale results), <b>People-search debounced 300ms + .catch + 'No people found' empty state</b> (was spamming Supabase per keystroke), <b>FollowersListModal stale-reset on close</b> (last query leaked to next open). P2: <b>4 empty-state polish</b> (feed when filters hide all, country/timezone pickers no-match, hashtag-no-match). Bundle <code>2026.0518.1348</code> + APK <code>ringin-v3.38.apk</code>.</p>
 </div>
 
 <div class="stats">
-<div class="stat done"><span class="n">16</span><div class="l">Done</div></div>
+<div class="stat done"><span class="n">178</span><div class="l">Done</div></div>
 <div class="stat prog"><span class="n">0</span><div class="l">In Progress</div></div>
 <div class="stat todo"><span class="n">9</span><div class="l">To Do</div></div>
 <div class="stat skip"><span class="n">0</span><div class="l">Skipped</div></div>

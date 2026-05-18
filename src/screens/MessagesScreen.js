@@ -1634,6 +1634,9 @@ export default function MessagesScreen(props){
   },[myId]);
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
+  // R17 FIX #2: track in-flight people-search so the empty-state line only
+  // shows when results are truly empty (not just while waiting).
+  var searchingMsgS=useState(false); var searchingMsg=searchingMsgS[0]; var setSearchingMsg=searchingMsgS[1];
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
   var refreshingS=useState(false); var refreshing=refreshingS[0]; var setRefreshing=refreshingS[1];
   var pullStartS=useState(0); var pullStart=pullStartS[0]; var setPullStart=pullStartS[1];
@@ -1707,6 +1710,13 @@ export default function MessagesScreen(props){
   //   'business' → business profile chats (users with role='business')
   var tabS = useState('friends'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
   var typingTimerRef=useRef(null);
+  // R17 FIX #1c: monotonically-increasing sequence guard for the people
+  // search query — a slower earlier resolve can't overwrite a newer one.
+  var peopleSearchSeqRef=useRef(0);
+  // R17 FIX #2: debounce timer for people search so we don't fire a query
+  // on every keystroke (was undebounced and could DoS profiles with rapid
+  // typing).
+  var peopleSearchDebounceRef=useRef(null);
   // FIX #4: mirror `active` to a ref so the inbox INSERT realtime handler
   // can read it synchronously without wrapping the side-effect-laden state
   // updates inside setActive(currentActive => ...). That pattern violates
@@ -1900,11 +1910,25 @@ export default function MessagesScreen(props){
   },[myId]);
 
   // Search users
+  // R17 FIX #1c + #2: debounced + sequence-guarded + .catch'd. Previously
+  // every keystroke fired an immediate query, the older response could
+  // overwrite the newer one, and a rejected promise left state stale.
   useEffect(function(){
-    if(!search.trim()){setSearchRes([]);return;}
-    sb.from('profiles').select('*').or('email.ilike.%'+search+'%,full_name.ilike.%'+search+'%').then(function(res){
-      setSearchRes((res.data||[]).filter(function(u){return u.id!==myId;}));
-    });
+    if (peopleSearchDebounceRef.current) clearTimeout(peopleSearchDebounceRef.current);
+    if(!search.trim()){setSearchRes([]); setSearchingMsg(false); return;}
+    setSearchingMsg(true);
+    var mySeq = ++peopleSearchSeqRef.current;
+    peopleSearchDebounceRef.current = setTimeout(function(){
+      sb.from('profiles').select('*').or('email.ilike.%'+search+'%,full_name.ilike.%'+search+'%').then(function(res){
+        if (mySeq !== peopleSearchSeqRef.current) return; // newer query in flight
+        setSearchRes((res.data||[]).filter(function(u){return u.id!==myId;}));
+        setSearchingMsg(false);
+      }).catch(function(){
+        if (mySeq !== peopleSearchSeqRef.current) return;
+        setSearchRes([]); setSearchingMsg(false);
+      });
+    }, 150);
+    return function(){ if (peopleSearchDebounceRef.current) clearTimeout(peopleSearchDebounceRef.current); };
   },[search]);
 
   function refreshConvos(){
@@ -2045,7 +2069,14 @@ export default function MessagesScreen(props){
       React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Messages'),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
         // + New message — moved to LEFT of the coin chip
-        React.createElement('button',{onClick:function(){setShowNew(!showNew);},title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
+        React.createElement('button',{onClick:function(){
+          // R17 FIX #8: when closing the new-message panel, also clear any
+          // lingering search query + results so it doesn't reopen showing
+          // a stale list from a previous session.
+          var willOpen = !showNew;
+          setShowNew(willOpen);
+          if (!willOpen) { setSearch(''); setSearchRes([]); setSearchingMsg(false); }
+        },title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
         React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
           React.createElement('span',null,(Number(coinBal)||0).toLocaleString())
@@ -2079,7 +2110,12 @@ export default function MessagesScreen(props){
             React.createElement('div',{style:{fontSize:'11px',color:u.is_online?'var(--green)':'var(--t2)'}},u.is_online?'Online':'Member')
           )
         );
-      })
+      }),
+      // R17 FIX #2: empty-state when search has ≥2 chars and the query is
+      // settled (not in-flight) but matched no people.
+      (searchRes.length === 0 && search.trim().length >= 2 && !searchingMsg) ? React.createElement('div',{
+        style:{padding:'14px 10px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}
+      },'No people found') : null
     ) : null,
     // Tabs — Friends / Experts / Business (Instagram Reels/Friends style)
     React.createElement('div',{

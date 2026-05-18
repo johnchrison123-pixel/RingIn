@@ -95,6 +95,12 @@ export default function SearchScreen(props){
   var ftsPostsS = useState([]); var ftsPosts = ftsPostsS[0]; var setFtsPosts = ftsPostsS[1];
   var ftsLoadingS = useState(false); var ftsLoading = ftsLoadingS[0]; var setFtsLoading = ftsLoadingS[1];
   var ftsDebounceRef = useRef(null);
+  // R17 FIX #1b: monotonically-increasing sequence guard for the FTS query
+  // so a slower earlier resolve can't clobber a newer one's results.
+  var ftsSearchSeqRef = useRef(0);
+  // R17 FIX #6: live mirror of searchQ so an in-flight RPC's .then() can
+  // see the CURRENT input state (the effect closure's `searchQ` is stale).
+  var searchQLiveRef = useRef('');
 
   // ── T2.12: Trending hashtags from the materialized view (0014_trending.sql).
   // Shown when there's no active search query. Tap a tag → seeds search with #tag.
@@ -127,6 +133,10 @@ export default function SearchScreen(props){
     };
   }, []);
 
+  // R17 FIX #6: mirror searchQ into a ref every render so an in-flight
+  // RPC's resolve callback can compare against the LIVE input value, not
+  // the captured-at-effect-start one.
+  searchQLiveRef.current = searchQ;
   // T2.8 — debounced FTS query against the new search_posts / search_profiles
   // RPCs. Fires 250ms after the user stops typing, only when query >= 2 chars.
   useEffect(function(){
@@ -134,11 +144,20 @@ export default function SearchScreen(props){
     var q = (searchQ || '').trim();
     if (q.length < 2) { setFtsPeople([]); setFtsPosts([]); setFtsLoading(false); return; }
     setFtsLoading(true);
+    // R17 FIX #1b: capture sequence for this invocation so a slower
+    // earlier resolve can't overwrite newer results.
+    var mySeq = ++ftsSearchSeqRef.current;
     ftsDebounceRef.current = setTimeout(function(){
       Promise.all([
         sb.rpc('search_profiles', { q: q, lim: 8 }).then(function(r){ return (r && !r.error && r.data) ? r.data : []; }).catch(function(){ return []; }),
         sb.rpc('search_posts',    { q: q, lim: 8 }).then(function(r){ return (r && !r.error && r.data) ? r.data : []; }).catch(function(){ return []; }),
       ]).then(function(results){
+        // R17 FIX #6: bail if user cleared input or typed something
+        // different while the RPC was in flight.
+        var liveQ = (searchQLiveRef.current || '').trim();
+        if (liveQ.length < 2 || liveQ !== q) return;
+        // R17 FIX #1b: newer query in flight, don't overwrite its result.
+        if (mySeq !== ftsSearchSeqRef.current) return;
         setFtsPeople(results[0]);
         setFtsPosts(results[1]);
         setFtsLoading(false);

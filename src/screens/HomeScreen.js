@@ -1317,6 +1317,11 @@ export default function HomeScreen(props){
   var pullDistHS=useState(0); var pullDistH=pullDistHS[0]; var setPullDistH=pullDistHS[1];
   var fileInputRef=useRef(null);
   var typingTimerRef=useRef(null);
+  // R17 FIX #1a: monotonically-increasing sequence guard for doSearch (header
+  // search). A fast-typed earlier query could resolve AFTER a newer one and
+  // clobber the visible results. Each call captures mySeq; on resolve, if
+  // it's not the latest, bail.
+  var doSearchSeqRef = useRef(0);
   // R16 FIX #8: typingTimerRef sets a setTimeout on each comment keystroke
   // (line ~3040). If HomeScreen unmounts mid-debounce, the timer fires on
   // a dead component (no actual setState here, but it leaks the closure
@@ -1664,6 +1669,9 @@ export default function HomeScreen(props){
 
   function doSearch(q){
     if(!q||!q.trim()){setSearchRes(null);return;}
+    // R17 FIX #1a: capture sequence for this invocation so a slower
+    // earlier resolve can't overwrite a newer one.
+    var mySeq = ++doSearchSeqRef.current;
     setSearching(true);
     var ql = q.toLowerCase();
     var experts = ALL_EXPERTS.filter(function(e){return e.name.toLowerCase().includes(ql)||e.role.toLowerCase().includes(ql);});
@@ -1672,10 +1680,14 @@ export default function HomeScreen(props){
     if(supabase){
       // FIX #3: add .catch so a rejected profile search doesn't leave the spinner stuck
       supabase.from('profiles').select('*').or('email.ilike.%'+q+'%,full_name.ilike.%'+q+'%').then(function(res){
+        if (mySeq !== doSearchSeqRef.current) return; // R17 FIX #1a: newer query in flight
         var users = res.data||[];
         setSearchRes({experts:experts,skills:skills,workshops:workshops,users:users});
         setSearching(false);
-      }).catch(function(e){ setSearching(false); console.warn('[ringin] doSearch reject:', e); });
+      }).catch(function(e){
+        if (mySeq !== doSearchSeqRef.current) return; // R17 FIX #1a: don't flip spinner if superseded
+        setSearching(false); console.warn('[ringin] doSearch reject:', e);
+      });
     } else {
       setSearchRes({experts:experts,skills:skills,workshops:workshops,users:[]});
       setSearching(false);
@@ -2879,9 +2891,13 @@ export default function HomeScreen(props){
       }, '× Clear filter')
     ) : null,
     React.createElement('div', {style:{padding:'0'}},
+      // R17 FIX #3 + #5: feed is wrapped in an outer IIFE so we can branch on
+      // length===0 → empty-state. Mirrors the userPosts empty-state pattern
+      // at ~line 619-621. Hashtag-filtered empty produces a tag-specific msg.
+      (function(){
       // Optional hashtag filter applied client-side. When selectedTag is null,
       // the full feed renders unchanged.
-      (function(){
+      var feedArr = (function(){
         var src = selectedTag
           ? posts.filter(function(p){ return Array.isArray(p.tags) && p.tags.indexOf(selectedTag) >= 0; })
           : posts.slice();
@@ -2937,7 +2953,22 @@ export default function HomeScreen(props){
           }
         }
         return src;
-      })().map(function(p){
+      })();
+      // R17 FIX #3 + #5: empty-state branches. Style mirrors userPosts at
+      // line ~619-621. Tag-specific copy when a hashtag filter is on.
+      if (feedArr.length === 0) {
+        if (selectedTag) {
+          return React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
+            React.createElement('div',{style:{fontSize:'30px',marginBottom:'8px'}},'#'),
+            React.createElement('div',{style:{fontSize:'13px'}},'No posts tagged #'+selectedTag+' yet — be the first to post.')
+          );
+        }
+        return React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t2)'}},
+          React.createElement('div',{style:{fontSize:'30px',marginBottom:'8px'}},'📝'),
+          React.createElement('div',{style:{fontSize:'13px'}},'No posts in your feed yet — follow some experts or check back later.')
+        );
+      }
+      return feedArr.map(function(p){
         var commentsArr=commentsCache[p.id]||[];
         return React.createElement('div', {key:p.id, className:'fpost'},
           React.createElement('div', {className:'ph', style:{position:'relative'}},
@@ -3063,7 +3094,8 @@ export default function HomeScreen(props){
             )
           ):null
         );
-      })
+      });
+      })()
     ),
     // Auto-load sentinel — IntersectionObserver (managed via FIX #4
     // useEffect above) triggers loadMoreFeed() as soon as this div enters

@@ -1425,14 +1425,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('button',{onClick:function(){setShowPhoneCodePicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
         React.createElement('div',{key:'plist-'+acctCountrySearch,style:{overflowY:'auto',flex:1}},
-          COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase())||c[2].includes(acctCountrySearch);}).map(function(c){
-            var sel=acctPhoneCode===c[2];
-            return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
-              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
-              React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
-            );
-          })
+          // R17 FIX #4: empty-state mirrors inline country picker pattern at ~line 1345.
+          (function(){
+            var filtered=COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase())||c[2].includes(acctCountrySearch);});
+            if(!filtered.length) return React.createElement('div',{style:{padding:'14px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No matches');
+            return filtered.map(function(c){
+              var sel=acctPhoneCode===c[2];
+              return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
+                style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
+                React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
+              );
+            });
+          })()
         )
       )
     ) : null,
@@ -1447,14 +1452,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('button',{onClick:function(){setShowTzPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
         React.createElement('div',{key:'tzlist-'+tzSearch,style:{overflowY:'auto',flex:1}},
-          TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());}).map(function(t){
-            var sel=acctTz===t[0];
-            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);try{localStorage.setItem('user_timezone',t[0]);}catch(e){}setShowTzPicker(false);setTzSearch('');},
-              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
-              sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
-            );
-          })
+          // R17 FIX #4: empty-state mirrors inline country picker pattern at ~line 1345.
+          (function(){
+            var filtered=TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());});
+            if(!filtered.length) return React.createElement('div',{style:{padding:'14px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No matches');
+            return filtered.map(function(t){
+              var sel=acctTz===t[0];
+              return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);try{localStorage.setItem('user_timezone',t[0]);}catch(e){}setShowTzPicker(false);setTzSearch('');},
+                style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
+                sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
+              );
+            });
+          })()
         )
       )
     ) : null
@@ -2257,7 +2267,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.37';
+              var APK_VERSION = 'v3.38';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

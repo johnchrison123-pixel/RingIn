@@ -17,6 +17,11 @@ export default function FollowersListModal(props) {
 
   useEffect(function(){
     if (!userId) return;
+    // R17 FIX #7: reset to empty + loading at the START so switching the
+    // modal from 'followers' → 'following' (or reopening on a different
+    // user) doesn't briefly show the previous list while the new query
+    // is in flight.
+    setUsers([]); setLoading(true);
     var col = type === 'followers' ? 'following_id' : 'follower_id';
     var otherCol = type === 'followers' ? 'follower_id' : 'following_id';
 

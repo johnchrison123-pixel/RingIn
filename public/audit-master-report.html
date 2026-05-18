@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RingIn — Master Audit Report (17 rounds, 178 fixes)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55;font-size:10.5pt}
+.wrap{max-width:920px;margin:0 auto;padding:28px 22px 60px}
+
+/* Cover */
+.cover{min-height:calc(100vh - 40px);display:flex;flex-direction:column;justify-content:center;padding:60px 30px;text-align:center;border:2px solid #1D9E75;border-radius:18px;background:linear-gradient(135deg,#F4FBF8,#FFFFFF);page-break-after:always;margin-bottom:32px}
+.cover .brand{font-family:Syne,sans-serif;font-size:48pt;font-weight:800;color:#1D9E75;letter-spacing:-1.5px;margin-bottom:8px}
+.cover .sub{font-size:20pt;font-weight:600;color:#1a1a1f;margin-bottom:24px}
+.cover .meta{font-size:11pt;color:#555;margin-bottom:36px}
+.cover .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:30px}
+.cover .stat{background:#fff;border:1.5px solid #1D9E75;border-radius:14px;padding:18px 10px}
+.cover .stat .n{font-size:32pt;font-weight:800;color:#1D9E75;display:block;line-height:1}
+.cover .stat .l{font-size:9pt;color:#444;text-transform:uppercase;letter-spacing:0.6px;margin-top:6px;font-weight:600}
+.cover .footer{margin-top:48px;font-size:10pt;color:#666}
+
+/* Section headings */
+h1{font-size:26pt;font-weight:800;color:#1D9E75;margin:48px 0 6px;letter-spacing:-0.5px;page-break-before:always;padding-top:8px}
+h1:first-of-type{page-break-before:auto}
+h2{font-size:18pt;font-weight:800;color:#1a1a1f;margin:30px 0 10px;padding-bottom:6px;border-bottom:2px solid #1D9E75;letter-spacing:-0.3px}
+h3{font-size:13pt;font-weight:800;color:#5746af;margin:20px 0 8px}
+h4{font-size:11.5pt;font-weight:700;color:#1a1a1f;margin:16px 0 6px}
+
+p{margin-bottom:10px}
+.lead{font-size:11.5pt;color:#333;line-height:1.7}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:9.5pt;background:#fff}
+thead{background:#F4FBF8}
+th{font-weight:700;text-align:left;padding:8px 10px;font-size:9pt;color:#0E5A2E;border-bottom:1.5px solid #1D9E75;text-transform:uppercase;letter-spacing:0.4px}
+td{padding:7px 10px;border-bottom:1px solid #ECECF2;vertical-align:top}
+td.num{font-family:ui-monospace,monospace;font-weight:600;color:#5746af;text-align:center;width:60px}
+td.round{font-weight:700;color:#1D9E75;width:50px;text-align:center}
+td.loc{font-family:ui-monospace,Menlo,monospace;color:#5746af;font-weight:600;font-size:8.5pt;background:#F8F8FC;padding:2px 5px;border-radius:3px;white-space:nowrap}
+td.sev{text-align:center;width:60px;font-weight:700;font-size:8.5pt}
+.sev-p0{color:#9b1a1a}
+.sev-p1{color:#8a4a08}
+.sev-p2{color:#7e5c0a}
+.sev-p3{color:#3a6a55}
+
+/* Callouts */
+.callout{background:#F4FBF8;border-left:4px solid #1D9E75;padding:12px 16px;margin:14px 0;border-radius:0 8px 8px 0;font-size:10pt}
+.callout.warn{background:#FFEFE6;border-left-color:#d97757}
+.callout.crit{background:#FFE0E0;border-left-color:#9b1a1a}
+.callout h4{margin:0 0 4px;color:inherit}
+
+/* Round cards */
+.round-card{background:#FAFAFC;border:1px solid #E0E0EA;border-radius:12px;padding:14px 18px;margin:12px 0}
+.round-card .head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.round-card .head .badge{background:#1D9E75;color:#fff;border-radius:6px;padding:3px 10px;font-size:9pt;font-weight:700;letter-spacing:0.4px}
+.round-card .head .count{background:#5746af;color:#fff;border-radius:99px;padding:2px 10px;font-size:9pt;font-weight:700}
+.round-card .head .angle{font-size:11pt;font-weight:600;color:#1a1a1f;margin-left:auto}
+.round-card ul{margin:6px 0 0 22px;font-size:9.5pt}
+.round-card ul li{margin-bottom:3px}
+
+/* Pattern boxes */
+.pattern-box{background:#F8F8FC;border:1px solid #D8C8FF;border-radius:10px;padding:14px;margin:10px 0;font-size:9.5pt}
+.pattern-box .name{font-weight:700;color:#5746af;font-size:10.5pt;margin-bottom:4px}
+.pattern-box .count{display:inline-block;background:#5746af;color:#fff;border-radius:99px;padding:1px 8px;font-size:8.5pt;font-weight:700;margin-left:6px;vertical-align:middle}
+
+/* Severity legend chip */
+.chip{display:inline-block;padding:2px 8px;border-radius:99px;font-size:8.5pt;font-weight:700;letter-spacing:0.3px}
+.chip-p0{background:#FFE0E0;color:#9b1a1a}
+.chip-p1{background:#FFEDD0;color:#8a4a08}
+.chip-p2{background:#FFF6D0;color:#7e5c0a}
+.chip-p3{background:#E8F2EE;color:#3a6a55}
+
+/* Checklist */
+.checklist{background:#fff;border:1px solid #E0E0EA;border-radius:10px;padding:14px 18px;margin:12px 0}
+.checklist ol{counter-reset:cli;list-style:none;padding:0}
+.checklist ol li{padding:9px 0 9px 36px;position:relative;border-bottom:1px solid #F0F0F4;font-size:10pt}
+.checklist ol li:last-child{border-bottom:none}
+.checklist ol li::before{content:counter(cli);counter-increment:cli;position:absolute;left:0;top:9px;width:26px;height:26px;background:#1D9E75;color:#fff;border-radius:50%;text-align:center;font-weight:700;font-size:10pt;line-height:26px}
+.checklist ol li b{color:#1a1a1f}
+.checklist ol li .why{display:block;color:#666;font-size:9pt;margin-top:3px}
+
+footer{margin-top:48px;padding-top:18px;border-top:2px solid #ECECF2;font-size:9pt;color:#888;text-align:center}
+
+@media print{
+  @page{size:A4;margin:14mm 12mm}
+  body{font-size:9pt;line-height:1.45}
+  .cover{min-height:auto;padding:40px 24px}
+  .cover .brand{font-size:38pt}
+  .cover .sub{font-size:16pt}
+  h1{font-size:20pt}
+  h2{font-size:14pt}
+  h3{font-size:11pt}
+  .round-card{break-inside:avoid}
+  .callout{break-inside:avoid}
+  .checklist{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- COVER PAGE -->
+<div class="cover">
+<div class="brand">RingIn</div>
+<div class="sub">Master Audit &amp; Fix Report</div>
+<div class="meta">17 audit rounds · 178 fixes shipped · 14 APK versions · 2026-05-18</div>
+
+<div class="stats">
+<div class="stat"><span class="n">178</span><div class="l">Total fixes</div></div>
+<div class="stat"><span class="n">17</span><div class="l">Audit rounds</div></div>
+<div class="stat"><span class="n">14</span><div class="l">APK builds</div></div>
+<div class="stat"><span class="n">13+</span><div class="l">Files / 12k+ lines</div></div>
+</div>
+
+<div class="footer">RingIn · Webstreax Technologies Pvt Ltd<br>Latest: APK v3.38 + Bundle 2026.0518.1348</div>
+</div>
+
+<!-- EXECUTIVE SUMMARY -->
+<h1>Executive summary</h1>
+<p class="lead">
+Started with one master audit (5 parallel agents → 152 findings across HomeScreen, Moments, Messages, Profile, Settings, Calls, Wallet, App.js, OTA, security). Shipped fixes in batches, then re-audited with a fresh angle each round. Every round still surfaced real user-impact bugs — the 12,000+ line codebase had genuine surface area.
+</p>
+
+<div class="callout">
+<h4>Per-round trend</h4>
+R7&nbsp;:&nbsp;9 · R8&nbsp;:&nbsp;8 · R9&nbsp;:&nbsp;10 · R10&nbsp;:&nbsp;8 · R11&nbsp;:&nbsp;11 · R12&nbsp;:&nbsp;6 · R13&nbsp;:&nbsp;8 · R14&nbsp;:&nbsp;10 · R15&nbsp;:&nbsp;8 · R16&nbsp;:&nbsp;9 · R17&nbsp;:&nbsp;8<br>
+Initial batches (R1-6): 83 fixes from the master audit. Average per fresh-angle round (R7+): ~8.6 fixes.
+</div>
+
+<h2>Process discipline</h2>
+<p>Every batch followed the same loop:</p>
+<ol style="margin:8px 0 12px 24px">
+<li><b>Audit agent</b> — independent agent reads the actual code, finds bugs with file:line citations</li>
+<li><b>Fix agent</b> — receives explicit instructions per item, edits surgically, NO JSX, var pattern, hook order preserved</li>
+<li><b>Verification agent</b> — independent agent checks each fix for scope leaks, hook order violations, regression of prior fixes</li>
+<li><b>Build check</b> — full CRA build must compile clean before ship</li>
+<li><b>Ship</b> — strip-build-for-apk lean APK + OTA bundle to GitHub raw + tracker PDF update + push to main</li>
+</ol>
+
+<div class="callout warn">
+<h4>Why fresh angles each round</h4>
+After round 6 ship, the audit agent kept reporting "Clean" against the same questions. So each subsequent round was given an <b>orthogonal angle</b>: different file-set focus (R9), different bug class (R10–R17). Each new angle found genuine bugs the previous rounds had missed. Suggests that any "no findings" result is more a sign of stale angles than a clean codebase.
+</div>
+
+<!-- ROUND-BY-ROUND BREAKDOWN -->
+<h1>Round-by-round breakdown</h1>
+
+<div class="round-card">
+<div class="head"><span class="badge">P0</span><span class="count">3 fixes</span><span class="angle">Crash-on-tap scope leaks</span></div>
+<ul>
+<li><b>UserProfileView Edit Post + Mute</b> referenced HomeScreen-scoped vars → ReferenceError on tap</li>
+<li><b>ProfileScreen onViewUser / onSwitchTab</b> used <code>props.X</code> but component destructured props — undefined</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">B1</span><span class="count">18 fixes</span><span class="angle">ProfileScreen — bio merge + dummy buttons + small honest fixes</span></div>
+<ul>
+<li>Bio JSON deep-merge in Save All + Expert App + Account Settings prefill (was wiping cover_url, location, notif_prefs, sound_prefs every save — silent data loss)</li>
+<li>8 dummy buttons converted: Edit Post, Mute, Photo, GIF, Set Reminder, Connect Voice, Saved Posts click, Help &amp; Support</li>
+<li>InstallPrompt accept-not-dismiss fix, login log Array.isArray guard, Volume slider stale closure, Test Sound variant, Expert App validation, SavedPosts safety timer</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">B2</span><span class="count">12 fixes</span><span class="angle">Messages + chat — realtime sync + block unification</span></div>
+<ul>
+<li>Realtime UPDATE / DELETE / message_reactions handlers on chat channel</li>
+<li>Inbox sender_id second handler + StrictMode-safe activeRef refactor</li>
+<li>ChatBox restrict/mute toggles broadcast events; inbox listens (storage event doesn't fire same-tab)</li>
+<li>blocks.js unified with legacy ringin_blocked, conversation_id 'e' regex, getPublicUrl guard, compression-fail fallback, last-seen reset, scroll-up guard</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">B3</span><span class="count">14 fixes</span><span class="angle">Memory leaks + race fixes + poll early-outs</span></div>
+<ul>
+<li>compVideo blob revoke, carouselIdx 400ms debounce, IntersectionObserver per-render leak + infinite loop, loadMoreFeed early return</li>
+<li>Back handler dep array completion (postMenu, showLikers, selectedUser, compAudienceMenu)</li>
+<li>Moments willChange reset, muted-users filter applied, sendMomentToUser convId, auto-advance refs</li>
+<li>CallScreen poll early-out, App pollOnce visibilitychange, lastSeen listener cleanup, sendBeacon('') removed</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">B4</span><span class="count">10 fixes</span><span class="angle">Coin sync + Wallet atomicity + StrictMode</span></div>
+<ul>
+<li>coinBalance per-user STORAGE_KEY (was global → multi-user leak), .maybeSingle (new users), cancelled flag, unique channel UUID</li>
+<li>WalletScreen near-atomic purchase (re-fetch before write), payTimerRef unmount cleanup</li>
+<li>CallScreen setSharedCoinBalance moved out of updater (StrictMode safe), 0-balance guard + coins-prop sync</li>
+<li>MessagesScreen + SearchScreen + HomeScreen coin:50 stubs removed</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">B5</span><span class="count">10 fixes</span><span class="angle">Mock data → real queries + N+1 fanout</span></div>
+<ul>
+<li>N+1 notification fanout → 1 batched .in() query + 1 batched insert</li>
+<li>Real call count from call_invites, member-since from session, real friends from follows, Skills from profileInfo.skills</li>
+<li>SearchScreen mock IDs namespaced 'mock_' to avoid UUID collision</li>
+<li>Hashtags lowercased, submitPost double-submit guard, editPostProfData added to back-handler dep array</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">B6</span><span class="count">15 fixes</span><span class="angle">Polish — alerts→toasts, validation, hygiene</span></div>
+<ul>
+<li>3 alerts in App.js → toasts, RINGIN_BUILD debug-gated</li>
+<li>WalletScreen Luhn check, Amex 4-digit CVV, UPI regex, real ₹ conversion</li>
+<li>MessagesScreen + HomeScreen timeAgo no 'Z' append, msgMenu position clamp</li>
+<li>Dead NOTIFS array removed, getRecommendedExperts import removed, UpdatePrompt honest fallback notes, iOS detection Mac fix, debug=0 off-switch</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R7</span><span class="count">9 fixes</span><span class="angle">Post-shipout full audit</span></div>
+<ul>
+<li><b>saveEditProfile bio deep-merge</b> — Edit Profile path missed in B1, was wiping bio every save</li>
+<li><b>[mshare] render</b> in chat + inbox (was raw text)</li>
+<li>HomeScreen image+video upload null-guard + .catch, App.js SIGNED_OUT cache cleanup, Save All timezone, lastSeen visibility ping</li>
+<li>11 alerts → toasts in HomeScreen, MessagesScreen PTR scroller, MessagesScreen revoke order</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R8</span><span class="count">8 fixes</span><span class="angle">Strict filter — only real impact</span></div>
+<ul>
+<li>Save All ack-before-write (was lying on network errors)</li>
+<li>saveEditProfile + Wallet processPayment .catch (stuck buttons on network reject)</li>
+<li>Wallet "You are buying" header missing price (empty div!)</li>
+<li>UserProfileView share guard, hardware-back-during-call hangup (ringin:back-call event), MessagesScreen alert→toast, Moments removed content: field</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R9</span><span class="count">10 fixes</span><span class="angle">Orthogonal — less-touched files + user flows</span></div>
+<ul>
+<li><b>CRITICAL</b>: SearchScreen inline Call button used legacy broken path — bypassed call_invites + FCM push (callee never rang)</li>
+<li>useCloseFriends mount sync, IncomingCallModal reject dedupe + await</li>
+<li>LiveWorkshopScreen scrollIntoView block:nearest, App.js _hscrollCache WeakMap</li>
+<li>blocks.js notify(), HomeScreen audience retry cap, MomentComposer revoke deferred, AnonymousConnect skip override, momentUsers notify error paths, IncomingCallModal token stash</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R10</span><span class="count">8 fixes</span><span class="angle">Every Supabase query + every ringin:* event</span></div>
+<ul>
+<li>Download My Data exporting empty messages (was querying nonexistent <code>content</code> column)</li>
+<li>SavedPosts couldn't actually be opened (dispatched event had ZERO consumers — wired 3-hop chain)</li>
+<li>4 silent-rollback gaps: Clear notifications, Delete moment, Delete post (Profile), Block user</li>
+<li>2 missing .catch on chat send + reaction DELETE</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R11</span><span class="count">11 fixes</span><span class="angle">Rollback completeness + date/TZ + number parsing</span></div>
+<ul>
+<li>Incoming call invites silently dropped if clock skew &gt;60s (widened to 5min + handle clock-behind-server)</li>
+<li>4 timeAgo functions rendered "-3m ago" on negative diffs (added Just now early return)</li>
+<li>ProfileScreen timeAgoProf Z-append bug R7 missed elsewhere</li>
+<li>Mark-all-notifications-read no rollback, 5 missing .catch (toggleLike, toggleLikeU, submitComment, saveEditPostProf, reaction INSERT), activity-log TZ consistency, coinBalance negative clamp, useFollow alert→toast + rollback toasts</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R12</span><span class="count">6 fixes</span><span class="angle">Realtime channels + permissions + concurrent actions</span></div>
+<ul>
+<li>Moment file upload no MIME/size validation (OOM on huge DSLR raws)</li>
+<li>6 raw clipboard sites in HomeScreen + Moments (replaced with helper + fallback)</li>
+<li>startOutgoingCall didn't guard incomingCallRef (could stack 2 calls)</li>
+<li>toggleLike/toggleLikeU rapid-tap created parallel RPC flicker (in-flight guard), notifs channel name unique-per-mount</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R13</span><span class="count">8 fixes</span><span class="angle">iOS WebView + CSS z-index/safe-area + prop contracts</span></div>
+<ul>
+<li><b>CRITICAL</b>: Incoming call modal was BELOW Moments viewer — user mid-moment couldn't answer/decline a real call</li>
+<li>Wallet card inputs now show numeric keyboard on mobile (was full QWERTY for 16-digit card numbers)</li>
+<li>InstallPrompt + notifications panel respect iPhone X+ safe-area-insets</li>
+<li>Moments clickGuard 400ms→80ms, chat input enterKeyHint='send', avatar drag preventDefault, IncomingCallModal img onError fallback</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R14</span><span class="count">10 fixes</span><span class="angle">First-paint + form inputs + image URLs</span></div>
+<ul>
+<li>4 stuck-spinner spots (FollowersList, doSearch, AnonymousConnect, FollowersListModal — all had .then with no .catch)</li>
+<li>9 Enter handlers now respect IME composition (CJK users no longer send half-composed messages)</li>
+<li>~10 image sites get onError fallback via ImgWithFallback component, feed images loading=lazy</li>
+<li>~15 emoji-prefix names render correctly via new safeInitials util</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R15</span><span class="count">8 fixes</span><span class="angle">PWA + cross-screen state coherence + audio</span></div>
+<ul>
+<li><b>CRITICAL</b>: Blocked users' posts kept appearing in feed + their moments kept playing (block button worked but had ZERO consumers)</li>
+<li><b>3 stale-closure regressions</b> defeating R2 restrict — inbox channel, chat channel, App-level global badge all captured the restricted set at subscribe time</li>
+<li>Manifest maskable icons dropped (React-atom had no safe zone), ringin-name-changed broadcast, ringtone visibilitychange stop</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R16</span><span class="count">9 fixes</span><span class="angle">Lifecycle cleanup + network resilience + auth edges</span></div>
+<ul>
+<li><b>P0</b>: handleAuth no try/catch (offline login stuck on "Please wait..." forever), agora fetchToken no timeout (call hung on "Connecting..."), fcm_token never cleared on SIGNED_OUT (next user got prev user's pushes)</li>
+<li>onMessageListener leak (notification sound fired N× after token refreshes), HomeScreen notifs effect dep stable across token refresh</li>
+<li>2 password .catch handlers (Reset + Change buttons no longer stuck), 2 typingTimer cleanups</li>
+</ul>
+</div>
+
+<div class="round-card">
+<div class="head"><span class="badge">R17</span><span class="count">8 fixes</span><span class="angle">Search/discovery + animations + empty states</span></div>
+<ul>
+<li>3 superseded-search races (fast typing → old query clobbers new results) — added seqRef guards in HomeScreen + SearchScreen FTS + MessagesScreen people-search</li>
+<li>MessagesScreen people-search undebounced + no .catch + no empty state — fixed all 3</li>
+<li>HomeScreen feed empty state ("No posts yet"), country + timezone picker empty state ("No matches"), hashtag-no-match empty state</li>
+<li>FollowersListModal stale users on reopen, MessagesScreen new-msg toggle clears stale search</li>
+</ul>
+</div>
+
+<!-- PATTERNS -->
+<h1>Patterns we fixed at the root</h1>
+
+<div class="pattern-box">
+<div class="name">Scope leaks <span class="count">7 sites caught</span></div>
+Variable declared in one component used from a sibling component scope. Multiple types: <code>mutedConvos</code> declared in ChatBox used from MessagesScreen, <code>userPosts</code> declared in UserProfileView used from saveEditPost, <code>props.X</code> used in components that destructured props. Same class of bug as the original "<code>mutedConvos is not defined</code>" crash. We fixed each one and audit agents specifically grep for this pattern now.
+</div>
+
+<div class="pattern-box">
+<div class="name">Stale closures in setInterval/setTimeout/listeners <span class="count">10+ sites</span></div>
+<code>hangup()</code> in CallScreen captured by 6+ stale closures (poll, 35s timer, per-min tick), <code>localCoins</code> read via closure inside hangup (would have undone every per-minute deduction), restrictedSet captured at channel subscribe time, etc. Fix pattern: mirror state into ref via useEffect, read <code>ref.current</code> inside async callbacks.
+</div>
+
+<div class="pattern-box">
+<div class="name">Missing .catch on Supabase promises <span class="count">15+ sites</span></div>
+<code>.then(r =&gt; { if (r.error) rollback })</code> handles RLS denial but NOT raw network reject. Pattern shipped: every Supabase call also has <code>.catch(e =&gt; { rollback; toastError })</code>. Caught stuck spinners in handleAuth, processPayment, saveEditProfile, save*, toggleLike, doSearch, matchAnonymous, password reset/change, follow/unfollow, mark-read, delete, ...
+</div>
+
+<div class="pattern-box">
+<div class="name">Optimistic UI without rollback <span class="count">8+ sites</span></div>
+<code>setState(optimistic); supabase.write()</code> with no rollback path on failure. Each one was a silent data corruption: setUnreadNotif(0) without restoring on error, deletePost without snap restore, etc. Pattern shipped: snapshot before, restore on error in both <code>.then(r =&gt; r.error)</code> AND <code>.catch</code>.
+</div>
+
+<div class="pattern-box">
+<div class="name">Stuck spinners on network failures <span class="count">5+ sites</span></div>
+Loading state set true → async call → on failure, never set false → user must hard-reload. Audited every "Loading..." / "Sending..." / "Processing..." state. Fix: always reset in catch.
+</div>
+
+<div class="pattern-box">
+<div class="name">Hardcoded "1,240" coin balance <span class="count">5 sites + CallScreen prop</span></div>
+Coin chip showed "1,240" everywhere across screens. Each screen had its own <code>useState(50)</code> or hardcoded literal. Built <code>useCoinBalance</code> shared hook with per-user storage + Supabase realtime + cross-screen broadcast. App.js feeds real balance to CallScreen so call deduction starts from actual wallet.
+</div>
+
+<div class="pattern-box">
+<div class="name">Cross-tab / cross-component event leaks <span class="count">~10 listeners</span></div>
+Every <code>'ringin:*'</code> custom event verified: producer + consumer + cleanup. Window events: <code>ringin:back</code>, <code>ringin:back-call</code>, <code>ringin:restricted-changed</code>, <code>ringin:muted-convos-changed</code>, <code>ringin:coin-balance</code>, <code>ringin:open-post-detail</code>, <code>ringin:home-open-post</code>, <code>ringin:incoming-call</code>, <code>ringin:name-changed</code>. All have matching addEventListener / removeEventListener.
+</div>
+
+<!-- DEFERRED -->
+<h1>Items deferred (need your manual input)</h1>
+<p>These can't be finished autonomously — require Supabase Console / Stripe account / Firebase Console / Apple Developer access:</p>
+
+<table>
+<thead><tr><th>Item</th><th>Needs</th><th>Why deferred</th></tr></thead>
+<tbody>
+<tr><td>Workshops payment flow</td><td>Stripe or Razorpay account + secret keys</td><td>Can't take real money without merchant config</td></tr>
+<tr><td>LiveWorkshopScreen real session</td><td>New Supabase schema (workshop_sessions, workshop_messages tables)</td><td>You haven't asked for these tables; spec uncertain</td></tr>
+<tr><td>Firebase API key rotation</td><td>Firebase Console access</td><td>Keys currently committed in repo + CLAUDE.md</td></tr>
+<tr><td>Email confirmation in auth flow</td><td>Supabase Auth settings + email template config</td><td>Requires admin Supabase access</td></tr>
+<tr><td>iOS push notifications</td><td>APN .p8 key + Apple Developer ($99/yr)</td><td>Can't be done without paid Apple account</td></tr>
+<tr><td>Real EXPERTS Supabase table</td><td>Schema for expert profiles + verification flow</td><td>You haven't approved a schema</td></tr>
+<tr><td>profile_vis / profile_locked / notif_* RLS</td><td>Supabase RLS policies + push routing infra</td><td>Backend-side enforcement</td></tr>
+<tr><td>WorkshopsScreen JSX → React.createElement</td><td>Code style migration only</td><td>Cosmetic, working as-is</td></tr>
+<tr><td>OTA Capgo undefined-resolve edge</td><td>Capgo plugin internal investigation</td><td>Rare edge, requires repro work</td></tr>
+<tr><td>popstate empty-URL on Firefox</td><td>Browser-specific UX tweak</td><td>Capacitor uses Chromium WebView anyway</td></tr>
+<tr><td>RINGIN_BUILD debug label</td><td>Cosmetic</td><td>Gated to <code>ringin_debug=1</code> only — invisible to real users</td></tr>
+</tbody>
+</table>
+
+<!-- TEST PLAN -->
+<h1>Test plan — verify on your phone</h1>
+<p>Install <code>~/Desktop/ringin-v3.38.apk</code>, accept the green Update prompt for the latest bundle, then walk through these scenarios. Each maps to a specific fix; if any breaks, that's a regression report worth sending back.</p>
+
+<div class="checklist">
+<ol>
+<li><b>Edit Post from your own profile</b><span class="why">Used to crash (P0 scope leak from R1). Modal should open, edit, save without ReferenceError.</span></li>
+<li><b>Tap a liker on a post</b><span class="why">Used to crash (P0 props destructure leak). Should navigate to user profile.</span></li>
+<li><b>View My Moment from avatar menu</b><span class="why">Used to crash (same P0 class). Should open Moments viewer.</span></li>
+<li><b>Account Settings → change country/timezone → Save</b><span class="why">Used to wipe cover/bio/notif/sound prefs (R1+R7 bio merge fix). Verify your existing fields survive.</span></li>
+<li><b>Edit Profile dialog → change name → Save</b><span class="why">Same data-loss class (R7). Verify cover/location/prefs survive AND top bar updates immediately (R15 ringin-name-changed event).</span></li>
+<li><b>Wallet → Buy coins package → confirm screen shows ₹price</b><span class="why">Was empty grey div (R8). Verify Card Number input shows numeric keyboard (R13).</span></li>
+<li><b>Make a call → press Android back</b><span class="why">Used to leave Agora session alive + DB invite stuck ringing (R8 ringin:back-call). Verify call ends cleanly + coins persist.</span></li>
+<li><b>Tap Call on expert while phone is ringing inbound</b><span class="why">Used to stack 2 calls (R12). Should be ignored.</span></li>
+<li><b>Share an image-only post (no caption)</b><span class="why">Used to crash null.substring (R8). Should share OK.</span></li>
+<li><b>Block a user → their posts should disappear from feed + their moments from strip</b><span class="why">R15 critical fix — block button finally has consumers.</span></li>
+<li><b>Restrict a user → message yourself from another account → should be silent</b><span class="why">R2 fix + R15 stale-closure fix. Should take effect IMMEDIATELY (no app restart needed).</span></li>
+<li><b>Sign out → sign in as different user → no flash of previous user's data</b><span class="why">R7 SIGNED_OUT cleanup + R16 fcm_token clear.</span></li>
+<li><b>Picking a photo for Moments &gt;10MB or non-image file</b><span class="why">Should reject with toast, not OOM Android (R12).</span></li>
+<li><b>Long carousel — swipe to slide 3 → switch tab → come back</b><span class="why">Slide position persists (R3 carousel memory).</span></li>
+<li><b>Hardware back button</b><span class="why">Closes innermost overlay first → tab nav → home → exit. Should never exit on first press unless already on home (R6 + many follow-ups).</span></li>
+<li><b>Pull-to-refresh on Home + Messages inbox</b><span class="why">Both should work (R3 PTR scroller fix).</span></li>
+<li><b>Open a chat → scroll up to read history → receive new message</b><span class="why">View should NOT jump to bottom (R2 scroll-up guard).</span></li>
+<li><b>Type a chat message in Chinese / Japanese / Korean IME → press Enter to confirm candidate</b><span class="why">Should NOT send the half-composed message (R14 IME guard on 9 Enter handlers).</span></li>
+<li><b>Open Saved Posts → tap a saved post</b><span class="why">Used to do nothing (R10 — dispatched event had no consumer, now 3-hop chain works).</span></li>
+<li><b>Sign-in offline / on flaky network</b><span class="why">Button should reset on error, not stick on "Please wait..." (R16 handleAuth try/catch).</span></li>
+<li><b>Tap a name with emoji prefix (e.g. "🤦‍♀️ Maria")</b><span class="why">Avatar initials should render cleanly, not show corrupt half-surrogate chars (R14 safeInitials).</span></li>
+<li><b>Type fast in any search input</b><span class="why">Results should match the LATEST query, not get clobbered by an older slow query (R17 seqRef guards).</span></li>
+<li><b>Empty states everywhere</b><span class="why">New user, empty feed → see "No posts yet" message, not blank scroll area (R17).</span></li>
+</ol>
+</div>
+
+<!-- FINAL NOTES -->
+<h1>Notes on what's NOT regression-tested</h1>
+<p>The audit + verify agents specifically check for scope leaks, hook order, missing .catch, and regression of previously-shipped fixes — but they do NOT run the actual app. Verification is static (read the code) not dynamic (tap buttons). If any fix introduced a subtle runtime bug that compiles cleanly, only your real-device testing will catch it.</p>
+
+<p>If you find any regression, send me the symptom (which screen, which tap, what happened) and I'll fix it surgically in the next iteration.</p>
+
+<footer>
+RingIn · Master Audit Report · 17 audit rounds · 178 fixes · APK v3.38 + Bundle 2026.0518.1348<br>
+Webstreax Technologies Pvt Ltd · Generated 2026-05-18
+</footer>
+
+</div>
+</body>
+</html>
