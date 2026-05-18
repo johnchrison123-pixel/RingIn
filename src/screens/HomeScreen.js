@@ -19,7 +19,7 @@ import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {detectContent,autoTagPost} from '../utils/mlService';
 import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
-import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed */
+import {isBlockedSync, onBlocksChanged} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed; R19 verifier-fix: subscribe to re-render on block-change */
 import {formatDateTime, formatDate, formatTime, safeSetItem} from '../utils/dateFmt'; /* R18: timezone-aware date display + safe localStorage wrapper */
 
 function playKeyClick(){playSound('typing');}
@@ -541,6 +541,8 @@ export function UserProfileView(props){
               var cur = (function(){ try{ var s = localStorage.getItem('ringin_muted_posts'); return s ? JSON.parse(s) : []; }catch(e){ return []; } })();
               var next = cur.indexOf(pid) >= 0 ? cur.filter(function(x){ return x !== pid; }) : cur.concat([pid]);
               localStorage.setItem('ringin_muted_posts', JSON.stringify(next));
+              /* R19 FIX #5: broadcast so other screens re-read */
+              try { window.dispatchEvent(new CustomEvent('ringin-muted-posts-changed', { detail: { pid: pid, muted: next.indexOf(pid) >= 0 } })); } catch(_){}
               try { toastSuccess(next.indexOf(pid) >= 0 ? '🔕 Notifications off' : '🔔 Notifications on'); } catch(_){}
             } catch(_){}
           }
@@ -822,8 +824,35 @@ export default function HomeScreen(props){
   var postMenuS=useState(null); var postMenu=postMenuS[0]; var setPostMenu=postMenuS[1];
   var showEditPostS=useState(false); var showEditPost=showEditPostS[0]; var setShowEditPost=showEditPostS[1];
   var editPostDataS=useState(null); var editPostData=editPostDataS[0]; var setEditPostData=editPostDataS[1];
+  /* R19 verifier-fix: bump on every blocks-changed so isBlockedSync filters
+   * (lines 1747, 3016) re-evaluate without waiting for any other state change.
+   * onBlocksChanged is fired by blocks.js after any block mutation, including
+   * the 3 legacy direct-write sites that now dispatch the window event. */
+  var blocksTickS = useState(0); var blocksTick = blocksTickS[0]; var setBlocksTick = blocksTickS[1];
+  useEffect(function(){
+    try { return onBlocksChanged(function(){ setBlocksTick(function(n){ return n + 1; }); }); } catch(_){ return; }
+  }, []);
+
   var mutedPostsS=useState(function(){try{var s=localStorage.getItem('ringin_muted_posts');return s?JSON.parse(s):[];}catch(e){return [];}});
   var mutedPosts=mutedPostsS[0]; var setMutedPosts=mutedPostsS[1];
+  /* R19 FIX #5: re-sync mutedPosts when toggled from ProfileScreen or
+   * UserProfileView (same window event pattern as ringin-muted-convos-changed). */
+  useEffect(function(){
+    function onMutedChanged(){
+      try {
+        var s = localStorage.getItem('ringin_muted_posts');
+        setMutedPosts(s ? JSON.parse(s) : []);
+      } catch(_){}
+    }
+    function onStorage(e){ if (e && e.key === 'ringin_muted_posts') onMutedChanged(); }
+    try { window.addEventListener('ringin-muted-posts-changed', onMutedChanged); } catch(_){}
+    try { window.addEventListener('storage', onStorage); } catch(_){}
+    return function(){
+      try { window.removeEventListener('ringin-muted-posts-changed', onMutedChanged); } catch(_){}
+      try { window.removeEventListener('storage', onStorage); } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   var currentUserId = props.session&&props.session.user ? props.session.user.id : null;
   var currentUserName = props.session&&props.session.user ? ((props.session.user.email||'').split('@')[0] || null) : null;
@@ -1603,11 +1632,16 @@ export default function HomeScreen(props){
     });
   }
   function toggleMutePost(pid){
-    setMutedPosts(function(prev){
-      var next=prev.includes(pid)?prev.filter(function(x){return x!==pid;}):prev.concat([pid]);
-      try{localStorage.setItem('ringin_muted_posts',JSON.stringify(next));}catch(e){}
-      return next;
-    });
+    /* R19 verifier-fix: compute next OUTSIDE the updater so StrictMode (which
+     * double-invokes updaters in dev) doesn't dispatch the event twice. The
+     * functional state-update still uses an updater for concurrency safety,
+     * but the side-effects (LS write + window event) only fire once. */
+    var cur = mutedPosts || [];
+    var next = cur.includes(pid) ? cur.filter(function(x){return x!==pid;}) : cur.concat([pid]);
+    setMutedPosts(next);
+    try{ localStorage.setItem('ringin_muted_posts', JSON.stringify(next)); }catch(e){}
+    /* R19 FIX #5: broadcast so UserProfileView menu label + ProfileScreen mutedPostsProf re-render */
+    try { window.dispatchEvent(new CustomEvent('ringin-muted-posts-changed', { detail: { pid: pid, muted: next.includes(pid) } })); } catch(_){}
   }
 
   function loadMoreFeed(){

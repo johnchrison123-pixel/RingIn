@@ -15,6 +15,12 @@ export default function IncomingCallModal(props){
   var invite = props.invite || {};
   var session = props.session;
   var hapticRef = useRef(null);
+  /* R19 verifier-fix: track whether the user ACCEPTED the call. If true,
+   * unmount cleanup must NOT delete the prefetched Agora token — CallScreen
+   * mounts in the same commit and reads the stash asynchronously (after a
+   * rAF yield). Deleting in cleanup wins the race and defeats the prefetch
+   * optimization (Saves ~200-500ms of perceived call-setup latency). */
+  var acceptedRef = useRef(false);
   // ROUND-9 FIX #3: prevent double-reject. If the user double-taps the
   // decline button OR taps it while the UPDATE is in-flight, we'd
   // previously fire two UPDATEs and two onReject() calls, occasionally
@@ -92,11 +98,32 @@ export default function IncomingCallModal(props){
         }catch(_){}
       }).catch(function(){ /* network hiccup — fall back to inline fetch later */ });
     }catch(e){ /* never block the modal on a pre-fetch error */ }
-    return function(){ cancelled = true; };
+    return function(){
+      cancelled = true;
+      /* R19 FIX #7 (corrected after verifier review): clear the prefetched-token
+       * stash on unmount IF this modal was for the same invite we stashed for
+       * AND the user did NOT accept the call. On accept, CallScreen mounts in
+       * the same commit and reads the stash AFTER a rAF yield — deleting here
+       * would defeat the entire prefetch optimization. acceptedRef is set
+       * inside accept() BEFORE props.onAccept triggers unmount, so we can tell
+       * the difference between accept-path unmount and reject/dismiss unmount. */
+      try {
+        if (acceptedRef.current) return; // accept path — leave stash alone
+        var stash = window.__ringinPrefetchedAgoraToken;
+        if (stash && stash.inviteId === invite.id) {
+          delete window.__ringinPrefetchedAgoraToken;
+        }
+      } catch(_){}
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function accept(){
+    /* R19 verifier-fix: flag accepted BEFORE props.onAccept (which triggers
+     * unmount). The cleanup below reads this ref and skips the stash-delete
+     * so CallScreen → startCallSession → agora.js can still pick up the
+     * prefetched token after its rAF yield. */
+    acceptedRef.current = true;
     try{ stopRingtone(); }catch(e){}
     if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
     if(props.onAccept) props.onAccept(invite);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RingIn — Master Audit Report (18 rounds, 189 fixes)</title>
+<title>RingIn — Master Audit Report (19 rounds, 199 fixes)</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55;font-size:10.5pt}
@@ -104,16 +104,16 @@ footer{margin-top:48px;padding-top:18px;border-top:2px solid #ECECF2;font-size:9
 <div class="cover">
 <div class="brand">RingIn</div>
 <div class="sub">Master Audit &amp; Fix Report</div>
-<div class="meta">18 audit rounds · 189 fixes shipped · 14 APK versions · 2026-05-18</div>
+<div class="meta">19 audit rounds · 199 fixes shipped · 14 APK versions · 2026-05-18</div>
 
 <div class="stats">
-<div class="stat"><span class="n">189</span><div class="l">Total fixes</div></div>
-<div class="stat"><span class="n">18</span><div class="l">Audit rounds</div></div>
-<div class="stat"><span class="n">15</span><div class="l">APK builds</div></div>
+<div class="stat"><span class="n">199</span><div class="l">Total fixes</div></div>
+<div class="stat"><span class="n">19</span><div class="l">Audit rounds</div></div>
+<div class="stat"><span class="n">16</span><div class="l">APK builds</div></div>
 <div class="stat"><span class="n">13+</span><div class="l">Files / 12k+ lines</div></div>
 </div>
 
-<div class="footer">RingIn · Webstreax Technologies Pvt Ltd<br>Latest: APK v3.39 + Bundle 2026.0518.1444</div>
+<div class="footer">RingIn · Webstreax Technologies Pvt Ltd<br>Latest: APK v3.40 + Bundle 2026.0518.1532</div>
 </div>
 
 <!-- EXECUTIVE SUMMARY -->
@@ -124,8 +124,8 @@ Started with one master audit (5 parallel agents → 152 findings across HomeScr
 
 <div class="callout">
 <h4>Per-round trend</h4>
-R7&nbsp;:&nbsp;9 · R8&nbsp;:&nbsp;8 · R9&nbsp;:&nbsp;10 · R10&nbsp;:&nbsp;8 · R11&nbsp;:&nbsp;11 · R12&nbsp;:&nbsp;6 · R13&nbsp;:&nbsp;8 · R14&nbsp;:&nbsp;10 · R15&nbsp;:&nbsp;8 · R16&nbsp;:&nbsp;9 · R17&nbsp;:&nbsp;8 · R18&nbsp;:&nbsp;11<br>
-Initial batches (R1-6): 83 fixes from the master audit. Average per fresh-angle round (R7+): ~8.8 fixes.
+R7&nbsp;:&nbsp;9 · R8&nbsp;:&nbsp;8 · R9&nbsp;:&nbsp;10 · R10&nbsp;:&nbsp;8 · R11&nbsp;:&nbsp;11 · R12&nbsp;:&nbsp;6 · R13&nbsp;:&nbsp;8 · R14&nbsp;:&nbsp;10 · R15&nbsp;:&nbsp;8 · R16&nbsp;:&nbsp;9 · R17&nbsp;:&nbsp;8 · R18&nbsp;:&nbsp;11 · R19&nbsp;:&nbsp;10<br>
+Initial batches (R1-6): 83 fixes from the master audit. Average per fresh-angle round (R7+): ~8.6 fixes.
 </div>
 
 <h2>Process discipline</h2>
@@ -334,6 +334,21 @@ After round 6 ship, the audit agent kept reporting "Clean" against the same ques
 </ul>
 </div>
 
+<div class="round-card">
+<div class="head"><span class="badge">R19</span><span class="count">10 fixes</span><span class="angle">Toggle race conditions + cross-screen state sync + timer leaks</span></div>
+<ul>
+<li><b>useFollow rapid-tap race + .catch on offline</b> — pendingRef Set guards parallel writes; without it tap-tap-tap left state flipped (out-of-order resolvers) and offline left optimistic state stuck forever</li>
+<li><b>Blocks broadcast event</b> — block from chat / Moments / Profile-blocked-list now dispatches <code>ringin-blocks-changed</code> so HomeScreen feed-filter, MessagesScreen send-guard, Moments strip all re-read immediately (was stale until app reload)</li>
+<li><b>Muted-posts broadcast event</b> — mute from HomeScreen / UserProfileView / ProfileScreen post-menu all dispatch <code>ringin-muted-posts-changed</code> + cross-tab <code>storage</code> event listener so the other screen's menu label + state stay in sync</li>
+<li><b>3rd formatTime NaN + negative-diff guard</b> in MessagesScreen — HomeScreen.timeAgoUtil and MessagesScreen.timeAgo already had this from R11 FIX #2, but the inbox-row formatter was missed. No more "-1m ago" on fresh PWA installs (server clock ahead of client) or "NaNm ago" on invalid timestamp</li>
+<li><b>Moments toast timer ref + unmount cleanup</b> — 1.4s <code>setSentToast('')</code> was firing on dead component if user closed viewer mid-toast. Also clear-and-restart on back-to-back toasts</li>
+<li><b>ProfileScreen acctSaved 3 setTimeout sites → ref-tracked helper</b> — was firing setState on dead subtree if user navigated away mid-Save</li>
+<li><b>IncomingCallModal prefetched-token cleanup</b> — <code>window.__ringinPrefetchedAgoraToken</code> was lingering after reject. <b>Verifier caught</b>: my first attempt deleted the stash on ALL unmounts, including Accept — which defeated the ~200-500ms prefetch optimization because CallScreen reads the stash AFTER an rAF yield (post-unmount). Fixed by adding <code>acceptedRef</code> set inside accept() before props.onAccept triggers unmount.</li>
+<li><b>blocks-changed event had no consumers</b> (verifier caught) — added <code>_resyncFromLegacyLS</code> in blocks.js that listens to the window event + cross-tab storage event, merges legacy LS IDs into _cache, notifies React subscribers. HomeScreen now subscribes via onBlocksChanged → blocksTick bump → feed re-filters via isBlockedSync.</li>
+<li><b>toggleMutePost dispatch inside setMutedPosts updater</b> (verifier caught) — StrictMode double-invokes updaters in dev → event fired twice. Moved dispatch outside the updater; setState still uses functional form for concurrency safety.</li>
+</ul>
+</div>
+
 <!-- PATTERNS -->
 <h1>Patterns we fixed at the root</h1>
 
@@ -432,7 +447,7 @@ Every <code>'ringin:*'</code> custom event verified: producer + consumer + clean
 <p>If you find any regression, send me the symptom (which screen, which tap, what happened) and I'll fix it surgically in the next iteration.</p>
 
 <footer>
-RingIn · Master Audit Report · 18 audit rounds · 189 fixes · APK v3.39 + Bundle 2026.0518.1444<br>
+RingIn · Master Audit Report · 19 audit rounds · 199 fixes · APK v3.40 + Bundle 2026.0518.1532<br>
 Webstreax Technologies Pvt Ltd · Generated 2026-05-18
 </footer>
 

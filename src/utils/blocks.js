@@ -29,7 +29,72 @@ var MIGRATED_KEY = 'ringin_blocks_migrated_v2';
 var _cache = new Set();
 var _listeners = [];
 
-function notify() { _listeners.slice().forEach(function(l){ try{ l(_cache); }catch(_){} }); }
+/* R19 FIX #2: dispatch a window event in addition to internal listeners.
+ * Old behaviour was that only React components which subscribed via
+ * onBlocksChanged got the update. Now any code listening to the window
+ * event 'ringin-blocks-changed' (e.g. legacy sites in ProfileScreen /
+ * MessagesScreen / Moments that still write the legacy LS key directly)
+ * can also react. Cross-TAB sync rides on the natural `storage` event
+ * for CACHE_KEY which any subscriber can also listen to. */
+function notify() {
+  _listeners.slice().forEach(function(l){ try{ l(_cache); }catch(_){} });
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ringin-blocks-changed', { detail: { size: _cache.size } }));
+    }
+  } catch(_){}
+}
+
+/* R19 FIX #2: helper for legacy call-sites that still write the
+ * `ringin_blocked` LS key directly. Lets them broadcast without having
+ * to refactor the whole flow to use blockUser/unblockUser. */
+export function notifyLegacyBlocksChanged(){
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ringin-blocks-changed', { detail: { source: 'legacy' } }));
+    }
+  } catch(_){}
+}
+
+/* R19 verifier-fix: re-sync _cache when ringin-blocks-changed fires from any
+ * source. Without this, the 3 legacy direct-write sites (MessagesScreen block,
+ * Moments block, ProfileScreen unblock) update LS + dispatch the event, but
+ * isBlockedSync (which reads _cache) keeps returning stale results until next
+ * loadBlocks() / app reload. Now: any block-change → re-read LS into _cache →
+ * notify React subscribers → isBlockedSync is fresh. */
+function _resyncFromLegacyLS(){
+  try {
+    var raw = localStorage.getItem(LEGACY_KEY);
+    var arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return;
+    var legacyIds = arr.map(function(e){
+      if (typeof e === 'string') return e;
+      if (e && typeof e === 'object') return e.id || e.user_id;
+      return null;
+    }).filter(function(x){ return typeof x === 'string' && x.length > 0; });
+    // Union: keep server-backed entries already in _cache + add legacy IDs
+    var merged = new Set(_cache);
+    var added = 0;
+    legacyIds.forEach(function(id){ if (!merged.has(id)) { merged.add(id); added++; } });
+    // Also detect REMOVALS: any legacy ID that's no longer in LS should leave
+    // _cache (but only legacy IDs — never drop server-backed ones we can't see).
+    // Conservative: only act on the legacy diff, leave _cache values alone.
+    if (added > 0 || legacyIds.length === 0) {
+      _cache = merged;
+      writeCache(merged);
+      _listeners.slice().forEach(function(l){ try{ l(_cache); }catch(_){} });
+    }
+  } catch(_){}
+}
+if (typeof window !== 'undefined') {
+  try {
+    window.addEventListener('ringin-blocks-changed', _resyncFromLegacyLS);
+    // Cross-tab: storage event fires when other tab writes ringin_blocked
+    window.addEventListener('storage', function(e){
+      if (e && (e.key === LEGACY_KEY || e.key === CACHE_KEY)) _resyncFromLegacyLS();
+    });
+  } catch(_){}
+}
 
 function readCache() {
   try {

@@ -105,6 +105,14 @@ function MomentViewer(props){
   var holdPaused = holdPausedS[0]; var setHoldPaused = holdPausedS[1];
   var sentToastS = useState('');
   var sentToast = sentToastS[0]; var setSentToast = sentToastS[1];
+  /* R19 FIX #4: track the toast-dismiss timer so we can clear it on unmount
+   * (was firing setSentToast('') on dead component if user closed the viewer
+   * within 1.4s of triggering a toast). Also lets us clear-and-restart when
+   * a NEW toast arrives before the previous fade. */
+  var toastTimerRef = useRef(null);
+  useEffect(function(){
+    return function(){ if (toastTimerRef.current) { try { clearTimeout(toastTimerRef.current); } catch(_){} toastTimerRef.current = null; } };
+  }, []);
   // FIX #8: track failed header avatar load so we can fall back to the initial bubble
   var headerImgFailedS = useState(false);
   var headerImgFailed = headerImgFailedS[0]; var setHeaderImgFailed = headerImgFailedS[1];
@@ -442,6 +450,8 @@ function MomentViewer(props){
       var arr = raw ? JSON.parse(raw) : [];
       if (arr.indexOf(posterId) < 0) arr.push(posterId);
       localStorage.setItem('ringin_blocked', JSON.stringify(arr));
+      /* R19 FIX #2: broadcast so HomeScreen feed + MessagesScreen send-guard re-read */
+      try { window.dispatchEvent(new CustomEvent('ringin-blocks-changed', { detail: { source: 'moment-block' } })); } catch(_){}
     } catch(_){}
     showToast('Blocked');
     setTimeout(function(){ if (onClose) onClose(); }, 700);
@@ -502,7 +512,11 @@ function MomentViewer(props){
 
   function showToast(text){
     setSentToast(text);
-    setTimeout(function(){ setSentToast(''); }, 1400);
+    /* R19 FIX #4: clear-and-restart pattern. Previous timer is cleared so
+     * back-to-back toasts don't overlap each other's fade. Stored on a ref
+     * so unmount cleanup can clear it (see useEffect above). */
+    if (toastTimerRef.current) { try { clearTimeout(toastTimerRef.current); } catch(_){} }
+    toastTimerRef.current = setTimeout(function(){ setSentToast(''); toastTimerRef.current = null; }, 1400);
   }
 
   function toggleLike(e){

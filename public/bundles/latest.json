@@ -1,18 +1,17 @@
 {
-  "version": "2026.0518.1444",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1444.zip",
-  "published_at": "2026-05-18T14:44:00Z",
+  "version": "2026.0518.1532",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1532.zip",
+  "published_at": "2026-05-18T15:32:00Z",
   "git_sha": "manual",
-  "title": "11 fixes — Toast dedupe, ESC closes modals, broken-image fallbacks, abort timeouts",
+  "title": "10 fixes — Follow race-guard, blocks/mutes cross-screen sync, timer leaks (incl. 3 verifier-fixes)",
   "notes": [
-    "FIX: Toast notifications no longer stack endlessly on rapid action — same toast within 1s is deduped, max 3 visible at once.",
-    "FIX: ESC key now closes Report modal, Phone-code picker, Timezone picker, Followers list, Post-detail, Edit-post, Notifications panel, Comments panel, and chat 3-dot menu — was previously only closeable via X button.",
-    "FIX: All modals now lock body scroll while open — no more accidentally scrolling the screen behind the modal.",
-    "FIX: Avatar uploads no longer get stuck on the spinner in Safari private mode / when storage is full (was crashing the success handler via unwrapped localStorage.setItem).",
-    "FIX: 'Clear all messages' no longer uses native window.confirm (which blocked the JS thread + looked system-y on Android). Now in-app modal.",
-    "FIX: Report button — submit now has 10s timeout (fall back to local-save instead of hanging forever) + 60s per-target dedupe (can't accidentally double-report by tapping twice) + X button now closable mid-submit (was trapped).",
-    "FIX: Broken-image icons in 15+ places (followers list, saved posts, in-call expert avatars, chat avatars, chat-image bubbles, moments viewer, share sheet) — now show clean initials or 'Image unavailable' instead of broken-icon when Supabase signed URL expires.",
-    "POLISH: Notifications panel, post timestamps, wallet transactions, saved posts dates now respect your selected timezone (was always showing device-local).",
-    "POLISH: Toast dedupe — won't see the same error message stacked 8 times on bad network."
+    "FIX: Rapid Follow/Unfollow tapping no longer leaves the button in the wrong state — in-flight write is now guarded so the 2nd tap is dropped instead of racing the 1st.",
+    "FIX: Follow/unfollow on no internet now shows error toast instead of stuck button (was previously silent + state stuck on optimistic value).",
+    "FIX: Blocking a user from chat / Moments / Profile-blocked-list now immediately updates the feed, message send-guard, and Moments strip — was previously stale until app reload.",
+    "FIX: Muting a post from Profile or another user's profile now syncs back to your Feed instantly — was previously stale until refresh.",
+    "FIX: Inbox timestamps no longer show 'NaNm ago' or '-1m ago' when server clock is ahead of phone clock (fresh PWA installs before NTP sync).",
+    "FIX: Moments toast (Status muted / Blocked / etc) no longer leaks setTimeout on viewer-close — small memory hygiene improvement during long sessions.",
+    "FIX: Account 'Save All' / 'Save Profile Info' setTimeout reset is now ref-tracked and cleared on unmount — no more stale setState if you navigate away mid-save.",
+    "FIX: Declined incoming call now clears its prefetched Agora token from window scope so a subsequent outgoing call starts cleanly."
   ]
 }

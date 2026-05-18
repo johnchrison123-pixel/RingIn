@@ -746,6 +746,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       if(!blocked.includes(otherId)){
         blocked.push(otherId);
         try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
+        /* R19 FIX #2: broadcast so feed + moments re-filter immediately */
+        try { window.dispatchEvent(new CustomEvent('ringin-blocks-changed', { detail: { source: 'chat-block' } })); } catch(_){}
       }
       // FIX #7 (preserved): server-backed blocks table via blocks.js.
       try { serverBlockUser(myId, otherId).catch(function(){}); } catch(_) {}
@@ -2096,8 +2098,17 @@ export default function MessagesScreen(props){
 
   function formatTime(date){
     var d = date ? new Date(date) : new Date();
+    /* R19 FIX #3: NaN + negative-diff guard. Without these:
+     *   - invalid timestamp string showed "NaNm ago"
+     *   - server-clock-ahead-of-client showed "-1m ago" (typical on
+     *     fresh PWA installs before NTP sync). HomeScreen.timeAgoUtil
+     *     line 184 and the other MessagesScreen.timeAgo at line 36
+     *     already have this guard from R11 FIX #2; this third copy
+     *     was missed during that round. */
+    if(isNaN(d.getTime())) return '';
     var now = new Date();
     var diff = Math.floor((now-d)/1000);
+    if(diff<0) return 'Just now';
     if(diff<60) return 'Just now';
     if(diff<3600) return Math.floor(diff/60)+'m ago';
     if(diff<86400) return Math.floor(diff/3600)+'h ago';

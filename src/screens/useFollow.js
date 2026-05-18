@@ -1,5 +1,5 @@
 /* eslint-disable */
-import {useState, useEffect} from 'react';
+import {useState, useEffect, useRef} from 'react';
 import {sb as _sb} from '../utils/supabase';
 // R11 FIX #12: replace alert() with toast + give user feedback when
 // follow/unfollow rolls back (previously silent + console.error only).
@@ -22,6 +22,13 @@ export function useFollow(supabase, currentUserId){
   var loadedS = useState(Object.keys(initial).length > 0);
   var loaded = loadedS[0];
   var setLoaded = loadedS[1];
+
+  // R19 FIX #1: in-flight guard. Without this, rapid tap-tap-tap fires N
+  // parallel insert/delete writes whose .then arrive out of order — the
+  // last resolver's snapshot is stale, so the rollback baseline is wrong
+  // and state ends up flipped from what the user actually wanted.
+  // Mirrors HomeScreen.toggleLike's likingRef (R12 FIX #5).
+  var pendingRef = useRef(new Set());
 
   useEffect(function(){
     if(!currentUserId) return;
@@ -65,6 +72,10 @@ export function useFollow(supabase, currentUserId){
     // R11 FIX #12: replace blocking alert() with non-blocking toast.
     if(!currentUserId){ try{ toastWarn('Please log in to follow'); }catch(_){} return; }
     var tid = String(targetId);
+    // R19 FIX #1: drop if a write for this target is already in flight —
+    // prevents race where rapid taps produce out-of-order resolvers.
+    if (pendingRef.current.has(tid)) return;
+    pendingRef.current.add(tid);
     if(following[tid]){
       // Unfollow instantly
       var snapUnfollow = Object.assign({},following);
@@ -74,6 +85,7 @@ export function useFollow(supabase, currentUserId){
       try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(newMap));}catch(e){}
       broadcast(tid, false);
       sb.from('follows').delete().eq('follower_id',currentUserId).eq('following_id',tid).then(function(r){
+        pendingRef.current.delete(tid);
         if(r.error){
           console.error('RingIn Error [unfollow]:', r.error);
           // Rollback
@@ -83,6 +95,15 @@ export function useFollow(supabase, currentUserId){
           // R11 FIX #12: previously silent on failure — let the user know.
           try{ toastError('Couldn\'t update follow — try again'); }catch(_){}
         }
+      /* R19 FIX #1: .catch on network reject (offline) — previously the
+       * optimistic state was stuck forever and no toast fired. */
+      }).catch(function(e){
+        pendingRef.current.delete(tid);
+        console.warn('[ringin] unfollow reject:', e&&e.message?e.message:e);
+        setFollowing(snapUnfollow);
+        try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapUnfollow));}catch(_){}
+        broadcast(tid, true);
+        try{ toastError('Couldn\'t update follow — try again'); }catch(_){}
       });
     } else {
       // Follow instantly
@@ -98,6 +119,7 @@ export function useFollow(supabase, currentUserId){
         following_avatar: targetAvatar||'',
         following_role: targetRole||''
       }).then(function(r){
+        pendingRef.current.delete(tid);
         if(r.error){
           console.error('RingIn Error [follow]:', r.error);
           // Rollback
@@ -107,6 +129,14 @@ export function useFollow(supabase, currentUserId){
           // R11 FIX #12: previously silent on failure — let the user know.
           try{ toastError('Couldn\'t update follow — try again'); }catch(_){}
         }
+      /* R19 FIX #1: .catch on network reject (offline) */
+      }).catch(function(e){
+        pendingRef.current.delete(tid);
+        console.warn('[ringin] follow reject:', e&&e.message?e.message:e);
+        setFollowing(snapFollow);
+        try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapFollow));}catch(_){}
+        broadcast(tid, false);
+        try{ toastError('Couldn\'t update follow — try again'); }catch(_){}
       });
     }
   }

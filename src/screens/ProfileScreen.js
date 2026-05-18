@@ -240,6 +240,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   var acctPhoneS=useState(localStorage.getItem('acct_phone')||''); var acctPhone=acctPhoneS[0]; var setAcctPhone=acctPhoneS[1];
   var acctTzS=useState(localStorage.getItem('user_timezone')||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'); var acctTz=acctTzS[0]; var setAcctTz=acctTzS[1];
   var acctSavedS=useState(false); var acctSaved=acctSavedS[0]; var setAcctSaved=acctSavedS[1];
+  /* R19 FIX #6: track the 3 setTimeout handles for acctSaved so we can clear
+   * them on unmount or before re-arming. Was firing setAcctSaved(false) on a
+   * dead component after the user navigated away mid-Save. */
+  var acctSavedTimerRef = useRef(null);
+  function _scheduleAcctSavedReset(ms){
+    if (acctSavedTimerRef.current) { try { clearTimeout(acctSavedTimerRef.current); } catch(_){} }
+    acctSavedTimerRef.current = setTimeout(function(){ setAcctSaved(false); acctSavedTimerRef.current = null; }, ms || 2500);
+  }
+  useEffect(function(){
+    return function(){ if (acctSavedTimerRef.current) { try { clearTimeout(acctSavedTimerRef.current); } catch(_){} acctSavedTimerRef.current = null; } };
+  }, []);
   var acctCountrySearchS=useState(''); var acctCountrySearch=acctCountrySearchS[0]; var setAcctCountrySearch=acctCountrySearchS[1];
   var showCountryPickerS=useState(false); var showCountryPicker=showCountryPickerS[0]; var setShowCountryPicker=showCountryPickerS[1];
   var showPhoneCodePickerS=useState(false); var showPhoneCodePicker=showPhoneCodePickerS[0]; var setShowPhoneCodePicker=showPhoneCodePickerS[1];
@@ -360,6 +371,23 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // (same key HomeScreen uses) so a post muted here is also muted there.
   var mutedPostsProfS=useState(function(){try{var s=localStorage.getItem('ringin_muted_posts');return s?JSON.parse(s):[];}catch(e){return [];}});
   var mutedPostsProf=mutedPostsProfS[0]; var setMutedPostsProf=mutedPostsProfS[1];
+  /* R19 FIX #5: re-sync when HomeScreen toggles mute (cross-screen sync) */
+  useEffect(function(){
+    function onMutedChanged(){
+      try {
+        var s = localStorage.getItem('ringin_muted_posts');
+        setMutedPostsProf(s ? JSON.parse(s) : []);
+      } catch(_){}
+    }
+    function onStorage(e){ if (e && e.key === 'ringin_muted_posts') onMutedChanged(); }
+    try { window.addEventListener('ringin-muted-posts-changed', onMutedChanged); } catch(_){}
+    try { window.addEventListener('storage', onStorage); } catch(_){}
+    return function(){
+      try { window.removeEventListener('ringin-muted-posts-changed', onMutedChanged); } catch(_){}
+      try { window.removeEventListener('storage', onStorage); } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function saveEditPostProf(){
     if(!editPostProfData||!editPostProfData.content||!editPostProfData.content.trim()) return;
@@ -392,6 +420,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     var next = muted ? cur.filter(function(x){return x!==pid;}) : cur.concat([pid]);
     setMutedPostsProf(next);
     try{ localStorage.setItem('ringin_muted_posts', JSON.stringify(next)); }catch(_){}
+    /* R19 FIX #5: broadcast so HomeScreen + UserProfileView menu label re-render */
+    try { window.dispatchEvent(new CustomEvent('ringin-muted-posts-changed', { detail: { pid: pid, muted: !muted } })); } catch(_){}
     try{ toastSuccess(muted ? '🔔 Notifications on' : '🔕 Notifications off'); }catch(_){}
   }
 
@@ -1339,7 +1369,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                 sbProfile.from('profiles').update({full_name:acctName,bio:JSON.stringify(merged)}).eq('id',userId).then(function(r2){if(r2.error)console.error('RingIn Error [saveProfileInfo]:', r2.error);});
               });
             }
-            setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2000);
+            setAcctSaved(true); _scheduleAcctSavedReset(2000); /* R19 FIX #6: ref-tracked timer */
           },
           style:{width:'100%',padding:'11px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer'}
         },acctSaved?'Saved ✓':'Save Profile Info')
@@ -1435,12 +1465,12 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                   return;
                 }
                 // ROUND 8 FIX #1: ack moved INSIDE success branch (was firing before write)
-                setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
+                setAcctSaved(true); _scheduleAcctSavedReset(2500); /* R19 FIX #6: ref-tracked timer */
               });
             });
           } else {
             // No userId — local-only save still acknowledges
-            setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
+            setAcctSaved(true); _scheduleAcctSavedReset(2500); /* R19 FIX #6: ref-tracked timer */
           }
         },
         style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'30px'}
@@ -2071,6 +2101,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                     });
                     setBlockedList(newList);
                     try{ localStorage.setItem('ringin_blocked', JSON.stringify(newList)); }catch(e){}
+                    /* R19 FIX #2: broadcast so HomeScreen feed + Moments + MessagesScreen send-guard re-read */
+                    try { window.dispatchEvent(new CustomEvent('ringin-blocks-changed', { detail: { source: 'profile-unblock' } })); } catch(_){}
                   },
                   style:{padding:'7px 14px',background:'rgba(239,71,71,0.12)',border:'1px solid rgba(239,71,71,0.3)',borderRadius:'8px',color:'#ef4747',fontSize:'12px',fontWeight:600,cursor:'pointer',flexShrink:0}
                 },'Unblock')
@@ -2300,7 +2332,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.39';
+              var APK_VERSION = 'v3.40';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
