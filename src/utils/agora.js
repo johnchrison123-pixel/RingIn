@@ -202,7 +202,11 @@ export async function startCallSession(opts) {
     // Make this VISIBLE — silently going to listen-only is what caused the "one-way audio" bug
     var errMsg = 'Microphone unavailable: ' + (e && e.message ? e.message : 'permission denied') + '. Tap Call again, or check site permissions.';
     if (opts.onError) opts.onError(new Error(errMsg));
-    try { alert(errMsg); } catch (e2) {}
+    /* R21 FIX #4: replaced blocking alert() with non-blocking toast — was
+     * blocking the JS thread mid-WebRTC handshake (CLAUDE.md ban). The
+     * opts.onError path above already surfaces the message via setError()
+     * in CallScreen, so this is a secondary surface only. */
+    try { var t = require('./toast'); if (t && t.toastError) t.toastError(errMsg); } catch (e2) {}
     throw e;
   }
 
@@ -270,7 +274,8 @@ export async function startCallSession(opts) {
       if (publishAttempt >= 2) {
         var pubErr = 'Could not send mic audio to the other side: ' + (e && e.message ? e.message : 'publish failed');
         if (opts.onError) opts.onError(new Error(pubErr));
-        try { alert(pubErr); } catch (e2) {}
+        /* R21 FIX #4: non-blocking toast (was alert blocking iOS PWA AudioContext) */
+        try { var t2 = require('./toast'); if (t2 && t2.toastError) t2.toastError(pubErr); } catch (e2) {}
       } else {
         // Brief pause before retry
         await new Promise(function (r) { setTimeout(r, 250); });

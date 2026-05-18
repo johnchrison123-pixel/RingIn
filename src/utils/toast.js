@@ -96,7 +96,11 @@ export function showToast(message, opts) {
   }, duration);
 }
 
-export function toastSuccess(msg) { showToast(msg, {type: 'success'}); }
-export function toastError(msg) { showToast(msg, {type: 'error'}); }
-export function toastWarn(msg) { showToast(msg, {type: 'warn'}); }
-export function toastInfo(msg) { showToast(msg, {type: 'info'}); }
+/* R21 verifier-fix: forward optional duration so long-text toasts (e.g.
+ * "Account scheduled for deletion. Sign back in within 30 days to cancel.")
+ * can request 4-5s instead of the 2.5s default. Backward-compatible —
+ * existing callers without a duration get unchanged 2.5s behavior. */
+export function toastSuccess(msg, duration) { showToast(msg, {type: 'success', duration: duration}); }
+export function toastError(msg, duration) { showToast(msg, {type: 'error', duration: duration}); }
+export function toastWarn(msg, duration) { showToast(msg, {type: 'warn', duration: duration}); }
+export function toastInfo(msg, duration) { showToast(msg, {type: 'info', duration: duration}); }

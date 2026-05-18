@@ -206,6 +206,13 @@ export function startOtaUpdater(onAvailable){
   if (_otaStarted) return;
   _otaStarted = true;
   function doCheck(){
+    /* R21 FIX #2: skip if app is backgrounded. In Capacitor the WebView
+     * persists across pause/resume — without this gate the 5-min interval
+     * would keep hitting raw.githubusercontent.com for hours while the user
+     * isn't even looking at the app (battery + bandwidth drain). The
+     * visibilitychange handler below already does its own immediate check
+     * on resume, so this only skips redundant interval ticks while hidden. */
+    try { if (typeof document !== 'undefined' && document.hidden) return; } catch(_){}
     try {
       checkOnly().then(function(r){
         try { console.log('[ringin OTA] check:', JSON.stringify(r)); } catch(_){}

@@ -1,17 +1,16 @@
 {
-  "version": "2026.0518.1619",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1619.zip",
-  "published_at": "2026-05-18T16:19:00Z",
+  "version": "2026.0518.1701",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1701.zip",
+  "published_at": "2026-05-18T17:01:00Z",
   "git_sha": "manual",
-  "title": "8 fixes — Cover-save bio guard, body-scroll-lock refcount, sign-out cache wipe, FCM dedupe",
+  "title": "7 fixes — Push-Accept deep link, OTA battery, coin cross-account leak, alert→toast (12 sites)",
   "notes": [
-    "FIX: Cover image save no longer wipes your bio text and other profile fields if your login session has expired or the network drops mid-save (was overwriting bio JSON with empty object on RLS rejection).",
-    "FIX: Page no longer gets stuck unscrollable when you close 2 stacked modals (e.g. post-detail → edit-post over it → close in any order). New ref-counted body-scroll-lock used by all 6 modals.",
-    "PRIVACY FIX: Signing out now clears the server-backed blocks cache + follows cache + FCM token cache for your account. Next user signing in on the same device gets a clean slate.",
-    "FIX: FCM token registration no longer spams Supabase with an update every hour on token refresh — only writes if the token actually changed. Also skips the permission prompt if you've already denied it (was wasting a Notification.requestPermission + getToken round-trip on every TOKEN_REFRESHED).",
-    "FIX: OTA updater no longer double-registers its check timer + visibilitychange listener if the app re-runs auth state change handler.",
-    "FIX: Tapping Messages tab while already on Messages now resets in-place (close active chat + scroll to top) instead of remounting — was causing brief realtime-channel collision that broke message updates until next navigation.",
-    "FIX: Service worker registration now uses cache-busting query param + updateViaCache:'none' so deploys reliably push new SW versions to all clients (was risking stale SW serving old chunk URLs after deploys).",
-    "FIX: Chat photo upload on the no-compression fallback path now properly rolls back temp message + blob URL on network reject (previously only handled RLS error, leaked on offline drop)."
+    "FIX: Tapping 'Accept' on a lock-screen call notification (when app is fully closed) now opens the ringing modal instead of doing nothing silently. Was a hoisting bug where the direct-accept path was always undefined.",
+    "FIX: OTA update check now skips when the app is backgrounded (Capacitor WebView persists across pause). Saves battery + bandwidth during long-idle periods on Android.",
+    "PRIVACY FIX: Coin balance from a previous user signing out no longer leaks into the next user's CallScreen on the same device. Was caused by a legacy global cache key getting written on every coin change.",
+    "FIX: Microphone-error and audio-publish-error alerts in calls replaced with non-blocking toasts — was blocking the JS thread mid-WebRTC handshake on Android, and pausing iOS PWA AudioContext (which could kill the next call's audio session).",
+    "FIX: 12 user-facing native alert() dialogs replaced with in-app toasts — profile image validation (file type / size 5MB), profile save errors, restrict/unrestrict feedback, account deletion confirmation, OTA update check results. CLAUDE.md explicitly banned native dialogs (they block JS thread + look out-of-place on Android).",
+    "FIX: User display names that contain only non-string types (e.g. corrupted profile.full_name as number) no longer crash the Moments viewer or chat menu. Added String() coercion before .split().",
+    "FIX: Hardware back button from any top-level tab (Search/Profile/Wallet/Messages) now always goes home. Was sometimes landing in Anonymous Connect screen if you'd previously tapped the connect orb."
   ]
 }

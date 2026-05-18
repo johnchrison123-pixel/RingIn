@@ -99,11 +99,24 @@ export function setSharedCoinBalance(newBalance, opts){
   // a negative number when balance < cost. Mirrors the guard CallScreen.js
   // (~line 395) already applies before writing back to the profile.
   if (n < 0) n = 0;
-  // FIX #1: write to BOTH the per-user key (if we know whose balance this
-  // is) AND the legacy global key so any code still reading the legacy
-  // key sees the new value during the migration window.
-  writeCachedBalance(opts.userId || null, n);
-  try { localStorage.setItem(LEGACY_STORAGE_KEY, String(n)); } catch(_){}
+  /* R21 FIX #3: cross-account leak — previously this ALWAYS wrote the
+   * legacy global LEGACY_STORAGE_KEY too. When user A's call deducted coins
+   * and broadcast 950 to the legacy key, then A signed out, then B signed
+   * in on the same device, getCachedCoinBalance() (called from App.js call
+   * fallback path BEFORE B's hook had fetched) would return A's 950. B then
+   * mounts CallScreen with coins=950 even though B has 30, and per-minute
+   * deductions wreck B's real balance on persist.
+   *
+   * Fix: only write the legacy key when we DON'T know whose balance this is
+   * (back-compat with anonymous bootstrap path). When opts.userId is set,
+   * write only to the per-user key. Legacy reads still work because the
+   * read path (readCachedBalance) consults legacy as a fallback. */
+  if (opts.userId) {
+    writeCachedBalance(opts.userId, n);
+  } else {
+    writeCachedBalance(null, n);
+    try { localStorage.setItem(LEGACY_STORAGE_KEY, String(n)); } catch(_){}
+  }
   try {
     var ev = new CustomEvent(EVENT_NAME, { detail: { balance: n, userId: opts.userId || null } });
     window.dispatchEvent(ev);

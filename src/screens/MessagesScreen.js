@@ -183,7 +183,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       sb.from('restricted_users').delete().eq('restrictor_id', myId).eq('restricted_id', otherIdForRestrict).then(function(r){
         if (r && r.error) {
           var rb = new Set(restrictedSet); rb.add(otherIdForRestrict); setRestrictedSet(rb);
-          alert('Failed to unrestrict: ' + r.error.message);
+          /* R21 FIX #5: alert → setToast (CLAUDE.md bans native alert) */
+          setToast('Failed to unrestrict'); setTimeout(function(){ setToast(''); }, 2200);
         } else {
           // FIX #5: notify MessagesScreen so its inboxRestrictedSet refetches.
           try { window.dispatchEvent(new CustomEvent('ringin:restricted-changed')); } catch(_) {}
@@ -194,7 +195,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       sb.from('restricted_users').upsert([{ restrictor_id: myId, restricted_id: otherIdForRestrict }], { onConflict: 'restrictor_id,restricted_id' }).then(function(r){
         if (r && r.error) {
           var rb2 = new Set(restrictedSet); rb2.delete(otherIdForRestrict); setRestrictedSet(rb2);
-          alert('Failed to restrict: ' + r.error.message);
+          /* R21 FIX #5: alert → setToast */
+          setToast('Failed to restrict'); setTimeout(function(){ setToast(''); }, 2200);
         } else {
           // FIX #5: notify MessagesScreen so its inboxRestrictedSet refetches.
           try { window.dispatchEvent(new CustomEvent('ringin:restricted-changed')); } catch(_) {}
@@ -1051,7 +1053,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
             background:'none',border:'none',borderRadius:'8px',color:'var(--text)',
             fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
-        }, isRestrictedHere ? '✓ Unrestrict' : '⚠ Restrict ' + (convo && convo.name ? convo.name.split(' ')[0] : 'User')),
+        /* R21 FIX #6: String() coerce on .split */
+        }, isRestrictedHere ? '✓ Unrestrict' : '⚠ Restrict ' + (convo && convo.name ? String(convo.name).split(' ')[0] : 'User')),
         React.createElement('div',{style:{height:'1px',background:'var(--border)',margin:'2px 0'}}),
         React.createElement('button',{
           onClick:clearAllChat,
@@ -1065,7 +1068,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           style:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 14px',
             background:'none',border:'none',borderRadius:'8px',color:'#FF4757',
             fontSize:'13px',fontWeight:500,cursor:'pointer',textAlign:'left'}
-        }, '🚫 Block '+(convo&&convo.name ? convo.name.split(' ')[0] : 'User'))
+        /* R21 FIX #6: String() coerce on .split */
+        }, '🚫 Block '+(convo&&convo.name ? String(convo.name).split(' ')[0] : 'User'))
       )
     ) : null,
 

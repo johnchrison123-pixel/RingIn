@@ -236,14 +236,16 @@ export default function App() {
           }).eq('id', inviteIdParam).then(function(){});
           return;
         }
-        // accept (or no action — default to opening the ring modal)
-        if(actionParam === 'accept'){
-          // Jump straight into the call
-          if(typeof acceptIncomingCall === 'function') acceptIncomingCall(inv);
-        } else {
-          // Show the ring modal (same UX as if the user was already in-app)
-          setIncomingCall(inv);
-        }
+        /* R21 FIX #1: previously the actionParam==='accept' branch tried to
+         * call acceptIncomingCall directly — but that's declared LATER in this
+         * component as a function expression (line 607+) and is `undefined`
+         * inside this earlier useEffect due to var hoisting. The check silently
+         * failed every time, so push-Accept did nothing (user thought app
+         * froze). Always opening the ring modal works for both Accept and
+         * default cases — user taps Accept on the in-app modal, which uses the
+         * real (fully-declared) acceptIncomingCall. Costs one extra tap but
+         * always works. */
+        setIncomingCall(inv);
       });
     }catch(e){ /* never break the app on a URL parse error */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -969,6 +971,12 @@ export default function App() {
             if(tab.id==='messages'){
               setUnreadMsg(0);
             }
+            /* R21 FIX #7: reset prevTab when user explicitly taps a top-level
+             * nav tab. Without this, an earlier setPrevTab('connect') (from the
+             * connect orb at line ~999) would persist — then back-from-Search
+             * would land in Anonymous Connect instead of home (confusing).
+             * Always go home from a top-level tab unless caller overrides. */
+            setPrevTab('home');
             setActiveTab(tab.id);
           }
         },

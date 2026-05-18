@@ -760,7 +760,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         setSavingEdit(false);
         if(res.error){
           console.error('RingIn Error [saveEditProfile]:', res.error && res.error.message ? res.error.message : 'Unknown error');
-          alert('Something went wrong. Please try again.');
+          /* R21 FIX #5: alert → toastError */
+          try { toastError('Something went wrong. Please try again.'); } catch(_){}
           return;
         }
         var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
@@ -965,12 +966,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     // Validate file type
     var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
     if(!allowed.includes(file.type)){
-      alert('Only images allowed (JPG, PNG, GIF, WebP)');
+      /* R21 FIX #5: alert → toast */
+      try { toastError('Only images allowed (JPG, PNG, GIF, WebP)'); } catch(_){}
       return;
     }
     // Validate file size (max 5MB)
     if(file.size > 5 * 1024 * 1024){
-      alert('Image must be under 5MB');
+      try { toastError('Image must be under 5MB'); } catch(_){}
       return;
     }
     var reader = new FileReader();
@@ -1034,12 +1036,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     // Validate file type
     var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
     if(!allowed.includes(file.type)){
-      alert('Only images allowed (JPG, PNG, GIF, WebP)');
+      /* R21 FIX #5: alert → toast */
+      try { toastError('Only images allowed (JPG, PNG, GIF, WebP)'); } catch(_){}
       return;
     }
     // Validate file size (max 5MB)
     if(file.size > 5 * 1024 * 1024){
-      alert('Image must be under 5MB');
+      try { toastError('Image must be under 5MB'); } catch(_){}
       return;
     }
     var reader = new FileReader();
@@ -1917,12 +1920,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             sbProfile.rpc('request_account_deletion').then(function(r){
               if(r.error){
                 console.warn('[ringin] delete account RPC error', r.error);
-                alert('Could not start deletion automatically. Please email support@ringin.app and we will process it manually.');
+                /* R21 FIX #5: alert → toast (long-text; use longer duration) */
+                try { toastError('Could not start deletion. Please email support@ringin.app to process manually.', 5500); } catch(_){}
                 return;
               }
               // Sign out — supabase client clears the session.
               try { sbProfile.auth.signOut(); } catch(_){}
-              alert('Your account is now scheduled for deletion. Sign back in within 30 days to cancel. We are sorry to see you go.');
+              try { toastSuccess('Account scheduled for deletion. Sign back in within 30 days to cancel.', 5500); } catch(_){}
+            }).catch(function(e){
+              /* R21 — also handle raw network reject */
+              console.warn('[ringin] delete account RPC reject', e);
+              try { toastError('Network error — please email support@ringin.app to delete manually.', 5500); } catch(_){}
             });
           },red:true},
         ].map(function(item,i,arr){
@@ -2350,7 +2358,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.41';
+              var APK_VERSION = 'v3.42';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -2390,13 +2398,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                     } catch(_){}
                   }
                 } else if (r && r.reason === 'already-current') {
-                  alert('✅ You are on the latest version (' + (r.current || 'current') + ').');
+                  /* R21 FIX #5: alert → toast */
+                  try { toastSuccess('You are on the latest version (' + (r.current || 'current') + ')'); } catch(_){}
                 } else if (r && r.reason === 'web') {
-                  alert('🌐 PWA: updates apply automatically via service worker.');
+                  try { toastSuccess('PWA: updates apply automatically'); } catch(_){}
                 } else {
-                  alert('Update check: ' + (r && r.reason ? r.reason : 'unknown'));
+                  try { toastError('Update check: ' + (r && r.reason ? r.reason : 'unknown')); } catch(_){}
                 }
-              }).catch(function(err){ alert('Update check failed: ' + (err && err.message ? err.message : err)); });
+              }).catch(function(err){
+                /* R21 FIX #5: alert → toast */
+                try { toastError('Update check failed: ' + (err && err.message ? err.message : err)); } catch(_){}
+              });
             });
           },
           style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}

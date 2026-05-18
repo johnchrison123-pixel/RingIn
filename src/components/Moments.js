@@ -1086,7 +1086,9 @@ function MomentViewer(props){
       React.createElement('input', {
         type:'text',
         value: replyText,
-        placeholder: 'Reply to '+ (user.name ? user.name.split(' ')[0] : 'this moment') + '…',
+        /* R21 FIX #6: String() coerce — truthy check passes for numbers/arrays
+         * but .split would crash. Defensive across all name-display sites. */
+        placeholder: 'Reply to '+ (user.name ? String(user.name).split(' ')[0] : 'this moment') + '…',
         onFocus: function(){ setPaused(true); },
         onBlur: function(){ setPaused(false); },
         onChange: function(e){ setReplyText(e.target.value); },
@@ -1693,7 +1695,8 @@ function MomentViewer(props){
             fontSize: '14px',
             color: 'rgba(255,255,255,0.55)',
           }
-        }, 'Reply to ' + (name ? name.split(' ')[0] : 'this moment') + '…'),
+        /* R21 FIX #6: String() coerce */
+        }, 'Reply to ' + (name ? String(name).split(' ')[0] : 'this moment') + '…'),
         // Heart button
         React.createElement('div', {
           style: {
