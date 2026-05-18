@@ -236,11 +236,23 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     });
     setReactionPicker(null);
     // Persist — try/catch in case the migration isn't applied.
+    // FIX R10-8: snapshot for rollback symmetric to the INSERT branch below.
+    var rxnSnap = reactionsByMsg;
     try {
       if (alreadyReacted) {
         sb.from('message_reactions').delete()
           .eq('message_id', msgId).eq('user_id', myId).eq('emoji', emoji)
-          .then(function(){});
+          .then(function(r){
+            if (r && r.error) {
+              // Rollback optimistic remove on failure — restore previous state.
+              setReactionsByMsg(rxnSnap);
+              try { console.warn('[ringin] reaction delete failed:', r.error.message); } catch(_){}
+            }
+          })
+          .catch(function(e){
+            setReactionsByMsg(rxnSnap);
+            try { console.warn('[ringin] reaction delete reject:', e); } catch(_){}
+          });
       } else {
         sb.from('message_reactions').insert([{ message_id: msgId, user_id: myId, emoji: emoji }])
           .then(function(r){
@@ -673,17 +685,34 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     var otherId = convo.receiverId || convo.other_user_id || convo.id;
     var otherName = convo.name || 'this person';
     if(!window.confirm('Block '+otherName+'? They will not be able to message you.')) return;
-    var blocked = [];
-    try{ var bs=localStorage.getItem('ringin_blocked'); if(bs) blocked=JSON.parse(bs); }catch(e){}
-    if(!blocked.includes(otherId)){
-      blocked.push(otherId);
-      try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
-    }
-    sb.from('blocked_users').upsert({blocker_id: myId, blocked_id: otherId}).then(function(){});
-    // FIX #7: also write to the new server-backed blocks table via blocks.js.
-    // Both legacy + new paths run — no migration data loss.
-    try { serverBlockUser(myId, otherId).catch(function(){}); } catch(_) {}
-    if(onBack) onBack();
+    // FIX R10-6: previous code wrote to localStorage + fired onBack BEFORE
+    // checking the DB write — so a failed server write left a UI that
+    // claimed "blocked" while the other user could still message us. Now
+    // wait for the server write to succeed before persisting locally and
+    // closing the chat. Preserves Round 2 fix (also calls serverBlockUser
+    // from blocks.js — both legacy + new paths run on success).
+    sb.from('blocked_users').upsert({blocker_id: myId, blocked_id: otherId}).then(function(r){
+      if(r && r.error){
+        console.error('[ringin] blockUser failed:', r.error);
+        setToast('Failed to block — try again');
+        setTimeout(function(){setToast('');}, 2500);
+        return;
+      }
+      // Persist to legacy localStorage path
+      var blocked = [];
+      try{ var bs=localStorage.getItem('ringin_blocked'); if(bs) blocked=JSON.parse(bs); }catch(e){}
+      if(!blocked.includes(otherId)){
+        blocked.push(otherId);
+        try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
+      }
+      // FIX #7 (preserved): server-backed blocks table via blocks.js.
+      try { serverBlockUser(myId, otherId).catch(function(){}); } catch(_) {}
+      if(onBack) onBack();
+    }).catch(function(e){
+      console.warn('[ringin] blockUser reject:', e);
+      setToast('Failed to block — network error');
+      setTimeout(function(){setToast('');}, 2500);
+    });
   }
 
   function toggleMuteConvo(){
@@ -767,6 +796,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         console.error('RingIn Error [send message]:', r.error&&r.error.message?r.error.message:'Unknown error');
         // Remove optimistic message on failure
         setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+        // FIX R10-7 (part 1): surface error to the user instead of silently
+        // disappearing their message — same UX as the .catch reject branch.
+        setToast('Message failed — try again');
+        setTimeout(function(){setToast('');}, 2500);
         return;
       }
       // Replace temp with real message from server
@@ -779,6 +812,14 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         });
       }
       if(onMessageSent) onMessageSent(convo, sentText);
+    }).catch(function(e){
+      // FIX R10-7 (part 2): raw promise rejects (network/abort/CORS) used to
+      // bubble up uncaught — leaving the optimistic message stuck forever
+      // with no error toast. Rollback + toast, symmetric to r.error branch.
+      console.warn('[ringin] send msg reject:', e);
+      setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+      setToast('Message failed — try again');
+      setTimeout(function(){setToast('');}, 2500);
     });
   }
 

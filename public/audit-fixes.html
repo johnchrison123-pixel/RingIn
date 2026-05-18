@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.30 — +10 orthogonal fixes (110 fixes total)</h2>
-<p>Round 9 widened to less-touched files + real user-flow chains. Caught a <b>CRITICAL</b>: inline experts-list Call button was using the legacy broken path — bypassed call_invites + FCM push entirely, so the callee never rang. Calls from the primary list view were silently dying. Also: <b>closeFriends</b> hook not seeding from cache, <b>IncomingCallModal reject</b> with no dedupe/await, <b>LiveWorkshop scroll hijacking page</b> on iOS, <b>App.js touchstart calling getComputedStyle on every ancestor</b> (perf cached via WeakMap), <b>blocks loader missing notify</b>, <b>HomeScreen audience-retry infinite recursion potential</b>, <b>MomentComposer blob flash</b>, <b>AnonymousConnect skip()</b> stale exclude, <b>momentUsers error path missing notify</b>. Bundle <code>2026.0518.0919</code> + APK <code>ringin-v3.30.apk</code>.</p>
+<h2>✅ APK v3.31 — +8 query/event fixes (118 fixes total)</h2>
+<p>Round 10 audited every Supabase query + every <code>ringin:*</code> custom event. Two HIGH-severity finds: <b>Download My Data was exporting empty messages</b> (querying nonexistent `content` column when it's `text`), and <b>Saved Posts couldn't actually be opened</b> (dispatched an event with ZERO consumers — wired up the 3-hop chain through App.js → HomeScreen). Plus 4 silent-rollback gaps: <b>Clear notifications, Delete moment, Delete post (Profile), Block user</b> all showed fake-success on RLS/network failures. Plus 2 missing .catch on chat send + reaction DELETE. Bundle <code>2026.0518.0951</code> + APK <code>ringin-v3.31.apk</code>.</p>
 </div>
 
 <div class="stats">

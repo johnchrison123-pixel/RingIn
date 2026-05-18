@@ -1343,6 +1343,19 @@ export default function HomeScreen(props){
     window.addEventListener('ringin-open-notifs', handler);
     return function(){ window.removeEventListener('ringin-open-notifs', handler); };
   },[props.session]);
+  // FIX R10-2 (consumer half): App.js routes 'ringin:open-post-detail' from
+  // SavedPostsScreen here as 'ringin:home-open-post'. We resolve the postId
+  // against the current `posts` array and open the post detail view.
+  useEffect(function(){
+    function onOpen(ev){
+      var pid = ev && ev.detail && ev.detail.postId;
+      if (!pid) return;
+      var p = posts.find(function(x){return x.id===pid;});
+      if (p) { setPostDetail(p); setPostDetailIdx(0); }
+    }
+    window.addEventListener('ringin:home-open-post', onOpen);
+    return function(){ window.removeEventListener('ringin:home-open-post', onOpen); };
+  },[posts]);
   useEffect(function(){
     if(!props.session||!props.session.user) return;
     var uid = props.session.user.id;
@@ -2262,7 +2275,27 @@ export default function HomeScreen(props){
         React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px 10px'}},
           React.createElement('div', {style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notifications'),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
-            notifs.length>0?React.createElement('button',{onClick:function(){var uid=props.session&&props.session.user?props.session.user.id:null;if(uid)sbHome.from('notifications').delete().eq('user_id',uid).then(function(){});setNotifs([]);setUnreadNotif(0);},style:{background:'none',border:'none',color:'var(--ac)',fontSize:'12px',fontWeight:600,cursor:'pointer'}},'Clear all'):null,
+            // FIX R10-3: Clear all had no rollback — silent failure left UI
+            // showing zero notifs but DB still had them; the next session
+            // would resurface them, confusing the user. Snapshot + rollback.
+            notifs.length>0?React.createElement('button',{onClick:function(){
+              var uid=props.session&&props.session.user?props.session.user.id:null;
+              if(!uid){ setNotifs([]); setUnreadNotif(0); return; }
+              var snap = notifs.slice();
+              var snapUnread = unreadNotif;
+              setNotifs([]); setUnreadNotif(0);
+              sbHome.from('notifications').delete().eq('user_id',uid).then(function(r){
+                if(r && r.error){
+                  console.error('[ringin] clear notifs failed:', r.error);
+                  setNotifs(snap); setUnreadNotif(snapUnread);
+                  try { toastError('Failed to clear — try again'); } catch(_){}
+                }
+              }).catch(function(e){
+                console.warn('[ringin] clear notifs reject:', e);
+                setNotifs(snap); setUnreadNotif(snapUnread);
+                try { toastError('Failed to clear — network error'); } catch(_){}
+              });
+            },style:{background:'none',border:'none',color:'var(--ac)',fontSize:'12px',fontWeight:600,cursor:'pointer'}},'Clear all'):null,
             React.createElement('button',{onClick:function(){setShowNotifs(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'18px',cursor:'pointer'}},'✕')
           )
         ),

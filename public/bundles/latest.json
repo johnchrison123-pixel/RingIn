@@ -1,19 +1,17 @@
 {
-  "version": "2026.0518.0919",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0919.zip",
-  "published_at": "2026-05-18T09:19:00Z",
+  "version": "2026.0518.0951",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0951.zip",
+  "published_at": "2026-05-18T09:51:00Z",
   "git_sha": "manual",
-  "title": "10 more fixes — CRITICAL: inline Call button now actually rings",
+  "title": "8 query/event fixes — Download data, Saved Posts open, rollback gaps",
   "notes": [
-    "CRITICAL FIX: Tapping the Call button in the Experts list (the primary entry point) was bypassing the call_invites pipeline + FCM push entirely. The callee never rang. Now uses the same window.__ringInStartCall path the profile-view Call button uses.",
-    "FIX: Close Friends list now actually populates on first mount (was stuck empty until you added/removed someone)",
-    "FIX: Incoming call decline now waits for the DB update + prevents accidental double-tap",
-    "FIX: Live workshop chat scroll no longer hijacks the page scroll on iOS",
-    "PERF: App.js touchstart now caches horizontal-scroll detection via WeakMap (was calling getComputedStyle on every ancestor, every tap — measurable jank on low-end Android)",
-    "FIX: Blocks loader missed notifying subscribers on cache-only path → block list could show stale until next change",
-    "FIX: Post creation with missing audience column can no longer infinite-loop on a persistent error (retry now capped at 1 attempt)",
-    "FIX: Moment composer no longer flashes broken-image icon when you swap photos quickly",
-    "FIX: Anonymous Connect skip button now correctly excludes the user you just skipped (was reading stale state, could re-match same person)",
-    "FIX: Moment users registry now notifies subscribers on error paths too (was silently leaving consumers on stale data)"
+    "FIX: Activity Log was exporting messages with empty bodies (querying nonexistent column — should be `text` not `content`)",
+    "FIX: Saved Posts can now actually be opened — the dispatched event had ZERO consumers, so tapping a saved post did nothing. Wired App.js → HomeScreen chain.",
+    "FIX: Clear all notifications now rolls back on RLS/network failure (was silently restoring on next mount)",
+    "FIX: Delete moment now actually checks for errors — was showing 'Deleted ✓' even when the DB delete failed",
+    "FIX: Delete post from your profile now rolls back on failure (matches the HomeScreen fix from Round 7)",
+    "FIX: Block user now verifies the server write succeeded before claiming the user is blocked (was lying on failure)",
+    "FIX: Sending a chat message during a network drop now removes the optimistic bubble + shows 'Message failed' (was leaving a stuck-forever ghost message)",
+    "FIX: Un-reacting to a message on a failing network now rolls back the optimistic UI (was showing reaction gone but it'd reappear next chat open)"
   ]
 }

@@ -418,11 +418,22 @@ function MomentViewer(props){
     var ok = true;
     try { ok = window.confirm('Delete this moment? It will disappear for everyone.'); } catch(_){}
     if (!ok) return;
+    // FIX R10-4: delete used to fire-and-forget — RLS denial or network
+    // failure still showed "Deleted" toast and closed the viewer, but the
+    // moment came back on next mount. Check r.error + add .catch.
     try {
-      sb.from('moments').delete().eq('id', cur.id).then(function(){
+      sb.from('moments').delete().eq('id', cur.id).then(function(r){
+        if (r && r.error) {
+          console.error('[ringin] delete moment failed:', r.error);
+          try { showToast('Failed to delete'); } catch(_){}
+          return;
+        }
         showToast('Deleted');
         // Close the viewer — parent will re-fetch the list on next mount.
         setTimeout(function(){ if (onClose) onClose(); }, 600);
+      }).catch(function(e){
+        console.warn('[ringin] delete moment reject:', e);
+        try { showToast('Failed to delete'); } catch(_){}
       });
     } catch(_){}
   }

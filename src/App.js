@@ -183,6 +183,24 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // FIX R10-2: SavedPostsScreen dispatches 'ringin:open-post-detail' with a
+  // postId when the user taps a saved post. Previously had ZERO consumers
+  // — clicks were silently dropped. Three-hop chain:
+  //   SavedPosts  → dispatches 'ringin:open-post-detail' {postId}
+  //   App.js      → switches to home tab + dispatches 'ringin:home-open-post'
+  //   HomeScreen  → listens for 'ringin:home-open-post' → opens postDetail
+  useEffect(function(){
+    function onOpenPostDetail(ev){
+      var postId = ev && ev.detail && ev.detail.postId;
+      if (!postId) return;
+      setActiveTab('home');
+      try { window.dispatchEvent(new CustomEvent('ringin:home-open-post', {detail:{postId:postId}})); } catch(_){}
+    }
+    window.addEventListener('ringin:open-post-detail', onOpenPostDetail);
+    return function(){ window.removeEventListener('ringin:open-post-detail', onOpenPostDetail); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Lock-screen notification deep-link handler ─────────────────────────
   // When the user taps an incoming-call push notification, the service
   // worker opens the PWA at /?invite=<id>&action=accept|decline. Read

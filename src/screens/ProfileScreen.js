@@ -858,7 +858,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     sbProfile.from('posts').select('id,text,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){posts=r.data||[];check();});
     sbProfile.from('comments').select('id,text,post_id,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){comments=r.data||[];check();});
     sbProfile.from('follows').select('id,following_name,created_at').eq('follower_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){follows=r.data||[];check();});
-    sbProfile.from('messages').select('id,content,created_at').eq('sender_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){messages=r.data||[];check();});
+    // FIX R10-1: messages table column is `text`, not `content`. Selecting
+    // `content` returned undefined for every row → Download My Data + activity
+    // log were effectively empty. Other call sites correctly use `text`.
+    sbProfile.from('messages').select('id,text,created_at').eq('sender_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){messages=r.data||[];check();});
 
     // Realtime: re-fetch on any new post, comment, follow, message
     var ch=sbProfile.channel('activity-log-'+userId)
@@ -2211,7 +2214,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.30';
+              var APK_VERSION = 'v3.31';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -2699,7 +2702,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
               if(!p) return null;
               var isMutedProf = mutedPostsProf.indexOf(p.id) >= 0;
               var items=[
-                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){sbProfile.from('posts').delete().eq('id',p.id).then(function(){});setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
+                // FIX R10-5: mirror HomeScreen Delete-Post rollback pattern.
+                // Previous code optimistically removed from myPosts but never
+                // checked the result — a failure left the post live in DB yet
+                // gone from UI until refresh.
+                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){var snap=myPosts.slice();setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbProfile.from('posts').delete().eq('id',p.id).then(function(r){if(r&&r.error){console.error('[ringin] delete post (profile) failed:',r.error);setMyPosts(snap);try{toastError('Failed to delete post');}catch(_){}}}).catch(function(e){console.warn('[ringin] delete post (profile) reject:',e);setMyPosts(snap);try{toastError('Failed to delete post');}catch(_){}});}}},
                 {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuProf(null);}},
                 // FIX #4: open real edit modal instead of "coming soon" alert
                 {icon:'✏️',label:'Edit Post',fn:function(){setEditPostProfData({id:p.id,content:p.text||''});setPostMenuProf(null);}},
