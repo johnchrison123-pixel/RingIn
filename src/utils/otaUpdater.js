@@ -196,8 +196,15 @@ export function setAutoUpdate(on){
 // Behaviour on update available:
 //   - If autoUpdate=true → call downloadAndApply silently (no popup)
 //   - If autoUpdate=false → fire onAvailable(info) so popup shows
+/* R20 FIX #6: guard against double-registration. App.js's main useEffect can
+ * re-run on auth state change → would call startOtaUpdater again → stack two
+ * setIntervals + two visibilitychange/online listeners → hammer the manifest
+ * URL on every check tick. Single-init guard prevents this. */
+var _otaStarted = false;
 export function startOtaUpdater(onAvailable){
   if (!isNative()) return;
+  if (_otaStarted) return;
+  _otaStarted = true;
   function doCheck(){
     try {
       checkOnly().then(function(r){

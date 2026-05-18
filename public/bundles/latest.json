@@ -1,17 +1,17 @@
 {
-  "version": "2026.0518.1532",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1532.zip",
-  "published_at": "2026-05-18T15:32:00Z",
+  "version": "2026.0518.1619",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1619.zip",
+  "published_at": "2026-05-18T16:19:00Z",
   "git_sha": "manual",
-  "title": "10 fixes — Follow race-guard, blocks/mutes cross-screen sync, timer leaks (incl. 3 verifier-fixes)",
+  "title": "8 fixes — Cover-save bio guard, body-scroll-lock refcount, sign-out cache wipe, FCM dedupe",
   "notes": [
-    "FIX: Rapid Follow/Unfollow tapping no longer leaves the button in the wrong state — in-flight write is now guarded so the 2nd tap is dropped instead of racing the 1st.",
-    "FIX: Follow/unfollow on no internet now shows error toast instead of stuck button (was previously silent + state stuck on optimistic value).",
-    "FIX: Blocking a user from chat / Moments / Profile-blocked-list now immediately updates the feed, message send-guard, and Moments strip — was previously stale until app reload.",
-    "FIX: Muting a post from Profile or another user's profile now syncs back to your Feed instantly — was previously stale until refresh.",
-    "FIX: Inbox timestamps no longer show 'NaNm ago' or '-1m ago' when server clock is ahead of phone clock (fresh PWA installs before NTP sync).",
-    "FIX: Moments toast (Status muted / Blocked / etc) no longer leaks setTimeout on viewer-close — small memory hygiene improvement during long sessions.",
-    "FIX: Account 'Save All' / 'Save Profile Info' setTimeout reset is now ref-tracked and cleared on unmount — no more stale setState if you navigate away mid-save.",
-    "FIX: Declined incoming call now clears its prefetched Agora token from window scope so a subsequent outgoing call starts cleanly."
+    "FIX: Cover image save no longer wipes your bio text and other profile fields if your login session has expired or the network drops mid-save (was overwriting bio JSON with empty object on RLS rejection).",
+    "FIX: Page no longer gets stuck unscrollable when you close 2 stacked modals (e.g. post-detail → edit-post over it → close in any order). New ref-counted body-scroll-lock used by all 6 modals.",
+    "PRIVACY FIX: Signing out now clears the server-backed blocks cache + follows cache + FCM token cache for your account. Next user signing in on the same device gets a clean slate.",
+    "FIX: FCM token registration no longer spams Supabase with an update every hour on token refresh — only writes if the token actually changed. Also skips the permission prompt if you've already denied it (was wasting a Notification.requestPermission + getToken round-trip on every TOKEN_REFRESHED).",
+    "FIX: OTA updater no longer double-registers its check timer + visibilitychange listener if the app re-runs auth state change handler.",
+    "FIX: Tapping Messages tab while already on Messages now resets in-place (close active chat + scroll to top) instead of remounting — was causing brief realtime-channel collision that broke message updates until next navigation.",
+    "FIX: Service worker registration now uses cache-busting query param + updateViaCache:'none' so deploys reliably push new SW versions to all clients (was risking stale SW serving old chunk URLs after deploys).",
+    "FIX: Chat photo upload on the no-compression fallback path now properly rolls back temp message + blob URL on network reject (previously only handled RLS error, leaked on offline drop)."
   ]
 }

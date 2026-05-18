@@ -20,6 +20,7 @@ import {detectContent,autoTagPost} from '../utils/mlService';
 import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 import {isBlockedSync, onBlocksChanged} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed; R19 verifier-fix: subscribe to re-render on block-change */
+import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2: ref-counted lock prevents 2-modal overflow leak */
 import {formatDateTime, formatDate, formatTime, safeSetItem} from '../utils/dateFmt'; /* R18: timezone-aware date display + safe localStorage wrapper */
 
 function playKeyClick(){playSound('typing');}
@@ -430,16 +431,14 @@ export function UserProfileView(props){
     if (editPostUData || openCommentsU) {
       window.addEventListener('keydown', onKey);
     }
-    var prevOverflow = null;
-    if (editPostUData && typeof document !== 'undefined' && document.body) {
-      prevOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
+    /* R20 FIX #2: ref-counted body-scroll-lock; releases atomically on cleanup */
+    var releaseLock = null;
+    if (editPostUData) {
+      releaseLock = acquireBodyScrollLock();
     }
     return function(){
       window.removeEventListener('keydown', onKey);
-      if (editPostUData && typeof document !== 'undefined' && document.body) {
-        document.body.style.overflow = prevOverflow || '';
-      }
+      if (releaseLock) releaseLock();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editPostUData, openCommentsU]);
@@ -1522,17 +1521,14 @@ export default function HomeScreen(props){
     if (postDetail || showEditPost || showNotifs || openComments) {
       window.addEventListener('keydown', onKey);
     }
-    // Body scroll lock — only while a true fullscreen overlay is open.
-    var prevOverflow = null;
-    if (anyFullscreen && typeof document !== 'undefined' && document.body) {
-      prevOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
+    /* R20 FIX #2: ref-counted body-scroll-lock; releases atomically on cleanup */
+    var releaseLock = null;
+    if (anyFullscreen) {
+      releaseLock = acquireBodyScrollLock();
     }
     return function(){
       window.removeEventListener('keydown', onKey);
-      if (anyFullscreen && typeof document !== 'undefined' && document.body) {
-        document.body.style.overflow = prevOverflow || '';
-      }
+      if (releaseLock) releaseLock();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postDetail, showEditPost, showNotifs, openComments]);

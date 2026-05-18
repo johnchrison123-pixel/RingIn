@@ -14,6 +14,7 @@ import {useCoinBalance} from '../utils/coinBalance';
 import {sb as sbProfileCoin} from '../utils/supabase';
 /* R18: timezone-aware date display + safe localStorage wrapper */
 import {formatDate, safeSetItem} from '../utils/dateFmt';
+import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2 */
 
 // Copy a URL to the clipboard and toast ONLY on real success.
 // Same helper pattern as HomeScreen — eliminates false-positive "Link
@@ -659,13 +660,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   /* R18: ESC closes phone-code picker + body-scroll-lock while open */
   useEffect(function(){
     if (!showPhoneCodePicker) return;
-    var prevOverflow = '';
-    try { prevOverflow = document.body.style.overflow || ''; document.body.style.overflow = 'hidden'; } catch(_){}
+    /* R20 FIX #2: ref-counted lock (was per-effect snapshot which leaked when 2 modals stacked) */
+    var releaseLock = acquireBodyScrollLock();
     function onKey(e){ if (e.key === 'Escape' || e.keyCode === 27) { setShowPhoneCodePicker(false); setAcctCountrySearch(''); } }
     try { document.addEventListener('keydown', onKey); } catch(_){}
     return function(){
       try { document.removeEventListener('keydown', onKey); } catch(_){}
-      try { document.body.style.overflow = prevOverflow; } catch(_){}
+      releaseLock();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPhoneCodePicker]);
@@ -673,13 +674,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   /* R18: ESC closes timezone picker + body-scroll-lock while open */
   useEffect(function(){
     if (!showTzPicker) return;
-    var prevOverflow = '';
-    try { prevOverflow = document.body.style.overflow || ''; document.body.style.overflow = 'hidden'; } catch(_){}
+    /* R20 FIX #2: ref-counted lock */
+    var releaseLock = acquireBodyScrollLock();
     function onKey(e){ if (e.key === 'Escape' || e.keyCode === 27) { setShowTzPicker(false); setTzSearch(''); } }
     try { document.addEventListener('keydown', onKey); } catch(_){}
     return function(){
       try { document.removeEventListener('keydown', onKey); } catch(_){}
-      try { document.body.style.overflow = prevOverflow; } catch(_){}
+      releaseLock();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showTzPicker]);
@@ -1105,12 +1106,29 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           });
           // 2) Merge into bio JSON — re-read latest bio first so we don't clobber other fields
           supabase.from('profiles').select('bio').eq('id',userId).single().then(function(rb){
+            /* R20 FIX #1: if the read failed (session expiry → RLS rejects, or
+             * network reject), DO NOT proceed with the merge — synthesizing
+             * `existing = {}` would wipe every other field in the user's bio
+             * JSON (bio text, social links, cover_url, location, notif_prefs,
+             * sound_prefs, etc.). Bail out and surface a toast so the user knows
+             * the cover-image-itself succeeded (it's in cover_url column and
+             * localStorage) but the bio-JSON mirror didn't. */
+            if (rb.error || !rb.data) {
+              try { toastError('Cover saved, but session may have expired — please re-login if it doesn\'t sync.'); } catch(_){}
+              return;
+            }
             var existing = {};
             try{ if(rb.data && rb.data.bio) existing = JSON.parse(rb.data.bio); }catch(e){ existing = {}; }
             existing.cover_url = url;
             supabase.from('profiles').update({bio: JSON.stringify(existing)}).eq('id',userId).then(function(r2){
-              if(r2.error){ console.error('bio cover_url merge failed:', r2.error.message); alert('Cover saved locally, but could not sync to your account. Please try again later.'); }
+              if(r2.error){ console.error('bio cover_url merge failed:', r2.error.message); try{ toastError('Cover saved locally — could not sync to account'); }catch(_){} }
+            }).catch(function(e){
+              console.warn('[ringin] bio cover_url merge reject:', e && e.message ? e.message : e);
             });
+          }).catch(function(e){
+            /* R20 FIX #1: also handle the raw network reject path on the select */
+            console.warn('[ringin] bio read reject for cover-save:', e && e.message ? e.message : e);
+            try { toastError('Cover saved, but couldn\'t sync — check your connection.'); } catch(_){}
           });
           setUploading(false);
         });
@@ -2332,7 +2350,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.40';
+              var APK_VERSION = 'v3.41';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

@@ -1553,6 +1553,16 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                 // FIX #9: revoke only on success path.
                 revokeLocal2();
                 if(onMessageSent) onMessageSent(convo,'📷 Photo');
+              }).catch(function(e){
+                /* R20 FIX #9: previously only the .error branch handled failure.
+                 * On raw network reject (offline / Supabase down) the temp message
+                 * and blob URL leaked — temp stayed in msgs forever and the
+                 * blob held memory until tab close. Now: same cleanup as .error. */
+                console.warn('RingIn Error [chatPhotoInsert-raw reject]:', e && e.message ? e.message : e);
+                setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                setToast('Photo upload failed');
+                setTimeout(function(){setToast('');},2500);
+                setTimeout(revokeLocal2, 0);
               });
             });
           });
@@ -1678,6 +1688,22 @@ export default function MessagesScreen(props){
   var expertConvosS=useState(EXPERT_CONVOS_BASE); var expertConvos=expertConvosS[0]; var setExpertConvos=expertConvosS[1];
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
+  /* R20 FIX #7: listen for the tap-on-active-tab reset event. Previously App.js
+   * bumped a key prop to force remount, which caused a realtime-channel
+   * collision (new instance + old instance both subscribing to identical
+   * channel names → cleanup of old removed the new instance's channel).
+   * Now: in-place reset → close active chat + scroll to top of inbox. */
+  useEffect(function(){
+    function onReset(){
+      try {
+        setActive(null);
+        if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch(_){}
+    }
+    try { window.addEventListener('ringin:messages-reset', onReset); } catch(_){}
+    return function(){ try { window.removeEventListener('ringin:messages-reset', onReset); } catch(_){} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // FIX #9: removed `coinsS = useState(50)` stub. That hardcoded 50-coin
   // local state was bypassing the real wallet balance — a user with 1000
   // coins would still see CallScreen mounted with coins=50. The

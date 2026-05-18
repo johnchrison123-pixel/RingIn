@@ -30,6 +30,12 @@ export function initFirebase(){
   }
 }
 
+/* R20 FIX #5: track whether we've already called requestPermission this
+ * session. Per spec, browsers don't re-prompt after deny — calling it again
+ * is wasted work AND on Firefox/Safari we then spend a getToken+DB roundtrip
+ * we don't need. Also dedupe DB writes: only update profiles.fcm_token if
+ * the value actually changed since last write (cached in fcm_token_<userId>). */
+var _permissionAskedThisSession = false;
 export async function requestNotificationPermission(userId, sb){
   if(!('Notification' in window)){
     console.log('Browser does not support notifications');
@@ -40,16 +46,33 @@ export async function requestNotificationPermission(userId, sb){
     if(!messaging) return null;
 
     var {getToken} = require('firebase/messaging');
-    var permission = await Notification.requestPermission();
-    if(permission !== 'granted'){
-      console.log('Notification permission denied');
-      return null;
+    /* R20 FIX #5: gate on Notification.permission BEFORE calling requestPermission.
+     * If 'denied', bail immediately — browser won't re-prompt anyway, and we
+     * avoid the getToken roundtrip. If 'default', only ask ONCE per session
+     * (guarded by _permissionAskedThisSession). If 'granted', skip the prompt
+     * entirely and proceed directly to getToken. */
+    var perm = (typeof Notification !== 'undefined' && Notification.permission) || 'default';
+    if (perm === 'denied') return null;
+    if (perm === 'default') {
+      if (_permissionAskedThisSession) return null;
+      _permissionAskedThisSession = true;
+      var permission = await Notification.requestPermission();
+      if (permission !== 'granted') return null;
     }
+    // perm === 'granted' (or just granted in the prompt above) — fetch token
 
     var token = await getToken(messaging, {vapidKey: firebaseConfig.vapidKey});
     if(token && userId && sb){
-      // Save token to Supabase profiles table
-      await sb.from('profiles').update({fcm_token: token}).eq('id', userId);
+      /* R20 FIX #5: dedupe DB writes — only update profiles.fcm_token if it
+       * actually differs from the last value we cached locally for this user.
+       * Saves a write per hourly TOKEN_REFRESHED. */
+      var cachedKey = 'fcm_token_' + userId;
+      var lastToken = null;
+      try { lastToken = localStorage.getItem(cachedKey); } catch(_){}
+      if (lastToken !== token) {
+        try { localStorage.setItem(cachedKey, token); } catch(_){}
+        await sb.from('profiles').update({fcm_token: token}).eq('id', userId);
+      }
     }
     return token;
   }catch(e){

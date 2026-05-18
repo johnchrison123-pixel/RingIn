@@ -2,6 +2,7 @@
 import React, {useState, useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import ImgWithFallback from '../components/ImgWithFallback';
+import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2 */
 
 export default function FollowersListModal(props) {
   // type: 'followers' | 'following'
@@ -51,12 +52,9 @@ export default function FollowersListModal(props) {
   }, [userId, type]);
 
   // R18 — ESC closes modal + body scroll lock while open
+  // R20 FIX #2 — switched to ref-counted lock to prevent multi-modal overflow leak
   useEffect(function(){
-    var prevOverflow = '';
-    try {
-      prevOverflow = document.body.style.overflow || '';
-      document.body.style.overflow = 'hidden';
-    } catch(_){}
+    var releaseLock = acquireBodyScrollLock();
     function onKey(e){
       if ((e.key === 'Escape' || e.keyCode === 27) && onClose) {
         try { onClose(); } catch(_){}
@@ -65,7 +63,7 @@ export default function FollowersListModal(props) {
     try { document.addEventListener('keydown', onKey); } catch(_){}
     return function(){
       try { document.removeEventListener('keydown', onKey); } catch(_){}
-      try { document.body.style.overflow = prevOverflow; } catch(_){}
+      releaseLock();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

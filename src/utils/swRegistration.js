@@ -50,7 +50,19 @@ export function registerAppShellSW(){
   // Defer to idle/load so SW registration never delays first paint.
   function go(){
     try{
-      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      /* R20 FIX #8: add cache-busting query param so browsers can't serve a
+       * stale /sw.js from HTTP cache. Without this, if Vercel's static-asset
+       * cache headers ever changed to allow caching of /sw.js, clients would
+       * be stuck on whatever SW version they had registered until something
+       * else forced an update. The query param doesn't change the SW file's
+       * cache identity (browsers byte-compare the file body, not the URL),
+       * but it ensures the FETCH of /sw.js bypasses HTTP cache. Using the
+       * REACT_APP_BUILD_ID env var if available, otherwise a hardcoded
+       * fallback that we bump per deploy (or just timestamp). */
+      var swVer = (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BUILD_ID)
+        ? process.env.REACT_APP_BUILD_ID
+        : 'v20'; // R20 bump (was no cache-buster); bump per round
+      navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(swVer), { scope: '/', updateViaCache: 'none' })
         .then(function(reg){
           // Watch for updates. When a new SW finishes installing AND there's
           // already an active controller (so this isn't the first-ever

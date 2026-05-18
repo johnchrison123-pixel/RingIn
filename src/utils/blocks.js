@@ -216,6 +216,13 @@ export function unblockUser(myId, otherId) {
 
 export function isBlockedSync(otherId) { return otherId ? _cache.has(otherId) : false; }
 export function getCachedBlocks() { return _cache; }
+/* R20 FIX #3: clear module-scope _cache on sign-out so the next user signing
+ * in on the same tab doesn't see leftover blocks from the previous user.
+ * App.js calls this from the SIGNED_OUT branch alongside the LS key wipe. */
+export function resetBlocksCache() {
+  _cache = new Set();
+  _listeners.slice().forEach(function(l){ try{ l(_cache); }catch(_){} });
+}
 export function onBlocksChanged(cb) {
   _listeners.push(cb);
   return function(){ _listeners = _listeners.filter(function(l){ return l !== cb; }); };

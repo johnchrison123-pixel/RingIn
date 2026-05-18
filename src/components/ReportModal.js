@@ -2,6 +2,7 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {toastInfo} from '../utils/toast';
+import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2 */
 
 // ──────────────────────────────────────────────────────────────────────────
 // ReportModal — replaces the previously fake `alert("Thank you for
@@ -116,13 +117,10 @@ export default function ReportModal(props) {
   var closeRef = useRef(null);
 
   // R18 Fix A — ESC closes + body-scroll-lock (gated on whether modal has a target)
+  // R20 FIX #2 — switched to ref-counted lock so opening ReportModal over post-detail no longer leaks overflow:hidden
   useEffect(function(){
     if (!target) return;
-    var prevOverflow = '';
-    try {
-      prevOverflow = document.body.style.overflow || '';
-      document.body.style.overflow = 'hidden';
-    } catch(_){}
+    var releaseLock = acquireBodyScrollLock();
     function onKey(e){
       if (e.key === 'Escape' || e.keyCode === 27) {
         try { closeRef.current && closeRef.current(); } catch(_){}
@@ -131,7 +129,7 @@ export default function ReportModal(props) {
     try { document.addEventListener('keydown', onKey); } catch(_){}
     return function(){
       try { document.removeEventListener('keydown', onKey); } catch(_){}
-      try { document.body.style.overflow = prevOverflow; } catch(_){}
+      releaseLock();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
-import {loadBlocks} from './utils/blocks';
+import {loadBlocks, resetBlocksCache} from './utils/blocks'; /* R20 FIX #3: reset on SIGNED_OUT */
 import {startCloseFriends} from './utils/closeFriends';
 import {startOtaUpdater, downloadAndApply} from './utils/otaUpdater';
 import HomeScreen, {UserProfileView} from './screens/HomeScreen';
@@ -61,7 +61,8 @@ export default function App() {
   var viewUserStackS = useState([]); var viewUserStack = viewUserStackS[0]; var setViewUserStack = viewUserStackS[1];
   var unreadMsgS = useState(0); var unreadMsg = unreadMsgS[0]; var setUnreadMsg = unreadMsgS[1];
   var unreadNotifS = useState(0); var unreadNotif = unreadNotifS[0]; var setUnreadNotif = unreadNotifS[1];
-  var msgResetKeyS = useState(0); var msgResetKey = msgResetKeyS[0]; var setMsgResetKey = msgResetKeyS[1];
+  /* R20 verifier-cleanup: msgResetKey state removed — was used by Fix #7 prior
+   * (key='messages-N' for remount-on-tap). Now in-place reset via window event. */
   // Incoming call: a row inserted into call_invites where callee_id = me
   var incomingCallS = useState(null); var incomingCall = incomingCallS[0]; var setIncomingCall = incomingCallS[1];
   // Active call (rendered above everything): set when user starts an outgoing call OR accepts an incoming one
@@ -332,11 +333,16 @@ export default function App() {
           // call pushes intended for the previous account.
           if (prevId) { try { clearFcmToken(supabase, prevId); } catch(_){} }
           if (prevId) {
-            var keysToWipe = ['convos_'+prevId, 'profile_info_'+prevId, 'avatar_'+prevId, 'ringin_coin_balance_'+prevId, 'saved_posts_'+prevId, 'user_posts_'+prevId];
+            /* R20 FIX #3: also wipe follows cache for prev user (was leaving the
+             * next user with prev user's follow map until first server fetch). */
+            var keysToWipe = ['convos_'+prevId, 'profile_info_'+prevId, 'avatar_'+prevId, 'ringin_coin_balance_'+prevId, 'saved_posts_'+prevId, 'user_posts_'+prevId, 'follows_'+prevId, 'fcm_token_'+prevId];
             keysToWipe.forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
           }
-          // Always-shared keys to clear
-          ['ringin_clikes', 'ringin_muted_posts', 'ringin_muted_convos', 'ringin_blocked', 'ringin_muted_words', 'ringin_muted_moment_users', 'ringin_carousel_idx', 'feed_posts_cache'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+          /* R20 FIX #3: wipe server-backed blocks cache (CACHE_KEY + MIGRATED_KEY) +
+           * reset blocks.js module-scope _cache so the next user gets a clean slate
+           * (previously the live in-memory Set survived auth-change). */
+          ['ringin_clikes', 'ringin_muted_posts', 'ringin_muted_convos', 'ringin_blocked', 'ringin_blocks_v2', 'ringin_blocks_migrated_v2', 'ringin_muted_words', 'ringin_muted_moment_users', 'ringin_carousel_idx', 'feed_posts_cache'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+          try { resetBlocksCache(); } catch(_){}
         } catch(_){}
         // also stop lastSeen + close any open chats
         try { stopLastSeen(); } catch(_){}
@@ -814,7 +820,15 @@ export default function App() {
     if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onOpenProfile:function(){setPrevTab('home');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onGoToSearch:function(){setPrevTab('home');setActiveTab('search');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('search');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('workshops');setActiveTab('profile');}});
-    if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages-'+msgResetKey, session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onViewUser:pushViewUser, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('messages');setActiveTab('profile');}, onUnreadCount:setUnreadMsg});
+    /* R20 FIX #7: removed key='messages-'+msgResetKey to avoid remount race.
+     * When user taps Messages tab while already on Messages, React-18's stable-
+     * parent reconciliation could mount the NEW MessagesScreen BEFORE the old
+     * one's cleanup ran — two Supabase realtime channels with identical names
+     * would collide, then cleanup of the OLD instance would remove the channel
+     * the NEW instance had just adopted, breaking realtime until next nav.
+     * Now: tap-while-on-tab dispatches a window event the existing MessagesScreen
+     * consumes in-place (scroll-to-top + close any open chat). No remount. */
+    if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages', session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onViewUser:pushViewUser, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('messages');setActiveTab('profile');}, onUnreadCount:setUnreadMsg});
     if (activeTab === 'profile') return React.createElement(ProfileScreen, {session:session, supabase:supabase, onOpenWallet:openWallet, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onViewUser:function(u){setViewUserStack([u]);}, onSwitchTab:function(t){setActiveTab(t);}});
     if (activeTab === 'wallet') return React.createElement(WalletScreen, {session:session, onBack:function(){setActiveTab(prevTab);}});
     if (activeTab === 'saved') return React.createElement(SavedPostsScreen, {session:session, onBack:function(){setActiveTab(prevTab);}, onViewUser:pushViewUser});
@@ -947,7 +961,10 @@ export default function App() {
           className:'nav-tab '+(activeTab===tab.id?'active':''),
           onClick:function(){
             if(tab.id==='messages' && activeTab==='messages'){
-              setMsgResetKey(function(k){return k+1;});
+              /* R20 FIX #7: dispatch event instead of remount to avoid the
+               * realtime-channel collision. MessagesScreen listens for this
+               * and resets in-place (close active chat + scroll to top). */
+              try { window.dispatchEvent(new CustomEvent('ringin:messages-reset')); } catch(_){}
             }
             if(tab.id==='messages'){
               setUnreadMsg(0);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RingIn — Master Audit Report (19 rounds, 199 fixes)</title>
+<title>RingIn — Master Audit Report (20 rounds, 207 fixes)</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:#fff;color:#1a1a1f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55;font-size:10.5pt}
@@ -104,16 +104,16 @@ footer{margin-top:48px;padding-top:18px;border-top:2px solid #ECECF2;font-size:9
 <div class="cover">
 <div class="brand">RingIn</div>
 <div class="sub">Master Audit &amp; Fix Report</div>
-<div class="meta">19 audit rounds · 199 fixes shipped · 14 APK versions · 2026-05-18</div>
+<div class="meta">20 audit rounds · 207 fixes shipped · 14 APK versions · 2026-05-18</div>
 
 <div class="stats">
-<div class="stat"><span class="n">199</span><div class="l">Total fixes</div></div>
-<div class="stat"><span class="n">19</span><div class="l">Audit rounds</div></div>
-<div class="stat"><span class="n">16</span><div class="l">APK builds</div></div>
+<div class="stat"><span class="n">207</span><div class="l">Total fixes</div></div>
+<div class="stat"><span class="n">20</span><div class="l">Audit rounds</div></div>
+<div class="stat"><span class="n">17</span><div class="l">APK builds</div></div>
 <div class="stat"><span class="n">13+</span><div class="l">Files / 12k+ lines</div></div>
 </div>
 
-<div class="footer">RingIn · Webstreax Technologies Pvt Ltd<br>Latest: APK v3.40 + Bundle 2026.0518.1532</div>
+<div class="footer">RingIn · Webstreax Technologies Pvt Ltd<br>Latest: APK v3.41 + Bundle 2026.0518.1619</div>
 </div>
 
 <!-- EXECUTIVE SUMMARY -->
@@ -124,7 +124,7 @@ Started with one master audit (5 parallel agents → 152 findings across HomeScr
 
 <div class="callout">
 <h4>Per-round trend</h4>
-R7&nbsp;:&nbsp;9 · R8&nbsp;:&nbsp;8 · R9&nbsp;:&nbsp;10 · R10&nbsp;:&nbsp;8 · R11&nbsp;:&nbsp;11 · R12&nbsp;:&nbsp;6 · R13&nbsp;:&nbsp;8 · R14&nbsp;:&nbsp;10 · R15&nbsp;:&nbsp;8 · R16&nbsp;:&nbsp;9 · R17&nbsp;:&nbsp;8 · R18&nbsp;:&nbsp;11 · R19&nbsp;:&nbsp;10<br>
+R7&nbsp;:&nbsp;9 · R8&nbsp;:&nbsp;8 · R9&nbsp;:&nbsp;10 · R10&nbsp;:&nbsp;8 · R11&nbsp;:&nbsp;11 · R12&nbsp;:&nbsp;6 · R13&nbsp;:&nbsp;8 · R14&nbsp;:&nbsp;10 · R15&nbsp;:&nbsp;8 · R16&nbsp;:&nbsp;9 · R17&nbsp;:&nbsp;8 · R18&nbsp;:&nbsp;11 · R19&nbsp;:&nbsp;10 · R20&nbsp;:&nbsp;8<br>
 Initial batches (R1-6): 83 fixes from the master audit. Average per fresh-angle round (R7+): ~8.6 fixes.
 </div>
 
@@ -349,6 +349,20 @@ After round 6 ship, the audit agent kept reporting "Clean" against the same ques
 </ul>
 </div>
 
+<div class="round-card">
+<div class="head"><span class="badge">R20</span><span class="count">8 fixes</span><span class="angle">Session expiry edges + DOM hygiene + multi-tab cache leakage + auth refresh overhead</span></div>
+<ul>
+<li><b>ProfileScreen cover-save bio JSON guard</b> — if the bio re-read fails (session expired → RLS rejects, or network drop), bail and toast instead of merging into empty object (was silently wiping every other bio JSON field: bio text, social links, location, notif_prefs, sound_prefs)</li>
+<li><b>NEW shared bodyScrollLock util</b> with reference-counted acquire/release. Replaces 6 independent per-modal snapshot/restore effects (R18 introduced) that leaked <code>overflow:hidden</code> permanently when 2 modals stacked (e.g. post-detail → edit-post over it, close in any order). Updated: HomeScreen×2, ProfileScreen×2, FollowersListModal, ReportModal.</li>
+<li><b>SIGNED_OUT cache wipe extended</b> — adds <code>ringin_blocks_v2</code>, <code>ringin_blocks_migrated_v2</code>, <code>follows_<prevId></code>, <code>fcm_token_<prevId></code> + new <code>resetBlocksCache()</code> export from blocks.js resets the live in-memory <code>_cache</code> Set. Next user signing in on the same device gets a clean slate.</li>
+<li><b>FCM requestNotificationPermission</b> — now gates on <code>Notification.permission</code> BEFORE calling <code>requestPermission</code>. Bail immediately if denied (browser won't re-prompt anyway). Default state asked once per session. Profiles.fcm_token write only fires if token differs from cached <code>fcm_token_<userId></code> in LS (no more hourly redundant DB writes on TOKEN_REFRESHED).</li>
+<li><b>otaUpdater <code>_otaStarted</code> guard</b> — module-scope flag prevents double-registration of the setInterval + visibilitychange/online listeners when App.js's main useEffect re-runs on auth state change.</li>
+<li><b>MessagesScreen tap-on-active-tab in-place reset</b> — removed <code>key='messages-'+msgResetKey</code> from MessagesScreen mount. The remount triggered a realtime-channel collision (new instance subscribed before old cleanup ran → cleanup of OLD removed channel NEW had adopted → chat stopped updating until next nav). Now dispatches <code>ringin:messages-reset</code> event → existing MessagesScreen closes active chat + scrolls inbox top in-place.</li>
+<li><b>SW registration cache-busting</b> — added <code>?v=v20</code> query param + <code>updateViaCache:'none'</code> registration option so deploys reliably push new SW versions even if Vercel ever changed cache headers on /sw.js. Bump per round.</li>
+<li><b>Chat photo raw-fallback insert .catch</b> — was only handling <code>r.error</code>, leaking temp message + blob URL on raw network reject (offline). Now mirrors the <code>.error</code> branch cleanup in <code>.catch</code>.</li>
+</ul>
+</div>
+
 <!-- PATTERNS -->
 <h1>Patterns we fixed at the root</h1>
 
@@ -447,7 +461,7 @@ Every <code>'ringin:*'</code> custom event verified: producer + consumer + clean
 <p>If you find any regression, send me the symptom (which screen, which tap, what happened) and I'll fix it surgically in the next iteration.</p>
 
 <footer>
-RingIn · Master Audit Report · 19 audit rounds · 199 fixes · APK v3.40 + Bundle 2026.0518.1532<br>
+RingIn · Master Audit Report · 20 audit rounds · 207 fixes · APK v3.41 + Bundle 2026.0518.1619<br>
 Webstreax Technologies Pvt Ltd · Generated 2026-05-18
 </footer>
 
