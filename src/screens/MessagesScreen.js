@@ -153,6 +153,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   // restricted_users table (migration 0003_restrict.sql).
   var restrictedSetS = useState(new Set());
   var restrictedSet = restrictedSetS[0]; var setRestrictedSet = restrictedSetS[1];
+  // R15 FIX #4: mirror restrictedSet into a ref so the chat realtime INSERT
+  // handler (deps [convId]) reads the freshest set instead of a stale snapshot.
+  var restrictedSetRef = useRef(new Set());
+  useEffect(function(){ restrictedSetRef.current = restrictedSet; }, [restrictedSet]);
   useEffect(function(){
     if (!myId) return;
     try {
@@ -496,7 +500,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
           }
           var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-          var senderRestricted = restrictedSet && restrictedSet.has && restrictedSet.has(p.new.sender_id);
+          // R15 FIX #4: read from ref (fresh) instead of closure (stale, captured at convId change).
+          var _rs = restrictedSetRef.current;
+          var senderRestricted = _rs && _rs.has && _rs.has(p.new.sender_id);
           if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
         }
       })
@@ -544,7 +550,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         var pl = msg && msg.payload;
         if (!pl || !pl.user_id || pl.user_id === myId) return;
         // RESTRICT enforcement: hide typing indicator from restricted users.
-        if (restrictedSet && restrictedSet.has && restrictedSet.has(pl.user_id)) return;
+        // R15 FIX #4: read via ref (channel useEffect deps are [convId]).
+        var _rs2 = restrictedSetRef.current;
+        if (_rs2 && _rs2.has && _rs2.has(pl.user_id)) return;
         if (pl.typing) {
           setOtherTyping(true);
           if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
@@ -1705,6 +1713,12 @@ export default function MessagesScreen(props){
   // updater purity and double-fires in React StrictMode.
   var activeRef=useRef(null);
   useEffect(function(){ activeRef.current = active; },[active]);
+  // R15 FIX #3: mirror inboxRestrictedSet into a ref so the inbox channel
+  // useEffect (deps [myId]) sees the freshest set after a restrict toggle.
+  // Without this the inbox INSERT handler reads a stale snapshot captured
+  // when the channel was first subscribed.
+  var inboxRestrictedSetRef=useRef(new Set());
+  useEffect(function(){ inboxRestrictedSetRef.current = inboxRestrictedSet; },[inboxRestrictedSet]);
   // FIX #7: warm up the server-side blocks cache (blocks.js) so the send()
   // guard in ChatBox has fresh data the first time it runs.
   useEffect(function(){
@@ -1836,7 +1850,9 @@ export default function MessagesScreen(props){
         var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
         // RESTRICT enforcement at inbox layer — silent badge bump only,
         // no badge/sound for messages from restricted users.
-        var senderRestricted = inboxRestrictedSet && inboxRestrictedSet.has && inboxRestrictedSet.has(p.new.sender_id);
+        // R15 FIX #3: read via ref (channel useEffect deps are [myId]).
+        var _irs = inboxRestrictedSetRef.current;
+        var senderRestricted = _irs && _irs.has && _irs.has(p.new.sender_id);
         if(!isViewingThisConvo){
           // Not viewing this chat — increment badge and unread count (skip if restricted)
           if(!senderRestricted){

@@ -1,15 +1,15 @@
 {
-  "version": "2026.0518.1206",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1206.zip",
-  "published_at": "2026-05-18T12:06:00Z",
+  "version": "2026.0518.1237",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1237.zip",
+  "published_at": "2026-05-18T12:37:00Z",
   "git_sha": "manual",
-  "title": "10 fixes — IME composition, stuck spinners, broken images, lazy load",
+  "title": "8 fixes — Blocked users filtered, restrict mode now actually silent, PWA polish",
   "notes": [
-    "FIX: 4 stuck-spinner spots — FollowersList modal, post search, Anonymous Connect matchmaking, all had .then() with no .catch() (rejection would leave 'Loading...' forever).",
-    "FIX: 9 Enter handlers across chat / comments / search now respect IME composition. Mandarin/Japanese/Korean users typing in their IME will no longer accidentally send a half-composed message when pressing Enter to confirm a candidate.",
-    "FIX: ~10 image sites in feed / notifications / likers / experts strip / composer now fall back to user initials when the URL 404s. New ImgWithFallback wrapper component.",
-    "PERF: Feed post images now load=lazy — faster first paint and less mobile data on long sessions.",
-    "FIX: Emoji-prefix names like '🤦‍♀️ Maria' now render correctly in initials avatars. New safeInitials utility uses Array.from for surrogate-pair-safe slicing. Applied to ~15 sites across HomeScreen, App, SearchScreen, IncomingCallModal.",
-    "POLISH: TopBarAvatar + Moments header avatar both got onError fallback to initials."
+    "CRITICAL FIX: Blocked users' posts will no longer appear in your feed (the block button worked but no consumer was filtering — fixed feed render AND realtime INSERT).",
+    "CRITICAL FIX: Blocked users' moments are now filtered from the stories strip (was showing their avatar + their moments still played).",
+    "FIX: Restrict mode in chat header now takes effect IMMEDIATELY (was waiting until you reloaded the app). 3 stale-closure regressions defeating Round 2's silent-restrict feature — inbox notifications, chat-level notifications, and the global app badge ALL ignored the restrict toggle until reload.",
+    "FIX: Android home-screen app icon no longer mangled — dropped maskable icon variants (React-atom logo had no safe zone to mask).",
+    "FIX: Changing your name in Edit Profile now updates the top-bar avatar's tooltip immediately (was waiting for next reload).",
+    "FIX: Ringtone stops when you background the tab during an incoming call (prevents residual scheduled oscillators firing all at once when you come back)."
   ]
 }

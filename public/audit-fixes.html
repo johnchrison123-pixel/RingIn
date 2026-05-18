@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.35 — +10 first-paint/input/image fixes (153 fixes total)</h2>
-<p>Round 14 audited first-paint quirks + form input edges + image URL handling. Wins: <b>4 stuck-spinner spots fixed</b> (FollowersList, doSearch, AnonymousConnect, all had .then() with no .catch), <b>9 Enter handlers now respect IME composition</b> (Mandarin/Japanese/Korean users no longer send half-composed messages), <b>~10 img sites get onError fallback to initials</b> via new ImgWithFallback component (broken avatars no longer show browser broken-image icon in feed/notifications/likers/experts strip/composer), <b>feed images now load=lazy</b> (faster first-paint on long feeds, less bandwidth), <b>15+ emoji-prefix names</b> render correctly via new safeInitials util (was rendering corrupt half-surrogates for users like "🤦‍♀️ Maria"). Bundle <code>2026.0518.1206</code> + APK <code>ringin-v3.35.apk</code>.</p>
+<h2>✅ APK v3.36 — +8 block/restrict/PWA fixes (161 fixes total)</h2>
+<p>Round 15 audited PWA + cross-screen state coherence + audio. <b>CRITICAL: blocked users' posts kept appearing in feed + their moments kept playing</b> (the block button existed but no consumer was filtering — fixed both feed render AND moments strip). <b>3 stale-closure regressions defeating Round 2 restrict</b> — inbox channel, chat channel, and App-level global badge all captured the restricted_users set at subscribe time so toggling Restrict took no effect until reload. Fixed all 3 via ref-mirror pattern. Plus <b>manifest maskable icons dropped</b> (was mangled React-atom on Android home screen), <b>profile name change broadcasts</b> so top-bar updates immediately, <b>ringtone stops on tab background</b>. Bundle <code>2026.0518.1237</code> + APK <code>ringin-v3.36.apk</code>.</p>
 </div>
 
 <div class="stats">

@@ -19,6 +19,7 @@ import {toastSuccess,toastError,toastWarn} from '../utils/toast';
 import {detectContent,autoTagPost} from '../utils/mlService';
 import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
+import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed */
 
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
@@ -1622,6 +1623,10 @@ export default function HomeScreen(props){
   // Realtime: likes, comment counts, new posts in feed (shared hook)
   usePostsRealtime(sbHome,'public-posts',currentUserId,setPosts,setCommentsCache,{
     onNewPost:function(raw){
+      // R15 FIX #1: skip realtime INSERT for blocked authors so they can't
+      // re-appear in the feed via a fresh post even though render-time
+      // filter would also catch it (avoids unnecessary state churn).
+      if (raw && isBlockedSync(raw.user_id || raw.userId)) return;
       var newPost=mapPost(raw);
       setPosts(function(prev){
         if(prev.find(function(pp){return pp.id===newPost.id;})) return prev;
@@ -2877,6 +2882,9 @@ export default function HomeScreen(props){
           if (aud === 'only_me') return false;
           return true;
         });
+        // R15 FIX #1: hide posts whose author the current user has blocked.
+        // Uses the cached Set from blocks.js (warmed at App level) so this is O(1).
+        src = src.filter(function(p){ return !isBlockedSync(p.userId || p.user_id); });
         // Diversity cap: stop the same author from dominating the feed via
         // 4+ consecutive posts. Pulls a same-author run > 3 down past the
         // next available different-author post. Preserves overall ordering;

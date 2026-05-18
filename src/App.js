@@ -394,6 +394,27 @@ export default function App() {
     };
   }, []);
 
+  // R15 FIX #5: app-level restricted-users set so the global badge listener
+  // can suppress badge bumps + notification sound from restricted senders.
+  // Mirrored into a ref because the badge channel useEffect deps are
+  // [appUserId] only and would otherwise read a stale snapshot.
+  var appRestrictedSetRef = useRef(new Set());
+  useEffect(function(){
+    if(!appUserId) return;
+    function load(){
+      try {
+        supabase.from('restricted_users').select('restricted_id').eq('restrictor_id', appUserId).then(function(r){
+          if (r && !r.error && r.data) {
+            appRestrictedSetRef.current = new Set(r.data.map(function(x){ return x.restricted_id; }));
+          }
+        });
+      } catch(_) {}
+    }
+    load();
+    window.addEventListener('ringin:restricted-changed', load);
+    return function(){ window.removeEventListener('ringin:restricted-changed', load); };
+  },[appUserId]);
+
   // ── Global message badge listener — always active regardless of tab ──
   useEffect(function(){
     if(!appUserId) return;
@@ -404,6 +425,8 @@ export default function App() {
     // Realtime: increment badge when new message arrives
     var ch = supabase.channel('app-inbox-badge-'+appUserId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+appUserId},function(p){
+        // R15 FIX #5: silent for restricted senders — no badge bump, no sound.
+        if (p && p.new && appRestrictedSetRef.current.has(p.new.sender_id)) return;
         // Don't increment if user is currently on messages tab (MessagesScreen handles it there)
         setActiveTab(function(currentTab){
           if(currentTab !== 'messages'){

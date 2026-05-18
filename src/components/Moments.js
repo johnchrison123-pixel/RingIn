@@ -2,6 +2,7 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {createPortal} from 'react-dom';
+import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #2: filter blocked users from moments strip */
 
 // R12 FIX #3: Mirror of HomeScreen.copyToClipboardWithToast — Moments lives
 // in components/ and we don't want to import from screens/. Same legacy
@@ -1951,6 +1952,9 @@ export default function Moments(props){
     if (!m) return false;
     if (_mutedMomentUsers.indexOf(m.userId) >= 0) return false;
     if (m.expertId != null && _mutedMomentUsers.indexOf(String(m.expertId)) >= 0) return false;
+    // R15 FIX #2: also drop moments authored by users the viewer has blocked.
+    if (isBlockedSync(m.userId)) return false;
+    if (m.expertId != null && isBlockedSync(String(m.expertId))) return false;
     return true;
   });
   var showAdd = props.showAdd !== false;

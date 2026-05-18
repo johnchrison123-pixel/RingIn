@@ -704,6 +704,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
         setProfileInfo(updated);
         try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
+        // R15 FIX #7: broadcast the new display name so TopBarAvatar (and any
+        // other listener mirroring the avatar-changed pattern) can refresh
+        // without a remount. Mirrors the existing 'ringin-avatar-changed'.
+        try { window.dispatchEvent(new CustomEvent('ringin-name-changed', {detail: {userId: userId, name: editName}})); } catch(_){}
         setShowEditProfile(false);
       });
     }).catch(function(e){
@@ -2235,7 +2239,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.35';
+              var APK_VERSION = 'v3.36';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
