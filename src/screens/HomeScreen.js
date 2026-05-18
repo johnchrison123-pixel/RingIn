@@ -155,6 +155,8 @@ function timeAgoUtil(dateStr){
   var date=new Date(dateStr);
   if (isNaN(date.getTime())) return '';
   var diff=Math.floor((now-date)/1000);
+  // R11 FIX #2: clock skew (server ahead of client) → show 'Just now' instead of '-Nm ago'.
+  if (diff < 0) return 'Just now';
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
@@ -329,6 +331,14 @@ export function UserProfileView(props){
           return Object.assign({},p,{liked:snapU.liked,likes:snapU.likes,likedByIds:snapU.likedByIds});
         });});
       }
+    }).catch(function(e){
+      // R11 FIX #5: previously no .catch — rejected promise left optimistic
+      // state in place and triggered an unhandled rejection.
+      console.warn('[ringin] toggleLikeU reject:', e);
+      setUserPosts(function(prev){return prev.map(function(p){
+        if(p.id!==pid) return p;
+        return Object.assign({},p,{liked:snapU.liked,likes:snapU.likes,likedByIds:snapU.likedByIds});
+      });});
     });
   }
 
@@ -1050,6 +1060,17 @@ export default function HomeScreen(props){
           });
         });
       }
+    }).catch(function(e){
+      // R11 FIX #6: previously no .catch — a rejected insert (offline /
+      // network drop) left the optimistic local-id comment in the cache
+      // and the post comment count bumped. Symmetric rollback with the
+      // .then's res.error branch above.
+      console.warn('[ringin] submitComment reject:', e);
+      setCommentsCache(function(prev){
+        try{localStorage.setItem('comments_'+postId,JSON.stringify(snapComments));}catch(_){}
+        return Object.assign({},prev,{[postId]:snapComments});
+      });
+      setPosts(function(prev){return prev.map(function(p){return p.id===postId?Object.assign({},p,{comments:Math.max(0,(p.comments||1)-1)}):p;});});
     });
   }
 
@@ -1088,6 +1109,15 @@ export default function HomeScreen(props){
       if(!snap.liked&&snap.userId&&snap.userId!==userId){
         sbHome.from("notifications").insert([{user_id:snap.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar||'',type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
+    }).catch(function(e){
+      // R11 FIX #5: previously no .catch — a rejected promise (offline /
+      // network drop) left the optimistic state in place and threw an
+      // unhandled rejection. Match the .then's revert pattern.
+      console.warn('[ringin] toggleLike reject:', e);
+      setPosts(function(prev){return prev.map(function(p){
+        if(p.id!==pid) return p;
+        return Object.assign({},p,{liked:snap.liked,likes:snap.likes,likedBy:snap.likedBy,likedByIds:snap.likedByIds});
+      });});
     });
   }
 
@@ -1336,13 +1366,26 @@ export default function HomeScreen(props){
     var handler=function(){
       setShowNotifs(true);
       if(props.session&&props.session.user){
-        sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(){});
+        // R11 FIX #4: mark-all-read was fire-and-forget — a failed UPDATE
+        // left the badge at 0 in the UI but DB still flagged unread rows,
+        // so the next session would resurface them. Snapshot + rollback.
+        var snap = unreadNotif;
         setUnreadNotif(0);
+        sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(r){
+          if(r && r.error){
+            console.error('[ringin] mark-read failed:', r.error);
+            setUnreadNotif(snap);
+            try { toastError('Couldn\'t mark notifications as read'); } catch(_){}
+          }
+        }).catch(function(e){
+          console.warn('[ringin] mark-read reject:', e);
+          setUnreadNotif(snap);
+        });
       }
     };
     window.addEventListener('ringin-open-notifs', handler);
     return function(){ window.removeEventListener('ringin-open-notifs', handler); };
-  },[props.session]);
+  },[props.session,unreadNotif]);
   // FIX R10-2 (consumer half): App.js routes 'ringin:open-post-detail' from
   // SavedPostsScreen here as 'ringin:home-open-post'. We resolve the postId
   // against the current `posts` array and open the post detail view.
@@ -1572,6 +1615,8 @@ export default function HomeScreen(props){
     var date = new Date(dateStr);
     if (isNaN(date.getTime())) return '';
     var diff = Math.floor((now - date) / 1000);
+    // R11 FIX #2: clock skew (server ahead of client) → show 'Just now' instead of '-Nm ago'.
+    if (diff < 0) return 'Just now';
     if(diff < 60) return 'Just now';
     if(diff < 3600) return Math.floor(diff/60) + 'm ago';
     if(diff < 86400) return Math.floor(diff/3600) + 'h ago';
@@ -2253,8 +2298,20 @@ export default function HomeScreen(props){
         React.createElement('div', {className:'ibt', onClick:function(){
           setShowNotifs(!showNotifs);
           if(!showNotifs&&props.session&&props.session.user){
-            sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(){});
+            // R11 FIX #4: same fire-and-forget bug as the bell-event handler
+            // above — snapshot + rollback so the badge stays accurate on failure.
+            var snap2 = unreadNotif;
             setUnreadNotif(0);
+            sbHome.from('notifications').update({read:true}).eq('user_id',props.session.user.id).eq('read',false).then(function(r){
+              if(r && r.error){
+                console.error('[ringin] mark-read failed:', r.error);
+                setUnreadNotif(snap2);
+                try { toastError('Couldn\'t mark notifications as read'); } catch(_){}
+              }
+            }).catch(function(e){
+              console.warn('[ringin] mark-read reject:', e);
+              setUnreadNotif(snap2);
+            });
           }
         }, style:{cursor:'pointer',position:'relative'}},
           React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'var(--t2)',strokeWidth:2,width:15,height:15},

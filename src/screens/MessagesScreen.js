@@ -29,6 +29,8 @@ function timeAgo(dateStr){
   var date = new Date(dateStr);
   if (isNaN(date.getTime())) return '';
   var diff = Math.floor((now - date)/1000);
+  // R11 FIX #2: clock skew (server ahead of client) → show 'Just now' instead of '-Nm ago'.
+  if (diff < 0) return 'Just now';
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
@@ -268,6 +270,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               });
               try { console.warn('[ringin] reaction insert failed:', r.error.message); } catch(_){}
             }
+          })
+          .catch(function(e){
+            // R11 FIX #8: Round 10 added .catch to the DELETE branch — the
+            // INSERT counterpart was missed. Symmetric rollback so a rejected
+            // promise (offline / network drop) doesn't leave a stuck emoji.
+            setReactionsByMsg(rxnSnap);
+            try { console.warn('[ringin] reaction insert reject:', e); } catch(_){}
           });
       }
     } catch (_) {}

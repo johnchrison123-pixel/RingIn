@@ -152,11 +152,16 @@ function playProfEmojiClick(){playSound('emoji');}
 function playProfPostSound(){playSound('send');}
 function timeAgoProf(dateStr){
   if(!dateStr) return '';
+  // R11 FIX #3: removed manual 'Z' appending — same fix Round 7 applied to
+  // HomeScreen + MessagesScreen. Forcing UTC on a string that was already
+  // local-ISO double-shifted the display by the TZ offset. Browser handles
+  // ISO with/without 'Z' or '+HH:MM' correctly on its own.
   var now=new Date();
-  var str=dateStr.toString();
-  if(!str.includes('Z')&&!str.includes('+')) str=str+'Z';
-  var date=new Date(str);
+  var date=new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
   var diff=Math.floor((now-date)/1000);
+  // R11 FIX #2: clock skew (server ahead of client) → show 'Just now' instead of '-Nm ago'.
+  if (diff < 0) return 'Just now';
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
@@ -368,6 +373,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         return;
       }
       try{ toastSuccess('✏️ Post updated'); }catch(e){}
+    }).catch(function(e){
+      // R11 FIX #7: Round 7 added .catch to saveEditProfile but this sibling
+      // was missed. Mirror the same pattern: rollback + toast + log.
+      console.warn('[ringin] saveEditPostProf reject:', e);
+      setMyPosts(snap);
+      setEditPostProfData(null);
+      try{ toastError('Failed to edit post'); }catch(_){}
     });
   }
 
@@ -1107,12 +1119,20 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   if(showActivityLog){
     // Group items by date label
     var tz=localStorage.getItem('user_timezone')||'UTC';
+    // R11 FIX #9: previously "Today"/"Yesterday" compared d.toDateString()
+    // (browser local TZ) but the long-form fallback used `timeZone: tz`.
+    // If browser TZ and stored TZ diverged, a row could be tagged "Today"
+    // by toDateString but show a different long-form date elsewhere.
+    // Compare ALL day strings under the same stored timeZone.
     function dayLabel(iso){
       var d=new Date(iso);
-      var today=new Date();
-      var yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
-      if(d.toDateString()===today.toDateString()) return 'Today';
-      if(d.toDateString()===yesterday.toDateString()) return 'Yesterday';
+      if (isNaN(d.getTime())) return '';
+      var dayOpts={timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'};
+      var todayStr = new Date().toLocaleDateString([],dayOpts);
+      var yesterdayStr = new Date(Date.now() - 86400000).toLocaleDateString([],dayOpts);
+      var rowStr = d.toLocaleDateString([],dayOpts);
+      if (rowStr === todayStr) return 'Today';
+      if (rowStr === yesterdayStr) return 'Yesterday';
       return d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric',timeZone:tz});
     }
     function fmtTime(iso){return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:tz});}
@@ -2214,7 +2234,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.31';
+              var APK_VERSION = 'v3.32';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

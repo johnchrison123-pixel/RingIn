@@ -1,17 +1,18 @@
 {
-  "version": "2026.0518.0951",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0951.zip",
-  "published_at": "2026-05-18T09:51:00Z",
+  "version": "2026.0518.1022",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1022.zip",
+  "published_at": "2026-05-18T10:22:00Z",
   "git_sha": "manual",
-  "title": "8 query/event fixes — Download data, Saved Posts open, rollback gaps",
+  "title": "11 fixes — clock-skew calls, timeAgo neg, missing .catches, TZ consistency",
   "notes": [
-    "FIX: Activity Log was exporting messages with empty bodies (querying nonexistent column — should be `text` not `content`)",
-    "FIX: Saved Posts can now actually be opened — the dispatched event had ZERO consumers, so tapping a saved post did nothing. Wired App.js → HomeScreen chain.",
-    "FIX: Clear all notifications now rolls back on RLS/network failure (was silently restoring on next mount)",
-    "FIX: Delete moment now actually checks for errors — was showing 'Deleted ✓' even when the DB delete failed",
-    "FIX: Delete post from your profile now rolls back on failure (matches the HomeScreen fix from Round 7)",
-    "FIX: Block user now verifies the server write succeeded before claiming the user is blocked (was lying on failure)",
-    "FIX: Sending a chat message during a network drop now removes the optimistic bubble + shows 'Message failed' (was leaving a stuck-forever ghost message)",
-    "FIX: Un-reacting to a message on a failing network now rolls back the optimistic UI (was showing reaction gone but it'd reappear next chat open)"
+    "CRITICAL FIX: Incoming-call invites were being silently dropped if your device clock was even 60 seconds behind the server. Now tolerates clock skew in both directions + widens stale window to 5 minutes.",
+    "FIX: Posts/messages from the future (server-time ahead of your clock) no longer render as '-3m ago' — show 'Just now' instead. Fixed in 4 timeAgo functions across the app.",
+    "FIX: ProfileScreen timeAgo had a leftover bug Round 7 missed — posts showed different times on Home vs Profile for users in non-UTC timezones.",
+    "FIX: Mark-all-notifications-read now rolls back on RLS/network failure (was zeroing the badge locally even when server stayed unread → next reload popped the badge right back).",
+    "FIX: 5 more silent-failure paths — toggleLike, toggleLikeU, submitComment, reaction INSERT, saveEditPostProf — all now roll back on raw network rejects with user-visible toasts.",
+    "FIX: Activity log day grouping ('Today'/'Yesterday') was mixing browser TZ + stored TZ. Now uses your stored TZ consistently.",
+    "POLISH: useFollow now toasts on failure (was silent + console-only), follow button stops looking 'stuck'.",
+    "POLISH: Wallet coin balance can't display negative values (clamped in setSharedCoinBalance to mirror CallScreen guard).",
+    "POLISH: Moment viewer no longer says 'just now ago' (cosmetic)."
   ]
 }

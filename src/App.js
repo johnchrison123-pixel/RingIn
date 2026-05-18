@@ -445,10 +445,15 @@ export default function App() {
 
     function handleInvite(inv){
       if(!inv || inv.status !== 'ringing') return;
-      // Stale invites (>60s old) — caller has given up
+      // Stale invites (>5min old) — caller has given up.
+      // R11 FIX #1: tolerate clock skew. If user clock is BEHIND server
+      // (rawAge negative — server timestamp is "future"), treat as fresh
+      // instead of dropping. If user clock is AHEAD by minutes, the old
+      // 60s window would drop legit calls — widen to 5 min for safety.
       try{
-        var ageMs = Date.now() - new Date(inv.created_at).getTime();
-        if(ageMs > 60000) return;
+        var rawAge = Date.now() - new Date(inv.created_at).getTime();
+        var ageMs = rawAge < 0 ? 0 : rawAge;
+        if(ageMs > 5 * 60 * 1000) return;
       }catch(e){}
       // Never re-show a previously dismissed/accepted/rejected invite
       if(dismissedInvitesRef.current.has(inv.id)) return;

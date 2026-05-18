@@ -95,6 +95,10 @@ export function setSharedCoinBalance(newBalance, opts){
   opts = opts || {};
   var n = Number(newBalance);
   if (isNaN(n)) return;
+  // R11 FIX #10: clamp negatives — call deduction code can race and pass
+  // a negative number when balance < cost. Mirrors the guard CallScreen.js
+  // (~line 395) already applies before writing back to the profile.
+  if (n < 0) n = 0;
   // FIX #1: write to BOTH the per-user key (if we know whose balance this
   // is) AND the legacy global key so any code still reading the legacy
   // key sees the new value during the migration window.

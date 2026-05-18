@@ -1469,7 +1469,12 @@ function MomentViewer(props){
                     : React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}}, initial),
                   React.createElement('div',{style:{flex:1,minWidth:0}},
                     React.createElement('div',{style:{fontSize:'13.5px',color:'#fff',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, displayName),
-                    React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginTop:'1px'}}, v.viewed_at ? relativeTime(v.viewed_at) + ' ago' : 'recently')
+                    React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginTop:'1px'}}, v.viewed_at ? (function(){
+                      // R11 FIX #11: relativeTime returns 'just now' for <1 min — appending
+                      // ' ago' produced 'just now ago'. Only append for the time-unit cases.
+                      var rel = relativeTime(v.viewed_at);
+                      return /^(just now|now)$/i.test(rel) ? rel : (rel + ' ago');
+                    })() : 'recently')
                   )
                 );
               })
