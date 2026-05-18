@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.28 — +9 more fixes after a fresh post-v3.27 audit (92 fixes total)</h2>
-<p>Ran a fresh full-app audit after shipping v3.27. Found 13 actionable items the previous round missed. Fixed 9 in this batch (4 deferred — JSX→React.createElement on Workshops, OTA Capgo edge case, popstate URL on FF, RINGIN_BUILD label). Biggest wins this round: <b>saveEditProfile bio merge fix</b> (the ONE Edit Profile path Batch 1 missed — was wiping cover/location/notif prefs on save), <b>[mshare] inbox+chat render</b> (was showing raw text), <b>HomeScreen upload spinners stuck</b> (no .catch on getPublicUrl failures), <b>SIGNED_OUT cache cleanup</b> (next user no longer sees previous user's data). APK <code>ringin-v3.28.apk</code> on Desktop. Bundle <code>2026.0518.0824</code>.</p>
+<h2>✅ APK v3.29 — +8 more fixes after another strict-filter audit (100 fixes total)</h2>
+<p>Round 8 caught real bugs even after 92 prior fixes: <b>Save All "✓" lied about success</b> (silent data loss), <b>saveEditProfile + Wallet processPayment had no .catch</b> (stuck buttons on network errors), <b>Wallet "You are buying" header had no price</b> (empty div where ₹X should be), <b>UserProfileView share crashed on image-only posts</b>, <b>hardware back during a call leaked Agora session + DB row</b> (now properly hangs up + persists coins), <b>Moments share insert was writing to nonexistent `content:` column</b> (silently failing — recipient never got the moment). Bundle <code>2026.0518.0845</code> + APK <code>ringin-v3.29.apk</code> on Desktop.</p>
 </div>
 
 <div class="stats">

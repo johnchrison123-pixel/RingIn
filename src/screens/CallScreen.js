@@ -113,6 +113,11 @@ export default function CallScreen(props){
   // deduction. The ref is updated in a useEffect below.
   var localCoinsRef = useRef(coins);
   useEffect(function(){ localCoinsRef.current = localCoins; }, [localCoins]);
+  // ROUND 8 FIX #6: phaseRef mirror — the 'ringin:back-call' listener is
+  // registered once with empty deps so it can't read the latest `phase`
+  // directly. The mirror lets the listener bail if the call already ended.
+  var phaseRef = useRef(phase);
+  useEffect(function(){ phaseRef.current = phase; }, [phase]);
   var mutedS = useState(false); var muted = mutedS[0]; var setMuted = mutedS[1];
   // Speaker off = normal call volume (100). Speaker on = loudspeaker boost (250).
   // Browser can't actually route to earpiece — this is volume-based "loudspeaker" mode.
@@ -538,6 +543,22 @@ export default function CallScreen(props){
         }
       }catch(e){}
     };
+  }, []);
+
+  // ROUND 8 FIX #6: Hardware-back during an active call used to just
+  // setActiveCall(null) at the App.js level — that ripped CallScreen out
+  // of the tree without running hangup(), leaking the Agora client +
+  // leaving the call_invites row stuck in 'ringing' + skipping the coin
+  // persist + transactions write. App.js now dispatches this event before
+  // unmounting so we can hangup cleanly first.
+  useEffect(function(){
+    function onBackCall(){
+      try {
+        if (phaseRef.current !== 'ended' && !endedRef.current) hangup('caller_hangup');
+      } catch(_){}
+    }
+    window.addEventListener('ringin:back-call', onBackCall);
+    return function(){ window.removeEventListener('ringin:back-call', onBackCall); };
   }, []);
 
   // Mute/Speaker handlers — wrapped in useCallback with empty deps so the

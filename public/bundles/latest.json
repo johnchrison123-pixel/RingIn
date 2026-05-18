@@ -1,18 +1,17 @@
 {
-  "version": "2026.0518.0824",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0824.zip",
-  "published_at": "2026-05-18T08:24:00Z",
+  "version": "2026.0518.0845",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0845.zip",
+  "published_at": "2026-05-18T08:45:00Z",
   "git_sha": "manual",
-  "title": "9 more audit fixes — Edit Profile bio safe, [mshare] renders, uploads unstuck",
+  "title": "8 more fixes — Save All honesty, stuck spinners, share crash, back-during-call",
   "notes": [
-    "DATA LOSS FIX: Edit Profile dialog now deep-merges into your bio (was wiping cover/location/notif prefs every time you tapped Save — same class of bug as the v3.27 Save All fix, missed in that pass)",
-    "FIX: [mshare] moment shares now render as a clickable 'Shared a moment' card in chat + inbox (was showing raw '[mshare]https://...' text)",
-    "FIX: Image and video upload spinners no longer stick forever on bucket misconfig or network error",
-    "FIX: Sign-out now wipes per-user caches (convos, profile, avatar, coins, saved posts) — next user signing in on the same device no longer sees previous user's data flash",
-    "FIX: Save All now persists timezone (was missing from the bio.location write, breaking cross-device sync)",
-    "FIX: 'Last seen' now updates immediately when you return to the app (was waiting up to 60s)",
-    "POLISH: 11 more raw alert(...) calls in HomeScreen replaced with toasts (errors no longer block the JS thread)",
-    "FIX: Inbox pull-to-refresh now reads the correct scroll position (was always firing because outer flex container has no scroll)",
-    "FIX: Image upload error no longer flashes broken-image icon (blob URL revoke deferred until after the render commits)"
+    "FIX: Account Settings 'All Saved ✓' now only shows after the write actually succeeds (was lying on network errors)",
+    "FIX: Edit Profile save button no longer stuck on 'Saving...' if the network fails — now shows a toast and resets",
+    "FIX: Wallet purchase 'Processing...' no longer stuck forever on network reject — properly resets + toasts the error",
+    "FIX: Wallet 'You are buying' confirm screen now shows the ₹ price (was an empty grey row)",
+    "FIX: Sharing an image-only post from your profile no longer crashes",
+    "FIX: Pressing the hardware back button during a call now properly hangs up — leaves Agora cleanly, persists coins, updates the call_invites row, writes the in-chat call log (was silently leaving zombie sessions)",
+    "FIX: Photo upload failure now shows a toast instead of a blocking alert dialog",
+    "FIX: Sharing a moment to a friend now actually delivers — was writing to a column that doesn't exist in the messages table"
   ]
 }

@@ -694,6 +694,12 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
         setShowEditProfile(false);
       });
+    }).catch(function(e){
+      // ROUND 8 FIX #2: outer SELECT (or downstream promise) reject left UI stuck
+      // on "Saving..." with no feedback. Surface error + clear loading.
+      setSavingEdit(false);
+      try{ toastError('Save failed — try again'); }catch(_){}
+      console.warn('[ringin] saveEditProfile failed', e);
     });
   }
 
@@ -1362,11 +1368,20 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                 timezone: acctTz,
               });
               sbProfile.from('profiles').update({full_name:acctName,bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(r2){
-                if(r2.error)console.error('RingIn Error [saveAll]:', r2.error);
+                if(r2.error){
+                  console.error('RingIn Error [saveAll]:', r2.error);
+                  // ROUND 8 FIX #1: only acknowledge save on confirmed success
+                  try{ toastError('Failed to save — try again'); }catch(_){ }
+                  return;
+                }
+                // ROUND 8 FIX #1: ack moved INSIDE success branch (was firing before write)
+                setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
               });
             });
+          } else {
+            // No userId — local-only save still acknowledges
+            setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
           }
-          setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
         },
         style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'30px'}
       },acctSaved?'All Saved ✓':'Save All'),
@@ -2196,7 +2211,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.28';
+              var APK_VERSION = 'v3.29';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

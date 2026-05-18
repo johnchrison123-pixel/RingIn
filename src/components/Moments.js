@@ -354,12 +354,14 @@ function MomentViewer(props){
     var payload = '[mshare]' + link + '|' + (captionText || 'Shared a moment');
     try {
       var convId = [myUserId, u.id].sort().join('_');
+      // ROUND 8 FIX #8: removed `content: payload` — the `messages` table
+      // only has `text`, writing to a non-existent column made the INSERT
+      // fail silently so the recipient never got the shared moment.
       sb.from('messages').insert([{
         conversation_id: convId,
         sender_id: myUserId,
         receiver_id: u.id,
         text: payload,
-        content: payload,
       }]).then(function(){}).catch(function(){});
     } catch(_){}
     // Mark as sent in the UI immediately (optimistic)

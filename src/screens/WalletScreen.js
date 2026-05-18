@@ -149,12 +149,20 @@ export default function WalletScreen(props){
             if(tr && tr.data && tr.data[0]){
               setTransactions(function(prev){return [tr.data[0]].concat(prev);});
             }
-          });
+          }).catch(function(){ /* tx insert failure shouldn't block UI — purchase already succeeded */ });
 
           setDone(true);
           setPaying(false);
           toastSuccess('🎉 Payment successful! +'+addedCoins+' coins');
+        }).catch(function(e){
+          // ROUND 8 FIX #3: inner UPDATE network reject left UI stuck on "Processing..."
+          setPaying(false);
+          try{ toastError('Payment failed: '+((e&&e.message)?e.message:'network error')); }catch(_){}
         });
+      }).catch(function(e){
+        // ROUND 8 FIX #3: outer SELECT network reject left UI stuck on "Processing..."
+        setPaying(false);
+        try{ toastError('Payment processing failed — try again'); }catch(_){}
       });
     },1200);
   }
@@ -178,7 +186,8 @@ export default function WalletScreen(props){
       React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'4px'}},'You are buying'),
       React.createElement('div',{style:{fontSize:'28px',fontWeight:800,color:'var(--ac)',marginBottom:'4px'}},'🪙 '+selected.coins+' coins'),
       selected.bonus>0 && React.createElement('div',{style:{fontSize:'11px',color:'var(--green)',marginBottom:'4px'}},'Includes '+selected.bonus+' bonus coins!'),
-      React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)'}})
+      // ROUND 8 FIX #4: price div was empty — third arg missing, customers couldn't see what they were paying
+      React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)'}},'₹'+selected.price)
     ),
     React.createElement('div',{style:{padding:'0 18px 10px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'10px'}},'Payment Method'),

@@ -636,7 +636,7 @@ export function UserProfileView(props){
             React.createElement('button',{
               onClick:function(){
                 var url='https://ring-in.vercel.app/post/'+p.id;
-                if(navigator.share){navigator.share({title:'Check this out on RingIn',text:p.text.substring(0,100),url:url}).catch(function(){});}
+                if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url}).catch(function(){});} // ROUND 8 FIX #5: guard null p.text
                 else{copyToClipboardWithToast(url,'🔗 Link copied to clipboard');}
               },
               style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}

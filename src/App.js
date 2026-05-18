@@ -82,7 +82,16 @@ export default function App() {
     } catch(_) {}
     // 2-7. App-level nav
     if (incomingCall) { setIncomingCall(null); return true; }
-    if (activeCall) { setActiveCall(null); return true; }
+    if (activeCall) {
+      // ROUND 8 FIX #6: nulling activeCall directly leaked the Agora client
+      // + left the DB invite row in 'ringing' state + skipped the coin
+      // transactions row write. Dispatch event first so CallScreen runs
+      // its hangup('caller_hangup') sequence (leave + DB update + tx
+      // write + coin persist + broadcast) BEFORE we unmount it.
+      try { window.dispatchEvent(new CustomEvent('ringin:back-call')); } catch(_){}
+      setActiveCall(null);
+      return true;
+    }
     if (viewUserStack && viewUserStack.length > 0) { popViewUser(); return true; }
     if (activeTab === 'search' && selectedExpert) { setSelectedExpert(null); return true; }
     if (activeTab === 'wallet') { setActiveTab(prevTab); return true; }

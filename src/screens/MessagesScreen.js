@@ -1305,7 +1305,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               console.error('RingIn Error [chatPhotoUpload]:', r.error&&r.error.message?r.error.message:'Unknown error');
               setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
               revokeLocal();
-              alert('Photo upload failed: '+r.error.message);
+              // ROUND 8 FIX #7: replace blocking alert with non-modal toast (matches
+              // the other failure paths in this same function, line 1319/1331)
+              try { setToast('Photo upload failed: '+(r.error.message||'')); setTimeout(function(){setToast('');},2500); } catch(_){ }
               return;
             }
             // FIX #9: getPublicUrl().data.publicUrl can be undefined — guard
