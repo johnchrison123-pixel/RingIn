@@ -198,6 +198,11 @@ export function UserProfileView(props){
   // Report modal state — replaces the previously fake alert("Thank you...").
   var reportTargetUS=useState(null); var reportTargetU=reportTargetUS[0]; var setReportTargetU=reportTargetUS[1];
 
+  // R12 FIX #5: per-post in-flight guard for toggleLikeU — prevents the
+  // double-toggle race where a fast tap fires two RPC calls and the second
+  // (still-pending) `.then` reverts using a stale snapshot.
+  var likingURef = useRef({});
+
   // Comments state
   var openCommentsUS=useState(null); var openCommentsU=openCommentsUS[0]; var setOpenCommentsU=openCommentsUS[1];
   var commentsCacheUS=useState({}); var commentsCacheU=commentsCacheUS[0]; var setCommentsCacheU=commentsCacheUS[1];
@@ -311,9 +316,12 @@ export function UserProfileView(props){
 
   function toggleLikeU(pid){
     if(!currentUserId) return;
+    // R12 FIX #5: in-flight guard — second tap during pending RPC is ignored
+    if (likingURef.current[pid]) return;
+    likingURef.current[pid] = true;
     // Capture snapshot before optimistic update for correct revert
     var snapU = userPosts.find(function(p){return p.id===pid;});
-    if(!snapU) return;
+    if(!snapU){ likingURef.current[pid] = false; return; }
     var newLikedU = !snapU.liked;
     playLikeSound(newLikedU);
     var newIdsU = newLikedU ? [currentUserId].concat(snapU.likedByIds||[]) : (snapU.likedByIds||[]).filter(function(id){return id!==currentUserId;});
@@ -331,6 +339,7 @@ export function UserProfileView(props){
           return Object.assign({},p,{liked:snapU.liked,likes:snapU.likes,likedByIds:snapU.likedByIds});
         });});
       }
+      likingURef.current[pid] = false;
     }).catch(function(e){
       // R11 FIX #5: previously no .catch — rejected promise left optimistic
       // state in place and triggered an unhandled rejection.
@@ -339,6 +348,7 @@ export function UserProfileView(props){
         if(p.id!==pid) return p;
         return Object.assign({},p,{liked:snapU.liked,likes:snapU.likes,likedByIds:snapU.likedByIds});
       });});
+      likingURef.current[pid] = false;
     });
   }
 
@@ -494,7 +504,7 @@ export function UserProfileView(props){
                 toastSuccess('🔖 Saved to your bookmarks');
               }).catch(function(){toastError('Failed to save');});
             }},
-            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}toastSuccess('🔗 Link copied!');setPostMenuU(null);}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuU(null);}},/* R12 FIX #2: use helper so toast only fires on actual copy success */
             {icon:'➕',label:(props.following&&props.following[p.userId]?'✓ Unfollow ':'Follow ')+displayName,fn:function(){props.toggleFollow(p.userId,displayName,avatarUrl,'RingIn Member');setPostMenuU(null);}},
             {icon:'😶',label:'Not interested',fn:function(){setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenuU(null);}},
             {icon:'🚩',label:'Report',red:true,fn:function(){setReportTargetU({type:'post',id:p.id,label:'this post'});setPostMenuU(null);}}
@@ -763,6 +773,11 @@ export default function HomeScreen(props){
   var currentUserName = props.session&&props.session.user ? ((props.session.user.email||'').split('@')[0] || null) : null;
   var currentUserAvatar = currentUserId ? localStorage.getItem('avatar_'+currentUserId) : null;
 
+  // R12 FIX #5: per-post in-flight guard for toggleLike — prevents the
+  // double-toggle race where a fast tap fires two RPC calls and the second
+  // (still-pending) `.then` reverts using a stale snapshot.
+  var likingRef = useRef({});
+
   // ── Moments: file picker + composer state ──────────────────────────────
   // Real user-posted moments fetched from Supabase (`moments` table) and
   // cached in localStorage so the poster sees their own immediately even
@@ -896,7 +911,20 @@ export default function HomeScreen(props){
     var f = e.target && e.target.files && e.target.files[0];
     // Reset value so the user can pick the same file twice in a row
     try{ e.target.value = ''; }catch(_){}
-    if(f) setPendingMomentFile(f);
+    if(!f) return;
+    // R12 FIX #1: MIME + size guards. Pre-fix, picking a 50MB DSLR JPG or a
+    // video file would either OOM the canvas decode on Android or silently
+    // upload to chat-images and fail at insert. Validate BEFORE compress.
+    var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp','image/heic','image/heif'];
+    if (f.type && allowed.indexOf(f.type) < 0) {
+      try { toastWarn('Only images supported for moments (JPG, PNG, GIF, WebP)'); } catch(_){}
+      return;
+    }
+    if (f.size > 10 * 1024 * 1024) {
+      try { toastWarn('Image must be under 10MB'); } catch(_){}
+      return;
+    }
+    setPendingMomentFile(f);
   }
 
   function postMoment(file, caption, opts){
@@ -1081,9 +1109,12 @@ export default function HomeScreen(props){
     var userAvatar = userId ? localStorage.getItem("avatar_"+userId) : null;
     if(!userId) return;
     if(typeof pid !== "string") return;
+    // R12 FIX #5: in-flight guard — second tap during pending RPC is ignored
+    if (likingRef.current[pid]) return;
+    likingRef.current[pid] = true;
     // Capture snapshot BEFORE optimistic update — used for correct revert + notification
     var snap = posts.find(function(p){return p.id===pid;});
-    if(!snap) return;
+    if(!snap){ likingRef.current[pid] = false; return; }
     var newLiked = !snap.liked;
     playLikeSound(newLiked);
     var newLikes = newLiked ? snap.likes+1 : Math.max(0,snap.likes-1);
@@ -1103,12 +1134,14 @@ export default function HomeScreen(props){
           if(p.id!==pid) return p;
           return Object.assign({},p,{liked:snap.liked,likes:snap.likes,likedBy:snap.likedBy,likedByIds:snap.likedByIds});
         });});
+        likingRef.current[pid] = false;
         return;
       }
       // Notify post owner only when this was a like action (snap.liked was false)
       if(!snap.liked&&snap.userId&&snap.userId!==userId){
         sbHome.from("notifications").insert([{user_id:snap.userId,from_user_id:userId,from_user_name:userName,from_user_avatar:userAvatar||'',type:"like",message:userName+" liked your post",post_id:pid,read:false}]).then(function(){});
       }
+      likingRef.current[pid] = false;
     }).catch(function(e){
       // R11 FIX #5: previously no .catch — a rejected promise (offline /
       // network drop) left the optimistic state in place and threw an
@@ -1118,6 +1151,7 @@ export default function HomeScreen(props){
         if(p.id!==pid) return p;
         return Object.assign({},p,{liked:snap.liked,likes:snap.likes,likedBy:snap.likedBy,likedByIds:snap.likedByIds});
       });});
+      likingRef.current[pid] = false;
     });
   }
 
@@ -1415,7 +1449,11 @@ export default function HomeScreen(props){
         setUnreadNotif(res.data.filter(function(n){return !n.read;}).length);
       }
     });
-    var ch = sbHome.channel('notifs-'+uid)
+    // R12 FIX #6: append a random suffix so a fast remount (StrictMode dev
+    // double-mount or session refresh) doesn't collide on the same channel
+    // name. The cleanup still removes the exact channel instance via `ch`.
+    var notifsChanName = 'notifs-' + uid + '-' + Math.random().toString(36).slice(2);
+    var ch = sbHome.channel(notifsChanName)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+uid},function(p){
         setNotifs(function(prev){return [p.new].concat(prev);});
         setUnreadNotif(function(n){return n+1;});
@@ -2274,7 +2312,7 @@ export default function HomeScreen(props){
                 toastSuccess('🔖 Saved to your bookmarks');
               }).catch(function(){toastError('Failed to save');});
             }},
-            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}toastSuccess('🔗 Link copied!');setPostMenu(null);}},
+            {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenu(null);}},/* R12 FIX #2: use helper so toast only fires on actual copy success */
             {icon:'➕',label:(following[p.userId]?'✓ Unfollow ':'Follow ')+p.name,fn:function(){toggleFollow(p.userId,p.name,p.img,'RingIn Member');setPostMenu(null);}},
             {icon:'😶',label:'Not interested',fn:function(){setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});setPostMenu(null);}},
             {icon:'🚩',label:'Report',red:true,fn:function(){setReportTarget({type:'post',id:p.id,label:'this post'});setPostMenu(null);}}

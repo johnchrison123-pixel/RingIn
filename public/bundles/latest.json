@@ -1,18 +1,14 @@
 {
-  "version": "2026.0518.1022",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1022.zip",
-  "published_at": "2026-05-18T10:22:00Z",
+  "version": "2026.0518.1055",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1055.zip",
+  "published_at": "2026-05-18T10:55:00Z",
   "git_sha": "manual",
-  "title": "11 fixes — clock-skew calls, timeAgo neg, missing .catches, TZ consistency",
+  "title": "6 fixes — Moment upload guard, clipboard fallback, call concurrency, like spam",
   "notes": [
-    "CRITICAL FIX: Incoming-call invites were being silently dropped if your device clock was even 60 seconds behind the server. Now tolerates clock skew in both directions + widens stale window to 5 minutes.",
-    "FIX: Posts/messages from the future (server-time ahead of your clock) no longer render as '-3m ago' — show 'Just now' instead. Fixed in 4 timeAgo functions across the app.",
-    "FIX: ProfileScreen timeAgo had a leftover bug Round 7 missed — posts showed different times on Home vs Profile for users in non-UTC timezones.",
-    "FIX: Mark-all-notifications-read now rolls back on RLS/network failure (was zeroing the badge locally even when server stayed unread → next reload popped the badge right back).",
-    "FIX: 5 more silent-failure paths — toggleLike, toggleLikeU, submitComment, reaction INSERT, saveEditPostProf — all now roll back on raw network rejects with user-visible toasts.",
-    "FIX: Activity log day grouping ('Today'/'Yesterday') was mixing browser TZ + stored TZ. Now uses your stored TZ consistently.",
-    "POLISH: useFollow now toasts on failure (was silent + console-only), follow button stops looking 'stuck'.",
-    "POLISH: Wallet coin balance can't display negative values (clamped in setSharedCoinBalance to mirror CallScreen guard).",
-    "POLISH: Moment viewer no longer says 'just now ago' (cosmetic)."
+    "FIX: Picking a moment photo now validates MIME (images only) + 10MB cap. Was OOM-ing Android when users picked 50MB DSLR raws.",
+    "FIX: 6 raw clipboard.writeText sites in Home + Moments now use proper helper — toast only fires on real success, falls back to legacy execCommand on Safari/WebView, shows error if both fail.",
+    "FIX: Tapping Call on another expert while your phone is ringing inbound no longer stacks two calls (was leaving the original caller staring at 'Ringing...' until timeout).",
+    "FIX: Rapid like-spam on a post no longer fires parallel RPC calls (could cause 2→3→2→1→2 flicker on error). In-flight guard per post.",
+    "FIX: Notifications realtime channel name unique-per-mount to prevent StrictMode double-subscribe collision."
   ]
 }

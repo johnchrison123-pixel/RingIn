@@ -615,6 +615,10 @@ export default function App() {
     // Double-tap guard — don't fire two inserts for one button press
     if(activeCallRef.current){ console.log('[ringin] startOutgoingCall ignored — already on a call'); return; }
     if(outgoingPendingRef.current){ console.log('[ringin] startOutgoingCall ignored — already pending'); return; }
+    // R12 FIX #4: also guard against stacking an outgoing call on top of a
+    // ringing incoming one — otherwise the user who taps "Call" while their
+    // phone is ringing ends up with two `calls` rows and both UIs fight.
+    if(incomingCallRef.current){ console.log('[ringin] startOutgoingCall ignored — incoming ring active'); return; }
     outgoingPendingRef.current = true;
 
     // CRITICAL: pre-generate the invite UUID client-side and use it as BOTH the row id

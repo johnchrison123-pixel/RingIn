@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.32 — +11 clock/rollback/parsing fixes (129 fixes total)</h2>
-<p>Round 11 audited optimistic rollback completeness + date/TZ handling + number parsing. Biggest win: <b>incoming-call invites were being silently dropped if your device clock was even 60 seconds behind the server</b> — phantom "no calls ringing" while caller saw normal UI. Also: <b>timeAgo functions rendered "-3m ago" on clock skew</b>, <b>ProfileScreen had a TZ bug Round 7 missed</b> (posts showed different times on Home vs Profile), <b>mark-all-notifications-read had no rollback</b> (badge zeroed locally even on server failure), plus <b>4 more missing .catch sites</b> (toggleLike + toggleLikeU + submitComment + reaction INSERT + saveEditPostProf) so failed actions don't leave ghost UI state. And useFollow now toasts on failure instead of staying silent. Bundle <code>2026.0518.1022</code> + APK <code>ringin-v3.32.apk</code>.</p>
+<h2>✅ APK v3.33 — +6 realtime/permission/race fixes (135 fixes total)</h2>
+<p>Round 12 audited realtime channels + clipboard/upload permissions + concurrent actions. <b>Moments file picker now validates MIME + 10MB size</b> (was OOM-ing Android on huge DSLR raws), <b>6 raw clipboard sites missed in Round 6 sweep</b> (2 in HomeScreen menus, 4 in Moments share flow) now use proper success/fail toasts, <b>tapping Call while phone is ringing inbound no longer stacks two calls</b>, <b>rapid like spam no longer creates parallel RPC flicker</b> (in-flight guard), <b>notifs channel name unique-per-mount</b> to prevent StrictMode double-subscribe collision. Bundle <code>2026.0518.1055</code> + APK <code>ringin-v3.33.apk</code>.</p>
 </div>
 
 <div class="stats">

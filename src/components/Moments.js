@@ -3,6 +3,35 @@ import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {createPortal} from 'react-dom';
 
+// R12 FIX #3: Mirror of HomeScreen.copyToClipboardWithToast — Moments lives
+// in components/ and we don't want to import from screens/. Same legacy
+// fallback so toast only fires on actual copy success.
+function _copyWithToast(text, onSuccess, onFail){
+  function legacy(t){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch(_) { return false; }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){ if (onSuccess) onSuccess(); }).catch(function(){
+        if (legacy(text)) { if (onSuccess) onSuccess(); } else if (onFail) onFail();
+      });
+      return;
+    }
+    if (legacy(text)) { if (onSuccess) onSuccess(); } else if (onFail) onFail();
+  } catch(_) {
+    if (legacy(text)) { if (onSuccess) onSuccess(); } else if (onFail) onFail();
+  }
+}
+
 // ── Mock moment slides used when no real data is wired up ─────────────────
 // Each "expert" gets a deterministic set of 3–4 gradient cards with captions
 // — chosen by hashing their id so the same person always sees the same set.
@@ -1284,16 +1313,16 @@ function MomentViewer(props){
               e.stopPropagation();
               var link = buildShareLink();
               var shareData = { title: 'Moment on RingIn', text: captionText || 'Check this moment on RingIn', url: link };
+              // R12 FIX #3: replace raw clipboard sites with _copyWithToast
+              // so the toast only fires on real copy success.
               try {
                 if (navigator.share) {
                   navigator.share(shareData).then(function(){ showToast('Shared'); }).catch(function(){});
                 } else {
-                  try { navigator.clipboard.writeText(link); } catch(_){}
-                  showToast('Link copied');
+                  _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
                 }
               } catch(_){
-                try { navigator.clipboard.writeText(link); } catch(_){}
-                showToast('Link copied');
+                _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
               }
               setShareSheet(false); setHoldPaused(false);
             },
@@ -1323,8 +1352,8 @@ function MomentViewer(props){
             onClick: function(e){
               e.stopPropagation();
               var link = buildShareLink();
-              try { navigator.clipboard.writeText(link); } catch(_){}
-              showToast('Link copied');
+              // R12 FIX #3: use _copyWithToast so toast only fires on real success
+              _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
               setShareSheet(false); setHoldPaused(false);
             },
             style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', flex: 1, minWidth: 0 }
@@ -1421,8 +1450,8 @@ function MomentViewer(props){
             var cur3 = slides[idx];
             if (cur3) {
               var link = 'https://ring-in.vercel.app/?moment=' + encodeURIComponent(cur3.id);
-              try { navigator.clipboard.writeText(link); } catch(_){}
-              showToast('Link copied');
+              // R12 FIX #3: use _copyWithToast so toast only fires on real success
+              _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
             }
           },
           style:{background:'none', border:'none', color:'#fff', fontSize:'15px', fontWeight:500, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
