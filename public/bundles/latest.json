@@ -1,16 +1,13 @@
 {
-  "version": "2026.0518.1701",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1701.zip",
-  "published_at": "2026-05-18T17:01:00Z",
+  "version": "2026.0518.2249",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.2249.zip",
+  "published_at": "2026-05-18T22:49:00Z",
   "git_sha": "manual",
-  "title": "7 fixes — Push-Accept deep link, OTA battery, coin cross-account leak, alert→toast (12 sites)",
+  "title": "Moments tiles: heart → round (Instagram-style)",
   "notes": [
-    "FIX: Tapping 'Accept' on a lock-screen call notification (when app is fully closed) now opens the ringing modal instead of doing nothing silently. Was a hoisting bug where the direct-accept path was always undefined.",
-    "FIX: OTA update check now skips when the app is backgrounded (Capacitor WebView persists across pause). Saves battery + bandwidth during long-idle periods on Android.",
-    "PRIVACY FIX: Coin balance from a previous user signing out no longer leaks into the next user's CallScreen on the same device. Was caused by a legacy global cache key getting written on every coin change.",
-    "FIX: Microphone-error and audio-publish-error alerts in calls replaced with non-blocking toasts — was blocking the JS thread mid-WebRTC handshake on Android, and pausing iOS PWA AudioContext (which could kill the next call's audio session).",
-    "FIX: 12 user-facing native alert() dialogs replaced with in-app toasts — profile image validation (file type / size 5MB), profile save errors, restrict/unrestrict feedback, account deletion confirmation, OTA update check results. CLAUDE.md explicitly banned native dialogs (they block JS thread + look out-of-place on Android).",
-    "FIX: User display names that contain only non-string types (e.g. corrupted profile.full_name as number) no longer crash the Moments viewer or chat menu. Added String() coercion before .split().",
-    "FIX: Hardware back button from any top-level tab (Search/Profile/Wallet/Messages) now always goes home. Was sometimes landing in Anonymous Connect screen if you'd previously tapped the connect orb."
+    "DESIGN: Moments strip tiles are now round Instagram-style circles instead of heart-shaped.",
+    "DESIGN: Unread-moment gradient ring + 2px gap between ring and avatar (matches Instagram exactly).",
+    "DESIGN: '+ add' badge on your own tile moved to bottom-right of the circle (was offset for the heart's pointy bottom).",
+    "Close Friends green-ring variant preserved. The separate chat-reaction heart-emoji lever in messages is unchanged (different feature)."
   ]
 }

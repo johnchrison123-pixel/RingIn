@@ -1817,16 +1817,21 @@ function MomentViewer(props){
 // can be added later by wiring `moments` prop to a fetch / realtime sub.
 // ──────────────────────────────────────────────────────────────────────────
 
+// R23: switched from heart clip-path to Instagram-style round shape.
+// HEART_CLIP_PATH kept in source as a deprecated reference in case the
+// "heart" look is ever wanted again (e.g. Valentine's theme). To revert,
+// re-apply this clip-path in heartWrapStyle + heartInnerStyle below.
 var HEART_CLIP_PATH =
   'polygon(50% 95%, 20% 80%, 3% 50%, 3% 25%, 20% 5%, 35% 5%, 50% 22%, 65% 5%, 80% 5%, 97% 25%, 97% 50%, 80% 80%)';
 
-// One heart tile. Renders the avatar (or initials) inside a heart-shaped
-// clip, optionally wrapped in a gradient "unread" ring. For the "add"
-// tile (isAdd=true), overlays a small + badge in the bottom-right corner
-// so the affordance stays visible even when the user has an avatar.
+// One moment tile. Renders the avatar (or initials) inside a round
+// (Instagram-style) clip, optionally wrapped in a gradient "unread" ring.
+// For the "add" tile (isAdd=true), overlays a small + badge in the
+// bottom-right corner so the affordance stays visible even when the user
+// has an avatar.
 //
 // When `onAddClick` is also passed, the + badge becomes its OWN click
-// target — tapping the badge opens the uploader, while tapping the heart
+// target — tapping the badge opens the uploader, while tapping the tile
 // itself fires `onClick` (typically opening the viewer for your own
 // already-posted moments). This is the Instagram pattern: one tile per
 // user, with a separate "+" affordance to add more.
@@ -1856,11 +1861,14 @@ function HeartTile(props){
     flexShrink: 0,
     display: 'block',
   };
-  // The heart silhouette wrapper (handles the optional gradient ring)
+  /* R23: round Instagram-style ring (replaces heart silhouette).
+   * Outer = the gradient ring background. Inner = the avatar circle.
+   * The 2px white border between ring and avatar is the Instagram gap
+   * achieved by giving heartInnerStyle a `border: 2px solid var(--bg)`. */
   var heartWrapStyle = {
     position: 'absolute',
     inset: 0,
-    clipPath: HEART_CLIP_PATH,
+    borderRadius: '50%',
     background: ring
       ? (ringVariant === 'close-friends'
           ? 'linear-gradient(135deg,#27C96A,#1FA858,#0F6E3A)'
@@ -1871,7 +1879,7 @@ function HeartTile(props){
   };
   var heartInnerStyle = {
     width: '100%', height: '100%',
-    clipPath: HEART_CLIP_PATH,
+    borderRadius: '50%',
     background: bg,
     display: 'flex',
     alignItems: 'center',
@@ -1881,17 +1889,22 @@ function HeartTile(props){
     fontWeight: 700,
     overflow: 'hidden',
     position: 'relative',
+    /* R23: thin solid-bg gap between ring and avatar — matches Instagram exactly */
+    border: ring ? '2px solid var(--bg)' : 'none',
+    boxSizing: 'border-box',
   };
   // + badge for "add" tiles. Sits outside the clip so it's always visible
   // even when an avatar is shown. If onAddClick is wired, the badge
   // becomes a clickable button (intercepts the tap so the heart's main
   // onClick — typically "open viewer" — doesn't fire).
   var badgeClickable = isAdd && !!onAddClick;
+  /* R23: badge now positioned at bottom-right of the CIRCLE (was offset
+   * for heart's pointy bottom). Matches Instagram's "+ on story add" tile. */
   var badgeStyle = {
     position: 'absolute',
-    bottom: '-2px',
-    right: '6px',
-    width: '22px', height: '22px',
+    bottom: '0px',
+    right: '0px',
+    width: '20px', height: '20px',
     borderRadius: '50%',
     background: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
     border: '2px solid var(--bg)',
@@ -1899,7 +1912,7 @@ function HeartTile(props){
     alignItems: 'center',
     justifyContent: 'center',
     color: '#fff',
-    fontSize: '16px',
+    fontSize: '14px',
     fontWeight: 700,
     lineHeight: 1,
     boxShadow: '0 2px 6px rgba(0,0,0,0.35)',

@@ -633,8 +633,8 @@ export function UserProfileView(props){
         },'Message')
       )
     ),
-    // Moments — this user's heart-shaped Stories. Currently UI-only; the
-    // viewing user can't add to someone else's moments, so showAdd is false.
+    // Moments — this user's Instagram-style round Stories tiles. UI-only;
+    // the viewing user can't add to someone else's moments, so showAdd is false.
     React.createElement('div',{style:{padding:'2px 16px 0',borderTop:'1px solid var(--border)',marginTop:'8px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',paddingTop:'10px'}},'Moments')
     ),
@@ -2332,7 +2332,7 @@ export default function HomeScreen(props){
   // Moments rendering: pull the current user's grouped moment OUT of the
   // strip and pass it as `ownMoment`. This way the "+" tile doubles as the
   // user's own moments tile (tap → view their slides) instead of rendering
-  // as a separate "You" heart NEXT to the "+", which is the bug — you'd
+  // as a separate "You" tile NEXT to the "+", which is the bug — you'd
   // see two tiles representing the same user after posting.
   var ownMomentForStrip = realMoments.find(function(m){ return m.isSelf; }) || null;
   var otherRealMoments = realMoments.filter(function(m){ return !m.isSelf; });
@@ -2737,7 +2737,7 @@ export default function HomeScreen(props){
       onShare: postMoment,
     }) : null,
 
-    // ── Moments — RingIn's heart-shaped Stories, Instagram-style.
+    // ── Moments — Instagram-style round Stories strip.
     // Real user-posted moments (from Supabase) come first, then mock
     // expert moments fill out the strip for demo purposes.
     React.createElement(Moments, {

@@ -61,7 +61,7 @@ export function registerAppShellSW(){
        * fallback that we bump per deploy (or just timestamp). */
       var swVer = (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BUILD_ID)
         ? process.env.REACT_APP_BUILD_ID
-        : 'v20'; // R20 bump (was no cache-buster); bump per round
+        : 'v23'; // R20 bump (was no cache-buster); bump per round
       navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(swVer), { scope: '/', updateViaCache: 'none' })
         .then(function(reg){
           // Watch for updates. When a new SW finishes installing AND there's

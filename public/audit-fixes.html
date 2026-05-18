@@ -51,7 +51,12 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.42 — +7 push-deep-link / OTA-battery / coin-cross-account-leak / 12 alert→toast (214 fixes · 21 rounds)</h2>
+<h2>✅ APK v3.43 — Moments tiles: heart → round Instagram-style (214 fixes + 1 design swap · 21 rounds)</h2>
+<p>One-shot design change: Moments strip tiles swapped from the heart-clip silhouette to round Instagram circles. Gradient unread ring + 2px gap matches Instagram exactly. + add badge repositioned to circle's bottom-right. Close Friends green variant preserved. Chat-reaction heart lever (different feature) unchanged. Bundle <code>2026.0518.2249</code> + APK <code>ringin-v3.43.apk</code>.</p>
+</div>
+
+<div class="banner" style="opacity:0.55">
+<h2>APK v3.42 — +7 push-deep-link / OTA-battery / coin-cross-account-leak / 12 alert→toast (214 fixes · 21 rounds)</h2>
 <p>Round 21 audited deep-link push handling + lifecycle battery + cross-account cache integrity + native-dialog hygiene. P1 wins: <b>Lock-screen push Accept now works</b> (was hoisting-buggy → did nothing silently; now always opens ring modal), <b>OTA check skipped when backgrounded</b> (Capacitor app no longer hits GitHub every 5min while you're on home screen), <b>coin balance cross-account leak fixed</b> (user A's 950 was leaking to user B's CallScreen via legacy global key), <b>12 native alert() dialogs → toasts</b> (mic error + audio publish + profile validation + delete account + OTA check — all were blocking the JS thread, iOS PWA could lose AudioContext mid-call). P2: <b>String() coerce on 4 .split sites</b> (corrupted non-string full_name no longer crashes Moments/chat-menu), <b>prevTab reset on top-level nav</b> (hardware back from Search no longer lands in Anonymous Connect). Bundle <code>2026.0518.1701</code> + APK <code>ringin-v3.42.apk</code>.</p>
 </div>
 
