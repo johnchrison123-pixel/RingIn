@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.29 — +8 more fixes after another strict-filter audit (100 fixes total)</h2>
-<p>Round 8 caught real bugs even after 92 prior fixes: <b>Save All "✓" lied about success</b> (silent data loss), <b>saveEditProfile + Wallet processPayment had no .catch</b> (stuck buttons on network errors), <b>Wallet "You are buying" header had no price</b> (empty div where ₹X should be), <b>UserProfileView share crashed on image-only posts</b>, <b>hardware back during a call leaked Agora session + DB row</b> (now properly hangs up + persists coins), <b>Moments share insert was writing to nonexistent `content:` column</b> (silently failing — recipient never got the moment). Bundle <code>2026.0518.0845</code> + APK <code>ringin-v3.29.apk</code> on Desktop.</p>
+<h2>✅ APK v3.30 — +10 orthogonal fixes (110 fixes total)</h2>
+<p>Round 9 widened to less-touched files + real user-flow chains. Caught a <b>CRITICAL</b>: inline experts-list Call button was using the legacy broken path — bypassed call_invites + FCM push entirely, so the callee never rang. Calls from the primary list view were silently dying. Also: <b>closeFriends</b> hook not seeding from cache, <b>IncomingCallModal reject</b> with no dedupe/await, <b>LiveWorkshop scroll hijacking page</b> on iOS, <b>App.js touchstart calling getComputedStyle on every ancestor</b> (perf cached via WeakMap), <b>blocks loader missing notify</b>, <b>HomeScreen audience-retry infinite recursion potential</b>, <b>MomentComposer blob flash</b>, <b>AnonymousConnect skip()</b> stale exclude, <b>momentUsers error path missing notify</b>. Bundle <code>2026.0518.0919</code> + APK <code>ringin-v3.30.apk</code>.</p>
 </div>
 
 <div class="stats">

@@ -14,6 +14,11 @@ export default function IncomingCallModal(props){
   var invite = props.invite || {};
   var session = props.session;
   var hapticRef = useRef(null);
+  // ROUND-9 FIX #3: prevent double-reject. If the user double-taps the
+  // decline button OR taps it while the UPDATE is in-flight, we'd
+  // previously fire two UPDATEs and two onReject() calls, occasionally
+  // leaving the modal in a partially-dismissed state. One-shot guard.
+  var rejectedRef = useRef(false);
 
   // Real ringtone (warm two-stroke bell, loops every 2.4s, capped at 6 cycles).
   // Shorter haptic pattern (single ~250ms buzz per cycle) to avoid Samsung Internet
@@ -64,7 +69,15 @@ export default function IncomingCallModal(props){
       }).then(function(data){
         if(cancelled || !data || !data.token) return;
         try{
+          // ROUND-9 FIX #10: tag the prefetched-token stash with this
+          // invite's id, so a stale token from a previous (or concurrent)
+          // ring can't be accidentally consumed by a different call.
+          // agora.js already gates on channel+uid match — inviteId is a
+          // belt-and-braces audit trail (consumed-side check can be
+          // strengthened later without breaking the existing contract).
           window.__ringinPrefetchedAgoraToken = {
+            ts: Date.now(),
+            inviteId: invite.id,
             channel: channel,
             uid: uidInt,
             token: data.token,
@@ -84,12 +97,29 @@ export default function IncomingCallModal(props){
     if(props.onAccept) props.onAccept(invite);
   }
   function reject(){
+    // ROUND-9 FIX #3: dedupe — if user double-taps or tap fires while the
+    // first UPDATE is in flight, bail. We also always call onReject (even
+    // on error) so the modal closes; App.js's dismissedInvitesRef prevents
+    // re-show from realtime/polling.
+    if (rejectedRef.current) return;
+    rejectedRef.current = true;
     try{ stopRingtone(); }catch(e){}
     if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
-    if(invite.id){
-      sb.from('call_invites').update({status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected'}).eq('id', invite.id).then(function(){});
+    try {
+      if(invite.id){
+        var p = sb.from('call_invites').update({status:'rejected', ended_at:new Date().toISOString(), end_reason:'callee_rejected'}).eq('id', invite.id);
+        if (p && p.then) {
+          p.then(function(){ if(props.onReject) props.onReject(invite); })
+           .catch(function(){ if(props.onReject) props.onReject(invite); });
+        } else {
+          if(props.onReject) props.onReject(invite);
+        }
+      } else {
+        if(props.onReject) props.onReject(invite);
+      }
+    } catch (_) {
+      if(props.onReject) props.onReject(invite);
     }
-    if(props.onReject) props.onReject(invite);
   }
 
   var name = invite.caller_name || 'Someone';

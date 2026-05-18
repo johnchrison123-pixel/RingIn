@@ -28,6 +28,28 @@ import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
 // Replaced with non-blocking toasts via the existing toast utility.
 import {toastError, toastWarn} from './utils/toast';
 
+// ROUND-9 FIX #6: getComputedStyle in the swipe-back touchstart walker
+// was running for every node on every touch — measurable jank on big
+// trees (think nested carousel feeds). WeakMap-cache the answer per
+// node so repeated touches in the same DOM tree pay only the first
+// computation. WeakMap auto-cleans entries when the node is GC'd.
+var _hscrollCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+function isHorizontalScrollAncestor(node){
+  if (!node) return false;
+  if (_hscrollCache && _hscrollCache.has(node)) return _hscrollCache.get(node);
+  var hasHScroll = false;
+  try {
+    var cs = (typeof window !== 'undefined' && window.getComputedStyle) ? window.getComputedStyle(node) : null;
+    if (cs && /auto|scroll/.test(cs.overflowX) && node.scrollWidth > node.clientWidth) {
+      hasHScroll = true;
+    }
+  } catch (_) {}
+  if (_hscrollCache) {
+    try { _hscrollCache.set(node, hasHScroll); } catch (_) {}
+  }
+  return hasHScroll;
+}
+
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
   var tabS = useState('home'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
@@ -755,9 +777,9 @@ export default function App() {
       try{
         var node = e.target;
         while(node && node !== document.body){
-          var cs = window.getComputedStyle(node);
-          if(cs && (cs.overflowX === 'auto' || cs.overflowX === 'scroll')
-              && node.scrollWidth > node.clientWidth){
+          // ROUND-9 FIX #6: use the WeakMap-cached helper instead of
+          // running getComputedStyle on every touchstart.
+          if(isHorizontalScrollAncestor(node)){
             window._swX = -1;
             return;
           }

@@ -1,17 +1,19 @@
 {
-  "version": "2026.0518.0845",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0845.zip",
-  "published_at": "2026-05-18T08:45:00Z",
+  "version": "2026.0518.0919",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0919.zip",
+  "published_at": "2026-05-18T09:19:00Z",
   "git_sha": "manual",
-  "title": "8 more fixes — Save All honesty, stuck spinners, share crash, back-during-call",
+  "title": "10 more fixes — CRITICAL: inline Call button now actually rings",
   "notes": [
-    "FIX: Account Settings 'All Saved ✓' now only shows after the write actually succeeds (was lying on network errors)",
-    "FIX: Edit Profile save button no longer stuck on 'Saving...' if the network fails — now shows a toast and resets",
-    "FIX: Wallet purchase 'Processing...' no longer stuck forever on network reject — properly resets + toasts the error",
-    "FIX: Wallet 'You are buying' confirm screen now shows the ₹ price (was an empty grey row)",
-    "FIX: Sharing an image-only post from your profile no longer crashes",
-    "FIX: Pressing the hardware back button during a call now properly hangs up — leaves Agora cleanly, persists coins, updates the call_invites row, writes the in-chat call log (was silently leaving zombie sessions)",
-    "FIX: Photo upload failure now shows a toast instead of a blocking alert dialog",
-    "FIX: Sharing a moment to a friend now actually delivers — was writing to a column that doesn't exist in the messages table"
+    "CRITICAL FIX: Tapping the Call button in the Experts list (the primary entry point) was bypassing the call_invites pipeline + FCM push entirely. The callee never rang. Now uses the same window.__ringInStartCall path the profile-view Call button uses.",
+    "FIX: Close Friends list now actually populates on first mount (was stuck empty until you added/removed someone)",
+    "FIX: Incoming call decline now waits for the DB update + prevents accidental double-tap",
+    "FIX: Live workshop chat scroll no longer hijacks the page scroll on iOS",
+    "PERF: App.js touchstart now caches horizontal-scroll detection via WeakMap (was calling getComputedStyle on every ancestor, every tap — measurable jank on low-end Android)",
+    "FIX: Blocks loader missed notifying subscribers on cache-only path → block list could show stale until next change",
+    "FIX: Post creation with missing audience column can no longer infinite-loop on a persistent error (retry now capped at 1 attempt)",
+    "FIX: Moment composer no longer flashes broken-image icon when you swap photos quickly",
+    "FIX: Anonymous Connect skip button now correctly excludes the user you just skipped (was reading stale state, could re-match same person)",
+    "FIX: Moment users registry now notifies subscribers on error paths too (was silently leaving consumers on stale data)"
   ]
 }

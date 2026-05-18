@@ -1789,12 +1789,17 @@ export default function HomeScreen(props){
         };
         // Remember last-used audience so the next post defaults to it.
         try{ localStorage.setItem('ringin_last_audience', compAudience); }catch(_){}
-        function handleInsertResult(res){
-          if (res.error && /audience/.test(res.error.message || '')) {
+        function handleInsertResult(res, isRetry){
+          isRetry = isRetry || false;
+          // ROUND-9 FIX #8: bound the retry so we don't infinite-loop if
+          // /audience/ keeps appearing in the error message even after the
+          // column is removed from the payload (e.g. the server hit is a
+          // different /audience/ trigger or RLS rule). One retry max.
+          if (res.error && /audience/.test(res.error.message || '') && !isRetry) {
             // Migration 0005 not applied yet — retry without the audience
             // field so the post still goes through (defaults to public).
             var fallback = Object.assign({}, postData); delete fallback.audience;
-            return sbHome.from('posts').insert([fallback]).select().then(handleInsertResult);
+            return sbHome.from('posts').insert([fallback]).select().then(function(r){ handleInsertResult(r, true); });
           }
       if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');toastError('Something went wrong. Please try again.');/* FIX #7 */setPosting(false);return;}
       if(res.data&&res.data[0]){

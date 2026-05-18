@@ -35,15 +35,20 @@ export default function AnonymousConnect(props) {
     setInterests(interests.filter(function(x){ return x !== i; }));
   }
 
-  function find() {
+  function find(excludeOverride) {
     if (!userId) { toastError('Please log in'); return; }
     setSearching(true); setErr(null); setMatch(null);
+    // ROUND-9 FIX #11a: accept an explicit excludeOverride so skip() can
+    // pass the new list directly instead of relying on the closed-over
+    // `exclude` state (which would be stale on the same tick that we
+    // just called setExclude). Defaults to current state.
+    var useExclude = Array.isArray(excludeOverride) ? excludeOverride : exclude;
 
     matchAnonymous({
       userId: userId,
       interests: interests,
       sameGeography: sameGeo,
-      excludeUserIds: exclude,
+      excludeUserIds: useExclude,
     }).then(function(r){
       setSearching(false);
       if (!r || !r.match) {
@@ -55,9 +60,15 @@ export default function AnonymousConnect(props) {
   }
 
   function skip() {
-    if (match) setExclude(exclude.concat([match.user_id]));
+    // ROUND-9 FIX #11a: build the new exclude list locally and pass it
+    // directly to find() so we don't race the setState that wouldn't
+    // have committed by the time find() reads `exclude` from closure.
+    if (!match) return;
+    var skippedId = match.user_id || match.id;
+    var newExclude = (exclude || []).concat(skippedId ? [skippedId] : []);
+    setExclude(newExclude);
     setMatch(null);
-    find();
+    find(newExclude);
   }
 
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},

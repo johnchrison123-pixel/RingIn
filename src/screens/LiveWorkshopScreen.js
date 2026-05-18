@@ -15,7 +15,11 @@ export default function LiveWorkshopScreen({workshop,onLeave}){
     var iv=setInterval(function(){setViewers(function(x){return x+Math.floor(Math.random()*3)-1;});},5000);
     return function(){clearInterval(iv);};
   },[]);
-  useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[ msgs]);
+  // ROUND-9 FIX #5: add block:'nearest' so iOS doesn't hijack the
+  // document scroll when this fires (default block is 'start', which
+  // walks UP every ancestor that can scroll — including <body> on iOS,
+  // popping the user out of the workshop view when chat updates).
+  useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth',block:'nearest'});},[ msgs]);
   function send(){
     if(!text.trim()) return;
     setMsgs(function(prev){return prev.concat([{id:Date.now(),author:'You',text:text.trim(),isHost:false}]);});

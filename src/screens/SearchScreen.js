@@ -252,7 +252,22 @@ export default function SearchScreen(props){
           ),
           React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}},
             React.createElement('button',{
-              onClick:function(ev){ev.stopPropagation();setActiveCall(e);},
+              // ROUND-9 FIX #1: list-view Call button was using legacy
+              // setActiveCall(e) path — bypassed call_invites pipeline so
+              // callee never got a ring. Same fix already applied to
+              // ExpertProfile.onCall (above); apply here too. For mock
+              // experts (numeric ids), App.js's startOutgoingCall UUID
+              // guard alerts gracefully. For real experts the global
+              // path creates a real call_invites row + fires FCM push.
+              onClick:function(ev){
+                ev.stopPropagation();
+                var target = Object.assign({}, e, {id: 'mock_' + e.id, rate: e.rate || 30});
+                if (typeof window !== 'undefined' && window.__ringInStartCall) {
+                  window.__ringInStartCall(target, {rate: e.rate || 30});
+                } else {
+                  setActiveCall(e);
+                }
+              },
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             },'Call'),
             // FIX #6: namespace the mock expert follow IDs with 'mock_' to

@@ -88,6 +88,12 @@ export function useCloseFriends(){
   var s = useState(_cache);
   var ids = s[0]; var setIds = s[1];
   useEffect(function(){
+    // ROUND-9 FIX #2: on mount, re-read the current _cache. If
+    // startCloseFriends already populated it before this hook mounted,
+    // we'd otherwise stay stuck with the empty initial Set until the
+    // server refresh completes (or worse, forever if there's no
+    // refresh). Mirrors the pattern used by useMomentUserIds.
+    setIds(_cache);
     function listener(newSet){ setIds(newSet); }
     _listeners.push(listener);
     return function(){ _listeners = _listeners.filter(function(l){ return l !== listener; }); };
