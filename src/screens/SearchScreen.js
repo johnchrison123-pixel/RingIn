@@ -118,6 +118,15 @@ export default function SearchScreen(props){
   // useEffect LAST
   useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
 
+  // R16 FIX #9: typingTimerRef debounces the search-typing sound (line ~192).
+  // If SearchScreen unmounts mid-debounce, clear the timer so the closure
+  // doesn't leak.
+  useEffect(function(){
+    return function(){
+      if (typingTimerRef.current) { try { clearTimeout(typingTimerRef.current); } catch(_){} typingTimerRef.current = null; }
+    };
+  }, []);
+
   // T2.8 — debounced FTS query against the new search_posts / search_profiles
   // RPCs. Fires 250ms after the user stops typing, only when query >= 2 chars.
   useEffect(function(){

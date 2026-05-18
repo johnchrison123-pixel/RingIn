@@ -1,15 +1,16 @@
 {
-  "version": "2026.0518.1237",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1237.zip",
-  "published_at": "2026-05-18T12:37:00Z",
+  "version": "2026.0518.1310",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1310.zip",
+  "published_at": "2026-05-18T13:10:00Z",
   "git_sha": "manual",
-  "title": "8 fixes — Blocked users filtered, restrict mode now actually silent, PWA polish",
+  "title": "9 fixes — Login offline, Agora timeout, FCM token leak, push dedup",
   "notes": [
-    "CRITICAL FIX: Blocked users' posts will no longer appear in your feed (the block button worked but no consumer was filtering — fixed feed render AND realtime INSERT).",
-    "CRITICAL FIX: Blocked users' moments are now filtered from the stories strip (was showing their avatar + their moments still played).",
-    "FIX: Restrict mode in chat header now takes effect IMMEDIATELY (was waiting until you reloaded the app). 3 stale-closure regressions defeating Round 2's silent-restrict feature — inbox notifications, chat-level notifications, and the global app badge ALL ignored the restrict toggle until reload.",
-    "FIX: Android home-screen app icon no longer mangled — dropped maskable icon variants (React-atom logo had no safe zone to mask).",
-    "FIX: Changing your name in Edit Profile now updates the top-bar avatar's tooltip immediately (was waiting for next reload).",
-    "FIX: Ringtone stops when you background the tab during an incoming call (prevents residual scheduled oscillators firing all at once when you come back)."
+    "FIX: Login/signup button no longer stuck on 'Please wait...' if you're offline or the network drops mid-request (was requiring full app reload).",
+    "FIX: Agora token fetch now has 15s timeout — outgoing calls no longer hang on 'Connecting...' indefinitely when the API is slow.",
+    "PRIVACY FIX: Your FCM push token is now cleared on sign-out — the next user signing in on the same device won't receive your push notifications anymore.",
+    "FIX: Push notification listener was being added on every hourly token refresh — caused notification sound to fire 2x/3x/4x after long sessions. Now properly deduped.",
+    "PERF: Notifications realtime channel was rebuilding every ~1 hour on token refresh (and missing notifications during the rebuild window). Now stable across token refreshes.",
+    "FIX: Password Reset email button + Password Change button both no longer stuck on 'Sending.../Changing...' if the network drops.",
+    "POLISH: 2 typing-sound timers now properly cleared on screen exit (no more stray key-click on the next screen)."
   ]
 }

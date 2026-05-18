@@ -21,6 +21,7 @@ import InstallPrompt from './components/InstallPrompt';
 import UpdatePrompt from './components/UpdatePrompt';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
+import {clearFcmToken} from './utils/firebase'; /* R16 FIX #3 */
 import {playSound} from './utils/soundEngine';
 import {prefetchAgora} from './utils/agora';
 import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
@@ -326,6 +327,10 @@ export default function App() {
       if (_event === 'SIGNED_OUT') {
         try {
           var prevId = _prevAuthUserId || ((session && session.user) ? session.user.id : null);
+          // R16 FIX #3: clear fcm_token on the signed-out user's row BEFORE
+          // wiping the local cache. Otherwise the device keeps receiving
+          // call pushes intended for the previous account.
+          if (prevId) { try { clearFcmToken(supabase, prevId); } catch(_){} }
           if (prevId) {
             var keysToWipe = ['convos_'+prevId, 'profile_info_'+prevId, 'avatar_'+prevId, 'ringin_coin_balance_'+prevId, 'saved_posts_'+prevId, 'user_posts_'+prevId];
             keysToWipe.forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
@@ -744,13 +749,31 @@ export default function App() {
     e.preventDefault();
     setLoading(true);
     setMessage('');
+    // R16 FIX #1: handleAuth previously had no try/catch around the await
+    // calls. If supabase.auth threw (network drop, DNS fail, etc.), the
+    // function rejected before setLoading(false) ran, leaving the
+    // "Please wait..." button stuck forever. Wrap each branch.
     if (isLogin) {
-      var res = await supabase.auth.signInWithPassword({ email: email, password: password });
-      if (res.error) setMessage(res.error.message);
+      try {
+        var res = await supabase.auth.signInWithPassword({ email: email, password: password });
+        if (res.error) { setMessage(res.error.message); setLoading(false); return; }
+      } catch (e) {
+        console.warn('[ringin] handleAuth signIn reject:', e);
+        setMessage('Network error — try again');
+        setLoading(false);
+        return;
+      }
     } else {
-      var res2 = await supabase.auth.signUp({ email: email, password: password });
-      if (res2.error) setMessage(res2.error.message);
-      else setMessage('Account created! You can now log in.');
+      try {
+        var res2 = await supabase.auth.signUp({ email: email, password: password });
+        if (res2.error) { setMessage(res2.error.message); setLoading(false); return; }
+        setMessage('Account created! You can now log in.');
+      } catch (e) {
+        console.warn('[ringin] handleAuth signUp reject:', e);
+        setMessage('Network error — try again');
+        setLoading(false);
+        return;
+      }
     }
     setLoading(false);
   };

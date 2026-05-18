@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.36 — +8 block/restrict/PWA fixes (161 fixes total)</h2>
-<p>Round 15 audited PWA + cross-screen state coherence + audio. <b>CRITICAL: blocked users' posts kept appearing in feed + their moments kept playing</b> (the block button existed but no consumer was filtering — fixed both feed render AND moments strip). <b>3 stale-closure regressions defeating Round 2 restrict</b> — inbox channel, chat channel, and App-level global badge all captured the restricted_users set at subscribe time so toggling Restrict took no effect until reload. Fixed all 3 via ref-mirror pattern. Plus <b>manifest maskable icons dropped</b> (was mangled React-atom on Android home screen), <b>profile name change broadcasts</b> so top-bar updates immediately, <b>ringtone stops on tab background</b>. Bundle <code>2026.0518.1237</code> + APK <code>ringin-v3.36.apk</code>.</p>
+<h2>✅ APK v3.37 — +9 lifecycle/network/auth fixes (170 fixes total)</h2>
+<p>Round 16 audited useEffect cleanup completeness + network resilience + auth edges. P0 wins: <b>Login/signup offline error now resets the button</b> (was stuck on 'Please wait...' requiring full reload), <b>Agora token fetch now has 15s timeout</b> (caller could hang on 'Connecting...' indefinitely on slow networks), <b>FCM token now cleared on sign-out</b> (previous user's push notifications kept hitting next user's phone). P1 wins: <b>onMessage push listener dedup</b> (was accumulating per hourly token refresh, multi-firing notification sounds), <b>HomeScreen notifs effect now stable across token refresh</b> (was rebuilding channel hourly), <b>2 password .catch handlers</b> (Reset + Change buttons no longer stuck). P2: 2 typingTimer cleanups (stray key-click on next screen). Bundle <code>2026.0518.1310</code> + APK <code>ringin-v3.37.apk</code>.</p>
 </div>
 
 <div class="stats">

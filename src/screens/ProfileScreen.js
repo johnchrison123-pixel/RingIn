@@ -1637,10 +1637,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                         var addr=(pwResetEmail||email).trim();
                         if(!addr){setPwResetErr('Enter your email');return;}
                         setPwResetLoad(true); setPwResetErr('');
+                        // R16 FIX #6: resetPasswordForEmail had no .catch — if
+                        // the network rejected, setPwResetLoad(true) was never
+                        // cleared and the "Sending…" button stayed disabled.
                         sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:'https://ring-in.vercel.app'}).then(function(res){
                           setPwResetLoad(false);
                           if(res.error) setPwResetErr(res.error.message);
                           else setPwResetSent(true);
+                        }).catch(function(e){
+                          setPwResetLoad(false);
+                          console.warn('[ringin] resetPasswordForEmail reject:', e);
+                          try{ toastError('Failed to send reset email — check connection'); }catch(_){}
                         });
                       },
                       style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwResetLoad?0.6:1}
@@ -1680,13 +1687,24 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                         if(pwNew!==pwConfirm){setPwChangeErr('Passwords do not match.');return;}
                         if(pwNew.length<8){setPwChangeErr('New password must be at least 8 characters.');return;}
                         setPwChangeLoad(true);
+                        // R16 FIX #7: nested .then() chain had no .catch — a
+                        // rejected signInWithPassword (network drop) left
+                        // pwChangeLoad=true and the user stuck on "Changing…".
                         sbProfile.auth.signInWithPassword({email:email,password:pwCurrent}).then(function(res){
                           if(res.error){setPwChangeErr('Current password is incorrect.');setPwChangeLoad(false);return;}
                           sbProfile.auth.updateUser({password:pwNew}).then(function(r){
                             setPwChangeLoad(false);
                             if(r.error){setPwChangeErr(r.error.message);return;}
                             setPwChangeDone(true);
+                          }).catch(function(e){
+                            setPwChangeLoad(false);
+                            console.warn('[ringin] updateUser reject:', e);
+                            try{ toastError('Failed to change password — try again'); }catch(_){}
                           });
+                        }).catch(function(e){
+                          setPwChangeLoad(false);
+                          console.warn('[ringin] pwChange signIn reject:', e);
+                          try{ toastError('Failed to change password — try again'); }catch(_){}
                         });
                       },
                       style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwChangeLoad?0.6:1}
@@ -2239,7 +2257,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.36';
+              var APK_VERSION = 'v3.37';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

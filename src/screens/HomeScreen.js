@@ -1317,6 +1317,15 @@ export default function HomeScreen(props){
   var pullDistHS=useState(0); var pullDistH=pullDistHS[0]; var setPullDistH=pullDistHS[1];
   var fileInputRef=useRef(null);
   var typingTimerRef=useRef(null);
+  // R16 FIX #8: typingTimerRef sets a setTimeout on each comment keystroke
+  // (line ~3040). If HomeScreen unmounts mid-debounce, the timer fires on
+  // a dead component (no actual setState here, but it leaks the closure
+  // until it runs). Cancel on unmount for hygiene.
+  useEffect(function(){
+    return function(){
+      if (typingTimerRef.current) { try { clearTimeout(typingTimerRef.current); } catch(_){} typingTimerRef.current = null; }
+    };
+  }, []);
   // FIX #6 — hoisted from below so the back-handler useEffect's dep array
   // sees a defined value on first render. Was at line ~1503 originally;
   // moving it up keeps the same React hook call order (just earlier in
@@ -1486,7 +1495,12 @@ export default function HomeScreen(props){
         if(!mp.includes(p.new.post_id)) playSound('notification');
       }).subscribe();
     return function(){sbHome.removeChannel(ch);};
-  },[props.session]);
+  // R16 FIX #5: dep was [props.session] — the session object reference
+  // changes on every TOKEN_REFRESHED (~hourly), so the whole effect tore
+  // down + rebuilt the notifs realtime channel every hour. Depend on the
+  // user id only so the effect re-runs only on actual sign-in / sign-out.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[props.session && props.session.user && props.session.user.id]);
 
   function saveEditPost(){
     if(!editPostData||!editPostData.content||!editPostData.content.trim()) return;
