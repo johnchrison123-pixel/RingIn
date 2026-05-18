@@ -51,12 +51,12 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.38 — +8 search/empty-state/race-condition fixes (178 fixes total · 17 rounds)</h2>
-<p>Round 17 audited search-input race conditions + missing empty states + stale-write guards. P1 wins: <b>3 sequence-guards on search results</b> (HomeScreen + SearchScreen + MessagesScreen — fast typing no longer flickers stale results), <b>People-search debounced 300ms + .catch + 'No people found' empty state</b> (was spamming Supabase per keystroke), <b>FollowersListModal stale-reset on close</b> (last query leaked to next open). P2: <b>4 empty-state polish</b> (feed when filters hide all, country/timezone pickers no-match, hashtag-no-match). Bundle <code>2026.0518.1348</code> + APK <code>ringin-v3.38.apk</code>.</p>
+<h2>✅ APK v3.39 — +11 toast/ESC/image-fallback/abort fixes (189 fixes total · 18 rounds)</h2>
+<p>Round 18 audited storage failures + modal accessibility + broken-image leakage + form abort behavior. P1 wins: <b>Toast dedupe + cap-3</b> (rapid error spam no longer stacks endlessly), <b>ESC closes 9 different modals</b> (was X-only), <b>body-scroll-lock while modal open</b>, <b>safeSetItem wrap on 12 unwrapped localStorage.setItem sites</b> (no more crashed-spinner in Safari private mode), <b>kill native window.confirm in clearAllChat</b>, <b>ReportModal 10s abort + 60s per-target dedupe + X-closable mid-submit</b>, <b>15+ ImgWithFallback swaps</b> (followers list, saved posts, expert call avatars, chat avatars, chat images, moments viewer — clean fallback instead of broken-image icon). P2: <b>4 timezone-aware date sites</b> (notifications, posts, wallet, saved). Bundle <code>2026.0518.1444</code> + APK <code>ringin-v3.39.apk</code>.</p>
 </div>
 
 <div class="stats">
-<div class="stat done"><span class="n">178</span><div class="l">Done</div></div>
+<div class="stat done"><span class="n">189</span><div class="l">Done</div></div>
 <div class="stat prog"><span class="n">0</span><div class="l">In Progress</div></div>
 <div class="stat todo"><span class="n">9</span><div class="l">To Do</div></div>
 <div class="stat skip"><span class="n">0</span><div class="l">Skipped</div></div>

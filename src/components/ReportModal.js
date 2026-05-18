@@ -1,6 +1,7 @@
 /* eslint-disable */
-import React, {useState} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
+import {toastInfo} from '../utils/toast';
 
 // ──────────────────────────────────────────────────────────────────────────
 // ReportModal — replaces the previously fake `alert("Thank you for
@@ -11,6 +12,11 @@ import {sb} from '../utils/supabase';
 // queued in localStorage under `ringin_reports_queue` so we still have a
 // record. Next time we run the migration AND a user opens the app, a
 // background flush sends the queued reports to Supabase.
+//
+// R18 additions:
+//   - ESC closes modal + body-scroll-lock (Fix A)
+//   - 10s abort timeout on Supabase insert + X-button closable mid-submit (Fix B)
+//   - 60s per-target dedupe to stop spam-re-submit (Fix C)
 //
 // Usage:
 //   var [open, setOpen] = useState(null);  // null or { type, id, label? }
@@ -34,13 +40,28 @@ var CATEGORIES = [
   {id:'other',      label:'Something else',       icon:'•',  help:'Tell us in the box below.'},
 ];
 
-// Best-effort insert. If the table is missing or RLS blocks, fall back to
-// localStorage so we never silently drop a report.
-function submitReport(payload) {
-  return sb.from('reports').insert([payload]).select().single().then(function(res){
+// R18 Fix C — module-scope dedupe map. Key = type+':'+id, value = timestamp.
+// Survives modal unmount/remount so the user can't spam-resubmit the same
+// target by tap-tap-tap.
+var lastReportedTargets = new Map();
+var DEDUPE_WINDOW_MS = 60000;
+
+// R18 Fix B — Best-effort insert with optional AbortSignal. If table is
+// missing, RLS blocks, or signal aborts, falls back to localStorage queue.
+function submitReport(payload, signal) {
+  var insertPromise = sb.from('reports').insert([payload]).select().single().then(function(res){
     if (res.error) throw res.error;
     return { ok: true, mode: 'supabase', id: res.data && res.data.id };
-  }).catch(function(err) {
+  });
+  // Race against an abort promise so we don't hang on slow networks
+  if (signal && typeof AbortController !== 'undefined') {
+    var abortPromise = new Promise(function(_, reject){
+      if (signal.aborted) return reject(new Error('aborted'));
+      signal.addEventListener('abort', function(){ reject(new Error('aborted')); });
+    });
+    insertPromise = Promise.race([insertPromise, abortPromise]);
+  }
+  return insertPromise.catch(function(err) {
     try {
       var queue = JSON.parse(localStorage.getItem('ringin_reports_queue') || '[]');
       queue.push(Object.assign({}, payload, {
@@ -89,35 +110,107 @@ export default function ReportModal(props) {
   var doneS = useState(null);
   var done = doneS[0]; var setDone = doneS[1];
 
+  // R18 Fix B — refs for in-flight abort controller + first-render guard + latest-close ref (for ESC)
+  var ctrlRef = useRef(null);
+  var firstTargetRef = useRef(true);
+  var closeRef = useRef(null);
+
+  // R18 Fix A — ESC closes + body-scroll-lock (gated on whether modal has a target)
+  useEffect(function(){
+    if (!target) return;
+    var prevOverflow = '';
+    try {
+      prevOverflow = document.body.style.overflow || '';
+      document.body.style.overflow = 'hidden';
+    } catch(_){}
+    function onKey(e){
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        try { closeRef.current && closeRef.current(); } catch(_){}
+      }
+    }
+    try { document.addEventListener('keydown', onKey); } catch(_){}
+    return function(){
+      try { document.removeEventListener('keydown', onKey); } catch(_){}
+      try { document.body.style.overflow = prevOverflow; } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
+
+  // R18 Fix B reset — reset submitting + abort controller on target change
+  // (skip first render so we don't kill the very first submit before it starts)
+  useEffect(function(){
+    if (firstTargetRef.current) { firstTargetRef.current = false; return; }
+    setSubmitting(false);
+    if (ctrlRef.current) {
+      try { ctrlRef.current.abort(); } catch(_){}
+      ctrlRef.current = null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target && target.id]);
+
   if (!target) return null;
   var reporterId = (session && session.user && session.user.id) || null;
   var canSubmit = !!category && !!reporterId && !submitting;
 
   function handleSubmit() {
     if (!canSubmit) return;
+    // R18 Fix C — dedupe check
+    var dedupeKey = target.type + ':' + String(target.id);
+    var lastTs = lastReportedTargets.get(dedupeKey);
+    if (lastTs && (Date.now() - lastTs) < DEDUPE_WINDOW_MS) {
+      try { toastInfo('Already reported — thanks'); } catch(_){}
+      setDone('supabase'); // treat as success splash
+      return;
+    }
     setSubmitting(true);
+    // Soft cap on map size — clear if huge
+    if (lastReportedTargets.size > 200) {
+      var cutoff = Date.now() - DEDUPE_WINDOW_MS;
+      var toDelete = [];
+      lastReportedTargets.forEach(function(ts, k){ if (ts < cutoff) toDelete.push(k); });
+      toDelete.forEach(function(k){ lastReportedTargets.delete(k); });
+    }
+    // R18 Fix B — 10s abort timer
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    ctrlRef.current = ctrl;
+    var timeoutId = null;
+    if (ctrl) {
+      timeoutId = setTimeout(function(){ try { ctrl.abort(); } catch(_){} }, 10000);
+    }
     submitReport({
       reporter_id: reporterId,
       target_type: target.type,
       target_id: String(target.id),
       category: category,
       details: (details || '').trim() || null,
-    }).then(function(res){
+    }, ctrl ? ctrl.signal : null).then(function(res){
+      if (timeoutId) clearTimeout(timeoutId);
+      ctrlRef.current = null;
       setSubmitting(false);
       setDone(res.mode);
+      lastReportedTargets.set(dedupeKey, Date.now());
     }).catch(function(){
+      if (timeoutId) clearTimeout(timeoutId);
+      ctrlRef.current = null;
       setSubmitting(false);
       setDone('error');
     });
   }
 
   function close() {
-    if (submitting) return;  // don't close mid-submit
+    // R18 Fix B — allow close mid-submit; just abort in-flight insert
+    if (submitting && ctrlRef.current) {
+      try { ctrlRef.current.abort(); } catch(_){}
+      ctrlRef.current = null;
+      setSubmitting(false);
+    }
     setCategory(null);
     setDetails('');
     setDone(null);
     if (onClose) onClose();
   }
+  // Keep ESC handler pointing to the latest close (re-declared every render)
+  closeRef.current = close;
 
   // Backdrop + card
   return React.createElement('div', {
@@ -156,8 +249,9 @@ export default function ReportModal(props) {
             done ? 'Thanks. We will review within 24h.' : 'Tell us what is wrong. Reports are anonymous to the other party.'
           )
         ),
+        // R18 Fix B — X button stays clickable mid-submit
         React.createElement('button', {
-          onClick: close, disabled: submitting,
+          onClick: close,
           style: { background: 'none', border: 'none', color: 'var(--t2)', fontSize: '24px', cursor: 'pointer', padding: '0 4px', lineHeight: 1 }
         }, '×')
       ),
@@ -236,12 +330,12 @@ export default function ReportModal(props) {
         style: { padding: '12px 20px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: '8px', justifyContent: 'flex-end' }
       },
         React.createElement('button', {
-          onClick: close, disabled: submitting,
+          onClick: close,
           style: {
             background: 'transparent', color: 'var(--t2)',
             border: '1px solid var(--border)', padding: '9px 18px',
             borderRadius: '20px', fontSize: '13px', fontWeight: 600,
-            cursor: submitting ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
             fontFamily: 'inherit',
           }
         }, 'Cancel'),

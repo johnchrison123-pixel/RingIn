@@ -5,10 +5,13 @@ import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
 import AvatarRing from '../components/AvatarRing';
+import ImgWithFallback from '../components/ImgWithFallback';
 import {useMomentUserIds} from '../utils/momentUsers';
 import compressImage from '../utils/compressImage';
 import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
 import {useCoinBalance} from '../utils/coinBalance';
+// R18 FIX D: shared TZ-aware date/time formatters.
+import {formatDateTime, formatDate, formatTime} from '../utils/dateFmt';
 // FIX #7: server-side block list unification — see src/utils/blocks.js.
 import {blockUser as serverBlockUser, isBlockedSync, loadBlocks} from '../utils/blocks';
 
@@ -120,6 +123,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var msgMenuS=useState(null); var msgMenu=msgMenuS[0]; var setMsgMenu=msgMenuS[1];
   var toastS=useState(''); var toast=toastS[0]; var setToast=toastS[1];
   var chatMenuOpenS=useState(false); var chatMenuOpen=chatMenuOpenS[0]; var setChatMenuOpen=chatMenuOpenS[1];
+  // R18 FIX A: in-app confirm modal for "Clear All Chat" — replaces native
+  // window.confirm (banned per CLAUDE.md). Lives in ChatBox scope because
+  // clearAllChat (and its supabase delete + msgs setter) all live here too.
+  var clearChatConfirmS=useState(false); var clearChatConfirm=clearChatConfirmS[0]; var setClearChatConfirm=clearChatConfirmS[1];
 
   // Per-conversation read-receipts toggle (reciprocal — like WhatsApp).
   // Stored in localStorage `ringin_rr_off` as a Set of conversation IDs.
@@ -370,6 +377,24 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     };
   }, []);
 
+  // R18 FIX B: ESC closes the 3-dot chat-header dropdown. Outside-click is
+  // already wired (full-viewport overlay div at zIndex:300 onClick→close);
+  // this only adds the keyboard escape path so power-users + a11y testers
+  // get the expected behaviour. Listener is mounted only while the menu is
+  // open to avoid an always-on global keydown handler.
+  // Also closes the R18 FIX A clear-chat confirm modal — same UX contract.
+  useEffect(function(){
+    if (!chatMenuOpen && !clearChatConfirm) return;
+    function onKey(e){
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        if (clearChatConfirm) setClearChatConfirm(false);
+        else if (chatMenuOpen) setChatMenuOpen(false);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return function(){ window.removeEventListener('keydown', onKey); };
+  }, [chatMenuOpen, clearChatConfirm]);
+
   var bottomRef=useRef(null);
   var headerRef=useRef(null);
   var chatBoxRef=useRef(null);
@@ -466,8 +491,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     if (diff < 60*60*1000) return 'last seen '+Math.floor(diff/60000)+'m ago';
     if (diff < 24*60*60*1000) return 'last seen '+Math.floor(diff/3600000)+'h ago';
     if (diff < 7*24*60*60*1000) return 'last seen '+Math.floor(diff/86400000)+'d ago';
-    var d = new Date(iso);
-    return 'last seen ' + d.toLocaleDateString([], {month:'short', day:'numeric'});
+    // R18 FIX D: TZ-aware date via shared formatter (honors user_timezone).
+    return 'last seen ' + formatDate(iso);
   }
 
   useEffect(function(){
@@ -745,12 +770,20 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     });
   }
 
+  // R18 FIX A: split into two functions —
+  //   clearAllChat() — kebab-menu entry point: closes the menu, opens the
+  //     in-app confirm modal (no more native window.confirm).
+  //   doClearChat() — actual delete + supabase write, called by the modal's
+  //     "Clear" button.
   function clearAllChat(){
     setChatMenuOpen(false);
-    if(!window.confirm('Clear all messages in this conversation? This cannot be undone.')) return;
+    setClearChatConfirm(true);
+  }
+  function doClearChat(){
     var convId2 = convo.convId || convo.id;
     var snap = msgs.slice();
     setMsgs([]);
+    setClearChatConfirm(false);
     sb.from('messages').delete().eq('conversation_id', convId2).then(function(r){
       if(r.error){
         console.error('RingIn Error [clearAllChat]:', r.error&&r.error.message?r.error.message:'Unknown error');
@@ -761,6 +794,12 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         setToast('Chat cleared');
         setTimeout(function(){setToast('');}, 2000);
       }
+    }).catch(function(e){
+      /* R18 verifier-fix: rollback on raw network reject (was leaving msgs empty) */
+      console.warn('RingIn Error [clearAllChat reject]:', e&&e.message?e.message:e);
+      setMsgs(snap);
+      setToast('Failed to clear chat');
+      setTimeout(function(){setToast('');}, 2000);
     });
   }
 
@@ -901,7 +940,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           }
           return [
             React.createElement('div',{key:'av',onClick:openProfile,style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0,cursor:otherUid?'pointer':'default'}},
-              otherAvatar?React.createElement('img',{src:otherAvatar,alt:otherName,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+              // R18 FIX C: ImgWithFallback shows initials if src 404s / fails decode.
+              React.createElement(ImgWithFallback,{
+                src:otherAvatar, alt:otherName, fallback:(convo.initials||(otherName||'?').substring(0,2).toUpperCase()),
+                style:{width:'100%',height:'100%',objectFit:'cover'}
+              })
             ),
             React.createElement('div',{key:'nm',onClick:openProfile,style:{flex:1,minWidth:0,cursor:otherUid?'pointer':'default'}},
               React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
@@ -1024,6 +1067,40 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       )
     ) : null,
 
+    // ── R18 FIX A: in-app confirm modal for "Clear All Chat" ──
+    // Replaces native window.confirm (banned by CLAUDE.md). Backdrop click
+    // and Cancel both close the modal without deleting; Clear runs
+    // doClearChat() which performs the supabase delete + msgs reset.
+    clearChatConfirm ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:500,backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)'},
+        onClick:function(){ setClearChatConfirm(false); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{
+          position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+          zIndex:501, background:'var(--bg2,#161028)', border:'1px solid var(--border)',
+          borderRadius:'16px', padding:'18px 18px 14px', minWidth:'260px', maxWidth:'320px',
+          boxShadow:'0 16px 48px rgba(0,0,0,0.6)', color:'var(--text)', fontFamily:'inherit'
+        }
+      },
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}, 'Clear all messages?'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.4,marginBottom:'14px'}},
+          'This will permanently delete every message in this conversation. This cannot be undone.'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}},
+          React.createElement('button',{
+            onClick:function(){ setClearChatConfirm(false); },
+            style:{padding:'8px 14px',borderRadius:'8px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Cancel'),
+          React.createElement('button',{
+            onClick:doClearChat,
+            style:{padding:'8px 14px',borderRadius:'8px',background:'#FF4757',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Clear')
+        )
+      )
+    ) : null,
+
     // ── Chat messages area with reaction overlay ──
     React.createElement('div',{style:{flex:1,position:'relative',overflow:'hidden'}},
       React.createElement('div',{
@@ -1057,13 +1134,18 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               }},
                 React.createElement('span',{style:{fontSize:'13px'}}, d.icon),
                 React.createElement('span',null, d.label),
-                m.created_at ? React.createElement('span',{style:{color:'var(--t3)',fontWeight:400,marginLeft:'4px'}}, ' · '+new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})) : null
+                // R18 FIX D: TZ-aware time via shared formatTime (honors user_timezone).
+                m.created_at ? React.createElement('span',{style:{color:'var(--t3)',fontWeight:400,marginLeft:'4px'}}, ' · '+formatTime(m.created_at)) : null
               )
             );
           }
           return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:isMe?'flex-end':'flex-start',alignItems:'flex-end',gap:'6px'}},
             !isMe?React.createElement('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-              otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+              // R18 FIX C: ImgWithFallback for message-row avatar.
+              React.createElement(ImgWithFallback,{
+                src:otherAvatar, alt:otherName, fallback:(convo.initials||(otherName||'?').substring(0,2).toUpperCase()),
+                style:{width:'100%',height:'100%',objectFit:'cover'}
+              })
             ):null,
             React.createElement('div',null,
               React.createElement('div',{
@@ -1075,7 +1157,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                 onTouchEnd:function(){clearTimeout(pressTimerRef.current);}
               },
                 m.text&&m.text.startsWith('[img]')
-                  ?React.createElement('img',{src:m.text.slice(5),alt:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
+                  // R18 FIX C: ImgWithFallback for chat-image bubble — shows
+                  // "Image unavailable" placeholder if the CDN URL 404s.
+                  ?React.createElement(ImgWithFallback,{src:m.text.slice(5),alt:'Photo',fallback:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
                   // FIX #2: [mshare] body was showing as raw text. Render as a clickable card.
                   // Format: [mshare]<link>|<caption>
                   :(m.text&&m.text.startsWith('[mshare]'))
@@ -1133,7 +1217,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                     :React.createElement('span',null,m.text)
               ),
               React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
-                m.created_at?React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})):null,
+                // R18 FIX D: simplified to shared formatTime (already TZ-aware
+                // via user_timezone localStorage key — same behavior, no inline math).
+                m.created_at?React.createElement('span',null,formatTime(m.created_at)):null,
                 // Tick state: ✓ = sent (not yet read), ✓✓ blue = read.
                 // If the user has read receipts disabled for this convo,
                 // we never show ✓✓ blue — the deal is reciprocal: we don't
@@ -1175,7 +1261,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           style:{display:'flex',alignItems:'center',gap:'6px',padding:'4px 8px 0',animation:'ringin-typing-fade 0.15s ease-out'}
         },
           React.createElement('div',{style:{width:'24px',height:'24px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-            otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+            // R18 FIX C: ImgWithFallback for typing-indicator avatar.
+            React.createElement(ImgWithFallback,{
+              src:otherAvatar, alt:otherName, fallback:(convo.initials||(otherName||'?').substring(0,2).toUpperCase()),
+              style:{width:'100%',height:'100%',objectFit:'cover'}
+            })
           ),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',padding:'9px 13px',borderRadius:'18px 18px 18px 4px',background:'var(--bg3)',border:'1px solid var(--border)'}},
             React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--t2)',animation:'ringin-typing-dot 1.2s ease-in-out infinite',animationDelay:'0s'}}),
@@ -2102,7 +2192,12 @@ export default function MessagesScreen(props){
       searchRes.map(function(u,i){
         return React.createElement('div',{key:i,onClick:function(){startConvo(u);},style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px',borderRadius:'10px',cursor:'pointer',background:'var(--bg3)',marginBottom:'6px'}},
           React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,position:'relative'}},
-            u.avatar_url ? React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.full_name||u.email||'?').substring(0,2).toUpperCase(),
+            // R18 FIX C: ImgWithFallback for new-chat people-picker avatar.
+            React.createElement(ImgWithFallback,{
+              src:u.avatar_url, alt:(u.full_name||u.email||'User'),
+              fallback:(u.full_name||u.email||'?').substring(0,2).toUpperCase(),
+              style:{width:'100%',height:'100%',objectFit:'cover'}
+            }),
             u.is_online ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'10px',height:'10px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)'}}) : null
           ),
           React.createElement('div',null,
@@ -2221,7 +2316,11 @@ export default function MessagesScreen(props){
             React.createElement('div',{onClick:openTheirProfile,style:{position:'relative',flexShrink:0,cursor:'pointer'}},
               React.createElement(AvatarRing,{ show: momentUserIds.has(c.otherId || c.receiverId || c.user_id) },
                 React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
-                  c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
+                  // R18 FIX C: ImgWithFallback for friend-row inbox avatar.
+                  React.createElement(ImgWithFallback,{
+                    src:c.img, alt:c.name, fallback:c.initials,
+                    style:{width:'100%',height:'100%',objectFit:'cover'}
+                  })
                 )
               ),
               c.isOnline ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)',zIndex:1}}) : null
@@ -2277,7 +2376,11 @@ export default function MessagesScreen(props){
         return React.createElement('div',{key:c.id,onClick:function(){setActive(c);},style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
           React.createElement('div',{style:{position:'relative',flexShrink:0}},
             React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:c.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
-              c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
+              // R18 FIX C: ImgWithFallback for expert-row inbox avatar.
+              React.createElement(ImgWithFallback,{
+                src:c.img, alt:c.name, fallback:c.initials,
+                style:{width:'100%',height:'100%',objectFit:'cover'}
+              })
             ),
             React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)'}})
           ),

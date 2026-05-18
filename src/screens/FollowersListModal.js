@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React, {useState, useEffect} from 'react';
 import {sb} from '../utils/supabase';
+import ImgWithFallback from '../components/ImgWithFallback';
 
 export default function FollowersListModal(props) {
   // type: 'followers' | 'following'
@@ -49,6 +50,26 @@ export default function FollowersListModal(props) {
     }).catch(function(e){ setLoading(false); console.warn('[ringin] FollowersListModal query reject:', e); });
   }, [userId, type]);
 
+  // R18 — ESC closes modal + body scroll lock while open
+  useEffect(function(){
+    var prevOverflow = '';
+    try {
+      prevOverflow = document.body.style.overflow || '';
+      document.body.style.overflow = 'hidden';
+    } catch(_){}
+    function onKey(e){
+      if ((e.key === 'Escape' || e.keyCode === 27) && onClose) {
+        try { onClose(); } catch(_){}
+      }
+    }
+    try { document.addEventListener('keydown', onKey); } catch(_){}
+    return function(){
+      try { document.removeEventListener('keydown', onKey); } catch(_){}
+      try { document.body.style.overflow = prevOverflow; } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return React.createElement('div', {
     onClick: onClose,
     style: {position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(8px)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'},
@@ -71,10 +92,13 @@ export default function FollowersListModal(props) {
         ),
         users.map(function(u){
           return React.createElement('div', {key:u.id, style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 18px',borderBottom:'1px solid var(--border)'}},
-            React.createElement('div', {onClick:function(){onViewUser && onViewUser(u); onClose();}, style:{cursor:'pointer'}},
-              u.img
-                ? React.createElement('img', {src:u.img, alt:'', style:{width:'42px',height:'42px',borderRadius:'50%',objectFit:'cover'}})
-                : React.createElement('div', {style:{width:'42px',height:'42px',borderRadius:'50%',background:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'14px'}}, u.name.charAt(0).toUpperCase())
+            React.createElement('div', {onClick:function(){onViewUser && onViewUser(u); onClose();}, style:{cursor:'pointer',width:'42px',height:'42px',borderRadius:'50%',overflow:'hidden',flexShrink:0}},
+              /* R18 — ImgWithFallback shows initials if avatar URL 404s/fails */
+              React.createElement(ImgWithFallback, {
+                src: u.img, alt: u.name,
+                fallback: 'avatar', fallbackInitial: (u.name||'?').charAt(0),
+                style: {width:'42px',height:'42px',borderRadius:'50%',objectFit:'cover'}
+              })
             ),
             React.createElement('div', {onClick:function(){onViewUser && onViewUser(u); onClose();}, style:{flex:1,minWidth:0,cursor:'pointer'}},
               React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}}, u.name),

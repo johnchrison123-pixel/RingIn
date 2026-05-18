@@ -3,6 +3,9 @@ import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 // FIX #10: toastError for actual failures (was misusing toastSuccess)
 import {toastSuccess, toastError} from '../utils/toast';
+/* R18: shared image fallback + timezone-aware date + safe localStorage */
+import ImgWithFallback from '../components/ImgWithFallback';
+import {formatDate, safeSetItem} from '../utils/dateFmt';
 
 export default function SavedPostsScreen(props) {
   var onBack = props.onBack;
@@ -72,7 +75,8 @@ export default function SavedPostsScreen(props) {
     try{
       var key='saved_posts_'+userId;
       var s = JSON.parse(localStorage.getItem(key) || '[]');
-      localStorage.setItem(key, JSON.stringify(s.filter(function(x){return x!==postId;})));
+      /* R18: safeSetItem won't crash in private/full storage */
+      safeSetItem(key, JSON.stringify(s.filter(function(x){return x!==postId;})));
     }catch(e){}
     sb.from('saved_posts').delete().eq('user_id', userId).eq('post_id', postId).then(function(r){
       if (r.error) {
@@ -129,19 +133,24 @@ export default function SavedPostsScreen(props) {
         }
         return React.createElement('div', {key:p.id, onClick:openDetail, style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'12px',cursor:'pointer'}},
           React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}},
-            React.createElement('div', {onClick:function(e){ e.stopPropagation(); onViewUser && onViewUser({id:p.user_id, name:p.author_name, img:p.author_avatar});}, style:{cursor:'pointer'}, 'data-stop':'1'},
-              p.author_avatar
-                ? React.createElement('img', {src:p.author_avatar, alt:'', style:{width:'36px',height:'36px',borderRadius:'50%',objectFit:'cover'}})
-                : React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'13px'}}, (p.author_name||'?').charAt(0).toUpperCase())
+            React.createElement('div', {onClick:function(e){ e.stopPropagation(); onViewUser && onViewUser({id:p.user_id, name:p.author_name, img:p.author_avatar});}, style:{cursor:'pointer',width:'36px',height:'36px',borderRadius:'50%',overflow:'hidden',flexShrink:0}, 'data-stop':'1'},
+              /* R18: ImgWithFallback for author avatar */
+              React.createElement(ImgWithFallback, {
+                src: p.author_avatar, alt: p.author_name,
+                fallback: 'avatar', fallbackInitial: (p.author_name||'?').charAt(0),
+                style: {width:'36px',height:'36px',borderRadius:'50%',objectFit:'cover'}
+              })
             ),
             React.createElement('div', {style:{flex:1,minWidth:0}},
               React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, p.author_name),
-              React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)'}}, p.created_at ? new Date(p.created_at).toLocaleDateString() : '')
+              /* R18: timezone-aware date display */
+              React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)'}}, p.created_at ? formatDate(p.created_at) : '')
             ),
             React.createElement('button', {onClick:function(){unsave(p.id);}, style:{background:'rgba(239,71,71,0.12)',border:'1px solid var(--red)',color:'var(--red)',padding:'5px 12px',borderRadius:'8px',fontSize:'11px',fontWeight:700,cursor:'pointer'}}, '🗑 Unsave')
           ),
           React.createElement('div', {style:{fontSize:'14px',lineHeight:1.5,color:'var(--text)',whiteSpace:'pre-wrap',marginBottom:'8px'}}, p.text || ''),
-          images[0] && React.createElement('img', {src:images[0], alt:'', style:{width:'100%',maxHeight:'320px',objectFit:'cover',borderRadius:'10px',marginBottom:'8px'}}),
+          /* R18: ImgWithFallback for post thumbnail */
+          images[0] && React.createElement(ImgWithFallback, {src:images[0], alt:'Post image', fallback:'image', style:{width:'100%',maxHeight:'320px',objectFit:'cover',borderRadius:'10px',marginBottom:'8px',display:'block'}}),
           React.createElement('div', {style:{display:'flex',gap:'14px',fontSize:'12px',color:'var(--t2)'}},
             React.createElement('span', null, '❤ ' + (Array.isArray(p.likes) ? p.likes.length : 0)),
             React.createElement('span', null, '💬 ' + (p.comments_count || 0))

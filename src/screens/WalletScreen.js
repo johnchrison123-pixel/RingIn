@@ -3,6 +3,8 @@ import React,{useState,useEffect,useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {toastSuccess,toastError} from '../utils/toast';
 import {useCoinBalance, setSharedCoinBalance} from '../utils/coinBalance';
+/* R18: timezone-aware date for transaction receipts */
+import {formatDateTime} from '../utils/dateFmt';
 
 var PACKAGES=[
   {id:1,coins:100,price:100,label:'Starter',bonus:0,popular:false},
@@ -275,7 +277,8 @@ export default function WalletScreen(props){
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'10px'}},'Recent Activity'),
       transactions.length===0 && React.createElement('div',{style:{padding:'20px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}},'No transactions yet'),
       transactions.map(function(tx){
-        var dateStr = tx.created_at ? new Date(tx.created_at).toLocaleDateString() : '';
+        /* R18: timezone-aware (was device-local toLocaleDateString) */
+        var dateStr = tx.created_at ? formatDateTime(tx.created_at) : '';
         return React.createElement('div',{key:tx.id,style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
           React.createElement('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',flexShrink:0}},tx.type==='call'?'📞':tx.type==='workshop'?'🎙':'💳'),
           React.createElement('div',{style:{flex:1}},

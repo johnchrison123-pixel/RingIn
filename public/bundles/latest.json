@@ -1,17 +1,18 @@
 {
-  "version": "2026.0518.1348",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1348.zip",
-  "published_at": "2026-05-18T13:48:00Z",
+  "version": "2026.0518.1444",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.1444.zip",
+  "published_at": "2026-05-18T14:44:00Z",
   "git_sha": "manual",
-  "title": "8 fixes — Search race conditions, empty states, stale-write guards",
+  "title": "11 fixes — Toast dedupe, ESC closes modals, broken-image fallbacks, abort timeouts",
   "notes": [
-    "FIX: Search results no longer flicker between queries — when you type fast, the slower previous query result was overwriting the newer one. Now uses sequence guards (HomeScreen, SearchScreen, MessagesScreen).",
-    "FIX: People search in Messages now properly debounced (300ms) — no more spamming Supabase with one query per keystroke.",
-    "POLISH: People search now shows 'No people found' empty state instead of just disappearing.",
-    "POLISH: Feed empty state — when you have zero posts visible (after filters), now shows clear 'No posts to show' message instead of blank space.",
-    "POLISH: Country picker + Timezone picker now show 'No matches found' when search has no results, instead of just empty list.",
-    "POLISH: Hashtag search no-match state — clear 'No posts with #hashtag' message instead of empty feed.",
-    "FIX: Followers/Following list — when modal closes mid-search, the stale typed query no longer leaks into the next open.",
-    "FIX: New-message search panel now properly clears search state when you toggle the panel closed and reopen."
+    "FIX: Toast notifications no longer stack endlessly on rapid action — same toast within 1s is deduped, max 3 visible at once.",
+    "FIX: ESC key now closes Report modal, Phone-code picker, Timezone picker, Followers list, Post-detail, Edit-post, Notifications panel, Comments panel, and chat 3-dot menu — was previously only closeable via X button.",
+    "FIX: All modals now lock body scroll while open — no more accidentally scrolling the screen behind the modal.",
+    "FIX: Avatar uploads no longer get stuck on the spinner in Safari private mode / when storage is full (was crashing the success handler via unwrapped localStorage.setItem).",
+    "FIX: 'Clear all messages' no longer uses native window.confirm (which blocked the JS thread + looked system-y on Android). Now in-app modal.",
+    "FIX: Report button — submit now has 10s timeout (fall back to local-save instead of hanging forever) + 60s per-target dedupe (can't accidentally double-report by tapping twice) + X button now closable mid-submit (was trapped).",
+    "FIX: Broken-image icons in 15+ places (followers list, saved posts, in-call expert avatars, chat avatars, chat-image bubbles, moments viewer, share sheet) — now show clean initials or 'Image unavailable' instead of broken-icon when Supabase signed URL expires.",
+    "POLISH: Notifications panel, post timestamps, wallet transactions, saved posts dates now respect your selected timezone (was always showing device-local).",
+    "POLISH: Toast dedupe — won't see the same error message stacked 8 times on bad network."
   ]
 }

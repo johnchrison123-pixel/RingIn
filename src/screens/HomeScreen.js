@@ -20,6 +20,7 @@ import {detectContent,autoTagPost} from '../utils/mlService';
 import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed */
+import {formatDateTime, formatDate, formatTime, safeSetItem} from '../utils/dateFmt'; /* R18: timezone-aware date display + safe localStorage wrapper */
 
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
@@ -185,7 +186,7 @@ function timeAgoUtil(dateStr){
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
   if(diff<172800) return 'Yesterday';
-  return date.toLocaleDateString([],{month:'short',day:'numeric'});
+  return formatDate(date); /* R18: timezone-aware (was raw toLocaleDateString) */
 }
 
 export function UserProfileView(props){
@@ -413,6 +414,36 @@ export function UserProfileView(props){
       }
     });
   },[user.id]);
+
+  // R18 FIX B: ESC closes the UserProfileView-local edit-post modal +
+  // the inline comments expander. editPostUData is fullscreen-overlay style
+  // (position:fixed top:0...) so it also locks body scroll while open.
+  // openCommentsU is an inline panel under the post card (no backdrop), so
+  // it gets ESC only. Lives in UserProfileView's scope because both states
+  // are declared here — they're not visible from HomeScreen's scope.
+  useEffect(function(){
+    function onKey(ev){
+      if (ev.key !== 'Escape') return;
+      if (editPostUData) { setEditPostUData(null); return; }
+      if (openCommentsU) { setOpenCommentsU(null); return; }
+    }
+    if (editPostUData || openCommentsU) {
+      window.addEventListener('keydown', onKey);
+    }
+    var prevOverflow = null;
+    if (editPostUData && typeof document !== 'undefined' && document.body) {
+      prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+    return function(){
+      window.removeEventListener('keydown', onKey);
+      if (editPostUData && typeof document !== 'undefined' && document.body) {
+        document.body.style.overflow = prevOverflow || '';
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editPostUData, openCommentsU]);
+
   // Realtime: sync likes + comment counts on user profile posts (shared hook)
   usePostsRealtime(sbHome,'userprofile-posts-'+user.id,currentUserId,setUserPosts,setCommentsCacheU);
 
@@ -1000,7 +1031,7 @@ export default function HomeScreen(props){
           list.unshift(pending);
           var cutoff = Date.now() - 24*60*60*1000;
           list = list.filter(function(r){ return new Date(r.created_at).getTime() > cutoff; });
-          localStorage.setItem(key, JSON.stringify(list));
+          safeSetItem(key, JSON.stringify(list)); /* R18: safeSetItem (was bare setItem) */
         }catch(_){}
         // Close the composer + refresh strip
         setPendingMomentFile(null);
@@ -1019,7 +1050,7 @@ export default function HomeScreen(props){
           var raw = localStorage.getItem(key);
           var list = raw ? JSON.parse(raw) : [];
           list.unshift(pending);
-          localStorage.setItem(key, JSON.stringify(list));
+          safeSetItem(key, JSON.stringify(list)); /* R18: safeSetItem (was bare setItem) */
         }catch(_){}
         console.warn('[ringin] moments insert failed, using local cache:', err && err.message ? err.message : err);
         setPendingMomentFile(null);
@@ -1434,6 +1465,49 @@ export default function HomeScreen(props){
     return function(){ window.removeEventListener('ringin:back', onBack); };
   }, [showEditPost, postDetail, showNotifs, openComments, postMenu, showLikers, selectedUser, compAudienceMenu]);
 
+  // R18 FIX B: ESC closes post-detail, edit-post modal, notifications panel,
+  // and comments panel (the inline expand under each post card). Also locks
+  // body scroll while any of the three FULLSCREEN overlays (postDetail,
+  // showEditPost, showNotifs) are open so the page behind doesn't scroll
+  // when the user drag-scrolls inside the modal on touch devices. The
+  // openComments expand is inline (no backdrop), so it gets ESC only — no
+  // scroll lock. Single useEffect covers all four because they share the
+  // same window keydown listener and overflow restore.
+  useEffect(function(){
+    var anyFullscreen = !!(postDetail || showEditPost || showNotifs);
+    function onKey(ev){
+      if (ev.key !== 'Escape') return;
+      // Innermost first — same priority order as the ringin:back handler so
+      // ESC and the Android back gesture behave identically.
+      if (postDetail) {
+        setPostDetail(null); setPostDetailIdx(0); setPdMenuOpen(false); setPdUiVisible(true); setPdShowComments(false); setReplyingTo(null);
+        return;
+      }
+      if (showEditPost) {
+        setShowEditPost(false); setEditPostData(null);
+        return;
+      }
+      if (showNotifs) { setShowNotifs(false); return; }
+      if (openComments) { setOpenComments(null); return; }
+    }
+    if (postDetail || showEditPost || showNotifs || openComments) {
+      window.addEventListener('keydown', onKey);
+    }
+    // Body scroll lock — only while a true fullscreen overlay is open.
+    var prevOverflow = null;
+    if (anyFullscreen && typeof document !== 'undefined' && document.body) {
+      prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+    return function(){
+      window.removeEventListener('keydown', onKey);
+      if (anyFullscreen && typeof document !== 'undefined' && document.body) {
+        document.body.style.overflow = prevOverflow || '';
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postDetail, showEditPost, showNotifs, openComments]);
+
   // Listen for the bell-click event from the App-level top bar to open notifications panel
   useEffect(function(){
     var handler=function(){
@@ -1573,7 +1647,7 @@ export default function HomeScreen(props){
       role:'RingIn Member',
       color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
       img:p.user_avatar||null,
-      time:new Date(p.created_at).toLocaleString(),
+      time:formatDateTime(p.created_at), /* R18: timezone-aware (was raw toLocaleString) */
       createdAt:p.created_at,
       text:p.text||'',
       tags:p.tags||[],
@@ -1715,7 +1789,7 @@ export default function HomeScreen(props){
     if(diff < 3600) return Math.floor(diff/60) + 'm ago';
     if(diff < 86400) return Math.floor(diff/3600) + 'h ago';
     if(diff < 172800) return 'Yesterday';
-    return date.toLocaleDateString([],{month:'short',day:'numeric'});
+    return formatDate(date); /* R18: timezone-aware (was raw toLocaleDateString) */
   }
 
   // Pass the real coin balance from useCoinBalance hook (was hardcoded 50,
@@ -2167,7 +2241,7 @@ export default function HomeScreen(props){
       var msgsKey = 'msgs_' + convId;
       var prev = []; try{ var raw = localStorage.getItem(msgsKey); if(raw) prev = JSON.parse(raw); }catch(_){ }
       prev.push(msg);
-      localStorage.setItem(msgsKey, JSON.stringify(prev));
+      safeSetItem(msgsKey, JSON.stringify(prev)); /* R18: safeSetItem (was bare setItem) */
     }catch(_){}
     try{
       var ecKey = 'ringin_expert_convos_' + currentUserId;
@@ -2190,7 +2264,7 @@ export default function HomeScreen(props){
         isExpertMock: true,
       };
       if(idx >= 0) ec[idx] = Object.assign({}, ec[idx], entry); else ec.unshift(entry);
-      localStorage.setItem(ecKey, JSON.stringify(ec));
+      safeSetItem(ecKey, JSON.stringify(ec)); /* R18: safeSetItem (was bare setItem) */
     }catch(_){}
   }
 
@@ -2494,7 +2568,7 @@ export default function HomeScreen(props){
             ),
             React.createElement('div', {style:{flex:1}},
               React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',lineHeight:1.4,marginBottom:'3px'}}, n.message||'New notification'),
-              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, new Date(n.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))
+              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)'}}, formatDateTime(n.created_at)) /* R18: timezone-aware (was raw toLocaleString) */
             ),
             !n.read ? React.createElement('div', {style:{width:'7px',height:'7px',borderRadius:'50%',background:'var(--ac)',flexShrink:0,marginTop:'4px'}}) : null
           );

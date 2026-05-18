@@ -12,6 +12,8 @@ import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapt
 import {toastSuccess,toastError} from '../utils/toast';
 import {useCoinBalance} from '../utils/coinBalance';
 import {sb as sbProfileCoin} from '../utils/supabase';
+/* R18: timezone-aware date display + safe localStorage wrapper */
+import {formatDate, safeSetItem} from '../utils/dateFmt';
 
 // Copy a URL to the clipboard and toast ONLY on real success.
 // Same helper pattern as HomeScreen — eliminates false-positive "Link
@@ -191,7 +193,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // session's created_at timestamp. Empty when the session is still
   // hydrating so we don't render "Member since Invalid Date".
   var memberSince = (session && session.user && session.user.created_at)
-    ? (function(){ try { return new Date(session.user.created_at).toLocaleDateString([],{month:'long',year:'numeric'}); } catch(_){ return ''; } })()
+    /* R18: timezone-aware via formatDate; pass-through to ensure month/year shown */
+    ? (function(){ try { var d=new Date(session.user.created_at); return d.toLocaleDateString([],{month:'long',year:'numeric',timeZone: (localStorage.getItem('user_timezone')||undefined)}); } catch(_){ return ''; } })()
     : '';
 
   // Shared moments registry — drives the Instagram-style avatar ring on
@@ -623,6 +626,34 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     showSettings,
   ]);
 
+  /* R18: ESC closes phone-code picker + body-scroll-lock while open */
+  useEffect(function(){
+    if (!showPhoneCodePicker) return;
+    var prevOverflow = '';
+    try { prevOverflow = document.body.style.overflow || ''; document.body.style.overflow = 'hidden'; } catch(_){}
+    function onKey(e){ if (e.key === 'Escape' || e.keyCode === 27) { setShowPhoneCodePicker(false); setAcctCountrySearch(''); } }
+    try { document.addEventListener('keydown', onKey); } catch(_){}
+    return function(){
+      try { document.removeEventListener('keydown', onKey); } catch(_){}
+      try { document.body.style.overflow = prevOverflow; } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPhoneCodePicker]);
+
+  /* R18: ESC closes timezone picker + body-scroll-lock while open */
+  useEffect(function(){
+    if (!showTzPicker) return;
+    var prevOverflow = '';
+    try { prevOverflow = document.body.style.overflow || ''; document.body.style.overflow = 'hidden'; } catch(_){}
+    function onKey(e){ if (e.key === 'Escape' || e.keyCode === 27) { setShowTzPicker(false); setTzSearch(''); } }
+    try { document.addEventListener('keydown', onKey); } catch(_){}
+    return function(){
+      try { document.removeEventListener('keydown', onKey); } catch(_){}
+      try { document.body.style.overflow = prevOverflow; } catch(_){}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showTzPicker]);
+
   useEffect(function(){
     if(!userId) return;
     sbProfile.from('profiles').select('full_name,bio').eq('id',userId).single().then(function(res){
@@ -774,7 +805,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       supabase.from('profiles').select('avatar_url').eq('id',userId).single().then(function(res){
         if(res.data&&res.data.avatar_url){
           setAvatarUrl(res.data.avatar_url);
-          localStorage.setItem('avatar_'+userId,res.data.avatar_url);
+          /* R18: safeSetItem — never crashes in private/full storage */
+          safeSetItem('avatar_'+userId,res.data.avatar_url);
         }
       });
     }
@@ -948,7 +980,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
           var url = pub.data.publicUrl+'?t='+Date.now();
           setAvatarUrl(url);
-          localStorage.setItem('avatar_'+userId,url);
+          /* R18: safeSetItem — never crashes if storage quota is full */
+          safeSetItem('avatar_'+userId,url);
           var userEmail = (session&&session.user)?session.user.email:email;
           // CRITICAL: do NOT include full_name here — that would clobber the user's chosen name
           // whenever they update their avatar. Use UPDATE so we don't accidentally create a row
@@ -1320,7 +1353,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             onClick:function(){setShowPhoneCodePicker(true);setAcctCountrySearch('');},
             style:{padding:'12px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}
           },acctPhoneCode),
-          React.createElement('input',{type:'tel',value:acctPhone,onChange:function(e){setAcctPhone(e.target.value);localStorage.setItem('acct_phone',e.target.value);},placeholder:'Phone number',style:{flex:1,padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}})
+          React.createElement('input',{type:'tel',value:acctPhone,onChange:function(e){setAcctPhone(e.target.value); /* R18: safeSetItem on every keystroke */ safeSetItem('acct_phone',e.target.value);},placeholder:'Phone number',style:{flex:1,padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}})
         )
       ),
       // Location section
@@ -1347,7 +1380,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                 var sel=acctCountry===c[1];
                 return React.createElement('div',{
                   key:c[0],
-                  onMouseDown:function(){setAcctCountry(c[1]);localStorage.setItem('acct_country',c[1]);setShowCountryPicker(false);setAcctCountrySearch('');},
+                  onMouseDown:function(){setAcctCountry(c[1]); /* R18: safeSetItem */ safeSetItem('acct_country',c[1]);setShowCountryPicker(false);setAcctCountrySearch('');},
                   style:{padding:'11px 14px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.12)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}
                 },
                   React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
@@ -1431,7 +1464,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             if(!filtered.length) return React.createElement('div',{style:{padding:'14px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No matches');
             return filtered.map(function(c){
               var sel=acctPhoneCode===c[2];
-              return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
+              return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]); /* R18: safeSetItem */ safeSetItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
                 style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
                 React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
                 React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
@@ -2267,7 +2300,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.38';
+              var APK_VERSION = 'v3.39';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');

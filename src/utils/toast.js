@@ -1,6 +1,10 @@
 /* eslint-disable */
-/* Lightweight toast notifications — no dependencies */
+/* Lightweight toast notifications — no dependencies
+ * R18: added dedupe within 1s window + cap visible toasts at 3 */
 var container = null;
+var recentToasts = new Map(); // key: type+message → last shown timestamp
+var DEDUPE_WINDOW_MS = 1000;
+var MAX_VISIBLE = 3;
 
 function ensureContainer() {
   if (typeof document === 'undefined') return null;
@@ -17,12 +21,38 @@ function ensureContainer() {
   return container;
 }
 
+function pruneOldToasts(c) {
+  // Cap visible toasts: remove oldest if exceeding MAX_VISIBLE
+  while (c.childElementCount >= MAX_VISIBLE) {
+    var oldest = c.firstElementChild;
+    if (!oldest) break;
+    try { c.removeChild(oldest); } catch (e) { break; }
+  }
+}
+
 export function showToast(message, opts) {
   opts = opts || {};
   var type = opts.type || 'info'; // info | success | error | warn
   var duration = opts.duration || 2500;
   var c = ensureContainer();
   if (!c) return;
+
+  // Dedupe: same (type+message) within DEDUPE_WINDOW_MS is suppressed
+  var key = type + '::' + String(message);
+  var now = Date.now();
+  var last = recentToasts.get(key);
+  if (last && (now - last) < DEDUPE_WINDOW_MS) return;
+  recentToasts.set(key, now);
+  // Garbage-collect dedupe map (cap at 50 entries; remove expired)
+  if (recentToasts.size > 50) {
+    var cutoff = now - DEDUPE_WINDOW_MS;
+    var keysToDelete = [];
+    recentToasts.forEach(function(ts, k){ if (ts < cutoff) keysToDelete.push(k); });
+    keysToDelete.forEach(function(k){ recentToasts.delete(k); });
+  }
+
+  // Cap visible toasts BEFORE appending
+  pruneOldToasts(c);
 
   var colors = {
     info: 'rgba(123,110,255,0.95)',

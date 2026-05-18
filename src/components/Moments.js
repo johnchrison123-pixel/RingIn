@@ -3,6 +3,7 @@ import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {createPortal} from 'react-dom';
 import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #2: filter blocked users from moments strip */
+import ImgWithFallback from './ImgWithFallback'; /* R18: shared image fallback for share-sheet/viewer/cube avatars */
 
 // R12 FIX #3: Mirror of HomeScreen.copyToClipboardWithToast — Moments lives
 // in components/ and we don't want to import from screens/. Same legacy
@@ -1252,7 +1253,8 @@ function MomentViewer(props){
                   transition: 'border 200ms, box-shadow 200ms',
                 }
               },
-                u.avatar_url ? React.createElement('img', { src: u.avatar_url, alt: '', style: { width: '100%', height: '100%', objectFit: 'cover' } }) : initials
+                /* R18: ImgWithFallback — initials shown if avatar fails decode/404 */
+                React.createElement(ImgWithFallback, { src: u.avatar_url, alt: '', fallback: initials, style: { width: '100%', height: '100%', objectFit: 'cover' } })
               ),
               React.createElement('div', {
                 style: { fontSize: '11px', color: sent ? '#39FF14' : 'rgba(255,255,255,0.85)', fontWeight: 600, maxWidth: '64px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
@@ -1501,9 +1503,14 @@ function MomentViewer(props){
                 var avatar = prof.avatar_url || null;
                 var initial = (prof.full_name || v.viewer_id || '?').charAt(0).toUpperCase();
                 return React.createElement('div',{key:v.viewer_id,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}},
-                  avatar
-                    ? React.createElement('img', {src: avatar, alt:'', style:{width:'38px',height:'38px',borderRadius:'50%',objectFit:'cover',flexShrink:0,border:'1px solid rgba(255,255,255,0.1)'}})
-                    : React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}}, initial),
+                  /* R18: ImgWithFallback for viewer-list seen-by avatar */
+                  React.createElement('div', {style:{width:'38px',height:'38px',borderRadius:'50%',overflow:'hidden',flexShrink:0,border:'1px solid rgba(255,255,255,0.1)'}},
+                    React.createElement(ImgWithFallback, {
+                      src: avatar, alt: '',
+                      fallback: 'avatar', fallbackInitial: initial,
+                      style: {width:'38px',height:'38px',borderRadius:'50%',objectFit:'cover'}
+                    })
+                  ),
                   React.createElement('div',{style:{flex:1,minWidth:0}},
                     React.createElement('div',{style:{fontSize:'13.5px',color:'#fff',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, displayName),
                     React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginTop:'1px'}}, v.viewed_at ? (function(){
@@ -1599,12 +1606,14 @@ function MomentViewer(props){
           zIndex: 2,
         }
       },
-        avatar ? React.createElement('img', {
-          src: avatar, alt: '',
-          style: { width:'32px', height:'32px', borderRadius:'50%', objectFit:'cover', border:'1.5px solid rgba(255,255,255,0.5)', flexShrink:0 }
-        }) : React.createElement('div', {
-          style: { width:'32px', height:'32px', borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', fontWeight:700, flexShrink:0 }
-        }, (name || '?').charAt(0).toUpperCase()),
+        /* R18: ImgWithFallback for cube-ghost header avatar */
+        React.createElement('div', {style:{width:'32px',height:'32px',borderRadius:'50%',overflow:'hidden',border:'1.5px solid rgba(255,255,255,0.5)',flexShrink:0,background:'rgba(255,255,255,0.2)'}},
+          React.createElement(ImgWithFallback, {
+            src: avatar, alt: '',
+            fallback: 'avatar', fallbackInitial: (name || '?').charAt(0),
+            style: {width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover'}
+          })
+        ),
         React.createElement('div', { style: { fontSize:'14px', fontWeight:700, textShadow:'0 1px 4px rgba(0,0,0,0.3)' } }, name)
       ),
       // Caption — wrapper+flex pattern (image: blur card bottom; text: big centered).

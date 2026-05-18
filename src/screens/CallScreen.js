@@ -6,6 +6,8 @@ import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
 import {setSharedCoinBalance} from '../utils/coinBalance';
+/* R18: shared image fallback so expired Supabase avatar URLs don't show broken-image */
+import ImgWithFallback from '../components/ImgWithFallback';
 
 // ── Module-level SVG nodes ─────────────────────────────────────────────────
 // React.createElement creates a fresh object on every render. Hoisting the
@@ -621,7 +623,8 @@ export default function CallScreen(props){
   if(phase==='declined' || (phase==='ended' && endReason==='rejected')){
     return React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',background:'var(--bg)',padding:'24px'}},
       React.createElement('div',{style:{width:'90px',height:'90px',borderRadius:'50%',background:expert.color||'var(--ac)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:700,color:'#fff',marginBottom:'16px'}},
-        expert.img ? React.createElement('img',{src:expert.img,alt:expert.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (expert.initials||'?')
+        /* R18: ImgWithFallback shows initials text if avatar fails to load */
+        React.createElement(ImgWithFallback,{src:expert.img,alt:expert.name,fallback:(expert.initials||'?'),style:{width:'100%',height:'100%',objectFit:'cover'}})
       ),
       React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}},expert.name||'User'),
       React.createElement('div',{style:{fontSize:'14px',color:'#ef4444',marginBottom:'32px'}},'Call Declined'),
@@ -635,7 +638,8 @@ export default function CallScreen(props){
         React.createElement('div',{style:RIPPLE_1}),
         React.createElement('div',{style:RIPPLE_2}),
         React.createElement('div',{style:{width:'90px',height:'90px',borderRadius:'50%',background:expert.color||'var(--ac)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:700,color:'#fff',position:'relative',zIndex:1}},
-          expert.img ? React.createElement('img',{src:expert.img,alt:expert.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (expert.initials||'?')
+          /* R18: ImgWithFallback shows initials text if avatar fails to load */
+        React.createElement(ImgWithFallback,{src:expert.img,alt:expert.name,fallback:(expert.initials||'?'),style:{width:'100%',height:'100%',objectFit:'cover'}})
         )
       ),
       React.createElement('div',{style:{fontSize:'20px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
@@ -701,7 +705,8 @@ export default function CallScreen(props){
   // Connected / ended
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',background:'var(--bg)',padding:'24px'}},
     React.createElement('div',{style:{width:'90px',height:'90px',borderRadius:'50%',background:expert.color||'var(--ac)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:700,color:'#fff',marginBottom:'12px'}},
-      expert.img ? React.createElement('img',{src:expert.img,alt:expert.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (expert.initials||'?')
+      /* R18: ImgWithFallback shows initials text if avatar fails to load */
+        React.createElement(ImgWithFallback,{src:expert.img,alt:expert.name,fallback:(expert.initials||'?'),style:{width:'100%',height:'100%',objectFit:'cover'}})
     ),
     React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
     React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'6px'}},expert.role||'Member'),
