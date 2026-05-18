@@ -1995,9 +1995,14 @@ export default function Moments(props){
   }
   function closeViewer(){
     setViewer(null);
-    // Arm the click-blocker for the first ~400ms after close.
+    // R13 FIX #5: dismiss window reduced 400 → 80ms. The original 400ms
+    // window was way longer than needed to absorb the synthetic click
+    // (~50ms max on iOS/Android) and was creating a perceived "frozen"
+    // feel where the underlying feed felt unresponsive for ~third of a
+    // second after closing a moment. 80ms still covers the synthetic
+    // tap race without the lag.
     setClickGuard(true);
-    setTimeout(function(){ setClickGuard(false); }, 400);
+    setTimeout(function(){ setClickGuard(false); }, 80);
   }
 
   // Android back-button handler — split into TWO effects to avoid the
@@ -2050,8 +2055,9 @@ export default function Moments(props){
         } catch(_){}
         viewerOpenRef.current = false;
         setViewer(null);
+        // R13 FIX #5: see closeViewer — 400 → 80ms.
         setClickGuard(true);
-        setTimeout(function(){ setClickGuard(false); }, 400);
+        setTimeout(function(){ setClickGuard(false); }, 80);
       }
     }
     window.addEventListener('popstate', onPopState);

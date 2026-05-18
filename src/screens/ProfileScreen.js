@@ -2234,7 +2234,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.33';
+              var APK_VERSION = 'v3.34';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -2467,7 +2467,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           onMouseDown:function(e){setDragging(true);setDragStart({x:e.clientX-offset.x,y:e.clientY-offset.y});},
           onMouseMove:function(e){if(!dragging)return;setOffset({x:e.clientX-dragStart.x,y:e.clientY-dragStart.y});},
           onMouseUp:function(){setDragging(false);},
-          onTouchStart:function(e){setDragging(true);setDragStart({x:e.touches[0].clientX-offset.x,y:e.touches[0].clientY-offset.y});},
+          // R13 FIX #7: preventDefault on touchstart so iOS Safari doesn't
+          // trigger a long-press image menu / context callout while the
+          // user is starting an avatar reposition drag. Mirrors the
+          // existing onTouchMove preventDefault.
+          onTouchStart:function(e){e.preventDefault();setDragging(true);setDragStart({x:e.touches[0].clientX-offset.x,y:e.touches[0].clientY-offset.y});},
           onTouchMove:function(e){if(!dragging)return;e.preventDefault();setOffset({x:e.touches[0].clientX-dragStart.x,y:e.touches[0].clientY-dragStart.y});},
           onTouchEnd:function(){setDragging(false);}
         },

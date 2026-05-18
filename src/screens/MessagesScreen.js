@@ -1463,11 +1463,17 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         onClick:function(){setShowEmoji(function(v){return !v;});},
         style:{width:'34px',height:'34px',borderRadius:'50%',background:showEmoji?'var(--acg)':'var(--bg3)',border:showEmoji?'1px solid var(--ac)':'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px',color:showEmoji?'var(--ac)':'var(--text)'}
       },'😊'),
+      // R13 FIX #6: iOS keyboard polish for chat composer — show the
+      // blue "Send" return key, enable sentence-cap + autocorrect to
+      // match native messaging apps.
       React.createElement('input',{
         value:txt,
         onChange:function(e){setTxt(e.target.value);clearTimeout(chatTypingTimerRef.current);chatTypingTimerRef.current=setTimeout(function(){playMsKeyClick();},80);onTypingKeystroke();},
         onKeyDown:function(e){if(e.key==='Enter')send();},
         placeholder:'Type a message...',
+        enterKeyHint:'send',
+        autoCapitalize:'sentences',
+        autoCorrect:'on',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
       }),
 
@@ -2042,7 +2048,9 @@ export default function MessagesScreen(props){
     showNew ? React.createElement('div',{style:{padding:'0 18px 10px',borderBottom:'1px solid var(--border)'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'8px 12px',display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
         React.createElement('span',{style:{color:'var(--t3)',fontSize:'14px'}},'🔍'),
-        React.createElement('input',{autoFocus:true,placeholder:'Search people...',value:search,onChange:function(e){setSearch(e.target.value);},style:{flex:1,background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',fontFamily:'DM Sans,sans-serif'}})
+        // R13 FIX #6: people-search input — "Search" return key, no autocaps,
+        // no autocorrect (names get mangled by autocorrect, e.g. "Joao"→"Jean").
+        React.createElement('input',{autoFocus:true,placeholder:'Search people...',value:search,onChange:function(e){setSearch(e.target.value);},enterKeyHint:'search',autoCapitalize:'none',autoCorrect:'off',style:{flex:1,background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',fontFamily:'DM Sans,sans-serif'}})
       ),
       searchRes.map(function(u,i){
         return React.createElement('div',{key:i,onClick:function(){startConvo(u);},style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px',borderRadius:'10px',cursor:'pointer',background:'var(--bg3)',marginBottom:'6px'}},

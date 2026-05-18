@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.33 — +6 realtime/permission/race fixes (135 fixes total)</h2>
-<p>Round 12 audited realtime channels + clipboard/upload permissions + concurrent actions. <b>Moments file picker now validates MIME + 10MB size</b> (was OOM-ing Android on huge DSLR raws), <b>6 raw clipboard sites missed in Round 6 sweep</b> (2 in HomeScreen menus, 4 in Moments share flow) now use proper success/fail toasts, <b>tapping Call while phone is ringing inbound no longer stacks two calls</b>, <b>rapid like spam no longer creates parallel RPC flicker</b> (in-flight guard), <b>notifs channel name unique-per-mount</b> to prevent StrictMode double-subscribe collision. Bundle <code>2026.0518.1055</code> + APK <code>ringin-v3.33.apk</code>.</p>
+<h2>✅ APK v3.34 — +8 iOS/CSS/UX fixes (143 fixes total)</h2>
+<p>Round 13 audited iOS WebView + CSS z-index/safe-area + component prop contracts. CRITICAL: <b>Incoming call modal was BELOW the Moments viewer</b> — user watching a moment couldn't answer or decline a real ringing call. Also <b>Wallet card inputs now show numeric keyboard</b> (was full QWERTY — friction on purchase), <b>InstallPrompt + notifications panel respect iPhone X+ safe-area-insets</b> (no more home-indicator overlap or status-bar bleed), <b>Moments clickGuard 400ms→80ms</b> (snappier feed return), <b>chat input has enterKeyHint='send'</b> + autoCorrect (iOS keyboard shows "Send" button), <b>caller avatar in incoming call modal falls back to initials if image 404s</b>. Bundle <code>2026.0518.1125</code> + APK <code>ringin-v3.34.apk</code>.</p>
 </div>
 
 <div class="stats">

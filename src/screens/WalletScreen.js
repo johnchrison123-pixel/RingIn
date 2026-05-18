@@ -200,13 +200,17 @@ export default function WalletScreen(props){
         // Final polish: maxLength widened to 19 so Maestro/some debit cards
         // (which can be 19 digits) can be entered. Luhn validation enforces
         // a sensible 13-19 lower bound.
-        React.createElement('input',{placeholder:'Card Number',value:card.number,maxLength:19,onChange:function(e){updateCard('number',e.target.value.replace(/\D/g,''));},style:{padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}}),
+        // R13 FIX #2: type='tel' + inputMode='numeric' brings up the
+        // numeric keypad on iOS/Android (no spellcheck, no autocaps),
+        // matching native checkout UX. Existing onChange already strips
+        // non-digits via replace(/\D/g,'').
+        React.createElement('input',{type:'tel',inputMode:'numeric',placeholder:'Card Number',value:card.number,maxLength:19,onChange:function(e){updateCard('number',e.target.value.replace(/\D/g,''));},style:{padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}}),
         React.createElement('div',{style:{display:'flex',gap:'10px'}},
-          React.createElement('input',{placeholder:'MM/YY',value:card.expiry,maxLength:5,onChange:function(e){updateCard('expiry',e.target.value);},style:{flex:1,padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}}),
+          React.createElement('input',{type:'tel',inputMode:'numeric',placeholder:'MM/YY',value:card.expiry,maxLength:5,onChange:function(e){updateCard('expiry',e.target.value);},style:{flex:1,padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}}),
           // Final polish: CVV maxLength widened to 4 so Amex cards (which
           // use a 4-digit CID) can actually be entered. Validation still
           // accepts 3 OR 4.
-          React.createElement('input',{placeholder:'CVV',value:card.cvv,maxLength:4,onChange:function(e){updateCard('cvv',e.target.value.replace(/\D/g,''));},style:{flex:1,padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}})
+          React.createElement('input',{type:'tel',inputMode:'numeric',placeholder:'CVV',value:card.cvv,maxLength:4,onChange:function(e){updateCard('cvv',e.target.value.replace(/\D/g,''));},style:{flex:1,padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none'}})
         )
       ) : React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
         React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'4px'}},'Enter your UPI ID (e.g. name@upi, phone@paytm)'),

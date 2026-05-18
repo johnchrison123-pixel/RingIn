@@ -188,7 +188,10 @@ export default function InstallPrompt(){
     position:'fixed',
     left:'50%',
     transform:'translateX(-50%)',
-    bottom:'76px',
+    // R13 FIX #3: respect iOS home-indicator safe area so the pill doesn't
+    // sit under the gesture bar on notched/Dynamic-Island iPhones. Mirrors
+    // UpdatePrompt.js line 231.
+    bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
     zIndex:850,
     width:'calc(100% - 24px)',
     maxWidth:'420px',

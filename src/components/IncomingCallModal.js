@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {sb} from '../utils/supabase';
 import {playRingtone, stopRingtone, hapticPulse} from '../utils/soundEngine';
 import {hashUidToInt, prefetchAgora} from '../utils/agora';
@@ -19,6 +19,10 @@ export default function IncomingCallModal(props){
   // previously fire two UPDATEs and two onReject() calls, occasionally
   // leaving the modal in a partially-dismissed state. One-shot guard.
   var rejectedRef = useRef(false);
+  // R13 FIX #8: caller_avatar can 404 (deleted/expired Supabase storage URL,
+  // CDN hiccup, etc.). Without onError, broken image icons appear inside the
+  // gradient circle. Fall back to initials when the network/decode fails.
+  var imgFailedS = useState(false); var imgFailed = imgFailedS[0]; var setImgFailed = imgFailedS[1];
 
   // Real ringtone (warm two-stroke bell, loops every 2.4s, capped at 6 cycles).
   // Shorter haptic pattern (single ~250ms buzz per cycle) to avoid Samsung Internet
@@ -129,15 +133,19 @@ export default function IncomingCallModal(props){
   // Note: NO backdrop-filter — Samsung Internet/Galaxy GPUs run backdrop-filter
   // on the CPU which pegs a core during the ripple animations. Solid alpha bg
   // looks nearly identical and costs ~0 CPU. Keyframes live in src/index.css.
+  // R13 FIX #1: zIndex raised from 1000 → 999999 so the ring overlay always
+  // sits ABOVE the Moments cube/clickGuard (zIndex 9997/9998/99999). Without
+  // this, a user watching a moment couldn't see or answer an incoming call
+  // because the Moments viewer covered the IncomingCallModal.
   return React.createElement('div',{
-    style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(9,9,14,0.98)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px'}
+    style:{position:'fixed',inset:0,zIndex:999999,background:'rgba(9,9,14,0.98)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px'}
   },
     React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'18px',textTransform:'uppercase',letterSpacing:'2px',fontWeight:700}},'Incoming Call'),
     React.createElement('div',{style:{position:'relative',marginBottom:'24px'}},
       React.createElement('div',{style:{position:'absolute',width:'140px',height:'140px',borderRadius:'50%',background:'rgba(123,110,255,0.15)',top:'-25px',left:'-25px',animation:'ripple 1.2s ease-out infinite'}}),
       React.createElement('div',{style:{position:'absolute',width:'170px',height:'170px',borderRadius:'50%',background:'rgba(232,77,154,0.10)',top:'-40px',left:'-40px',animation:'ripple 1.2s ease-out infinite 0.5s'}}),
       React.createElement('div',{style:{width:'90px',height:'90px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:700,color:'#fff',position:'relative',zIndex:1}},
-        avatar ? React.createElement('img',{src:avatar,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+        (avatar && !imgFailed) ? React.createElement('img',{src:avatar,alt:name,onError:function(){ setImgFailed(true); },style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
       )
     ),
     React.createElement('div',{style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,color:'var(--text)',marginBottom:'6px'}}, name),

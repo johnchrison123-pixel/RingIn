@@ -2367,7 +2367,10 @@ export default function HomeScreen(props){
     showNotifs ? React.createElement('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:999}},
       React.createElement('div', {onClick:function(){setShowNotifs(false);}, style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)'}}),
       React.createElement('div', {style:{position:'absolute',top:0,left:0,right:0,background:'var(--bg)',borderBottomLeftRadius:'16px',borderBottomRightRadius:'16px',boxShadow:'0 8px 32px rgba(0,0,0,0.4)',zIndex:1000,maxHeight:'80vh',overflowY:'auto'}},
-        React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px 10px'}},
+        // R13 FIX #4: respect iOS notch / Dynamic Island so the header
+        // text doesn't slide under the status bar. Replaces the padding
+        // shorthand with explicit per-side props.
+        React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:'calc(16px + env(safe-area-inset-top, 0px))',paddingLeft:'18px',paddingRight:'18px',paddingBottom:'10px'}},
           React.createElement('div', {style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Notifications'),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
             // FIX R10-3: Clear all had no rollback — silent failure left UI
