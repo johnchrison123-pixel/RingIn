@@ -51,8 +51,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid #ddd;font-size:9pt;
 <p class="subhead">Live status of the bugs from <a href="https://github.com/johnchrison123-pixel/RingIn/blob/main/public/audit.pdf">audit.pdf</a> · Updated as work completes · Refresh to see progress</p>
 
 <div class="banner">
-<h2>✅ APK v3.27 — 83 audit fixes shipped (all 6 batches verified clean by 7 agents)</h2>
-<p>Ran 5 parallel deep-audit agents → 152 findings. Fixed 3 P0 crashes + 60 P1 + 20 P2 across 6 batches. Each batch: dedicated agent did the work, separate audit agent verified before next batch dispatched. Final supervisor swept all 13 files for scope leaks, hook violations, ref errors, broken integrations. <b>Clean — no issues found</b>. Bundle <code>2026.0518.0753</code> published. APK on Desktop as <code>ringin-v3.27.apk</code>. Some items skipped per your "no manual input" rule (Workshops payment flow needs Stripe/Razorpay, Firebase API key rotation needs Firebase Console, email confirmation needs Supabase auth config, LiveWorkshopScreen real session needs new schema).</p>
+<h2>✅ APK v3.28 — +9 more fixes after a fresh post-v3.27 audit (92 fixes total)</h2>
+<p>Ran a fresh full-app audit after shipping v3.27. Found 13 actionable items the previous round missed. Fixed 9 in this batch (4 deferred — JSX→React.createElement on Workshops, OTA Capgo edge case, popstate URL on FF, RINGIN_BUILD label). Biggest wins this round: <b>saveEditProfile bio merge fix</b> (the ONE Edit Profile path Batch 1 missed — was wiping cover/location/notif prefs on save), <b>[mshare] inbox+chat render</b> (was showing raw text), <b>HomeScreen upload spinners stuck</b> (no .catch on getPublicUrl failures), <b>SIGNED_OUT cache cleanup</b> (next user no longer sees previous user's data). APK <code>ringin-v3.28.apk</code> on Desktop. Bundle <code>2026.0518.0824</code>.</p>
 </div>
 
 <div class="stats">

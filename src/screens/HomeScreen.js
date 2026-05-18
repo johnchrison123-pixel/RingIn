@@ -470,7 +470,7 @@ export function UserProfileView(props){
             } catch(_){}
           }
           var items=isOwn?[
-            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){var snapU2=userPosts.slice();setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);alert('Failed to delete post.');}});}}},
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){var snapU2=userPosts.slice();setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);toastError('Failed to delete post.');/* FIX #7 */}});}}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuU(null);}},
             {icon:'✏️',label:'Edit Post',fn:function(){setEditPostUData({id:p.id,content:p.text||p.content||''});setPostMenuU(null);}},
             {icon:'🔕',label:_mutedListU.indexOf(p.id)>=0?'Turn on notifications':'Turn off notifications',fn:function(){_toggleMutePostU(p.id);setPostMenuU(null);}}
@@ -1350,7 +1350,7 @@ export default function HomeScreen(props){
     sbHome.from('profiles').select('banned').eq('id', uid).single().then(function(r){
       if(r.data && r.data.banned){
         sbHome.auth.signOut();
-        alert('Your account has been suspended. Please contact support.');
+        toastError('Your account has been suspended. Please contact support.');/* FIX #7 */
       }
     });
     sbHome.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(20).then(function(res){
@@ -1384,7 +1384,7 @@ export default function HomeScreen(props){
       if(r.error){
         console.error('RingIn Error [saveEditPost]:', r.error && r.error.message ? r.error.message : 'Unknown error');
         setPosts(snapPosts);
-        try{toastError('Failed to edit. Try again.');}catch(e){alert('Something went wrong. Please try again.');}
+        try{toastError('Failed to edit. Try again.');}catch(e){console.warn('[ringin] toast failed:', e);}/* FIX #7 */
         return;
       }
       try{toastSuccess('✏️ Post updated');}catch(e){}
@@ -1796,7 +1796,7 @@ export default function HomeScreen(props){
             var fallback = Object.assign({}, postData); delete fallback.audience;
             return sbHome.from('posts').insert([fallback]).select().then(handleInsertResult);
           }
-      if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');alert('Something went wrong. Please try again.');setPosting(false);return;}
+      if(res.error){console.error('RingIn Error [submitPost]:', res.error && res.error.message ? res.error.message : 'Unknown error');toastError('Something went wrong. Please try again.');/* FIX #7 */setPosting(false);return;}
       if(res.data&&res.data[0]){
         // FIX #1: N+1 query elimination. Previously this code did a per-follower
         // .single() lookup against notification_settings (1000 followers = 1000
@@ -1894,19 +1894,19 @@ export default function HomeScreen(props){
   function handleImageUpload(files){
     if(!files||files.length===0) return;
     var session = props.session;
-    if(!session||!session.user){alert('Please log in to add photos');return;}
+    if(!session||!session.user){toastWarn('Please log in to add photos');/* FIX #7 */return;}
     setUploadingMedia(true);
     var uid = session.user.id;
     var uploads = Array.from(files).map(function(file){
       // Validate file type
       var allowed = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
       if(!allowed.includes(file.type)){
-        alert('Only images allowed (JPG, PNG, GIF, WebP)');
+        toastWarn('Only images allowed (JPG, PNG, GIF, WebP)');/* FIX #7 */
         return Promise.resolve(null);
       }
       // Validate file size (max 10MB)
       if(file.size > 10 * 1024 * 1024){
-        alert('Image must be under 10MB');
+        toastWarn('Image must be under 10MB');/* FIX #7 */
         return Promise.resolve(null);
       }
       var ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'webp';
@@ -1914,22 +1914,36 @@ export default function HomeScreen(props){
       var path = 'posts/'+uid+'/'+safeFileName;
       return sbHome.storage.from('posts-media').upload(path, file, {upsert:true}).then(function(res){
         if(res.error){console.error('img upload err',res.error && res.error.message ? res.error.message : 'Unknown error');return null;}
-        return sbHome.storage.from('posts-media').getPublicUrl(path).data.publicUrl;
+        // FIX #3: null-guard getPublicUrl. If publicUrl is undefined, treat as failure.
+        var pub = sbHome.storage.from('posts-media').getPublicUrl(path);
+        if(!pub || !pub.data || !pub.data.publicUrl){
+          console.warn('[ringin] getPublicUrl returned no URL for', path);
+          return null;
+        }
+        return pub.data.publicUrl;
+      }).catch(function(e){
+        console.warn('[ringin] image upload failed:', e);
+        return null;
       });
     });
+    // FIX #3: ensure setUploadingMedia(false) ALWAYS runs even on error paths.
     Promise.all(uploads).then(function(urls){
       var valid = urls.filter(Boolean);
       setCompImgs(function(prev){return prev.concat(valid);});
       setUploadingMedia(false);
+    }).catch(function(e){
+      console.warn('[ringin] handleImageUpload failed:', e);
+      setUploadingMedia(false);
+      toastError('Image upload failed');
     });
   }
 
   function handleVideoUpload(file){
     if(!file) return;
     var session = props.session;
-    if(!session||!session.user){alert('Please log in to add video');return;}
+    if(!session||!session.user){toastWarn('Please log in to add video');/* FIX #7 */return;}
     var maxMB = 100;
-    if(file.size > maxMB*1024*1024){alert('Video must be under '+maxMB+'MB');return;}
+    if(file.size > maxMB*1024*1024){toastWarn('Video must be under '+maxMB+'MB');/* FIX #7 */return;}
     var localUrl = URL.createObjectURL(file);
     setCompVideo({localUrl:localUrl, supaUrl:null, uploading:true});
     setUploadingMedia(true);
@@ -1937,10 +1951,25 @@ export default function HomeScreen(props){
     var ext = (file.name||'video').split('.').pop()||'mp4';
     var path = 'posts/'+uid+'/vid_'+Date.now()+'.'+ext;
     sbHome.storage.from('posts-media').upload(path, file, {upsert:true}).then(function(res){
-      if(res.error){alert('Something went wrong. Please try again.');setCompVideo(null);setUploadingMedia(false);return;}
-      var publicUrl = sbHome.storage.from('posts-media').getPublicUrl(path).data.publicUrl;
+      if(res.error){toastError('Something went wrong. Please try again.');/* FIX #7 */setCompVideo(null);setUploadingMedia(false);return;}
+      // FIX #3: null-guard getPublicUrl. If publicUrl is undefined, treat as failure.
+      var pub = sbHome.storage.from('posts-media').getPublicUrl(path);
+      if(!pub || !pub.data || !pub.data.publicUrl){
+        console.warn('[ringin] video getPublicUrl returned no URL for', path);
+        setCompVideo(null);
+        setUploadingMedia(false);
+        toastError('Video upload failed');
+        return;
+      }
+      var publicUrl = pub.data.publicUrl;
       setCompVideo({localUrl:localUrl, supaUrl:publicUrl, uploading:false});
       setUploadingMedia(false);
+    }).catch(function(e){
+      // FIX #3: video upload no .catch. Always reset uploadingMedia + compVideo on failure.
+      console.warn('[ringin] video upload failed:', e);
+      setUploadingMedia(false);
+      setCompVideo(null);
+      toastError('Video upload failed');
     });
   }
 
@@ -2168,7 +2197,7 @@ export default function HomeScreen(props){
           if(!p) return null;
           var isOwn=p.userId===currentUserId;
           var items=isOwn?[
-            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){var snapBefore=posts.slice();setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePost]:', r.error);setPosts(snapBefore);alert('Failed to delete post.');}});}}},
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){var snapBefore=posts.slice();setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePost]:', r.error);setPosts(snapBefore);toastError('Failed to delete post.');/* FIX #7 */}});}}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenu(null);}},
             {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.text||p.content||''});setShowEditPost(true);setPostMenu(null);}},
             {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenu(null);}}

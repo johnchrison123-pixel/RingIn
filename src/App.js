@@ -252,6 +252,18 @@ export default function App() {
         try { startCloseFriends(res.data.session.user.id); } catch(_){}
       }
     });
+    // FIX #6: track the previous user id so we can wipe their per-user caches
+    // on SIGNED_OUT (where `session` is null and we'd otherwise have no id).
+    // supabase-js v2 has no sync supabase.auth.user(), so seed via the
+    // getSession promise and update on every auth event.
+    var _prevAuthUserId = null;
+    try {
+      supabase.auth.getSession().then(function(r){
+        if (r && r.data && r.data.session && r.data.session.user) {
+          _prevAuthUserId = r.data.session.user.id;
+        }
+      });
+    } catch(_){}
     var sub = supabase.auth.onAuthStateChange(function(_event, session) {
       setSession(session);
       // Restart heartbeat on auth change (sign-in / sign-out).
@@ -259,6 +271,24 @@ export default function App() {
         if (session && session.user) startLastSeen(session.user.id);
         else stopLastSeen();
       } catch(_) {}
+      // FIX #6: SIGNED_OUT — clear per-user + shared caches so the next user
+      // signing in doesn't see leftover data from the previous account.
+      if (_event === 'SIGNED_OUT') {
+        try {
+          var prevId = _prevAuthUserId || ((session && session.user) ? session.user.id : null);
+          if (prevId) {
+            var keysToWipe = ['convos_'+prevId, 'profile_info_'+prevId, 'avatar_'+prevId, 'ringin_coin_balance_'+prevId, 'saved_posts_'+prevId, 'user_posts_'+prevId];
+            keysToWipe.forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+          }
+          // Always-shared keys to clear
+          ['ringin_clikes', 'ringin_muted_posts', 'ringin_muted_convos', 'ringin_blocked', 'ringin_muted_words', 'ringin_muted_moment_users', 'ringin_carousel_idx', 'feed_posts_cache'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+        } catch(_){}
+        // also stop lastSeen + close any open chats
+        try { stopLastSeen(); } catch(_){}
+        _prevAuthUserId = null;
+      } else if (session && session.user) {
+        _prevAuthUserId = session.user.id;
+      }
       if(session && session.user){
         var email = session.user.email || '';
         var emailPrefix = email.indexOf('@') > 0 ? email.split('@')[0] : 'user';

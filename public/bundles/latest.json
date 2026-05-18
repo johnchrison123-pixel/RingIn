@@ -1,16 +1,18 @@
 {
-  "version": "2026.0518.0753",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0753.zip",
-  "published_at": "2026-05-18T07:53:00Z",
+  "version": "2026.0518.0824",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.0824.zip",
+  "published_at": "2026-05-18T08:24:00Z",
   "git_sha": "manual",
-  "title": "83 audit fixes — feed, messages, calls, wallet, settings, sync, memory leaks",
+  "title": "9 more audit fixes — Edit Profile bio safe, [mshare] renders, uploads unstuck",
   "notes": [
-    "3 CRASH FIXES: Edit Post from your profile, tapping likers, View My Moment — were ReferenceError on tap, now safe",
-    "DATA LOSS FIX: Account Settings + Expert App saves no longer wipe your cover, location, notif prefs, sound prefs from your profile bio",
-    "Settings: new useEffect prefills Account Settings from server on open (was localStorage-only — fresh install showed empty + could save empty over real data)",
-    "Coin sync: per-user storage key (multi-user devices), maybeSingle (new users), unique realtime channel per component, Wallet purchase is now near-atomic, CallScreen StrictMode-safe broadcast",
-    "Messages: chat realtime UPDATE/DELETE/reactions now propagate live, restrict/mute sync between ChatBox and inbox, blocks unified to blocks.js, photo upload fallback now inserts message row, scroll-up guard so new messages don't yank you down",
-    "Memory: video preview blob URLs now revoked, carouselIdx debounced, IntersectionObserver disconnects properly, lastSeen listeners cleanup, willChange resets after gesture",
-    "Polish: hashtags case-insensitive, double-submit guard on post, msgMenu position clamped, Wallet Luhn check + 4-digit Amex CVV + UPI regex + real rupee conversion, timeAgo no longer shifted by TZ, debug strings hidden in prod"
+    "DATA LOSS FIX: Edit Profile dialog now deep-merges into your bio (was wiping cover/location/notif prefs every time you tapped Save — same class of bug as the v3.27 Save All fix, missed in that pass)",
+    "FIX: [mshare] moment shares now render as a clickable 'Shared a moment' card in chat + inbox (was showing raw '[mshare]https://...' text)",
+    "FIX: Image and video upload spinners no longer stick forever on bucket misconfig or network error",
+    "FIX: Sign-out now wipes per-user caches (convos, profile, avatar, coins, saved posts) — next user signing in on the same device no longer sees previous user's data flash",
+    "FIX: Save All now persists timezone (was missing from the bio.location write, breaking cross-device sync)",
+    "FIX: 'Last seen' now updates immediately when you return to the app (was waiting up to 60s)",
+    "POLISH: 11 more raw alert(...) calls in HomeScreen replaced with toasts (errors no longer block the JS thread)",
+    "FIX: Inbox pull-to-refresh now reads the correct scroll position (was always firing because outer flex container has no scroll)",
+    "FIX: Image upload error no longer flashes broken-image icon (blob URL revoke deferred until after the render commits)"
   ]
 }

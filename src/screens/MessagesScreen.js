@@ -1018,6 +1018,20 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               },
                 m.text&&m.text.startsWith('[img]')
                   ?React.createElement('img',{src:m.text.slice(5),alt:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
+                  // FIX #2: [mshare] body was showing as raw text. Render as a clickable card.
+                  // Format: [mshare]<link>|<caption>
+                  :(m.text&&m.text.startsWith('[mshare]'))
+                    ?(function(){
+                        var body=m.text.slice(8);
+                        var sep=body.indexOf('|');
+                        var link=sep>=0?body.slice(0,sep):body;
+                        var cap=sep>=0?body.slice(sep+1):'';
+                        return React.createElement('div',{style:{padding:'8px',border:'1px solid var(--border)',borderRadius:'10px',background:'var(--bg3)',maxWidth:'240px'}},
+                          React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginBottom:'4px'}}, '✨ Shared a moment'),
+                          cap?React.createElement('div',{style:{fontSize:'12px',color:'var(--text)',marginBottom:'6px',wordBreak:'break-word'}}, cap):null,
+                          React.createElement('a',{href:link,target:'_blank',rel:'noopener noreferrer',style:{fontSize:'11px',color:'var(--ac)',textDecoration:'none'}}, 'View moment →')
+                        );
+                      })()
                   :(m.text&&(m.text.startsWith('[mreply]')||m.text.startsWith('[mlike]')))
                     ?(function(){
                         var isLike=m.text.startsWith('[mlike]');
@@ -1308,9 +1322,18 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             }
             sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
               if(mr.error){
+                // FIX #9: on insert error, KEEP the blob URL valid (do NOT
+                // revoke yet) so the optimistic temp message keeps rendering
+                // its preview. Previously revokeLocal() ran on error too,
+                // which left a broken image icon when the temp was kept
+                // around. Pair this with a toast so the user sees it failed.
                 console.error('RingIn Error [chatPhotoInsert]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
                 setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
-                revokeLocal();
+                setToast('Photo send failed');
+                setTimeout(function(){setToast('');},2500);
+                // Defer the revoke to a later tick so the blob is briefly
+                // alive in case any in-flight render still references it.
+                setTimeout(revokeLocal, 0);
                 return;
               }
               if(mr.data&&mr.data[0]){
@@ -1322,6 +1345,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               }
               // Real CDN URL now in the message — the blob preview is no
               // longer rendered, safe to release the local object.
+              // FIX #9: revoke only on success path.
               revokeLocal();
               if(onMessageSent) onMessageSent(convo,'📷 Photo');
             });
@@ -1355,11 +1379,16 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               }
               sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
                 if(mr && mr.error){
+                  // FIX #9 (raw fallback): on insert error, defer revoke so
+                  // the blob is briefly alive — previously the temp was
+                  // filtered and the blob was revoked in the SAME microtask
+                  // as the setMsgs filter, occasionally causing a broken
+                  // image flash before the temp was removed.
                   console.error('RingIn Error [chatPhotoInsert-raw]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
                   setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
-                  revokeLocal2();
                   setToast('Photo upload failed');
                   setTimeout(function(){setToast('');},2500);
+                  setTimeout(revokeLocal2, 0);
                   return;
                 }
                 if(mr.data&&mr.data[0]){
@@ -1369,6 +1398,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                     return prev.map(function(msg){return msg.id===tempId?mr.data[0]:msg;});
                   });
                 }
+                // FIX #9: revoke only on success path.
                 revokeLocal2();
                 if(onMessageSent) onMessageSent(convo,'📷 Photo');
               });
@@ -1928,32 +1958,13 @@ export default function MessagesScreen(props){
     else setActiveCall(exp);
   },onMessageSent:handleMessageSent});
 
+  // FIX #8: PTR handlers were on the outer flex container which has no
+  // overflow:auto, so e.currentTarget.scrollTop was always 0 — the "scrolled
+  // to top" guard always passed, and the inner inbox scroller never got the
+  // touch events. Handlers are now mounted on the inner scrolling div
+  // (line ~2051 — `flex:1,overflowY:'auto'`).
   return React.createElement('div',{
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
-    // Pull-to-refresh — touch handlers wired to the existing pullDist /
-    // refreshing state (previously decorative-only; "Pull to refresh"
-    // never actually fired refreshConvos).
-    onTouchStart:function(e){
-      if(refreshing) return;
-      // Only arm PTR when we're already scrolled to the very top of the
-      // inbox container. Otherwise swipe-down should keep scrolling content.
-      var sc = e.currentTarget;
-      if (sc && sc.scrollTop > 0) return;
-      var t = e.touches && e.touches[0]; if(!t) return;
-      setPullStart(t.clientY);
-    },
-    onTouchMove:function(e){
-      if(refreshing||!pullStart) return;
-      var t = e.touches && e.touches[0]; if(!t) return;
-      var d = t.clientY - pullStart;
-      if (d > 0) setPullDist(Math.min(d, 120));
-    },
-    onTouchEnd:function(){
-      if(refreshing) return;
-      if (pullDist > 50) { refreshConvos(); }
-      setPullStart(0);
-      setPullDist(0);
-    },
   },
     // Header
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
@@ -2034,7 +2045,32 @@ export default function MessagesScreen(props){
       })
     ),
     // Conversations
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'0 16px'}},
+    React.createElement('div',{
+      style:{flex:1,overflowY:'auto',padding:'0 16px'},
+      // FIX #8: PTR handlers moved here from the outer container so
+      // e.currentTarget.scrollTop reflects the actual scroll position.
+      onTouchStart:function(e){
+        if(refreshing) return;
+        // Only arm PTR when we're already scrolled to the very top of the
+        // inbox container. Otherwise swipe-down should keep scrolling content.
+        var sc = e.currentTarget;
+        if (sc && sc.scrollTop > 0) return;
+        var t = e.touches && e.touches[0]; if(!t) return;
+        setPullStart(t.clientY);
+      },
+      onTouchMove:function(e){
+        if(refreshing||!pullStart) return;
+        var t = e.touches && e.touches[0]; if(!t) return;
+        var d = t.clientY - pullStart;
+        if (d > 0) setPullDist(Math.min(d, 120));
+      },
+      onTouchEnd:function(){
+        if(refreshing) return;
+        if (pullDist > 50) { refreshConvos(); }
+        setPullStart(0);
+        setPullDist(0);
+      },
+    },
       loadingConvos ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
         [0,1,2].map(function(i){
@@ -2094,6 +2130,8 @@ export default function MessagesScreen(props){
                   if(!lm) return 'Start a conversation';
                   if(isCallLog(lm)) return previewCallLog(parseCallLog(lm), myId);
                   if(typeof lm==='string' && lm.indexOf('[img]')===0) return '📷 Photo';
+                  // FIX #2: inbox preview for shared moment
+                  if(typeof lm==='string' && lm.indexOf('[mshare]')===0) return '✨ Shared a moment';
                   if(typeof lm==='string' && lm.indexOf('[mlike]')===0) return '❤️ Liked your status';
                   if(typeof lm==='string' && lm.indexOf('[mreply]')===0){
                     var body=lm.slice(8); var sep=body.indexOf('|');

@@ -665,18 +665,35 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   function saveEditProfile(){
     if(!userId) return;
     setSavingEdit(true);
-    var newBio = JSON.stringify({about:editAbout,tag:editTag,website_name:editWebsiteName,website_url:editWebsiteUrl});
-    sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
-      setSavingEdit(false);
-      if(res.error){
-        console.error('RingIn Error [saveEditProfile]:', res.error && res.error.message ? res.error.message : 'Unknown error');
-        alert('Something went wrong. Please try again.');
-        return;
-      }
-      var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
-      setProfileInfo(updated);
-      try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
-      setShowEditProfile(false);
+    // FIX #1 (P0 data-loss): fetch + deep-merge the bio JSON so we don't wipe
+    // notif_prefs, sound_prefs, location, cover_url, expert_request, etc.
+    // SAME pattern as Save All (~line 1330) and Expert App (~line 2103).
+    sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r0){
+      var existing={};
+      try{
+        if(r0 && r0.data && r0.data.bio){
+          var b=(typeof r0.data.bio==='string')?JSON.parse(r0.data.bio):r0.data.bio;
+          if(b && typeof b==='object') existing=b;
+        }
+      }catch(_){}
+      var merged=Object.assign({},existing,{
+        about: editAbout || '',
+        tag: editTag || '',
+        website_name: editWebsiteName || '',
+        website_url: editWebsiteUrl || '',
+      });
+      sbProfile.from('profiles').update({full_name:editName,bio:JSON.stringify(merged)}).eq('id',userId).then(function(res){
+        setSavingEdit(false);
+        if(res.error){
+          console.error('RingIn Error [saveEditProfile]:', res.error && res.error.message ? res.error.message : 'Unknown error');
+          alert('Something went wrong. Please try again.');
+          return;
+        }
+        var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
+        setProfileInfo(updated);
+        try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
+        setShowEditProfile(false);
+      });
     });
   }
 
@@ -1335,11 +1352,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
               bioJson.tag = acctTag;
               bioJson.website_name = profileInfo.website_name || bioJson.website_name || '';
               bioJson.website_url = profileInfo.website_url || bioJson.website_url || '';
-              // ALSO persist country / phone to location JSON (cross-device sync)
+              // ALSO persist country / phone / timezone to location JSON (cross-device sync)
+              // FIX #4: timezone was missing — prefill at line ~650 reads loc.timezone
+              // so we must include it on write or cross-device sync breaks.
               bioJson.location = Object.assign({}, bioJson.location || {}, {
                 country_name: acctCountry,
                 dial: acctPhoneCode,
                 phone: acctPhone,
+                timezone: acctTz,
               });
               sbProfile.from('profiles').update({full_name:acctName,bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(r2){
                 if(r2.error)console.error('RingIn Error [saveAll]:', r2.error);
@@ -2176,7 +2196,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.27';
+              var APK_VERSION = 'v3.28';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
