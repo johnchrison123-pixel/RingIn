@@ -240,6 +240,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   var acctPhoneCodeS=useState(localStorage.getItem('acct_phone_code')||'+1'); var acctPhoneCode=acctPhoneCodeS[0]; var setAcctPhoneCode=acctPhoneCodeS[1];
   var acctPhoneS=useState(localStorage.getItem('acct_phone')||''); var acctPhone=acctPhoneS[0]; var setAcctPhone=acctPhoneS[1];
   var acctTzS=useState(localStorage.getItem('user_timezone')||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'); var acctTz=acctTzS[0]; var setAcctTz=acctTzS[1];
+  /* R39: gender on the real profile. '' = "Rather not say" (saved as null
+   * in DB). 'f' = Girl, 'm' = Boy, 'other' = Other. Same column the
+   * AnonymousConnect screen has been reading; this just gives users a
+   * way to edit it from the main profile too. */
+  var acctGenderS=useState(''); var acctGender=acctGenderS[0]; var setAcctGender=acctGenderS[1];
+  var acctGenderSavingS=useState(false); var acctGenderSaving=acctGenderSavingS[0]; var setAcctGenderSaving=acctGenderSavingS[1];
+  var acctGenderSavedS=useState(false); var acctGenderSaved=acctGenderSavedS[0]; var setAcctGenderSaved=acctGenderSavedS[1];
+  var acctGenderSavedTimerRef = useRef(null);
   var acctSavedS=useState(false); var acctSaved=acctSavedS[0]; var setAcctSaved=acctSavedS[1];
   /* R19 FIX #6: track the 3 setTimeout handles for acctSaved so we can clear
    * them on unmount or before re-arming. Was firing setAcctSaved(false) on a
@@ -250,7 +258,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     acctSavedTimerRef.current = setTimeout(function(){ setAcctSaved(false); acctSavedTimerRef.current = null; }, ms || 2500);
   }
   useEffect(function(){
-    return function(){ if (acctSavedTimerRef.current) { try { clearTimeout(acctSavedTimerRef.current); } catch(_){} acctSavedTimerRef.current = null; } };
+    return function(){
+      if (acctSavedTimerRef.current) { try { clearTimeout(acctSavedTimerRef.current); } catch(_){} acctSavedTimerRef.current = null; }
+      /* R39 */
+      if (acctGenderSavedTimerRef.current) { try { clearTimeout(acctGenderSavedTimerRef.current); } catch(_){} acctGenderSavedTimerRef.current = null; }
+    };
   }, []);
   var acctCountrySearchS=useState(''); var acctCountrySearch=acctCountrySearchS[0]; var setAcctCountrySearch=acctCountrySearchS[1];
   var showCountryPickerS=useState(false); var showCountryPicker=showCountryPickerS[0]; var setShowCountryPicker=showCountryPickerS[1];
@@ -850,9 +862,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // populates fields the user hasn't already typed into.
   useEffect(function(){
     if(!showAcct||!userId) return;
-    sbProfile.from('profiles').select('full_name,bio').eq('id',userId).single().then(function(res){
+    /* R39: also fetch `gender` so the new Gender card pre-fills with the
+     * current value. Forward-compatible — wraps the gender read in a guard
+     * in case the column doesn't exist yet (it does as of migration 0022). */
+    sbProfile.from('profiles').select('full_name,bio,gender').eq('id',userId).single().then(function(res){
       if(!res||!res.data) return;
       var fullName = res.data.full_name || '';
+      var dbGender = res.data.gender || '';
+      /* Only overwrite local state if user hasn't actively picked something. */
+      setAcctGender(function(prev){ return prev ? prev : dbGender; });
       var bioJson = {};
       try{ if(res.data.bio){ var b=(typeof res.data.bio==='string')?JSON.parse(res.data.bio):res.data.bio; if(b&&typeof b==='object') bioJson=b; } }catch(_){}
       var loc = bioJson.location || {};
@@ -872,6 +890,30 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[showAcct,userId]);
+
+  /* R39: auto-save the gender column to profiles on tap. '' (Rather not say)
+   * persists as NULL — the DB constraint `gender in ('m','f','other')`
+   * allows NULL. AnonymousConnect picks this up on its next mount and uses
+   * it to filter avatar options + drive matchmaking preference. */
+  function saveGender(g){
+    if (!userId) { setAcctGender(g); return; }
+    setAcctGender(g);
+    setAcctGenderSaving(true);
+    var dbValue = (g === 'm' || g === 'f' || g === 'other') ? g : null;
+    sbProfile.from('profiles').update({ gender: dbValue }).eq('id', userId).then(function(r){
+      setAcctGenderSaving(false);
+      if (r && r.error) {
+        try { toastError('Could not save gender — try again'); } catch(_){}
+        return;
+      }
+      setAcctGenderSaved(true);
+      if (acctGenderSavedTimerRef.current) { try { clearTimeout(acctGenderSavedTimerRef.current); } catch(_){} }
+      acctGenderSavedTimerRef.current = setTimeout(function(){ setAcctGenderSaved(false); acctGenderSavedTimerRef.current = null; }, 1800);
+    }).catch(function(){
+      setAcctGenderSaving(false);
+      try { toastError('Network error'); } catch(_){}
+    });
+  }
 
   function openEditProfile(){
     setEditName(profileInfo.name||email.split('@')[0]);
@@ -1540,6 +1582,23 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           },
           style:{width:'100%',padding:'11px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer'}
         },acctSaved?'Saved ✓':'Save Profile Info')
+      ),
+      // R39: Gender section — auto-saves on tap. '' = Rather not say (stored as NULL).
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px',display:'flex',alignItems:'center',gap:'6px'}},
+        React.createElement('span',null,'Gender'),
+        acctGenderSaving ? React.createElement('span',{style:{fontSize:'9px',color:'var(--t3)',textTransform:'none',letterSpacing:0}},'Saving…') : null,
+        acctGenderSaved ? React.createElement('span',{style:{fontSize:'9px',color:'#27C96A',textTransform:'none',letterSpacing:0,fontWeight:700}},'Saved ✓') : null
+      ),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px',marginBottom:'20px',display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'8px'}},
+        [{k:'f',l:'👧 Girl'},{k:'m',l:'👦 Boy'},{k:'other',l:'🌈 Other'},{k:'',l:'🤫 Rather not say'}].map(function(g){
+          var sel = acctGender === g.k;
+          return React.createElement('button',{
+            key:g.k||'none',
+            onClick:function(){ saveGender(g.k); },
+            disabled: acctGenderSaving,
+            style:{padding:'12px 8px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.14)':'var(--bg4)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'13px',fontWeight:sel?700:600,cursor:acctGenderSaving?'wait':'pointer',fontFamily:'inherit',transition:'all 0.15s',opacity:acctGenderSaving&&!sel?0.6:1}
+          }, g.l);
+        })
       ),
       // Contact section
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Contact'),
