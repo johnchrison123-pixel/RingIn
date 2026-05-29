@@ -243,9 +243,8 @@ export default function App() {
     try{
       var params = new URLSearchParams(window.location.search);
       var requestedTab = params.get('tab');
-      /* R24: removed 'workshops' from the PWA-shortcut allowlist along with
-       * its bottom-nav entry — feature is mock-only until real impl lands. */
-      var allowed = {home:1, messages:1, search:1, profile:1};
+      /* R27: workshops re-added per user request (tab restored to bottom nav). */
+      var allowed = {home:1, messages:1, search:1, workshops:1, profile:1};
       if(requestedTab && allowed[requestedTab]){
         setActiveTab(requestedTab);
       }
@@ -992,13 +991,11 @@ export default function App() {
   var tabs = [
     {id:'home', label:'Home', svg:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'},
     {id:'search', label:'Experts', svg:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'},
-    /* R24: Workshops tab hidden from bottom nav. The entire feature is mock
-     * (LIVE/UPCOMING arrays hardcoded in WorkshopsScreen.js; LiveWorkshopScreen
-     * SEED is fake chat with a randomly-incrementing viewer counter). Until
-     * the real workshop scheduling + voice infra lands, keeping this tab
-     * visible would be shipping dead UI to users. The screen file stays in
-     * the repo so it's a one-line restore when the feature is real. */
-    // {id:'workshops', label:'Workshops', svg:'M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'},
+    /* R27: Workshops tab restored per user request. Feature is still mock-data
+     * driven (LIVE/UPCOMING hardcoded in WorkshopsScreen.js) — tap will show
+     * the existing placeholder UI. Real workshop scheduling + voice infra to
+     * come in a future round. */
+    {id:'workshops', label:'Workshops', svg:'M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'},
     {id:'messages', label:'Messages', svg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
   ];
 
@@ -1151,18 +1148,30 @@ export default function App() {
           ),
           React.createElement('span', null, tab.label)
         );
-        /* R24: Anonymous Connect orb hidden pre-launch. The AnonymousConnect
-         * screen has no Connect Voice button (intentionally removed per FIX #8
-         * because voice infra isn't wired up yet — pressing "Skip" just finds
-         * a new match and offers nothing to do). Until matchmaking can hand
-         * off to an actual voice room, exposing this entry-point is a dead
-         * surface. Restore by uncommenting once voice handoff lands.
-         *
-         * if (tab.id === 'search') {
-         *   var orb = React.createElement('button', { ... }, ...);
-         *   return [btn, orb];
-         * }
-         */
+        /* R27: Anonymous Connect orb restored. The Connect Voice button is
+         * now wired (uses window.__ringInStartCall — same Agora pipeline as
+         * expert calls). Anonymous calls are rate=0 (free) so no coin cost. */
+        if (tab.id === 'search') {
+          var orb = React.createElement('button', {
+            key:'connect-orb',
+            onClick:function(){setPrevTab(activeTab);setActiveTab('connect');},
+            style:{
+              width:'40px',height:'40px',borderRadius:'50%',
+              background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
+              border:'none',cursor:'pointer',position:'relative',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              boxShadow:activeTab==='connect'?'0 0 0 3px rgba(123,110,255,0.4),0 4px 14px rgba(232,77,154,0.5)':'0 3px 10px rgba(232,77,154,0.4)',
+              flexShrink:0,margin:'0 2px',
+            },
+            title:'Anonymous Connect',
+          },
+            React.createElement('svg',{viewBox:'0 0 24 24',width:18,height:18,fill:'none',stroke:'#fff',strokeWidth:2.4},
+              React.createElement('path',{d:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z'})
+            ),
+            React.createElement('span',{style:{position:'absolute',top:'2px',right:'2px',width:'8px',height:'8px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
+          );
+          return [btn, orb];
+        }
         return btn;
       })
     )

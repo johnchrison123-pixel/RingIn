@@ -96,10 +96,37 @@ export default function AnonymousConnect(props) {
           return React.createElement('span', {key:i, style:{padding:'4px 10px',borderRadius:'12px',background:'var(--acg)',color:'var(--ac)',fontSize:'11px',fontWeight:600}}, r);
         })
       ),
-      // FIX #8: removed "Connect Voice" — voice infra isn't wired up yet;
-      // shipping a button that pops a "coming soon" toast is dead UI.
+      // R27: Connect Voice restored. Uses the same window.__ringInStartCall
+      // pipeline as expert calls — creates a real call_invites row, fires
+      // FCM push to the matched user, both join an Agora channel. Anonymous
+      // calls have rate=0 (free). Match's user_id IS a real Supabase UUID
+      // so the call_invites UUID regex passes.
       React.createElement('div', {style:{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'center'}},
-        React.createElement('button', {onClick:skip, style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, 'Skip')
+        React.createElement('button', {
+          onClick:skip,
+          style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}
+        }, 'Skip'),
+        React.createElement('button', {
+          onClick:function(){
+            var target = {
+              id: match.user_id || (match.profile && match.profile.id),
+              name: (match.profile && match.profile.name) || 'Anonymous',
+              avatar: (match.profile && match.profile.avatar_url) || null,
+              role: 'Anonymous Connect',
+              online: true,
+            };
+            if (!target.id) { toastError('Match has no user id — cannot connect'); return; }
+            try {
+              if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
+                /* Anonymous calls are free — rate=0 means no coin deduction. */
+                window.__ringInStartCall(target, { rate: 0, anonymous: true });
+              } else {
+                toastError('Call pipeline not ready — try again in a sec');
+              }
+            } catch(e){ console.warn('[anon-connect] start call failed:', e); toastError('Could not start call'); }
+          },
+          style:{padding:'10px 22px',borderRadius:'10px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(39,201,106,0.35)'}
+        }, '📞 Connect Voice')
       )
     ),
 

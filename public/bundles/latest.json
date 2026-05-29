@@ -1,19 +1,13 @@
 {
-  "version": "2026.0529.1856",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.1856.zip",
-  "published_at": "2026-05-29T18:56:00Z",
+  "version": "2026.0529.1956",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.1956.zip",
+  "published_at": "2026-05-29T19:56:00Z",
   "git_sha": "manual",
-  "title": "R23+R24+R25+R26 — Verification + Subscriptions + Auth polish",
+  "title": "R27 — Workshops + Anonymous Connect Voice restored",
   "notes": [
-    "NEW: Creator Subscriptions — verified users can offer monthly subs (Instagram-style) with custom price + perks. Subscribers get badge, priority queue, sub-only rooms.",
-    "NEW: Verification badge system — apply via Settings → Get Verified, admin reviews, pay yearly fee in coins to activate the blue tick.",
-    "NEW: Forgot Password link + show/hide password toggle on login screen.",
-    "NEW: Capacitor appUrlOpen deep-link listener for password reset emails.",
-    "FIX: 22+ alert() calls in ProfileScreen replaced with toasts (no more 'ring-in.vercel.app says').",
-    "FIX: Delete Account + Delete Post use in-app modals instead of window.confirm.",
-    "FIX: Mock data killed — fake EXPERTS, EXPERT_CONVOS_BASE, SAMPLE_SETS, mock posts seed all removed.",
-    "FIX: Workshops tab + Anonymous Connect orb hidden (100% mock features) until real impl lands.",
-    "FIX: CallScreen — toggleSpeaker bug, speaker state reset on unmount, localCoins no longer shows 'undefined coins remaining'.",
-    "FIX: Privacy settings (Profile Visibility, Lock Profile, Hide Likes) now wired to Supabase + RLS enforcement, not localStorage-only."
+    "RESTORED: Workshops tab back in bottom nav (still placeholder data, real impl coming).",
+    "RESTORED: Anonymous Connect orb (purple/pink circle between Experts and Messages).",
+    "NEW: Anonymous Connect Voice now WORKS — uses same Agora pipeline as expert calls. Tap '📞 Connect Voice' on a match → creates real call_invites row → fires push to matched user → both join Agora channel. Anonymous calls are free (rate=0).",
+    "Includes all R23+R24+R25+R26 features from previous bundle (verification, subscriptions, Forgot Password, in-app modals)."
   ]
 }
