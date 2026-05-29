@@ -1,15 +1,16 @@
 {
-  "version": "2026.0529.2055",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2055.zip",
-  "published_at": "2026-05-29T20:55:00Z",
+  "version": "2026.0529.2135",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2135.zip",
+  "published_at": "2026-05-29T21:35:00Z",
   "git_sha": "manual",
-  "title": "R30 — Online toggle + live online count (FRND-style)",
+  "title": "R31 — Anonymous profile: nickname, avatar, gender, preference filter",
   "notes": [
-    "NEW: 'I'm available to chat' toggle at the top of Anonymous Connect. Green pulsing dot when ON, FRND-style.",
-    "NEW: Live count of who's online — '🟢 23 people online now'. Updates every 15 sec automatically.",
-    "NEW: Tapping Find Someone auto-enables your availability (so partners can find you).",
-    "NEW: Availability auto-expires after 30 min idle. Heartbeat keeps it fresh while the screen is open.",
-    "REQUIRES: Migration 0020_anon_availability.sql applied in Supabase (adds is_available_anon + available_until columns + RPCs + count view).",
-    "Includes all R23–R29 features."
+    "NEW: Anonymous identity card — pick a nickname (30 chars), choose from 6 avatars (3 girl + 3 boy with distinct gradients), declare your gender.",
+    "NEW: Preference filter — match with Girls, Boys, or Anyone. Mutual compatibility enforced server-side (no one-sided matches).",
+    "NEW: Interests are now space-to-add (type 'music' + space → chipified). Removed the canned suggestion chips per user request.",
+    "NEW: Matched-with screen shows the partner's nickname + their picked avatar emoji + their gender.",
+    "PERSISTENT: Your anonymous profile is saved automatically (debounced 600ms) — next time you open Anonymous Connect, it's all pre-filled.",
+    "REQUIRES: Migration 0021_anon_profile.sql applied in Supabase (adds anon_nickname, anon_avatar, anon_gender, anon_preference columns + updates matchmaker RPC).",
+    "Includes all R23–R30 features."
   ]
 }

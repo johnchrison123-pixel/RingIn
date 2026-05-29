@@ -3,7 +3,21 @@ import React, {useState, useRef, useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
 
-var SUGGESTED = ['tech','startups','fitness','music','travel','finance','mental health','career','parenting','design','food','movies','gaming','meditation','philosophy'];
+// R31: removed SUGGESTED chips per user request. Interests are now free-text
+// with space-to-add UX.
+
+// R31: 6 anonymous avatars — 3 "girl"-styled + 3 "boy"-styled. Uses emoji
+// so we don't ship image assets; each gets a distinct gradient background
+// for visual variety. The 'id' is what's stored in profiles.anon_avatar.
+var ANON_AVATARS = [
+  { id:'girl1', emoji:'👩',  gender:'f', bg:'linear-gradient(135deg,#FF6B9D,#E84D9A)' },
+  { id:'girl2', emoji:'👧',  gender:'f', bg:'linear-gradient(135deg,#A78BFA,#7B6EFF)' },
+  { id:'girl3', emoji:'🧕',  gender:'f', bg:'linear-gradient(135deg,#FB7185,#F43F5E)' },
+  { id:'boy1',  emoji:'👨',  gender:'m', bg:'linear-gradient(135deg,#3B82F6,#1D4ED8)' },
+  { id:'boy2',  emoji:'👦',  gender:'m', bg:'linear-gradient(135deg,#10B981,#059669)' },
+  { id:'boy3',  emoji:'🧔',  gender:'m', bg:'linear-gradient(135deg,#F59E0B,#D97706)' },
+];
+function getAvatar(id){ return ANON_AVATARS.find(function(a){ return a.id === id; }) || ANON_AVATARS[0]; }
 
 // Inject pulse keyframes once
 if (typeof document !== 'undefined' && !document.getElementById('ringin-pulse-kf')) {
@@ -39,6 +53,13 @@ export default function AnonymousConnect(props) {
   var onlineCountS = useState(0); var onlineCount = onlineCountS[0]; var setOnlineCount = onlineCountS[1];
   var countPollRef = useRef(null);
   var heartbeatRef = useRef(null);
+  /* R31: anonymous identity (nickname + avatar + gender + preference). */
+  var nickS = useState(''); var nick = nickS[0]; var setNick = nickS[1];
+  var avatarIdS = useState('girl1'); var avatarId = avatarIdS[0]; var setAvatarId = avatarIdS[1];
+  var genderS = useState('f'); var gender = genderS[0]; var setGender = genderS[1];
+  var preferenceS = useState('both'); var preference = preferenceS[0]; var setPreference = preferenceS[1];
+  var profileSavedRef = useRef(false);
+  var saveProfileTimerRef = useRef(null);
 
   function addInterest(i) {
     var v = (i || '').trim().toLowerCase();
@@ -47,6 +68,19 @@ export default function AnonymousConnect(props) {
   }
   function removeInterest(i) {
     setInterests(interests.filter(function(x){ return x !== i; }));
+  }
+
+  /* R31: space-to-add interest. Watches the input value; when it ends with
+   * a space, commits the trimmed value as an interest chip. Mirrors how
+   * hashtag inputs feel — type "music<space>" and music is chipified. */
+  function onInterestInputChange(e){
+    var raw = e.target.value;
+    if (raw.length > 0 && raw.endsWith(' ')) {
+      var w = raw.trim();
+      if (w) addInterest(w);
+      return; // setInput('') already happened inside addInterest
+    }
+    setInput(raw);
   }
 
   /* R29: stop everything — clears poll, countdown, leaves the queue server-
@@ -188,17 +222,24 @@ export default function AnonymousConnect(props) {
 
   /* R30: load initial availability state + start polling the live count
    * every 15 sec. Also heartbeat the expiry every 5 min so the user
-   * stays "available" while the screen is open. */
+   * stays "available" while the screen is open. R31: also loads the
+   * persistent anonymous profile (nickname/avatar/gender/preference). */
   useEffect(function(){
     if (!userId) return;
     var cancelled = false;
-    // Initial fetch: am I available?
+    // Initial fetch: availability + anonymous profile
     try {
-      sb.from('profiles').select('is_available_anon,available_until').eq('id', userId).maybeSingle().then(function(r){
+      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference').eq('id', userId).maybeSingle().then(function(r){
         if (cancelled) return;
         if (r && !r.error && r.data) {
           var stillValid = !r.data.available_until || new Date(r.data.available_until) > new Date();
           setAvailable(!!r.data.is_available_anon && stillValid);
+          // R31: hydrate anonymous profile (don't overwrite user's local edits)
+          if (r.data.anon_nickname) setNick(r.data.anon_nickname);
+          if (r.data.anon_avatar)   setAvatarId(r.data.anon_avatar);
+          if (r.data.anon_gender)   setGender(r.data.anon_gender);
+          if (r.data.anon_preference) setPreference(r.data.anon_preference);
+          profileSavedRef.current = true;
         }
       }).catch(function(){});
     } catch(_){}
@@ -232,6 +273,30 @@ export default function AnonymousConnect(props) {
       if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
     };
   }, [available]);
+
+  /* R31: debounced save of anonymous profile. Runs 600ms after the user
+   * stops typing/changing — avoids spamming the RPC on every keystroke. */
+  useEffect(function(){
+    if (!userId) return;
+    // Don't save on initial mount before we've loaded
+    if (saveProfileTimerRef.current) clearTimeout(saveProfileTimerRef.current);
+    saveProfileTimerRef.current = setTimeout(function(){
+      try {
+        sb.rpc('set_anon_profile', {
+          p_nickname: nick || null,
+          p_avatar: avatarId,
+          p_gender: gender,
+          p_preference: preference,
+        }).then(function(r){
+          if (r && r.error) console.warn('[anon] save profile error:', r.error);
+          else profileSavedRef.current = true;
+        }).catch(function(){});
+      } catch(_){}
+    }, 600);
+    return function(){
+      if (saveProfileTimerRef.current) { clearTimeout(saveProfileTimerRef.current); saveProfileTimerRef.current = null; }
+    };
+  }, [nick, avatarId, gender, preference, userId]);
 
   function toggleAvailable(){
     if (availToggling) return;
@@ -304,23 +369,14 @@ export default function AnonymousConnect(props) {
       }, 'Cancel search')
     ),
 
-    // Match found
-    match && !searching && React.createElement('div', {style:{padding:'24px',margin:'16px',background:'linear-gradient(135deg,rgba(123,110,255,0.15),rgba(232,77,154,0.1))',border:'1px solid var(--ac)',borderRadius:'14px',textAlign:'center'}},
-      match.profile && match.profile.avatar_url
-        ? React.createElement('img', {src:match.profile.avatar_url, alt:'', style:{width:'80px',height:'80px',borderRadius:'50%',objectFit:'cover',margin:'0 auto'}})
-        : React.createElement('div', {style:{width:'80px',height:'80px',borderRadius:'50%',background:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'32px',margin:'0 auto'}}, (match.profile && match.profile.name || 'A').charAt(0)),
-      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)',marginTop:'14px'}}, (match.profile && match.profile.name) || 'Anonymous'),
-      match.profile && match.profile.city && React.createElement('div', {style:{fontSize:'12px',color:'var(--t3)',marginTop:'4px'}}, '📍 ' + match.profile.city + (match.profile.country ? ', ' + match.profile.country : '')),
-      match.reasons && match.reasons.length > 0 && React.createElement('div', {style:{marginTop:'12px',display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center'}},
-        match.reasons.map(function(r, i){
-          return React.createElement('span', {key:i, style:{padding:'4px 10px',borderRadius:'12px',background:'var(--acg)',color:'var(--ac)',fontSize:'11px',fontWeight:600}}, r);
-        })
-      ),
-      // R27: Connect Voice restored. Uses the same window.__ringInStartCall
-      // pipeline as expert calls — creates a real call_invites row, fires
-      // FCM push to the matched user, both join an Agora channel. Anonymous
-      // calls have rate=0 (free). Match's user_id IS a real Supabase UUID
-      // so the call_invites UUID regex passes.
+    // Match found — R31: shows partner's avatar emoji + nickname + gender
+    match && !searching && (function(){
+      var pa = getAvatar(match.partner_avatar || match.avatarId || 'girl1');
+      return React.createElement('div', {style:{padding:'24px',margin:'16px',background:'linear-gradient(135deg,rgba(123,110,255,0.15),rgba(232,77,154,0.1))',border:'1px solid var(--ac)',borderRadius:'14px',textAlign:'center'}},
+        React.createElement('div', {style:{width:'80px',height:'80px',borderRadius:'50%',background:pa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px',margin:'0 auto'}}, pa.emoji),
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)',marginTop:'14px'}}, match.partner_nickname || 'Anonymous'),
+        match.partner_gender ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'4px'}}, match.partner_gender === 'f' ? '👧 Girl' : '👦 Boy') : null,
+      // R27: Connect Voice — uses same window.__ringInStartCall pipeline as expert calls
       React.createElement('div', {style:{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'center'}},
         React.createElement('button', {
           onClick:skip,
@@ -329,9 +385,9 @@ export default function AnonymousConnect(props) {
         React.createElement('button', {
           onClick:function(){
             var target = {
-              id: match.user_id || (match.profile && match.profile.id),
-              name: (match.profile && match.profile.name) || 'Anonymous',
-              avatar: (match.profile && match.profile.avatar_url) || null,
+              id: match.partner_id || match.user_id,
+              name: match.partner_nickname || 'Anonymous',
+              avatar: null,
               role: 'Anonymous Connect',
               online: true,
             };
@@ -348,38 +404,91 @@ export default function AnonymousConnect(props) {
           style:{padding:'10px 22px',borderRadius:'10px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(39,201,106,0.35)'}
         }, '📞 Connect Voice')
       )
-    ),
+    );
+    })(),
 
-    // Setup
+    // Setup — R31 layout: anonymous profile card → interests → gender prefs → geo → find
     !searching && !match && React.createElement('div', {style:{padding:'16px'}},
-      React.createElement('p', {style:{fontSize:'13px',color:'var(--t2)',marginBottom:'18px'}}, 'Talk to a stranger by interests and geography. Privacy-first.'),
 
+      // ── R31: Anonymous identity card (nickname + avatar + gender) ──
       React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, 'Your Interests'),
-        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px',minHeight:'30px'}},
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'12px'}}, 'Your Anonymous Identity'),
+        // Nickname
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'Nickname'),
+        React.createElement('input', {
+          value:nick,
+          onChange:function(e){setNick(e.target.value.slice(0,30));},
+          placeholder:'e.g. Riya, Arjun, Whoever',
+          maxLength:30,
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
+        }),
+        // Avatar grid
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, 'Pick an avatar'),
+        React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:'8px',marginBottom:'14px'}},
+          ANON_AVATARS.map(function(a){
+            var sel = avatarId === a.id;
+            return React.createElement('button', {
+              key:a.id,
+              onClick:function(){ setAvatarId(a.id); /* auto-align gender to avatar's gender as a sensible default */ if (a.gender !== gender) setGender(a.gender); },
+              style:{aspectRatio:'1/1',borderRadius:'50%',background:a.bg,border:sel?'3px solid #fff':'3px solid transparent',outline:sel?'2px solid var(--ac)':'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',cursor:'pointer',padding:0,boxShadow:sel?'0 4px 14px rgba(123,110,255,0.5)':'none',transition:'all 0.15s'},
+              title:a.id
+            }, a.emoji);
+          })
+        ),
+        // Gender chooser
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, "I'm a"),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'4px'}},
+          [{k:'f',l:'👧 Girl'},{k:'m',l:'👦 Boy'}].map(function(g){
+            var sel = gender === g.k;
+            return React.createElement('button', {
+              key:g.k, onClick:function(){ setGender(g.k); },
+              style:{flex:1,padding:'10px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+            }, g.l);
+          })
+        )
+      ),
+
+      // ── R31: Preference filter — who do you want to match with? ──
+      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, 'I want to talk to'),
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginBottom:'12px'}}, "We'll only match you with people who also want to talk to your gender."),
+        React.createElement('div', {style:{display:'flex',gap:'8px'}},
+          [{k:'women',l:'👧 Girls'},{k:'men',l:'👦 Boys'},{k:'both',l:'✨ Anyone'}].map(function(p){
+            var sel = preference === p.k;
+            return React.createElement('button', {
+              key:p.k, onClick:function(){ setPreference(p.k); },
+              style:{flex:1,padding:'10px 6px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+            }, p.l);
+          })
+        )
+      ),
+
+      // ── R31: Interests (no chip suggestions, space-to-add) ──
+      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, 'Your Interests'),
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginBottom:'10px'}}, 'Type and hit space to add. People with shared interests get matched first.'),
+        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px',minHeight:interests.length===0?'0':'30px'}},
           interests.map(function(i){
             return React.createElement('span', {key:i, style:{padding:'5px 10px',borderRadius:'14px',background:'var(--acg)',color:'var(--ac)',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'6px'}},
               i,
-              React.createElement('span', {onClick:function(){removeInterest(i);}, style:{cursor:'pointer'}}, '×')
+              React.createElement('span', {onClick:function(){removeInterest(i);}, style:{cursor:'pointer',fontSize:'14px',lineHeight:1}}, '×')
             );
           })
         ),
         React.createElement('input', {
           value:input,
-          onChange:function(e){setInput(e.target.value);},
-          onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()){addInterest(input);}}, /* FIX #2: IME composition guard */
-          placeholder:'Type and press Enter',
-          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box'},
-        }),
-        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'10px',marginBottom:'6px'}}, 'Quick add:'),
-        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'5px'}},
-          SUGGESTED.filter(function(s){return interests.indexOf(s)<0;}).slice(0,8).map(function(s){
-            return React.createElement('button', {key:s, onClick:function(){addInterest(s);}, style:{padding:'4px 10px',borderRadius:'12px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'11px',fontWeight:600,cursor:'pointer'}}, '+ ' + s);
-          })
-        )
+          onChange:onInterestInputChange,
+          onKeyDown:function(e){
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()) {
+              addInterest(input);
+            }
+          },
+          placeholder:'Type an interest + space (e.g. music tech travel)',
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',fontFamily:'inherit'}
+        })
       ),
 
-      // Geography toggle
+      // ── Geography toggle ──
       React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
         React.createElement('div', null,
           React.createElement('div', {style:{fontWeight:600,fontSize:'13px',color:'var(--text)'}}, 'Match local users only'),
