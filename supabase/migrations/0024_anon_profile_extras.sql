@@ -82,6 +82,10 @@ revoke all on function public.list_anon_call_logs() from public;
 grant execute on function public.list_anon_call_logs() to authenticated;
 
 -- 5. Extended list_anon_connections — now also returns caption / languages / from
+-- DROP first: 0023 defined this function with 6 columns; we're changing the
+-- shape to 9 columns. Postgres won't let CREATE OR REPLACE alter the return
+-- type — must drop the old one.
+drop function if exists public.list_anon_connections();
 create or replace function public.list_anon_connections()
 returns table (
   user_id uuid, nickname text, avatar text, gender text,
