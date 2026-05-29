@@ -4,6 +4,7 @@ import {sb} from '../utils/supabase';
 import {playRingtone, stopRingtone, hapticPulse} from '../utils/soundEngine';
 import {hashUidToInt, prefetchAgora} from '../utils/agora';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
+import VerificationBadge from './VerificationBadge'; /* R40 */
 
 // Full-screen overlay shown when someone calls this user.
 // Props:
@@ -30,6 +31,19 @@ export default function IncomingCallModal(props){
   // CDN hiccup, etc.). Without onError, broken image icons appear inside the
   // gradient circle. Fall back to initials when the network/decode fails.
   var imgFailedS = useState(false); var imgFailed = imgFailedS[0]; var setImgFailed = imgFailedS[1];
+  /* R40: caller's verified flag — lazy fetched from profiles on mount. */
+  var callerVerifiedS = useState(false); var callerVerified = callerVerifiedS[0]; var setCallerVerified = callerVerifiedS[1];
+  useEffect(function(){
+    if (!invite || !invite.caller_id) return;
+    var cancelled = false;
+    try {
+      sb.from('profiles').select('is_verified').eq('id', invite.caller_id).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) setCallerVerified(!!r.data.is_verified);
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  }, [invite && invite.caller_id]);
 
   // Real ringtone (warm two-stroke bell, loops every 2.4s, capped at 6 cycles).
   // Shorter haptic pattern (single ~250ms buzz per cycle) to avoid Samsung Internet
@@ -176,7 +190,11 @@ export default function IncomingCallModal(props){
         (avatar && !imgFailed) ? React.createElement('img',{src:avatar,alt:name,onError:function(){ setImgFailed(true); },style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
       )
     ),
-    React.createElement('div',{style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,color:'var(--text)',marginBottom:'6px'}}, name),
+    React.createElement('div',{style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,color:'var(--text)',marginBottom:'6px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}},
+      React.createElement('span',null,name),
+      /* R40: show verification badge if caller is verified (lazy-fetched above). */
+      callerVerified ? React.createElement(VerificationBadge,{size:22}) : null
+    ),
     React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'40px'}}, 'is calling you'),
 
     React.createElement('div',{style:{display:'flex',gap:'40px',alignItems:'center'}},
@@ -185,8 +203,14 @@ export default function IncomingCallModal(props){
           onClick:reject,
           className:'ringin-tap',
           title:'Decline',
-          style:{width:'70px',height:'70px',borderRadius:'50%',background:'#c0392b',border:'none',cursor:'pointer',boxShadow:'0 6px 22px rgba(192,57,43,0.65)',willChange:'transform'}
-        }),
+          /* R40: red hangup with the standard handset-down icon inside. */
+          style:{width:'70px',height:'70px',borderRadius:'50%',background:'#E13B2F',border:'none',color:'#fff',cursor:'pointer',boxShadow:'0 6px 22px rgba(225,59,47,0.65)',willChange:'transform',display:'flex',alignItems:'center',justifyContent:'center'}
+        },
+          /* Handset rotated 135° = the universal "hang up" icon. */
+          React.createElement('svg',{viewBox:'0 0 24 24',width:'28',height:'28',fill:'none',stroke:'currentColor',strokeWidth:'2.2',strokeLinecap:'round',strokeLinejoin:'round',style:{transform:'rotate(135deg)'}},
+            React.createElement('path',{d:'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13 1.05.37 2.07.72 3.06a2 2 0 0 1-.45 2.11L8.09 10.18a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.99.35 2.01.59 3.06.72A2 2 0 0 1 22 16.92z'})
+          )
+        ),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}},'Decline')
       ),
       React.createElement('div',{style:{textAlign:'center'}},

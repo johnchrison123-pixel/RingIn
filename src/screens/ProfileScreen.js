@@ -5,6 +5,7 @@ import {sb as sbProfile} from '../utils/supabase';
 import {usePostsRealtime} from '../utils/usePostsRealtime';
 import Moments from '../components/Moments';
 import AvatarRing from '../components/AvatarRing';
+import VerificationBadge from '../components/VerificationBadge'; /* R40 */
 import {useMomentUserIds} from '../utils/momentUsers';
 import {useHideLikes} from '../utils/likeDisplayPref';
 import {useCloseFriends, addCloseFriend, removeCloseFriend} from '../utils/closeFriends';
@@ -240,14 +241,18 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   var acctPhoneCodeS=useState(localStorage.getItem('acct_phone_code')||'+1'); var acctPhoneCode=acctPhoneCodeS[0]; var setAcctPhoneCode=acctPhoneCodeS[1];
   var acctPhoneS=useState(localStorage.getItem('acct_phone')||''); var acctPhone=acctPhoneS[0]; var setAcctPhone=acctPhoneS[1];
   var acctTzS=useState(localStorage.getItem('user_timezone')||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'); var acctTz=acctTzS[0]; var setAcctTz=acctTzS[1];
-  /* R39: gender on the real profile. '' = "Rather not say" (saved as null
-   * in DB). 'f' = Girl, 'm' = Boy, 'other' = Other. Same column the
-   * AnonymousConnect screen has been reading; this just gives users a
-   * way to edit it from the main profile too. */
+  /* R39/R40: gender on the real profile + 30-day rate-limit metadata.
+   * '' = "Rather not say" (NULL in DB). The server-side set_my_gender RPC
+   * enforces the 30-day cooldown atomically — client just gates the UI. */
   var acctGenderS=useState(''); var acctGender=acctGenderS[0]; var setAcctGender=acctGenderS[1];
   var acctGenderSavingS=useState(false); var acctGenderSaving=acctGenderSavingS[0]; var setAcctGenderSaving=acctGenderSavingS[1];
   var acctGenderSavedS=useState(false); var acctGenderSaved=acctGenderSavedS[0]; var setAcctGenderSaved=acctGenderSavedS[1];
   var acctGenderSavedTimerRef = useRef(null);
+  /* R40: timestamp of last change. If null, never changed → first change is free.
+   * If <30 days ago, lock the dropdown + show days-remaining message. */
+  var acctGenderChangedAtS=useState(null); var acctGenderChangedAt=acctGenderChangedAtS[0]; var setAcctGenderChangedAt=acctGenderChangedAtS[1];
+  /* R40: verification flag — controls whether the badge shows next to user's name. */
+  var acctVerifiedS=useState(false); var acctVerified=acctVerifiedS[0]; var setAcctVerified=acctVerifiedS[1];
   var acctSavedS=useState(false); var acctSaved=acctSavedS[0]; var setAcctSaved=acctSavedS[1];
   /* R19 FIX #6: track the 3 setTimeout handles for acctSaved so we can clear
    * them on unmount or before re-arming. Was firing setAcctSaved(false) on a
@@ -862,13 +867,20 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // populates fields the user hasn't already typed into.
   useEffect(function(){
     if(!showAcct||!userId) return;
-    /* R39: also fetch `gender` so the new Gender card pre-fills with the
-     * current value. Forward-compatible — wraps the gender read in a guard
-     * in case the column doesn't exist yet (it does as of migration 0022). */
-    sbProfile.from('profiles').select('full_name,bio,gender').eq('id',userId).single().then(function(res){
+    /* R39/R40: also fetch `gender`, `gender_changed_at`, `is_verified`.
+     * Forward-compatible — falls back to narrow select if any column is missing. */
+    sbProfile.from('profiles').select('full_name,bio,gender,gender_changed_at,is_verified').eq('id',userId).single().then(function(res){
+      if (res && res.error && /column .* does not exist/i.test(res.error.message||'')) {
+        return sbProfile.from('profiles').select('full_name,bio,gender').eq('id',userId).single();
+      }
+      return res;
+    }).then(function(res){
       if(!res||!res.data) return;
       var fullName = res.data.full_name || '';
       var dbGender = res.data.gender || '';
+      /* R40 metadata */
+      if (res.data.gender_changed_at) setAcctGenderChangedAt(res.data.gender_changed_at);
+      if (typeof res.data.is_verified === 'boolean') setAcctVerified(!!res.data.is_verified);
       /* Only overwrite local state if user hasn't actively picked something. */
       setAcctGender(function(prev){ return prev ? prev : dbGender; });
       var bioJson = {};
@@ -891,26 +903,51 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[showAcct,userId]);
 
-  /* R39: auto-save the gender column to profiles on tap. '' (Rather not say)
-   * persists as NULL — the DB constraint `gender in ('m','f','other')`
-   * allows NULL. AnonymousConnect picks this up on its next mount and uses
-   * it to filter avatar options + drive matchmaking preference. */
+  /* R39/R40: auto-save the gender column via set_my_gender RPC.
+   * Enforces 30-day cooldown server-side (returns status='rate_limited'
+   * + days_remaining). Client also gates the dropdown to avoid the
+   * round-trip when we know it'll fail. */
   function saveGender(g){
     if (!userId) { setAcctGender(g); return; }
-    setAcctGender(g);
+    /* Client-side gate — server still authoritative, but spare the round-trip. */
+    if (acctGenderChangedAt) {
+      var msSince = Date.now() - new Date(acctGenderChangedAt).getTime();
+      var daysSince = msSince / (1000 * 60 * 60 * 24);
+      if (daysSince < 30) {
+        var daysLeft = Math.ceil(30 - daysSince);
+        try { toastError('You can change your gender again in ' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + '.'); } catch(_){}
+        return;
+      }
+    }
+    /* No-op if unchanged. */
+    if (acctGender === g) return;
+    var prev = acctGender;
+    setAcctGender(g); /* optimistic */
     setAcctGenderSaving(true);
     var dbValue = (g === 'm' || g === 'f' || g === 'other') ? g : null;
-    sbProfile.from('profiles').update({ gender: dbValue }).eq('id', userId).then(function(r){
+    sbProfile.rpc('set_my_gender', { p_gender: dbValue }).then(function(r){
       setAcctGenderSaving(false);
       if (r && r.error) {
+        setAcctGender(prev); /* rollback */
         try { toastError('Could not save gender — try again'); } catch(_){}
         return;
       }
+      var status = r && r.data && r.data.status;
+      if (status === 'rate_limited') {
+        setAcctGender(prev); /* rollback */
+        var d = (r.data.days_remaining) || 30;
+        try { toastError('You can change your gender again in ' + d + ' day' + (d === 1 ? '' : 's') + '.'); } catch(_){}
+        return;
+      }
+      if (status === 'noop') { /* nothing to do */ return; }
+      /* ok */
+      setAcctGenderChangedAt(new Date().toISOString());
       setAcctGenderSaved(true);
       if (acctGenderSavedTimerRef.current) { try { clearTimeout(acctGenderSavedTimerRef.current); } catch(_){} }
       acctGenderSavedTimerRef.current = setTimeout(function(){ setAcctGenderSaved(false); acctGenderSavedTimerRef.current = null; }, 1800);
     }).catch(function(){
       setAcctGenderSaving(false);
+      setAcctGender(prev); /* rollback */
       try { toastError('Network error'); } catch(_){}
     });
   }
@@ -1583,23 +1620,45 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           style:{width:'100%',padding:'11px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer'}
         },acctSaved?'Saved ✓':'Save Profile Info')
       ),
-      // R39: Gender section — auto-saves on tap. '' = Rather not say (stored as NULL).
-      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px',display:'flex',alignItems:'center',gap:'6px'}},
-        React.createElement('span',null,'Gender'),
-        acctGenderSaving ? React.createElement('span',{style:{fontSize:'9px',color:'var(--t3)',textTransform:'none',letterSpacing:0}},'Saving…') : null,
-        acctGenderSaved ? React.createElement('span',{style:{fontSize:'9px',color:'#27C96A',textTransform:'none',letterSpacing:0,fontWeight:700}},'Saved ✓') : null
-      ),
-      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px',marginBottom:'20px',display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'8px'}},
-        [{k:'f',l:'👧 Girl'},{k:'m',l:'👦 Boy'},{k:'other',l:'🌈 Other'},{k:'',l:'🤫 Rather not say'}].map(function(g){
-          var sel = acctGender === g.k;
-          return React.createElement('button',{
-            key:g.k||'none',
-            onClick:function(){ saveGender(g.k); },
-            disabled: acctGenderSaving,
-            style:{padding:'12px 8px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.14)':'var(--bg4)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'13px',fontWeight:sel?700:600,cursor:acctGenderSaving?'wait':'pointer',fontFamily:'inherit',transition:'all 0.15s',opacity:acctGenderSaving&&!sel?0.6:1}
-          }, g.l);
-        })
-      ),
+      // R40: Gender section — DROPDOWN with 30-day cooldown.
+      (function(){
+        /* Compute lock state for the inline lock hint. */
+        var locked = false; var daysLeft = 0;
+        if (acctGenderChangedAt) {
+          var msSince = Date.now() - new Date(acctGenderChangedAt).getTime();
+          var daysSince = msSince / (1000 * 60 * 60 * 24);
+          if (daysSince < 30) { locked = true; daysLeft = Math.ceil(30 - daysSince); }
+        }
+        return React.createElement(React.Fragment, null,
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px',display:'flex',alignItems:'center',gap:'6px'}},
+            React.createElement('span',null,'Gender'),
+            acctGenderSaving ? React.createElement('span',{style:{fontSize:'9px',color:'var(--t3)',textTransform:'none',letterSpacing:0}},'Saving…') : null,
+            acctGenderSaved ? React.createElement('span',{style:{fontSize:'9px',color:'#27C96A',textTransform:'none',letterSpacing:0,fontWeight:700}},'Saved ✓') : null
+          ),
+          React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'20px'}},
+            React.createElement('select',{
+              value: acctGender,
+              disabled: locked || acctGenderSaving,
+              onChange: function(e){ saveGender(e.target.value); },
+              style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid '+(locked?'var(--border)':'var(--border)'),borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',cursor:locked?'not-allowed':(acctGenderSaving?'wait':'pointer'),opacity:locked?0.6:1,appearance:'none',WebkitAppearance:'none',backgroundImage:'linear-gradient(45deg, transparent 50%, var(--t2) 50%), linear-gradient(135deg, var(--t2) 50%, transparent 50%)',backgroundPosition:'calc(100% - 18px) 50%, calc(100% - 13px) 50%',backgroundSize:'5px 5px, 5px 5px',backgroundRepeat:'no-repeat'}
+            },
+              React.createElement('option', {value:''},     '🤫 Rather not say'),
+              React.createElement('option', {value:'f'},    '👧 Girl'),
+              React.createElement('option', {value:'m'},    '👦 Boy'),
+              React.createElement('option', {value:'other'},'🌈 Other')
+            ),
+            locked
+              ? React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginTop:'10px',lineHeight:1.5}},
+                  '🔒 You can change your gender again in ' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + '. Limit: one change per 30 days.'
+                )
+              : React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginTop:'10px',lineHeight:1.5}},
+                  acctGenderChangedAt
+                    ? 'You can change this once. Next change unlocks after 30 days.'
+                    : 'You can change this once free, then one change per 30 days after.'
+                )
+          )
+        );
+      })(),
       // Contact section
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Contact'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
@@ -3497,15 +3556,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     // Name row
     React.createElement('div',{style:{padding:'50px 18px 8px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
-        /* R26: profile name + blue verified tick when is_verified. The tick
-         * uses the same Twitter/Insta-style design — gradient blue with a
-         * white checkmark, sized to match the name's baseline. */
-        React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'5px'}},
+        /* R40: profile name + 12-point pink-purple star verification badge. */
+        React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'6px'}},
           profileInfo.name||email.split('@')[0],
-          isVerified ? React.createElement('span',{
-            title:'Verified',
-            style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'18px',height:'18px',borderRadius:'50%',background:'linear-gradient(135deg,#1877F2,#42B3FF)',color:'#fff',fontSize:'11px',fontWeight:800,boxShadow:'0 2px 6px rgba(24,119,242,0.4)'}
-          }, '✓') : null
+          isVerified ? React.createElement(VerificationBadge, {size:18, style:{marginLeft:2}}) : null
         ),
         profileInfo.tag ? React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag) : null,
         profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},renderAbout(profileInfo.about)) : null,

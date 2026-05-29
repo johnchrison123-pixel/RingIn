@@ -4,6 +4,7 @@ import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
+import VerificationBadge from '../components/VerificationBadge'; /* R40 */
 import AvatarRing from '../components/AvatarRing';
 import ImgWithFallback from '../components/ImgWithFallback';
 import {useMomentUserIds} from '../utils/momentUsers';
@@ -862,6 +863,26 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         setTimeout(function(){setToast('');}, 2500);
         return;
       }
+      /* R40: WhatsApp-style push notification — fire-and-forget. Triggers
+       * a high-priority FCM push to the receiver's device so they get a
+       * system notification even when the app is backgrounded/closed.
+       * Requires Firebase setup (google-services.json + Vercel env vars)
+       * — silently no-ops if those aren't in place. */
+      try {
+        var apiBase = (typeof window !== 'undefined' && process.env.REACT_APP_API_BASE_URL) || 'https://ring-in.vercel.app';
+        fetch(apiBase + '/api/send-message-push', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({
+            conversation_id: convId,
+            to_user_id: receiverId,
+            sender_name: myName,
+            sender_avatar: null,
+            text: sentText,
+          }),
+          keepalive: true,
+        }).catch(function(){ /* best-effort */ });
+      } catch(_){}
       // Replace temp with real message from server
       if(r.data&&r.data[0]){
         setMsgs(function(prev){
@@ -951,7 +972,12 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               })
             ),
             React.createElement('div',{key:'nm',onClick:openProfile,style:{flex:1,minWidth:0,cursor:otherUid?'pointer':'default'}},
-              React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
+              React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)',display:'flex',alignItems:'center',gap:'4px'}},
+                React.createElement('span',null,otherName),
+                /* R40: verification badge — convo.is_verified flows in from
+                 * the conversation-list builder (profile join). */
+                convo && convo.is_verified ? React.createElement(VerificationBadge,{size:14}) : null
+              ),
               // Subtitle priority: typing → Online dot → "last seen Xm ago" → role.
               otherTyping ? React.createElement('div',{style:{fontSize:'10px',color:'var(--ac)',fontStyle:'italic'}},'typing…')
                 : (otherOnline||convo.isOnline) ? React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
@@ -1967,6 +1993,7 @@ export default function MessagesScreen(props){
             color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
             initials: displayName.substring(0,2).toUpperCase(),
             receiverId: c.otherId,
+            is_verified: !!prof.is_verified, /* R40 */
           });
         });
         try{localStorage.setItem('convos_'+myId, JSON.stringify(enriched));}catch(e){}
@@ -2098,6 +2125,7 @@ export default function MessagesScreen(props){
           var senderPrefix = c.otherName && c.otherName.indexOf('@')>=0 ? c.otherName.split('@')[0] : c.otherName;
           var emailPrefix = prof.email && prof.email.indexOf('@')>=0 ? prof.email.split('@')[0] : prof.email;
           var displayName = (prof.full_name && prof.full_name.trim()) || (senderPrefix && senderPrefix.trim()) || (emailPrefix && emailPrefix.trim()) || 'User';
+          c.is_verified = !!prof.is_verified; /* R40: stash for downstream */
           // Avatar fallback to localStorage cache; refresh cache when DB has the URL
           var dbAvatar = prof.avatar_url || null;
           var cachedAvatar = null;
@@ -2383,6 +2411,8 @@ export default function MessagesScreen(props){
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',alignItems:'center'}},
                 React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'5px',minWidth:0}},
                   React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.name),
+                  /* R40: verification badge in convo list */
+                  c.is_verified ? React.createElement(VerificationBadge,{size:13}) : null,
                   // Mute icon — shows when this conversation is in ringin_muted_convos.
                   // Matches Instagram / WhatsApp inbox convention.
                   inboxMutedConvos.indexOf(c.convId||c.id) >= 0 ? React.createElement('span',{title:'Notifications muted',style:{fontSize:'11px',color:'var(--t3)',flexShrink:0,lineHeight:1}},'🔕') : null
