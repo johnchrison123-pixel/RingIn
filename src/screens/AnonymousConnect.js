@@ -53,13 +53,34 @@ export default function AnonymousConnect(props) {
   var onlineCountS = useState(0); var onlineCount = onlineCountS[0]; var setOnlineCount = onlineCountS[1];
   var countPollRef = useRef(null);
   var heartbeatRef = useRef(null);
-  /* R31: anonymous identity (nickname + avatar + gender + preference). */
+  /* R31/R32: anonymous identity. Gender now comes from REAL profile
+   * (profiles.gender) — set during onboarding, displayed but not editable
+   * in the anon screen. Other fields stay editable. */
   var nickS = useState(''); var nick = nickS[0]; var setNick = nickS[1];
   var avatarIdS = useState('girl1'); var avatarId = avatarIdS[0]; var setAvatarId = avatarIdS[1];
   var genderS = useState('f'); var gender = genderS[0]; var setGender = genderS[1];
   var preferenceS = useState('both'); var preference = preferenceS[0]; var setPreference = preferenceS[1];
   var profileSavedRef = useRef(false);
   var saveProfileTimerRef = useRef(null);
+  /* R32: onboarding wizard state. Shown once on first Anonymous Connect open. */
+  var onboardedS = useState(true); var onboarded = onboardedS[0]; var setOnboarded = onboardedS[1];
+  var checkingOnboardS = useState(true); var checkingOnboard = checkingOnboardS[0]; var setCheckingOnboard = checkingOnboardS[1];
+  var obGenderS = useState(''); var obGender = obGenderS[0]; var setObGender = obGenderS[1];
+  var obNickS = useState(''); var obNick = obNickS[0]; var setObNick = obNickS[1];
+  var obAvatarS = useState(''); var obAvatar = obAvatarS[0]; var setObAvatar = obAvatarS[1];
+  var obPrefS = useState('both'); var obPref = obPrefS[0]; var setObPref = obPrefS[1];
+  var obSubmittingS = useState(false); var obSubmitting = obSubmittingS[0]; var setObSubmitting = obSubmittingS[1];
+  var obStepS = useState(1); var obStep = obStepS[0]; var setObStep = obStepS[1];
+  /* R33: 4-tab structure (Connections / Messages / Call Logs / Profile).
+   * Default landing tab is connections (where Find Someone + connection
+   * list live). Profile is where the identity + preferences + interests
+   * get edited. */
+  var activeTabS = useState('connections'); var activeTab = activeTabS[0]; var setActiveTab = activeTabS[1];
+  var connectionsS = useState([]); var connections = connectionsS[0]; var setConnections = connectionsS[1];
+  var pendingReqsS = useState([]); var pendingReqs = pendingReqsS[0]; var setPendingReqs = pendingReqsS[1];
+  var lastMatchPartnerS = useState(null); var lastMatchPartner = lastMatchPartnerS[0]; var setLastMatchPartner = lastMatchPartnerS[1];
+  var connReqSendingS = useState(false); var connReqSending = connReqSendingS[0]; var setConnReqSending = connReqSendingS[1];
+  var connectionsPollRef = useRef(null);
 
   function addInterest(i) {
     var v = (i || '').trim().toLowerCase();
@@ -99,12 +120,18 @@ export default function AnonymousConnect(props) {
   function startMatchedCall(matchData){
     var partner = matchData.partner_id;
     if (matchData.is_caller) {
+      /* R33: pass my own nickname + avatar via target._myNickname / _myAvatar
+       * so App.js.startOutgoingCall can stamp them onto call_invites.
+       * Without this, the callee sees the REAL name from my profile
+       * (the anonymity leak bug). */
       var target = {
         id: partner,
-        name: 'Anonymous',
+        name: matchData.partner_nickname || 'Anonymous',
         avatar: null,
         role: 'Anonymous Connect',
         online: true,
+        _myNickname: nick || 'Anonymous',
+        _myAvatar: avatarId || null,
       };
       try {
         if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
@@ -146,6 +173,8 @@ export default function AnonymousConnect(props) {
 
     function handleMatched(matchData){
       stopSearching();
+      // R33: remember the partner so user can later "Add as Connection"
+      setLastMatchPartner(matchData);
       startMatchedCall(matchData);
     }
 
@@ -227,22 +256,36 @@ export default function AnonymousConnect(props) {
   useEffect(function(){
     if (!userId) return;
     var cancelled = false;
-    // Initial fetch: availability + anonymous profile
+    // Initial fetch: availability + anonymous profile + REAL gender + onboarded flag
     try {
-      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference').eq('id', userId).maybeSingle().then(function(r){
+      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference,gender,anon_onboarded,full_name').eq('id', userId).maybeSingle().then(function(r){
         if (cancelled) return;
+        setCheckingOnboard(false);
         if (r && !r.error && r.data) {
           var stillValid = !r.data.available_until || new Date(r.data.available_until) > new Date();
           setAvailable(!!r.data.is_available_anon && stillValid);
-          // R31: hydrate anonymous profile (don't overwrite user's local edits)
           if (r.data.anon_nickname) setNick(r.data.anon_nickname);
           if (r.data.anon_avatar)   setAvatarId(r.data.anon_avatar);
-          if (r.data.anon_gender)   setGender(r.data.anon_gender);
+          // R32: gender is REAL gender (from profiles.gender) — not editable here
+          var realGender = r.data.gender || r.data.anon_gender || 'f';
+          setGender(realGender);
           if (r.data.anon_preference) setPreference(r.data.anon_preference);
+          // R32: onboarded flag — if false, show the setup wizard
+          var hasGender = !!r.data.gender;
+          var hasNick = r.data.anon_nickname && r.data.anon_nickname.trim().length > 0;
+          var ob = !!r.data.anon_onboarded && hasGender && hasNick;
+          setOnboarded(ob);
+          // Pre-fill onboarding fields with sensible defaults
+          if (!ob) {
+            setObGender(realGender || '');
+            setObNick(r.data.anon_nickname || (r.data.full_name ? r.data.full_name.split(' ')[0] : ''));
+            setObAvatar(r.data.anon_avatar || (realGender === 'm' ? 'boy1' : 'girl1'));
+            setObPref(r.data.anon_preference || 'both');
+          }
           profileSavedRef.current = true;
         }
-      }).catch(function(){});
-    } catch(_){}
+      }).catch(function(e){ setCheckingOnboard(false); console.warn('[anon] profile fetch reject:', e); });
+    } catch(_){ setCheckingOnboard(false); }
     function pollCount(){
       try {
         sb.from('available_anon_count').select('count').maybeSingle().then(function(r){
@@ -298,6 +341,117 @@ export default function AnonymousConnect(props) {
     };
   }, [nick, avatarId, gender, preference, userId]);
 
+  /* R32: complete onboarding — saves real gender + anon nickname/avatar/pref
+   * in one RPC. After this, the wizard never shows again for this user. */
+  function completeOnboarding(){
+    if (!obGender) { toastError('Please pick your gender'); return; }
+    if (!obNick || obNick.trim().length === 0) { toastError('Please pick a nickname'); return; }
+    if (!obAvatar) { toastError('Please pick an avatar'); return; }
+    setObSubmitting(true);
+    sb.rpc('complete_anon_onboarding', {
+      p_gender: obGender,
+      p_nickname: obNick.trim(),
+      p_avatar: obAvatar,
+      p_preference: obPref,
+    }).then(function(r){
+      setObSubmitting(false);
+      if (r && r.error) {
+        console.warn('[anon onboard] error:', r.error);
+        toastError('Could not save: ' + (r.error.message || 'unknown error'));
+        return;
+      }
+      // Hydrate the main-screen state from what we just saved
+      setGender(obGender);
+      setNick(obNick.trim());
+      setAvatarId(obAvatar);
+      setPreference(obPref);
+      setOnboarded(true);
+      try { toastInfo("You're all set! Tap Find Someone to start."); } catch(_){}
+    }).catch(function(e){
+      setObSubmitting(false);
+      console.warn('[anon onboard] reject:', e);
+      toastError('Network error — try again');
+    });
+  }
+
+  /* R33: load my connections + pending requests. Polls every 30 sec while
+   * the screen is open so new requests/accepts show up reasonably fast
+   * without WebSocket complexity. */
+  function loadConnectionsAndRequests(){
+    if (!userId) return;
+    try {
+      sb.rpc('list_anon_connections').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setConnections(r.data);
+      }).catch(function(){});
+      sb.rpc('list_pending_anon_requests').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setPendingReqs(r.data);
+      }).catch(function(){});
+    } catch(_){}
+  }
+  useEffect(function(){
+    if (!userId || !onboarded) return;
+    loadConnectionsAndRequests();
+    connectionsPollRef.current = setInterval(loadConnectionsAndRequests, 30000);
+    return function(){
+      if (connectionsPollRef.current) { clearInterval(connectionsPollRef.current); connectionsPollRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, onboarded]);
+
+  /* R33: send a connection request to the last person we just matched with. */
+  function sendConnectionRequest(){
+    if (!lastMatchPartner || !lastMatchPartner.partner_id) {
+      toastError('No recent match to connect with'); return;
+    }
+    setConnReqSending(true);
+    sb.rpc('request_anon_connection', { p_recipient: lastMatchPartner.partner_id }).then(function(r){
+      setConnReqSending(false);
+      if (r && r.error) {
+        console.warn('[anon] conn request error:', r.error);
+        toastError('Could not send request: ' + (r.error.message || 'unknown'));
+        return;
+      }
+      var st = r && r.data && r.data.status;
+      if (st === 'already_connected') {
+        try { toastInfo('You\'re already connected.'); } catch(_){}
+      } else {
+        try { toastInfo('Request sent! Waiting for them to accept.'); } catch(_){}
+      }
+      setLastMatchPartner(null);
+    }).catch(function(e){
+      setConnReqSending(false); console.warn('[anon] conn request reject:', e);
+      toastError('Network error — try again');
+    });
+  }
+
+  /* R33: respond to an incoming connection request. */
+  function respondToRequest(reqId, accept){
+    sb.rpc('respond_anon_connection', { p_request_id: reqId, p_accept: accept }).then(function(r){
+      if (r && r.error) { console.warn('[anon] respond error:', r.error); toastError('Action failed'); return; }
+      try { toastInfo(accept ? 'Connected!' : 'Request declined.'); } catch(_){}
+      loadConnectionsAndRequests();
+    }).catch(function(e){ console.warn('[anon] respond reject:', e); toastError('Network error'); });
+  }
+
+  /* R33: call a connection directly (re-use the existing call pipeline). */
+  function callConnection(conn){
+    if (!conn || !conn.user_id) { toastError('Invalid connection'); return; }
+    var target = {
+      id: conn.user_id,
+      name: conn.nickname || 'Anonymous',
+      avatar: null,
+      role: 'Anonymous Connection',
+      online: !!conn.is_online,
+      _myNickname: nick || 'Anonymous',
+      _myAvatar: avatarId || null,
+    };
+    try {
+      if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
+        window.__ringInStartCall(target, { rate: 0, anonymous: true });
+      } else { toastError('Call pipeline not ready'); }
+    } catch(e){ console.warn('[anon] call connection failed:', e); toastError('Could not start call'); }
+  }
+
   function toggleAvailable(){
     if (availToggling) return;
     setAvailToggling(true);
@@ -323,10 +477,114 @@ export default function AnonymousConnect(props) {
     });
   }
 
+  /* R32: first-time setup wizard — shown until the user picks gender + nick + avatar + preference once. */
+  if (!checkingOnboard && !onboarded) {
+    var obAvatarsToShow = obGender === 'm' ? ANON_AVATARS.filter(function(a){ return a.gender === 'm'; })
+                       : obGender === 'f' ? ANON_AVATARS.filter(function(a){ return a.gender === 'f'; })
+                       : ANON_AVATARS;
+    return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      React.createElement('div', {style:{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Welcome')
+      ),
+      React.createElement('div', {style:{padding:'18px'}},
+        React.createElement('h2', {style:{fontSize:'18px',fontWeight:800,color:'var(--text)',margin:'0 0 6px',fontFamily:'Syne, sans-serif'}}, 'Set up your anonymous profile'),
+        React.createElement('p', {style:{fontSize:'13px',color:'var(--t2)',margin:'0 0 18px',lineHeight:1.5}}, 'This is the identity strangers see when you connect anonymously. You can edit nickname, avatar and preferences anytime — but gender stays tied to your real RingIn profile.'),
+
+        // STEP 1 — Gender (only if not set on real profile)
+        React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
+          React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'10px'}}, "I'm a"),
+          React.createElement('div', {style:{display:'flex',gap:'8px'}},
+            [{k:'f',l:'👧 Girl'},{k:'m',l:'👦 Boy'},{k:'other',l:'🌈 Other'}].map(function(g){
+              var sel = obGender === g.k;
+              return React.createElement('button', {
+                key:g.k, onClick:function(){ setObGender(g.k); /* reset avatar to first matching one */ setObAvatar(g.k === 'm' ? 'boy1' : 'girl1'); },
+                style:{flex:1,padding:'12px 6px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+              }, g.l);
+            })
+          ),
+          React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'8px',lineHeight:1.5}}, 'This saves to your real profile and is used for matching. Cannot be changed later from this screen.')
+        ),
+
+        // STEP 2 — Nickname
+        React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
+          React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, 'Nickname'),
+          React.createElement('input', {
+            value:obNick,
+            onChange:function(e){ setObNick(e.target.value.slice(0,30)); },
+            placeholder:'e.g. Riya, Arjun, Whoever',
+            maxLength:30,
+            style:{width:'100%',padding:'11px 13px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'14px',outline:'none',boxSizing:'border-box',fontFamily:'inherit'}
+          })
+        ),
+
+        // STEP 3 — Avatar (filtered by gender if set)
+        React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
+          React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'10px'}}, 'Pick an avatar'),
+          React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat('+(obAvatarsToShow.length<6?'3':'6')+',1fr)',gap:'10px'}},
+            obAvatarsToShow.map(function(a){
+              var sel = obAvatar === a.id;
+              return React.createElement('button', {
+                key:a.id, onClick:function(){ setObAvatar(a.id); },
+                style:{aspectRatio:'1/1',borderRadius:'50%',background:a.bg,border:sel?'3px solid #fff':'3px solid transparent',outline:sel?'2px solid var(--ac)':'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',cursor:'pointer',padding:0,boxShadow:sel?'0 4px 14px rgba(123,110,255,0.5)':'none',transition:'all 0.15s'}
+              }, a.emoji);
+            })
+          )
+        ),
+
+        // STEP 4 — Preference
+        React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'18px'}},
+          React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'10px'}}, 'I want to talk to'),
+          React.createElement('div', {style:{display:'flex',gap:'8px'}},
+            [{k:'women',l:'👧 Girls'},{k:'men',l:'👦 Boys'},{k:'both',l:'✨ Anyone'}].map(function(p){
+              var sel = obPref === p.k;
+              return React.createElement('button', {
+                key:p.k, onClick:function(){ setObPref(p.k); },
+                style:{flex:1,padding:'12px 6px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+              }, p.l);
+            })
+          )
+        ),
+
+        // Submit
+        React.createElement('button', {
+          onClick: completeOnboarding, disabled: obSubmitting,
+          style:{width:'100%',padding:'15px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:800,cursor:obSubmitting?'wait':'pointer',opacity:obSubmitting?0.7:1,fontFamily:'inherit',boxShadow:'0 4px 16px rgba(123,110,255,0.4)'}
+        }, obSubmitting ? 'Saving…' : '✨ Get Started')
+      )
+    );
+  }
+
+  /* R33: 4 top tabs (Instagram-style). Connections is the default landing. */
+  var TABS = [
+    { key:'connections', label:'Connections', icon:'🤝' },
+    { key:'messages',    label:'Messages',    icon:'💬' },
+    { key:'calllogs',    label:'Call Logs',   icon:'📞' },
+    { key:'profile',     label:'Profile',     icon:'👤' },
+  ];
+  var pendingCount = (pendingReqs && pendingReqs.length) || 0;
+
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    React.createElement('div', {style:{position:'sticky',top:0,zIndex:10,background:'var(--bg2)',padding:'14px 18px',display:'flex',alignItems:'center',gap:'12px',borderBottom:'1px solid var(--border)'}},
-      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
+    React.createElement('div', {style:{position:'sticky',top:0,zIndex:10,background:'var(--bg2)',padding:'14px 18px 0',display:'flex',flexDirection:'column',gap:'10px',borderBottom:'1px solid var(--border)'}},
+      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect'),
+      /* R33: tab bar */
+      React.createElement('div', {style:{display:'flex',gap:'0',overflowX:'auto',scrollbarWidth:'none'}},
+        TABS.map(function(t){
+          var sel = activeTab === t.key;
+          var badge = (t.key === 'connections' && pendingCount > 0) ? pendingCount : 0;
+          return React.createElement('button', {
+            key:t.key,
+            onClick:function(){ setActiveTab(t.key); },
+            style:{flex:1,padding:'10px 4px',background:'transparent',border:'none',borderBottom:'2px solid '+(sel?'var(--ac)':'transparent'),color:sel?'var(--text)':'var(--t3)',fontSize:'12px',fontWeight:sel?700:500,cursor:'pointer',fontFamily:'inherit',position:'relative',whiteSpace:'nowrap'}
+          },
+            t.icon + ' ' + t.label,
+            badge > 0 ? React.createElement('span', {style:{position:'absolute',top:'4px',right:'8px',background:'#FF4757',color:'#fff',fontSize:'9px',fontWeight:700,padding:'1px 5px',borderRadius:'10px',minWidth:'15px',textAlign:'center'}}, badge) : null
+          );
+        })
+      )
     ),
+
+    /* ════════ CONNECTIONS TAB ════════ */
+    activeTab === 'connections' && React.createElement(React.Fragment, null,
 
     /* R30: live-online card. Always visible at the top. Big animated green
      * dot when ON + live count of available users in the entire app. */
@@ -377,10 +635,10 @@ export default function AnonymousConnect(props) {
         React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)',marginTop:'14px'}}, match.partner_nickname || 'Anonymous'),
         match.partner_gender ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'4px'}}, match.partner_gender === 'f' ? '👧 Girl' : '👦 Boy') : null,
       // R27: Connect Voice — uses same window.__ringInStartCall pipeline as expert calls
-      React.createElement('div', {style:{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'center'}},
+      React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'20px',justifyContent:'center',flexWrap:'wrap'}},
         React.createElement('button', {
           onClick:skip,
-          style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}
+          style:{padding:'10px 14px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer'}
         }, 'Skip'),
         React.createElement('button', {
           onClick:function(){
@@ -390,6 +648,11 @@ export default function AnonymousConnect(props) {
               avatar: null,
               role: 'Anonymous Connect',
               online: true,
+              /* R33: pass my nickname/avatar via _my* so App.js's startCall can
+               * use them as caller_name/caller_avatar on the call_invites row
+               * (fixes name-leak bug where real email was shown to recipient). */
+              _myNickname: nick || 'Anonymous',
+              _myAvatar: avatarId || null,
             };
             if (!target.id) { toastError('Match has no user id — cannot connect'); return; }
             try {
@@ -401,14 +664,83 @@ export default function AnonymousConnect(props) {
               }
             } catch(e){ console.warn('[anon-connect] start call failed:', e); toastError('Could not start call'); }
           },
-          style:{padding:'10px 22px',borderRadius:'10px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(39,201,106,0.35)'}
-        }, '📞 Connect Voice')
+          style:{padding:'10px 16px',borderRadius:'10px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(39,201,106,0.35)'}
+        }, '📞 Connect Voice'),
+        /* R33: Add as Connection — sends connection request to this partner. */
+        React.createElement('button', {
+          onClick:sendConnectionRequest,
+          disabled: connReqSending,
+          style:{padding:'10px 14px',borderRadius:'10px',background:'transparent',border:'1px solid var(--ac)',color:'var(--ac)',fontSize:'12px',fontWeight:700,cursor:connReqSending?'wait':'pointer',opacity:connReqSending?0.6:1}
+        }, connReqSending ? '...' : '➕ Add Connection')
       )
     );
     })(),
 
-    // Setup — R31 layout: anonymous profile card → interests → gender prefs → geo → find
+    /* ── Connections tab body when NOT searching and NOT showing match ── */
     !searching && !match && React.createElement('div', {style:{padding:'16px'}},
+
+      /* R33: Pending incoming connection requests */
+      pendingReqs.length > 0 ? React.createElement('div', {style:{marginBottom:'16px'}},
+        React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, '✨ Pending Requests (' + pendingReqs.length + ')'),
+        pendingReqs.map(function(req){
+          var ra = getAvatar(req.requester_avatar || 'girl1');
+          return React.createElement('div', {key:req.id,style:{background:'var(--bg2)',border:'1px solid var(--ac)',borderRadius:'12px',padding:'12px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px'}},
+            React.createElement('div', {style:{width:'40px',height:'40px',borderRadius:'50%',background:ra.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}, ra.emoji),
+            React.createElement('div', {style:{flex:1,minWidth:0}},
+              React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, req.requester_nickname || 'Anonymous'),
+              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'1px'}}, 'wants to connect')
+            ),
+            React.createElement('button', {onClick:function(){respondToRequest(req.id, false);},style:{padding:'7px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--t2)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, 'Decline'),
+            React.createElement('button', {onClick:function(){respondToRequest(req.id, true);},style:{padding:'7px 14px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Accept')
+          );
+        })
+      ) : null,
+
+      /* R33: Find Someone (was at bottom of setup; now top of Connections tab) */
+      err && React.createElement('div', {style:{padding:'12px',background:'rgba(239,71,71,0.1)',border:'1px solid var(--red)',borderRadius:'10px',color:'var(--red)',fontSize:'12px',marginBottom:'12px'}}, err),
+      React.createElement('button', {onClick:find, style:{width:'100%',padding:'14px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'16px'}}, '🎯 Find Someone to Talk To'),
+
+      /* R33: Accepted connections list */
+      React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, 'Your Connections (' + connections.length + ')'),
+      connections.length === 0
+        ? React.createElement('div', {style:{padding:'24px 16px',textAlign:'center',background:'var(--bg2)',border:'1px dashed var(--border)',borderRadius:'12px',color:'var(--t3)',fontSize:'12px'}},
+            React.createElement('div', {style:{fontSize:'32px',marginBottom:'8px',opacity:0.5}}, '🤝'),
+            'No connections yet. Match with someone and tap "Add Connection" to keep in touch.'
+          )
+        : connections.map(function(c){
+            var ca = getAvatar(c.avatar || 'girl1');
+            return React.createElement('div', {key:c.user_id,style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px'}},
+              React.createElement('div', {style:{width:'42px',height:'42px',borderRadius:'50%',background:ca.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',flexShrink:0,position:'relative'}},
+                ca.emoji,
+                c.is_online ? React.createElement('div', {style:{position:'absolute',bottom:'-2px',right:'-2px',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg)'}}) : null
+              ),
+              React.createElement('div', {style:{flex:1,minWidth:0}},
+                React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, c.nickname || 'Anonymous'),
+                React.createElement('div', {style:{fontSize:'10px',color:c.is_online?'#27C96A':'var(--t3)',marginTop:'1px'}}, c.is_online ? '🟢 Online now' : 'Offline')
+              ),
+              React.createElement('button', {onClick:function(){ setActiveTab('messages'); /* TODO: open chat with this connection */ },style:{padding:'7px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, '💬'),
+              React.createElement('button', {onClick:function(){ callConnection(c); },disabled:!c.is_online,style:{padding:'7px 12px',background:c.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:c.is_online?'none':'1px solid var(--border)',borderRadius:'8px',color:c.is_online?'#fff':'var(--t3)',fontSize:'11px',fontWeight:700,cursor:c.is_online?'pointer':'not-allowed',fontFamily:'inherit'}}, '📞')
+            );
+          })
+    )
+    ), /* close activeTab === 'connections' fragment */
+
+    /* ════════ MESSAGES TAB ════════ */
+    activeTab === 'messages' && React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
+      React.createElement('div', {style:{fontSize:'52px',marginBottom:'12px',opacity:0.4}}, '💬'),
+      React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'Messages Coming Soon'),
+      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Once you have connections, you\'ll be able to chat with them here — even when they\'re offline.')
+    ),
+
+    /* ════════ CALL LOGS TAB ════════ */
+    activeTab === 'calllogs' && React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
+      React.createElement('div', {style:{fontSize:'52px',marginBottom:'12px',opacity:0.4}}, '📞'),
+      React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'Call Logs Coming Soon'),
+      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Your history of anonymous calls — who you talked to, when, how long — will show up here.')
+    ),
+
+    /* ════════ PROFILE TAB ════════ */
+    activeTab === 'profile' && React.createElement('div', {style:{padding:'16px'}},
 
       // ── R31: Anonymous identity card (nickname + avatar + gender) ──
       React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
@@ -422,29 +754,33 @@ export default function AnonymousConnect(props) {
           maxLength:30,
           style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
         }),
-        // Avatar grid
+        // Avatar grid — R33 BUG FIX: filter by user's gender so a boy only sees boy
+        // avatars and vice versa. "Other" sees all 6.
         React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, 'Pick an avatar'),
-        React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:'8px',marginBottom:'14px'}},
-          ANON_AVATARS.map(function(a){
-            var sel = avatarId === a.id;
-            return React.createElement('button', {
-              key:a.id,
-              onClick:function(){ setAvatarId(a.id); /* auto-align gender to avatar's gender as a sensible default */ if (a.gender !== gender) setGender(a.gender); },
-              style:{aspectRatio:'1/1',borderRadius:'50%',background:a.bg,border:sel?'3px solid #fff':'3px solid transparent',outline:sel?'2px solid var(--ac)':'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',cursor:'pointer',padding:0,boxShadow:sel?'0 4px 14px rgba(123,110,255,0.5)':'none',transition:'all 0.15s'},
-              title:a.id
-            }, a.emoji);
-          })
-        ),
-        // Gender chooser
-        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, "I'm a"),
-        React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'4px'}},
-          [{k:'f',l:'👧 Girl'},{k:'m',l:'👦 Boy'}].map(function(g){
-            var sel = gender === g.k;
-            return React.createElement('button', {
-              key:g.k, onClick:function(){ setGender(g.k); },
-              style:{flex:1,padding:'10px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-            }, g.l);
-          })
+        (function(){
+          var filtered = gender === 'm' ? ANON_AVATARS.filter(function(a){ return a.gender === 'm'; })
+                       : gender === 'f' ? ANON_AVATARS.filter(function(a){ return a.gender === 'f'; })
+                       : ANON_AVATARS;
+          return React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(' + (filtered.length<6?'3':'6') + ',1fr)',gap:'10px',marginBottom:'14px'}},
+            filtered.map(function(a){
+              var sel = avatarId === a.id;
+              return React.createElement('button', {
+                key:a.id,
+                onClick:function(){ setAvatarId(a.id); },
+                style:{aspectRatio:'1/1',borderRadius:'50%',background:a.bg,border:sel?'3px solid #fff':'3px solid transparent',outline:sel?'2px solid var(--ac)':'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',cursor:'pointer',padding:0,boxShadow:sel?'0 4px 14px rgba(123,110,255,0.5)':'none',transition:'all 0.15s'},
+                title:a.id
+              }, a.emoji);
+            })
+          );
+        })(),
+        // R32: Gender is now READ-ONLY here (set during onboarding, lives on
+        // the user's real profile). Shown as a small badge for clarity.
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'4px'}},
+          'Your gender: ',
+          React.createElement('span', {style:{color:'var(--text)',fontWeight:600}},
+            gender === 'm' ? '👦 Boy' : gender === 'f' ? '👧 Girl' : '🌈 Other'
+          ),
+          React.createElement('span', {style:{color:'var(--t3)',marginLeft:'6px',fontSize:'10px'}}, '(from your RingIn profile)')
         )
       ),
 
@@ -499,9 +835,9 @@ export default function AnonymousConnect(props) {
         )
       ),
 
-      err && React.createElement('div', {style:{padding:'12px',background:'rgba(239,71,71,0.1)',border:'1px solid var(--red)',borderRadius:'10px',color:'var(--red)',fontSize:'12px',marginBottom:'12px'}}, err),
-
-      React.createElement('button', {onClick:find, style:{width:'100%',padding:'14px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer'}}, '🎯 Find Someone to Talk To')
+      /* R33: Find Someone button was moved to Connections tab. Profile tab
+       * is now just for editing the anonymous identity. */
+      React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',textAlign:'center',marginTop:'8px'}}, 'Changes save automatically. Switch to Connections tab to find someone.')
     )
   );
 }

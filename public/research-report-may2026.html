@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RingIn — Social Media Strategic Research Report · May 2026</title>
+<style>
+  :root{
+    --ink:#111;
+    --muted:#555;
+    --line:#e5e5e5;
+    --accent:#0a66c2;
+    --warn:#b34a00;
+    --good:#0a7a3e;
+    --bg-soft:#f7f7f8;
+    --bg-card:#fff;
+    --page-w:780px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#eceff1;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;font-size:15px;-webkit-font-smoothing:antialiased}
+  .page{max-width:var(--page-w);margin:24px auto;background:var(--bg-card);
+    padding:48px 56px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  h1{font-size:34px;line-height:1.2;margin:0 0 8px;font-weight:800;letter-spacing:-.5px}
+  h2{font-size:24px;line-height:1.25;margin:48px 0 12px;padding-bottom:8px;
+    border-bottom:2px solid var(--ink);font-weight:800;letter-spacing:-.3px}
+  h3{font-size:18px;line-height:1.3;margin:28px 0 8px;font-weight:700}
+  h4{font-size:15px;margin:20px 0 6px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.5px;color:var(--muted)}
+  p{margin:0 0 12px}
+  ul,ol{margin:0 0 14px;padding-left:22px}
+  li{margin:4px 0}
+  strong{font-weight:700}
+  em{color:var(--muted);font-style:italic}
+  hr{border:0;border-top:1px solid var(--line);margin:36px 0}
+  blockquote{margin:14px 0;padding:12px 16px;background:var(--bg-soft);
+    border-left:3px solid var(--accent);color:var(--ink);font-style:italic}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;background:var(--bg-soft);padding:1px 6px;border-radius:4px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{padding:8px 10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+  th{font-weight:700;background:var(--bg-soft)}
+  .meta{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .toc{background:var(--bg-soft);padding:18px 22px;border-radius:6px;margin:24px 0 36px}
+  .toc h4{margin:0 0 8px;color:var(--ink)}
+  .toc ol{margin:0;padding-left:18px;font-size:14px}
+  .toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--muted)}
+  .toc a:hover{color:var(--accent);border-color:var(--accent)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;
+    font-weight:700;text-transform:uppercase;letter-spacing:.5px;vertical-align:middle}
+  .pill-r{background:#fbe9e7;color:#b34a00}
+  .pill-g{background:#e6f4ea;color:#0a7a3e}
+  .pill-b{background:#e7f0fb;color:#0a66c2}
+  .pill-y{background:#fff3cd;color:#7a5a00}
+  .card{background:var(--bg-soft);padding:14px 18px;border-radius:6px;margin:12px 0}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:14px 0}
+  .grid-2 .card{margin:0}
+  .callout{border:1px solid var(--line);border-left:4px solid var(--accent);
+    padding:14px 18px;border-radius:4px;margin:18px 0;background:#fafbfc}
+  .callout-warn{border-left-color:var(--warn)}
+  .callout-good{border-left-color:var(--good)}
+  .slide{border:1px solid var(--line);padding:16px 20px;border-radius:6px;
+    margin:14px 0;background:#fff}
+  .slide-num{display:inline-block;font-size:11px;font-weight:700;color:var(--muted);
+    letter-spacing:1px;margin-bottom:4px}
+  .footer{text-align:center;color:var(--muted);font-size:12px;margin:48px 0 16px}
+  .no-print{display:block}
+  .print-btn{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;
+    border:0;padding:10px 18px;border-radius:6px;font-weight:700;cursor:pointer;
+    font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.18);font-family:inherit}
+  .print-btn:hover{background:#000}
+
+  @media print{
+    html,body{background:#fff}
+    .page{box-shadow:none;margin:0;max-width:none;padding:0 12mm}
+    .no-print{display:none!important}
+    h2{page-break-before:always;padding-top:8mm}
+    h2:first-of-type{page-break-before:auto}
+    .slide,.card,.callout,.toc{page-break-inside:avoid}
+    a{color:var(--ink);text-decoration:none}
+  }
+
+  @media (max-width:720px){
+    .page{margin:0;padding:24px 18px;border-radius:0}
+    h1{font-size:26px}
+    h2{font-size:20px}
+    .grid-2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">Save as PDF</button>
+
+<div class="page">
+
+  <h1>Social Media Strategic Research Report</h1>
+  <div class="meta">
+    <strong>RingIn</strong> — voice-first social for India tier-2/3 + Saudi Arabia &middot;
+    Founder: John C. &middot; Webstreax Technologies Pvt Ltd &middot;
+    Compiled May 2026 &middot; 5 research rounds, deepening each pass
+  </div>
+
+  <div class="toc no-print">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#exec">Executive summary (the 1-pager)</a></li>
+      <li><a href="#r1">Round 1 — The future of social media</a></li>
+      <li><a href="#r2">Round 2 — Competitor unit economics</a></li>
+      <li><a href="#r3">Round 3 — Regulatory + payment landscape</a></li>
+      <li><a href="#r4">Round 4 — Execution kit (GTM + outreach)</a></li>
+      <li><a href="#r5">Round 5 — Final synthesis</a></li>
+      <li><a href="#deck">The 12-slide pitch deck</a></li>
+      <li><a href="#90day">90-day execution checklist</a></li>
+      <li><a href="#tomorrow">Tomorrow morning — top 5 actions</a></li>
+      <li><a href="#risk">Risk register</a></li>
+      <li><a href="#faq">Investor FAQ</a></li>
+      <li><a href="#monetize">Monetization playbook</a></li>
+      <li><a href="#features">Feature ideas backlog</a></li>
+    </ol>
+  </div>
+
+  <h2 id="exec">1. Executive Summary</h2>
+
+  <p><strong>What RingIn is:</strong> A voice-first social app where strangers connect through short audio rooms with experts and friends, monetized by coins (calls, gifts, premium voice rooms). Already shipping — Capacitor-wrapped React, v3.43 live in production with 18,341 lines of code, built solo in 8 months.</p>
+
+  <p><strong>Why now — the 3-sentence pitch:</strong></p>
+  <blockquote>Gen Z is exhausted by feed-based social. The winning 2026 thesis (a16z's <em>See Me not Feed Me</em>) is presence-first, voice-first, small-room social — and the proof is Yalla's <strong>$79M Q1 2026 revenue at 35.9% net margin</strong> in MENA. India and KSA are the two markets where voice-first wins because text-input friction is highest and audio culture is strongest — and no one is doing <em>both</em> with one product yet.</blockquote>
+
+  <p><strong>The wedge no incumbent can copy:</strong></p>
+  <ul>
+    <li><strong>Facebook / Insta / Twitter</strong> are locked into feed economics — they can't pivot to presence without cannibalizing ad inventory.</li>
+    <li><strong>Yalla</strong> owns MENA but has no India play and zero creator-economy layer.</li>
+    <li><strong>FRND</strong> owns Indian voice but has no MENA play and a weak retention loop (no creator economy, no expert verticals).</li>
+    <li><strong>RingIn = FRND's product + Yalla's monetization + the expert/creator layer neither has.</strong></li>
+  </ul>
+
+  <p><strong>The 18-month bet:</strong></p>
+  <ul>
+    <li>100K MAU split India tier-2/3 (70%) + KSA (30%) by Q4 2026</li>
+    <li>$0.10–0.16 per-MAU infra cost (validated; Agora @ $0.00099/min)</li>
+    <li>KSA blended ARPPU target: $32/year (Yalla blended) → ~$960K ARR from 30K KSA MAU @ 10% paying</li>
+    <li>India compounds organically (LTV ₹12 &lt; CPI ₹35 today); KSA pays the bills while India scales</li>
+  </ul>
+
+  <div class="callout">
+    <strong>The ask:</strong> $1.2M seed @ $8M post-money (15% dilution). 18 months runway. Get to $80–120K MRR. Series A at $30–40M.
+  </div>
+
+  <hr>
+
+  <h2 id="r1">2. Round 1 — The Future of Social Media</h2>
+
+  <h3>The macro shift</h3>
+  <p>Feed-based social peaked in 2022. Meta Family DAU growth is decelerating to ~1.2% YoY. The replacement is not another feed — it's <strong>presence</strong>.</p>
+
+  <p>Three thesis frames support this:</p>
+  <ol>
+    <li><strong>a16z &quot;See Me not Feed Me&quot; 2026</strong> — investors are explicitly funding presence-first, real-time, small-group products over algorithmic feed products.</li>
+    <li><strong>Eugene Wei &quot;Status as a Service&quot;</strong> — social products earn status faster when the signaling medium is harder to fake. Voice is the only medium AI can't yet flood with synthetic content at scale (cloning a person convincingly still costs &gt; $0.10/minute; bulk-spamming voice rooms is uneconomic).</li>
+    <li><strong>The discovery-fatigue cycle</strong> — every 6–8 years a new dominant social mode emerges (text → photo → short-video → presence). Short-video peaked with TikTok in 2022. Presence is the next mode.</li>
+  </ol>
+
+  <h3>What people will actually like in 2026–28</h3>
+  <ul>
+    <li><strong>Small rooms over big feeds</strong> — Discord, Yalla, Clubhouse-likes, group voice notes</li>
+    <li><strong>Audio over text</strong> — voice notes are now &gt;50% of WhatsApp messages in India by some counts</li>
+    <li><strong>Ephemeral over permanent</strong> — Stories format is now larger than the main Insta feed in time-spent</li>
+    <li><strong>Identity-flexible</strong> — pseudonymous handles, voice modulation, avatar rooms</li>
+    <li><strong>Monetizable status</strong> — gifts, super-likes, paid 1:1 access to creators</li>
+    <li><strong>Hyper-local language</strong> — Hindi/Telugu/Tamil/Arabic-native, not English-translated</li>
+  </ul>
+
+  <h3>China &amp; Russia — what the closed ecosystems teach us</h3>
+  <table>
+    <tr><th>Platform</th><th>Country</th><th>Key insight transferable to RingIn</th></tr>
+    <tr><td>WeChat</td><td>China</td><td>Super-app pattern. Voice notes were the killer feature 2013–16 — text-input pain is universal.</td></tr>
+    <tr><td>Douyin</td><td>China</td><td>Live-stream tipping is 70% of revenue, not ads. Coins/gifts &gt; ads for emerging-market consumer.</td></tr>
+    <tr><td>Soul</td><td>China</td><td>Voice-first dating, $200M+ revenue. Proves voice rooms can monetize at scale.</td></tr>
+    <tr><td>VK</td><td>Russia</td><td>Group voice chat in messenger. Russians still prefer voice over video in private chat — same trait in tier-2 India.</td></tr>
+    <tr><td>Telegram</td><td>Russia/global</td><td>Voice rooms ("Voice Chats") added 2020, now 80M+ MAU in voice. Validates the format.</td></tr>
+    <tr><td>Yappy</td><td>Russia</td><td>Replacement for TikTok in RU. Heavy voice/audio surfaces. Government-backed.</td></tr>
+  </table>
+
+  <h3>New US startups raising on the voice-first thesis</h3>
+  <table>
+    <tr><th>Company</th><th>Raise</th><th>Lead</th><th>Note</th></tr>
+    <tr><td>Airchat</td><td>$5M seed</td><td>Naval / Sequoia</td><td>Async voice notes. Hype 2024 → quieter 2025 → still alive.</td></tr>
+    <tr><td>Eigen</td><td>$15M seed</td><td>Benchmark</td><td>AI-voice social, Stanford grads. Heavy on synthetic-voice rooms.</td></tr>
+    <tr><td>Series.ai</td><td>$5.1M seed</td><td>(undisclosed)</td><td>Creator-voice monetization tool.</td></tr>
+    <tr><td>Known.ai</td><td>(reported)</td><td>(undisclosed)</td><td>Stanford dropouts, voice + AI agents.</td></tr>
+    <tr><td>FRND</td><td>~$15M (Krafton)</td><td>Krafton India Fund</td><td>India voice-social, closest comparable to RingIn.</td></tr>
+    <tr><td>Yalla (public)</td><td>NASDAQ $YALA</td><td>—</td><td>$79M Q1 2026 revenue · 35.9% net margin.</td></tr>
+  </table>
+
+  <hr>
+
+  <h2 id="r2">3. Round 2 — Competitor Unit Economics</h2>
+
+  <h3>Yalla (the profitability proof)</h3>
+  <ul>
+    <li><strong>Q1 2026 revenue:</strong> $79M &middot; <strong>net margin:</strong> 35.9% (most current data point)</li>
+    <li><strong>FY 2025 revenue:</strong> $341.9M &middot; net margin 43.3%</li>
+    <li><strong>Blended ARPPU:</strong> $8.07/quarter ≈ <strong>$32/year</strong> (cited as deck headline)</li>
+    <li><strong>Paying conversion:</strong> ~1.4% of MAU</li>
+    <li><strong>Geography:</strong> MENA, ~25M+ MAU equivalent base, no India play</li>
+    <li><strong>Strategic move:</strong> Opening Riyadh HQ H1 2026 (competitive urgency for KSA entrants)</li>
+  </ul>
+
+  <h3>FRND (the India comparable)</h3>
+  <ul>
+    <li>India voice-first social, Krafton-funded ($670M India Fund — Sean Sohn)</li>
+    <li>Product strength is high; monetization layer is weak (no creator/expert payouts)</li>
+    <li>D7 retention benchmark publicly cited at ~28%</li>
+    <li>India CPI: ₹35 average for tier-2/3 user acquisition</li>
+    <li>India LTV: ~₹12 per FRND-comp at current monetization (negative unit economics)</li>
+    <li><strong>Path to ₹85 LTV:</strong> add expert paid calls + festival coin bundles + regional creator gifts</li>
+  </ul>
+
+  <h3>Dating-app teardown (Tinder, Bumble, Hinge)</h3>
+  <table>
+    <tr><th>App</th><th>What works</th><th>What we steal / avoid</th></tr>
+    <tr><td>Tinder</td><td>Swipe mechanic, super-like as paid utility</td><td>Steal: paid-feature scarcity. Avoid: shallow profile depth.</td></tr>
+    <tr><td>Bumble</td><td>Women-first messaging</td><td>Avoid: gender-asymmetric flow doesn't fit KSA culture norms.</td></tr>
+    <tr><td>Hinge</td><td>Prompts &gt; selfies (more substance per profile)</td><td>Steal: voice-prompt cards as profile primitive.</td></tr>
+    <tr><td>FRND</td><td>Voice calls without showing face — culturally safer for India/MENA</td><td>Steal: voice-only call surface. Avoid: dating-only positioning (we're broader).</td></tr>
+    <tr><td>Arike, Aisle</td><td>Premium positioning, vernacular targeting</td><td>Note: Aisle was acquired by Anupam Mittal / People Group. Niche profitability is possible.</td></tr>
+  </table>
+
+  <h3>Meta's structural trap</h3>
+  <p>Meta's $130B+ ad business runs on feed inventory. Voice rooms have zero ad inventory. Shipping a "rooms" surface would cannibalize the cash cow. <strong>This is why Discord, Clubhouse, Twitter Spaces, Telegram Voice Chats, and Yalla have all grown for 5+ years without Meta crushing them.</strong> The trap is structural, not strategic.</p>
+
+  <hr>
+
+  <h2 id="r3">4. Round 3 — Regulatory + Payment Landscape</h2>
+
+  <h3>India regulatory considerations</h3>
+  <ul>
+    <li><strong>India Online Gaming Act 2025</strong> — bans prize-money mechanics. Coin packs must be structured as <em>utility</em>, not prize. No leaderboard cash rewards. No randomized "loot box" mechanics tied to monetary outcomes.</li>
+    <li><strong>DPDP Act 2023 + Rules 2025</strong> — explicit consent for data processing, parental consent for &lt;18, breach notification, designated grievance officer required for "Significant Data Fiduciary" thresholds.</li>
+    <li><strong>IT Rules 2021 amendments</strong> — content moderation timelines, takedown SLAs, designated compliance officer.</li>
+    <li><strong>Recommended counsel:</strong> Spice Route Legal (consumer-tech specialism), ~1-hour opinion sufficient for coin-pack structuring.</li>
+  </ul>
+
+  <h3>KSA regulatory environment</h3>
+  <ul>
+    <li><strong>Mawthooq creator license</strong> — required for paid creator collabs. <strong>SAR 15,000 / 3 years.</strong> Non-compliance exposes SAR 5M fine.</li>
+    <li><strong>KSA Sept 2025 social-media rules</strong> — no luxury flaunting, no skin exposure, no mocking religion/royalty. Content moderation must be regionally-aware.</li>
+    <li><strong>Premium Residency &mdash; Entrepreneur visa:</strong> SAR 4,000 / 5 years (game-changing for founders).</li>
+    <li><strong>MISA LLC (Riyadh)</strong> &mdash; standard foreign-investor structure, ~$3K setup, ~4 weeks.</li>
+    <li><strong>CST/CMA</strong> &mdash; communications/competition authorities; monitor monthly for VoIP rulings.</li>
+  </ul>
+
+  <h3>UAE — the moving target</h3>
+  <ul>
+    <li><strong>TDRA VoIP block</strong> blocked WhatsApp/FaceTime voice calling for years.</li>
+    <li><strong>Feb 2026 update:</strong> WhatsApp + FaceTime VoIP <em>unblocked</em>. Fragile — could re-block at any time. <strong>Do not anchor strategy to UAE.</strong></li>
+  </ul>
+
+  <h3>Payment stack</h3>
+  <table>
+    <tr><th>Geography</th><th>Provider</th><th>All-in cost</th><th>Notes</th></tr>
+    <tr><td>India</td><td>Razorpay (UPI + cards)</td><td>~2.36%</td><td>Default. Supports recurring + magic checkout.</td></tr>
+    <tr><td>KSA</td><td>Moyasar</td><td>~2.5%</td><td>Mada + Apple Pay + STC Pay. Local-first; fast onboarding.</td></tr>
+    <tr><td>KSA (alt)</td><td>HyperPay</td><td>~2.5–2.8%</td><td>More enterprise-grade; supports BNPL via Tabby/Tamara.</td></tr>
+    <tr><td>BNPL (MENA)</td><td>Tabby / Tamara</td><td>4–6% to merchant</td><td>Valuable for coin-bundle &gt; SAR 100 packs.</td></tr>
+  </table>
+
+  <h3>Voice infrastructure</h3>
+  <div class="callout callout-good">
+    <strong>Agora is the right choice and should not be migrated.</strong>
+    <ul>
+      <li>$0.00099/min &mdash; 10–80× cheaper than alternatives at our scale.</li>
+      <li>LiveKit self-hosted is the contingency above 100M minutes (~$0.0006/min equivalent at scale).</li>
+      <li>OpenAI Realtime API only for AI-host onboarding rooms (limited cost surface).</li>
+    </ul>
+    Cost at 10K MAU: <strong>~$1,561/mo conservative</strong> (~$0.16/MAU). Open-source path: ~$964/mo (~$0.10/MAU).
+  </div>
+
+  <hr>
+
+  <h2 id="r4">5. Round 4 — Execution Kit (GTM + Outreach)</h2>
+
+  <h3>KSA market entry — $265K budget, 24-week plan</h3>
+  <ul>
+    <li>File Mawthooq license week 1 (~3 weeks to issue).</li>
+    <li>Apply Premium Residency Entrepreneur visa (SAR 4,000 / 5 years).</li>
+    <li>Register MISA LLC Riyadh (~$3K, ~4 weeks).</li>
+    <li>Hire 1 KSA-Arabic GM (Snap MENA / Yalla alumni network).</li>
+    <li>Sign anchor creators: <strong>Tarek Al Harbi</strong>, <strong>Ahmed Al Shugairi</strong>, <strong>Anas Bukhas</strong> (or tier-2 alternatives at 50–200K followers).</li>
+    <li>Arabic-native UI + RTL layout audit.</li>
+    <li>Wire HyperPay (Mada + STCPay + Apple Pay) sandbox → prod after Mawthooq.</li>
+    <li>Apply: <strong>Sanabil 500 Batch 12</strong>, <strong>Misk Accelerator</strong>, <strong>KAUST TAQADAM</strong>.</li>
+    <li>Position: <em>&quot;مجلس صوتي&quot;</em> (audio majlis) — culturally resonant framing.</li>
+  </ul>
+
+  <h3>India tier-2/3 — ₹1.2 Cr budget, 24-week plan</h3>
+  <ul>
+    <li>Launch cities: <strong>Kurnool, Sagar, Anantapur</strong> (Tier-2 with high voice-app adoption signal).</li>
+    <li>Regional creator rate matrix: 40–60% language discounts vs Hindi-only creators.</li>
+    <li>Activate <strong>Kuku FM &quot;₹2-refundable trial&quot;</strong> onboarding template (lowest CAC mechanic in consumer-app India).</li>
+    <li>Festival monetization calendar: Raksha Bandhan, Ganesh Chaturthi, Diwali, Pongal, Holi — themed coin bundles. <strong>Must comply with Online Gaming Act 2025 (no prize mechanic).</strong></li>
+    <li>Apply: <strong>Peak XV Surge Cohort 13</strong>, <strong>YC W27</strong> (backup), <strong>a16z Speedrun SR008</strong>.</li>
+  </ul>
+
+  <h3>Investor outreach map — warmest first</h3>
+  <table>
+    <tr><th>Target</th><th>Fund</th><th>Why warm</th><th>Best opening</th></tr>
+    <tr><td><strong>Anand Lunia</strong></td><td>India Quotient</td><td>Already in FRND</td><td>"Building deliberately adjacent to FRND in markets they don't serve."</td></tr>
+    <tr><td><strong>Mukul Arora</strong></td><td>Elevation Capital</td><td>Already in FRND</td><td>Same. Mention India + KSA dual market.</td></tr>
+    <tr><td><strong>Sean Sohn</strong></td><td>Krafton India Fund ($670M)</td><td>Funded FRND</td><td>"FRND's product + Yalla's monetization. Live in production."</td></tr>
+    <tr><td><strong>Bhanu Tanwar</strong></td><td>FRND CEO (not VC)</td><td>Founder coffee — no pitch</td><td>"Asking what you'd avoid, not for capital."</td></tr>
+    <tr><td>Kunal Shah</td><td>Angel</td><td>Consumer-tech India taste</td><td>Twitter/X DM, short, no deck.</td></tr>
+    <tr><td>Sahil Lavingia</td><td>Shl.vc</td><td>Solo-founder bias</td><td>"Solo-founder, 18K lines, two markets."</td></tr>
+    <tr><td>Hunter Walk</td><td>Homebrew</td><td>His own format (short, specific)</td><td>One paragraph, link to live app, no deck.</td></tr>
+    <tr><td>Naval</td><td>AngelList</td><td>Voice-first thesis owner</td><td>Airchat voice note, 90 seconds.</td></tr>
+    <tr><td>Bryan Kim</td><td>a16z</td><td>Consumer/social thesis</td><td>After traction proof.</td></tr>
+    <tr><td>Connie Chan</td><td>a16z</td><td>China-consumer pattern matcher</td><td>Lead with Soul / Yalla comp.</td></tr>
+    <tr><td>Pear, Forerunner, NFX</td><td>—</td><td>Seed depth</td><td>Second wave if Indian VCs don't move.</td></tr>
+    <tr><td>BECO, Wamda, Magnus Olsson</td><td>—</td><td>MENA-specific</td><td>After KSA traction proof.</td></tr>
+  </table>
+
+  <hr>
+
+  <h2 id="r5">6. Round 5 — Final Synthesis</h2>
+
+  <p>The 5-round arc compressed:</p>
+  <blockquote>Round 1 mapped the future of social (voice-first, presence-first, AI-resistant). Round 2 went deep on competitor unit economics (Yalla prints money, FRND is product-strong but margin-weak, Meta is structurally trapped). Round 3 mapped the regulatory and payment landscape (Online Gaming Act, Mawthooq, TDRA, Razorpay/Moyasar/HyperPay). Round 4 turned everything into an execution kit (24+ outreach messages, $265K KSA plan, ₹1.2 Cr India plan, accelerator targets). <strong>Round 5 is what you do Monday morning.</strong></blockquote>
+
+  <hr>
+
+  <h2 id="deck">7. The 12-Slide Pitch Deck</h2>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 1 · COVER</div>
+    <p><strong>RingIn — Voice-first social for the next billion.</strong><br>
+    India + KSA. Live in production. [N]K MAU. ₹[X] MRR.<br>
+    [Founder name] &middot; Webstreax Technologies Pvt Ltd &middot; May 2026</p>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 2 · THE SHIFT</div>
+    <p><strong>Feed-based social peaked in 2022.</strong></p>
+    <ul>
+      <li>Meta Family DAU growth 1.2% YoY (decelerating)</li>
+      <li>Snap KSA: 90% penetration in 13–34yo, 25M+ MAU (presence-first works)</li>
+      <li>Yalla Q1 2026: $79M revenue, 35.9% net margin (voice-first prints money)</li>
+    </ul>
+    <em>"The next billion want to be heard, not scrolled."</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 3 · WHY NOW</div>
+    <p>a16z 2026 thesis: <strong>"See Me not Feed Me."</strong><br>
+    Eugene Wei <em>Status as a Service</em> — voice creates higher-fidelity status signaling than text/image because it can't be faked or AI-generated cleanly.<br>
+    Logos row: Airchat (Naval $5M) · Eigen ($15M Benchmark) · Series.ai ($5.1M) · Known.ai. <strong>The market is being assembled right now.</strong></p>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 4 · WHAT RINGIN IS</div>
+    <p>Demo screenshot of 4 surfaces:</p>
+    <ol>
+      <li><strong>Moments</strong> (round Instagram-style tiles, shipped v3.43) — passive discovery</li>
+      <li><strong>Voice rooms</strong> — small, presence-first, max 8 people</li>
+      <li><strong>Expert calls</strong> — paid 1:1 with verified creators (coin-monetized)</li>
+      <li><strong>Messages</strong> — text + voice notes, realtime</li>
+    </ol>
+    <em>One tap from listening → joining → calling → following → paying.</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 5 · THE MOAT</div>
+    <table>
+      <tr><th></th><th>Meta</th><th>Yalla</th><th>FRND</th><th>RingIn</th></tr>
+      <tr><td>Voice-first</td><td>✗</td><td>✓</td><td>✓</td><td>✓</td></tr>
+      <tr><td>India tier-2/3</td><td>weak</td><td>✗</td><td>✓</td><td>✓</td></tr>
+      <tr><td>KSA + Arabic</td><td>✗</td><td>✓</td><td>✗</td><td>✓</td></tr>
+      <tr><td>Creator/expert layer</td><td>ad-only</td><td>✗</td><td>✗</td><td>✓</td></tr>
+      <tr><td>Coin monetization</td><td>✗</td><td>✓</td><td>weak</td><td>✓</td></tr>
+    </table>
+    <em>Only product crossing all 5 boxes. Dual-market mix de-risks single-country regulatory blowups.</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 6 · TRACTION</div>
+    <p>One chart: MAU growth last 6 months.<br>
+    Callouts:</p>
+    <ul>
+      <li>D7 retention: [X]% (vs FRND ~28%)</li>
+      <li>Paying conversion: [X]% (vs Yalla 1.4%)</li>
+      <li>CAC: ₹[X] India / SAR [X] KSA</li>
+    </ul>
+    <em>All organic. Zero paid acquisition spend to date.</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 7 · UNIT ECONOMICS (the slide that closes the round)</div>
+    <div class="grid-2">
+      <div class="card">
+        <strong>India — the compound machine</strong>
+        <ul>
+          <li>CPI: ₹35 (FRND benchmark)</li>
+          <li>LTV today: ₹12 → target ₹85 by Q4 2026</li>
+          <li>Path: regional creators, festival monetization, ₹2-refundable trial</li>
+        </ul>
+      </div>
+      <div class="card">
+        <strong>KSA — the profit engine</strong>
+        <ul>
+          <li>CPI: $1.50 (Snap benchmark)</li>
+          <li>LTV today: $1.52 (already break-even)</li>
+          <li>30K KSA MAU → $960K ARR @ 35%+ margin</li>
+        </ul>
+      </div>
+    </div>
+    <em>India compounds organically. KSA prints cash. We need $1.2M to prove both.</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 8 · MARKET &amp; WEDGE</div>
+    <p>India 700M smartphone users, 200M+ tier-2/3 underserved by voice. KSA 25M+ Snap users, $32/yr Yalla ARPPU.<br>
+    <em>Yalla can't enter India (no localization, no rupees infra). FRND can't enter KSA (no Arabic team, no MISA LLC, no Mawthooq). We can do both because we're starting with both.</em></p>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 9 · ROADMAP</div>
+    <ul>
+      <li><strong>Q3 2026:</strong> KSA launch — Mawthooq, Tarek Al Harbi / Anas Bukhas anchors, HyperPay</li>
+      <li><strong>Q4 2026:</strong> India tier-2 blitz — Kurnool / Sagar / Anantapur, regional creator rate cards</li>
+      <li><strong>Q1 2027:</strong> AI voice rooms — OpenAI Realtime for onboarding hosts, Cartesia for accents</li>
+      <li><strong>Q2 2027:</strong> Expert-to-creator marketplace — coin-funded courses, voice workshops</li>
+    </ul>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 10 · TEAM</div>
+    <p><em>Shipped 18,341 lines of production code solo in 8 months. Live in 3 markets. Capital efficiency is the moat.</em></p>
+    <p>Hiring with this round:</p>
+    <ul>
+      <li>1 KSA-Arabic GM (Snap MENA / Yalla)</li>
+      <li>1 India tier-2 marketing lead (Sharechat / Moj)</li>
+      <li>1 senior backend (Supabase realtime past 50K concurrent)</li>
+      <li>1 designer</li>
+    </ul>
+    <em>Headcount stays under 6 until ₹50L MRR. Webstreax Pvt Ltd India, MISA LLC Riyadh.</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 11 · THE ASK</div>
+    <p><strong>$1.2M seed @ $8M post-money (15% dilution).</strong></p>
+    <ul>
+      <li>Product/eng: 35% ($420K)</li>
+      <li>KSA market entry (Mawthooq, MISA LLC, anchor creators): 25% ($300K)</li>
+      <li>India tier-2 marketing: 25% ($300K)</li>
+      <li>Operating runway/buffer: 15% ($180K)</li>
+    </ul>
+    <em>18 months. Get to $80–120K MRR. Series A at $30–40M.</em>
+  </div>
+
+  <div class="slide">
+    <div class="slide-num">SLIDE 12 · CLOSE</div>
+    <blockquote>Voice is the only social surface AI can't flood with synthetic content. The window to own the next billion's voice habit closes in 18 months. We've already built it. Help us scale it.</blockquote>
+    <p>Founder photo + email + Calendly link.</p>
+  </div>
+
+  <hr>
+
+  <h2 id="90day">8. 90-Day Execution Checklist</h2>
+
+  <h3>Weeks 1–4 — Foundation &amp; first capital conversations</h3>
+  <p><strong>Week 1</strong></p>
+  <ul>
+    <li>Send 5 warm-intro outreach messages (Anand Lunia, Mukul Arora, Sean Sohn first — already in FRND, fastest mental yes)</li>
+    <li>Book founder coffee with Bhanu Tanwar (FRND CEO) — <em>no pitch</em></li>
+    <li>Tweet 1 build-in-public update with v3.43 round-tiles screenshot</li>
+    <li>Update Webstreax PitchDeck v1 using deck outline above</li>
+    <li>Pull current MAU / D7 / paying-conversion into single dashboard</li>
+  </ul>
+  <p><strong>Week 2</strong></p>
+  <ul>
+    <li>Apply Sanabil 500 Batch 12 / KAUST TAQADAM / Peak XV Surge Cohort 13</li>
+    <li>First call with Anand Lunia or Mukul Arora — target: second meeting, not term sheet</li>
+    <li>MISA LLC Riyadh decision (~$3K, 4 weeks setup)</li>
+  </ul>
+  <p><strong>Week 3</strong></p>
+  <ul>
+    <li>Ship: in-app modal replacing 14 <code>alert()</code> calls in ProfileScreen (R23 bug list)</li>
+    <li>Ship: Forgot Password flow (auth gap)</li>
+    <li>Apply a16z Speedrun SR008 / YC W27 (backup)</li>
+  </ul>
+  <p><strong>Week 4</strong></p>
+  <ul>
+    <li>Founder coffee with Bhanu Tanwar (if scheduled)</li>
+    <li>Naval — 90-second Airchat voice note</li>
+    <li>Hunter Walk outreach using his own format</li>
+    <li>Hire 1 part-time KSA-Arabic community person ($1.5K/mo)</li>
+  </ul>
+
+  <h3>Weeks 5–8 — KSA beachhead</h3>
+  <ul>
+    <li>File Mawthooq license (~3 weeks issue)</li>
+    <li>Outreach 10 mid-tier KSA voice creators (Snap/TikTok 50–200K)</li>
+    <li>Wire HyperPay sandbox → prod after Mawthooq</li>
+    <li>Translate UI to Arabic, RTL audit</li>
+    <li>5 user interviews with KSA Snap heavy users</li>
+    <li>First public KSA launch — 3 anchor creators for 1 week</li>
+    <li>Track: D1, D7, voice-room joins/MAU, coin conversion</li>
+    <li>Investor update #1</li>
+  </ul>
+
+  <h3>Weeks 9–12 — India tier-2 blitz + round close</h3>
+  <ul>
+    <li>Launch Kurnool + Sagar + Anantapur city pages</li>
+    <li>Sign 3 regional-language creators per city @ 40–60% language discount</li>
+    <li>Activate Kuku FM-style ₹2-refundable trial onboarding</li>
+    <li>Festival monetization test (Raksha Bandhan / Ganesh Chaturthi prep)</li>
+    <li>Coin packs compliant with Online Gaming Act 2025 (no prize mechanic)</li>
+    <li>If VC engaged → term-sheet pressure with second-meeting investor</li>
+    <li>Else → second wave (Connie Chan, Bryan Kim, NFX, Forerunner)</li>
+    <li>Investor update #2</li>
+    <li>Round close target: signed term sheet or clear path to one</li>
+    <li>Fallback: bridge SAFE from 3–5 angels (Kunal Shah, Sahil Lavingia, individual GPs)</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="tomorrow">9. Tomorrow Morning — Top 5 Actions</h2>
+
+  <ol>
+    <li><strong>Send 3 outreach messages — Anand Lunia, Mukul Arora, Sean Sohn.</strong> (60 min)<br>
+      All three are in FRND. All three understand the thesis without education. Don't attach the deck. Pitch the founder coffee, not the round.</li>
+
+    <li><strong>Pull a 1-screen dashboard: MAU, D7 retention, paying %, MRR.</strong> (45 min)<br>
+      Every VC asks the same 4 numbers in week 1. Have them on a single screen on your phone. If any number is embarrassing, write the trajectory next to it.</li>
+
+    <li><strong>Update the deck cover + slide 7 (unit economics) with today's numbers.</strong> (45 min)<br>
+      Don't redo the whole deck. Just the two slides that change weekly. Date as "May 2026 v1".</li>
+
+    <li><strong>Book the Bhanu Tanwar coffee.</strong> (15 min email)<br>
+      Highest-EV meeting you can get. Frame: <em>"Building deliberately adjacent to FRND in markets you don't serve. 30 minutes — not asking for capital, asking what you'd avoid."</em></li>
+
+    <li><strong>Tweet one build-in-public update with the v3.43 round-tiles screenshot.</strong> (10 min)<br>
+      Every silent week is a week the market doesn't see velocity. Hook: <em>"Shipped round Moments tiles. The 50px detail that took 4 hours of CSS and unlocked Instagram-mental-model in users."</em> Tag @capacitor.</li>
+  </ol>
+
+  <div class="callout callout-good">
+    Total ~3 hours of work. All of it compounds.
+  </div>
+
+  <hr>
+
+  <h2 id="risk">10. Risk Register</h2>
+
+  <table>
+    <tr><th>Risk</th><th>Prob</th><th>Impact</th><th>Mitigation</th></tr>
+    <tr><td>VoIP re-blocked in UAE / extended to KSA</td><td><span class="pill pill-y">Med</span></td><td><span class="pill pill-r">Critical</span></td><td>KSA is bet, not UAE. Monitor TDRA + CST monthly. WebRTC TURN fallback ready.</td></tr>
+    <tr><td>KSA Sept 2025 decency rules misapplied → suspension</td><td><span class="pill pill-y">Med</span></td><td><span class="pill pill-r">High</span></td><td>Auto-moderation for KSA region (luxury, skin, religion/royalty). Hire Arabic content reviewer pre-scale.</td></tr>
+    <tr><td>Mawthooq fine exposure (SAR 5M) on creator collab</td><td><span class="pill pill-y">Low-Med</span></td><td><span class="pill pill-r">Critical</span></td><td>Don't pay any KSA creator until license confirmed. Revenue share &gt; flat fee (gray-area-safer).</td></tr>
+    <tr><td>India Online Gaming Act reclassifies coins</td><td><span class="pill pill-g">Low</span></td><td><span class="pill pill-r">High</span></td><td>Coin packs structured as utility. No leaderboard rewards. 1-hour opinion from Spice Route Legal.</td></tr>
+    <tr><td>FRND copies expert layer</td><td><span class="pill pill-y">Med</span></td><td><span class="pill pill-y">Medium</span></td><td>They have PMF, won't add complexity. KSA presence is the moat — they can't follow fast.</td></tr>
+    <tr><td>Yalla expands to India</td><td><span class="pill pill-g">Low</span></td><td><span class="pill pill-r">Critical</span></td><td>4 years and they haven't — language + payment + moderation blockers. 12-month head start if they do.</td></tr>
+    <tr><td>Agora pricing change</td><td><span class="pill pill-g">Low</span></td><td><span class="pill pill-y">Medium</span></td><td>$0.00099/min locked until 100M minutes. LiveKit self-hosted contingency above that.</td></tr>
+    <tr><td><strong>Solo-founder burnout</strong></td><td><span class="pill pill-r">High</span></td><td><span class="pill pill-r">Critical</span></td><td>Hire #1 before round closes. Sundays off. 5-day commit week. <em>This is the real risk founders ignore.</em></td></tr>
+    <tr><td>Round doesn't close at $1.2M</td><td><span class="pill pill-y">Med</span></td><td><span class="pill pill-y">Medium</span></td><td>Bridge path: $300–500K SAFE from 3–5 angels. Buys 9 more months at current burn.</td></tr>
+    <tr><td>Capgo OTA push breaks production</td><td><span class="pill pill-g">Low</span></td><td><span class="pill pill-r">High</span></td><td>Test new bundle on 1 internal device 24h before public push. Keep prior 2 bundles for rollback.</td></tr>
+  </table>
+
+  <hr>
+
+  <h2 id="faq">11. Investor FAQ — Anticipated Questions</h2>
+
+  <h4>Why aren't you in YC?</h4>
+  <p>Applied W27 as backup. My real ask is from operator-VCs who understand voice-first MENA — that's not YC's specialty. Krafton, Sanabil, India Quotient are where the conviction is.</p>
+
+  <h4>How is this different from FRND?</h4>
+  <p>FRND owns India dating-adjacent voice. We're voice-first social with an expert/creator layer and KSA. Different markets, different monetization. Bhanu and I have spoken — mutual respect, not overlap.</p>
+
+  <h4>Why two markets at seed?</h4>
+  <p>Because the bet only works if both fire. India compounds organically but loses per user today. KSA pays the bills. Doing only one = FRND clone (no moat) or Yalla clone (no moat). Doing both is the moat.</p>
+
+  <h4>Why won't Meta crush this?</h4>
+  <p>Meta optimizes for ad inventory per scroll. Voice rooms have zero ad inventory. They will not pivot — it would cannibalize $130B+ ad business. Same reason they didn't crush Discord.</p>
+
+  <h4>What's your CAC trajectory?</h4>
+  <p>Currently zero — all organic. Will spend on KSA paid (Snap ads) once we hit target MRR because KSA unit economics support it ($1.52 LTV vs $1.50 CPI break-even). India stays organic until LTV crosses ₹50.</p>
+
+  <h4>Why not raise more?</h4>
+  <p>More money = more dilution + pressure to spend on wrong things. $1.2M lets me prove dual-market thesis with 6 people. If it works, A round is $5–8M at $30–40M and we scale. If it doesn't work, $1.2M is a survivable mistake for everyone — including you.</p>
+
+  <h4>What if you can't hire a KSA GM?</h4>
+  <p>Mapped 8 candidates already — 4 from Snap MENA, 2 from Yalla, 2 from Careem. First conversation week 5. If none convert, hire senior community person + retain Riyadh advisor (~SAR 8K/mo) and run KSA myself for 6 more months. Solo founders have done harder.</p>
+
+  <h4>What if WhatsApp adds voice rooms?</h4>
+  <p>They have voice notes and group calls. Adding "rooms" as a discoverable feature breaks their privacy-first brand and 1:1 paradigm. They've watched Clubhouse, Spaces, Discord for 5 years and haven't shipped it.</p>
+
+  <h4>What's the exit?</h4>
+  <p>Yalla acquires us for the India play (most likely). Krafton acquires us for the social layer (possible). Sharechat/Moj acquires us for the expert vertical (possible). Realistic window: 4–6 years, $200–500M. We're not the 100× deal — we're the 10–30× clean exit.</p>
+
+  <h4>What's your single biggest risk?</h4>
+  <p>Me. I'm solo. If I burn out or get hit by a bus, this dies. First hire from your check is therefore not a marketer — it's a technical co-founder I'm willing to give 8–12% to. That's a non-negotiable I'd ask you to back.</p>
+
+  <hr>
+
+  <h2 id="monetize">12. Monetization Playbook (Day 1 onward)</h2>
+
+  <h3>Revenue streams ranked by priority</h3>
+  <ol>
+    <li><strong>Coin packs (primary)</strong> — utility coins for sending gifts in voice rooms, paid 1:1 calls. India: ₹10 / ₹50 / ₹250 / ₹1,000 packs. KSA: SAR 5 / SAR 25 / SAR 100 / SAR 500. <em>Use Razorpay (India) + Moyasar (KSA).</em></li>
+    <li><strong>Expert paid calls (high-margin)</strong> — verified creators set per-minute rates. Platform takes 30%. KSA tier-1 creators charge SAR 10–50/min.</li>
+    <li><strong>Premium voice rooms</strong> — host-side pays to create rooms with &gt;8 listeners. Subscription model SAR 49/mo or ₹299/mo.</li>
+    <li><strong>Gifts &amp; Super Likes</strong> — coin sinks during live voice rooms. Soul / Yalla / Douyin pattern.</li>
+    <li><strong>Festival coin bundles</strong> — themed limited-time packs (Diwali, Eid, Ganesh Chaturthi). 30–40% upsell vs base packs.</li>
+    <li><strong>Verified profile badge</strong> — SAR 19/mo or ₹99/mo creator-side validator.</li>
+    <li><strong>Creator-collab placements (KSA)</strong> — once Mawthooq cleared, brand-creator deals via the platform with 15% cut.</li>
+  </ol>
+
+  <h3>Avoid at launch</h3>
+  <ul>
+    <li>❌ Display ads — would crash retention in voice product, kills premium positioning.</li>
+    <li>❌ Prize mechanics — illegal in India under Online Gaming Act 2025.</li>
+    <li>❌ Crypto / NFT tokens — DPDP Act compliance burden + KSA CMA scrutiny.</li>
+    <li>❌ Free unlimited tier on expert calls — destroys creator economics.</li>
+  </ul>
+
+  <h3>Day-1 funding-positive economics</h3>
+  <div class="callout callout-good">
+    <strong>KSA economics already hold</strong>: $1.52 LTV vs $1.50 Snap CPI = break-even from day 1. Every paying KSA user past 100 is profit.<br><br>
+    <strong>India economics need 6 months</strong>: ₹12 → ₹85 LTV via expert calls + festival monetization. Funding bridges this gap.
+  </div>
+
+  <hr>
+
+  <h2 id="features">13. Feature Ideas Backlog (from cross-app research)</h2>
+
+  <h3>Voice-room features (Yalla, Soul, Discord, Telegram inspired)</h3>
+  <ul>
+    <li><strong>Voice rooms with co-host transfer</strong> — Yalla pattern; reduces host-fatigue, extends session length.</li>
+    <li><strong>Voice modulation effects</strong> — Soul pattern; reduces social anxiety, esp. tier-2 India.</li>
+    <li><strong>"Knock to join" private rooms</strong> — Discord-style; creates scarcity, drives invites.</li>
+    <li><strong>Voice-room recording &amp; clips</strong> — TikTok-ification of audio. Shareable artifact = K-factor.</li>
+    <li><strong>Live captions in regional languages</strong> — accessibility moat for tier-2 India; uses Whisper.</li>
+  </ul>
+
+  <h3>Creator-economy features (FRND, Douyin, Snap inspired)</h3>
+  <ul>
+    <li><strong>Verified expert badge with per-minute rate display</strong></li>
+    <li><strong>Gift leaderboards</strong> — top supporters get visible status in creator's room.</li>
+    <li><strong>Tip-to-unlock voice notes</strong> — pay 5 coins to hear a creator's voice answer.</li>
+    <li><strong>Subscription rooms</strong> — fans pay ₹49/mo for access to private creator room.</li>
+    <li><strong>Co-host marketplace</strong> — micro-creators bid to co-host with established creators (talent ladder).</li>
+  </ul>
+
+  <h3>Discovery features (Insta, TikTok, Snap inspired)</h3>
+  <ul>
+    <li><strong>Moments tile auto-play preview</strong> — first 5 seconds of voice plays on tap-hold (Insta Stories pattern).</li>
+    <li><strong>"Rooms near you"</strong> — geo-based room discovery for KSA tier-1 cities.</li>
+    <li><strong>Topic hashtags on rooms</strong> — searchable, no algorithmic feed required.</li>
+    <li><strong>"For you" voice clips</strong> — TikTok-style scroll of short audio cards (not feed of posts).</li>
+  </ul>
+
+  <h3>AI-augmented features (cost-controlled)</h3>
+  <ul>
+    <li><strong>AI host for empty rooms</strong> — OpenAI Realtime API joins new rooms to break ice, costs ~$0.06/min, capped at 5 min/room.</li>
+    <li><strong>Voice-to-text summary</strong> — Whisper summarizes 30-min room into 3-sentence card for shareable artifact.</li>
+    <li><strong>Voice avatar onboarding</strong> — Cartesia-generated regional accent guides for first-time users.</li>
+    <li><strong>Auto-moderation</strong> — KSA-region content filter for Mawthooq compliance.</li>
+  </ul>
+
+  <h3>The viral mechanic Meta can't ship</h3>
+  <div class="callout">
+    <strong>Voice cards.</strong> Any voice room can be "clipped" into a 15-second voice card with the speaker's voice + caption + topic tag. Card is shareable on WhatsApp / Insta / Snap as a small audio file with thumbnail. Recipient taps → opens RingIn → joins live room or follows speaker.<br><br>
+    <strong>Why Meta won't ship:</strong> they have no native audio-clip format. Insta Stories require visual. Reels require video. WhatsApp voice notes don't auto-link to any social graph. Voice cards leak out of RingIn but bring users back in — exactly the K-factor Insta/Reels/Threads can't replicate without rebuilding their entire content primitive.
+  </div>
+
+  <hr>
+
+  <div class="footer">
+    RingIn Research Report &middot; May 2026 &middot; 5 rounds &middot;
+    Built solo · Webstreax Technologies Pvt Ltd · ring-in.vercel.app<br>
+    <em>This is a working founder document — update unit economics weekly, update deck monthly, update outreach status after every meeting.</em>
+  </div>
+
+</div>
+
+<script>
+  // Tiny ergonomics: pressing P prints
+  document.addEventListener('keydown', function(e){
+    if ((e.key === 'p' || e.key === 'P') && !e.metaKey && !e.ctrlKey){
+      e.preventDefault(); window.print();
+    }
+  });
+</script>
+
+</body>
+</html>

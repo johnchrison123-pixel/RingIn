@@ -715,6 +715,18 @@ export default function App() {
     var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
     var callerAvatar = null;
     try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}
+    /* R33 BUG FIX: anonymous call name leak.
+     * Without this, when AnonymousConnect started a call, the call_invites
+     * row was populated with the caller's REAL name from their email/profile.
+     * IncomingCallModal then showed the real name to the callee — breaking
+     * the whole "anonymous" promise. Now: if opts.anonymous, override the
+     * stored caller name + avatar with what the anon-profile UI passed in
+     * via target.name / target.avatar (those carry the nickname + avatar id). */
+    var isAnonCall = !!(opts && opts.anonymous);
+    if (isAnonCall) {
+      callerName = (otherUser && otherUser._myNickname) || 'Anonymous';
+      callerAvatar = (otherUser && otherUser._myAvatar) || null;
+    }
     // Double-tap guard — don't fire two inserts for one button press
     if(activeCallRef.current){ console.log('[ringin] startOutgoingCall ignored — already on a call'); return; }
     if(outgoingPendingRef.current){ console.log('[ringin] startOutgoingCall ignored — already pending'); return; }
@@ -757,6 +769,9 @@ export default function App() {
       channel: inviteUuid,       // same UUID — both sides agree, no race
       status: 'ringing',
       rate_per_min: rate,
+      /* R33: tag anonymous calls so the callee UI can show the anonymous
+       * badge instead of treating it like a regular expert call. */
+      is_anonymous: isAnonCall,
     };
     console.log('[ringin] inserting call_invite', payload);
     supabase.from('call_invites').insert(payload).then(function(r){
