@@ -92,15 +92,26 @@ async function bootstrapNativePush(userId, sb){
         var token = t && t.value;
         if (!token) return;
         if (userId && sb) {
-          var cachedKey = 'fcm_token_' + userId;
-          var lastToken = null;
-          try { lastToken = localStorage.getItem(cachedKey); } catch(_){}
-          if (lastToken !== token) {
-            try { localStorage.setItem(cachedKey, token); } catch(_){}
-            sb.from('profiles').update({fcm_token: token}).eq('id', userId).then(function(r){
-              if (r && r.error) console.warn('[ringin] native push: fcm_token write failed:', r.error.message);
-            });
-          }
+          /* R41 FIX: ALWAYS overwrite fcm_token on native, even if our local
+           * cache says it's unchanged. Without this, if the user previously
+           * used the Chrome PWA on the same device, the DB holds a WEB push
+           * token. The web service worker then handles the call notification
+           * and opens the call URL in Chrome (banner → tap → Chrome opens
+           * showing the call screen). Forcing a write on every native app
+           * open guarantees the native token wins. Trade-off: one extra DB
+           * write per app launch, which is negligible. */
+          try { localStorage.setItem('fcm_token_' + userId, token); } catch(_){}
+          sb.from('profiles').update({fcm_token: token, fcm_token_kind: 'native'}).eq('id', userId).then(function(r){
+            if (r && r.error) {
+              /* If fcm_token_kind column doesn't exist yet (older DB), retry
+               * without it — keep the upgrade strictly additive. */
+              if (/column .* does not exist/i.test(r.error.message || '')) {
+                sb.from('profiles').update({fcm_token: token}).eq('id', userId);
+              } else {
+                console.warn('[ringin] native push: fcm_token write failed:', r.error.message);
+              }
+            }
+          });
         }
       } catch (e) { console.warn('[ringin] native push registration handler error:', e); }
     });
@@ -192,15 +203,33 @@ export async function requestNotificationPermission(userId, sb){
 
     var token = await getToken(messaging, {vapidKey: firebaseConfig.vapidKey});
     if(token && userId && sb){
-      /* R20 FIX #5: dedupe DB writes — only update profiles.fcm_token if it
-       * actually differs from the last value we cached locally for this user.
-       * Saves a write per hourly TOKEN_REFRESHED. */
+      /* R20 FIX #5: dedupe DB writes via localStorage cache.
+       * R41 FIX: ALSO check fcm_token_kind in DB — if it's 'native', the
+       * user has the APK installed and we should NOT clobber their native
+       * token from the PWA. The web path can register, but it doesn't
+       * become the active push target until the user uninstalls the APK
+       * (or we add a UI toggle later). Without this gate, opening the
+       * RingIn PWA in Chrome after installing the APK would replace the
+       * native token → calls would be delivered to the browser → tap
+       * opens Chrome instead of the app. */
       var cachedKey = 'fcm_token_' + userId;
       var lastToken = null;
       try { lastToken = localStorage.getItem(cachedKey); } catch(_){}
       if (lastToken !== token) {
         try { localStorage.setItem(cachedKey, token); } catch(_){}
-        await sb.from('profiles').update({fcm_token: token}).eq('id', userId);
+        /* Check current kind — skip write if a native token is active. */
+        var existing = null;
+        try { existing = await sb.from('profiles').select('fcm_token_kind').eq('id', userId).maybeSingle(); } catch(_){}
+        var currentKind = existing && existing.data && existing.data.fcm_token_kind;
+        if (currentKind === 'native') {
+          console.log('[ringin] web push: native token active, not overwriting');
+        } else {
+          await sb.from('profiles').update({fcm_token: token, fcm_token_kind: 'web'}).eq('id', userId).then(function(r){
+            if (r && r.error && /column .* does not exist/i.test(r.error.message || '')) {
+              return sb.from('profiles').update({fcm_token: token}).eq('id', userId);
+            }
+          });
+        }
       }
     }
     return token;
