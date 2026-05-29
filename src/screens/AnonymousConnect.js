@@ -1,7 +1,7 @@
 /* eslint-disable */
-import React, {useState} from 'react';
-import {matchAnonymous} from '../utils/mlService';
-import {toastError} from '../utils/toast';
+import React, {useState, useRef, useEffect} from 'react';
+import {sb} from '../utils/supabase';
+import {toastError, toastInfo} from '../utils/toast';
 
 var SUGGESTED = ['tech','startups','fitness','music','travel','finance','mental health','career','parenting','design','food','movies','gaming','meditation','philosophy'];
 
@@ -25,6 +25,14 @@ export default function AnonymousConnect(props) {
   var matchS = useState(null); var match = matchS[0]; var setMatch = matchS[1];
   var excludeS = useState([]); var exclude = excludeS[0]; var setExclude = excludeS[1];
   var errS = useState(null); var err = errS[0]; var setErr = errS[1];
+  /* R29: countdown shown during the 30-sec search window so the user sees
+   * "Searching... 24s left" rather than a static spinner. */
+  var secsLeftS = useState(30); var secsLeft = secsLeftS[0]; var setSecsLeft = secsLeftS[1];
+  /* Refs to poll-interval + countdown-interval so we can cancel cleanly
+   * on unmount / skip / match-found / user cancel. */
+  var pollRef = useRef(null);
+  var countdownRef = useRef(null);
+  var deadlineRef = useRef(0);
 
   function addInterest(i) {
     var v = (i || '').trim().toLowerCase();
@@ -35,35 +43,122 @@ export default function AnonymousConnect(props) {
     setInterests(interests.filter(function(x){ return x !== i; }));
   }
 
+  /* R29: stop everything — clears poll, countdown, leaves the queue server-
+   * side. Safe to call multiple times. */
+  function stopSearching(){
+    if (pollRef.current)     { clearInterval(pollRef.current); pollRef.current = null; }
+    if (countdownRef.current){ clearInterval(countdownRef.current); countdownRef.current = null; }
+    try { sb.rpc('anonymous_leave_queue').then(function(){}).catch(function(){}); } catch(_){}
+    setSearching(false);
+  }
+
+  /* When the matchmaker returns 'matched' for us, fire the actual call.
+   * Deterministic role assignment via is_caller (larger UUID dials). Same
+   * call_invites + Agora pipeline as expert calls — rate=0 so no coin
+   * deduction. The callee gets the standard incoming call ring. */
+  function startMatchedCall(matchData){
+    var partner = matchData.partner_id;
+    if (matchData.is_caller) {
+      var target = {
+        id: partner,
+        name: 'Anonymous',
+        avatar: null,
+        role: 'Anonymous Connect',
+        online: true,
+      };
+      try {
+        if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
+          window.__ringInStartCall(target, { rate: 0, anonymous: true });
+        } else {
+          toastError('Call pipeline not ready — try again');
+        }
+      } catch(e){ console.warn('[anon] start call failed:', e); toastError('Could not start call'); }
+    } else {
+      /* Callee side — the partner is dialing us via the standard call_invites
+       * pipeline. App.js's incoming-call listener will pop the ring modal.
+       * Nothing for us to do except wait + show a quick toast. */
+      try { toastInfo('Matched! Incoming call from a stranger…'); } catch(_){}
+    }
+  }
+
   function find(excludeOverride) {
     if (!userId) { toastError('Please log in'); return; }
-    setSearching(true); setErr(null); setMatch(null);
-    // ROUND-9 FIX #11a: accept an explicit excludeOverride so skip() can
-    // pass the new list directly instead of relying on the closed-over
-    // `exclude` state (which would be stale on the same tick that we
-    // just called setExclude). Defaults to current state.
+    /* R29 — real matchmaking queue with 30-sec poll.
+     *
+     * Flow:
+     *  1. Call anonymous_enqueue_and_match RPC — atomically enqueues me
+     *     AND tries to find a partner from existing waiters.
+     *  2. If matched immediately → start the call, done.
+     *  3. If still waiting → poll anonymous_check_match every 2 sec for
+     *     up to 30 sec. When ANOTHER user enqueues and matches with me,
+     *     my row flips to 'matched' and the poll detects it.
+     *  4. On timeout (30 sec, no match) → leave queue + show toast.
+     */
+    setSearching(true); setErr(null); setMatch(null); setSecsLeft(30);
     var useExclude = Array.isArray(excludeOverride) ? excludeOverride : exclude;
+    deadlineRef.current = Date.now() + 30 * 1000;
 
-    // FIX #4: add .catch so a rejection (network/ML failure) doesn't leave the spinner stuck forever
-    matchAnonymous({
-      userId: userId,
-      interests: interests,
-      sameGeography: sameGeo,
-      excludeUserIds: useExclude,
-    }).then(function(r){
-      setSearching(false);
-      if (!r || !r.match) {
-        setErr(r && r.reason ? r.reason : 'No matches available right now. Try again in a moment!');
+    function handleMatched(matchData){
+      stopSearching();
+      startMatchedCall(matchData);
+    }
+
+    function pollOnce(){
+      if (Date.now() >= deadlineRef.current) {
+        // Timeout
+        stopSearching();
+        setErr('No matches available right now. Try again in a moment!');
         return;
       }
-      setMatch(r.match);
-    }).catch(function(e){ setSearching(false); console.warn('[ringin] matchAnonymous reject:', e); });
+      sb.rpc('anonymous_check_match').then(function(r){
+        if (!r || r.error) {
+          console.warn('[anon] check_match error:', r && r.error);
+          return;
+        }
+        if (r.data && r.data.status === 'matched') { handleMatched(r.data); }
+      }).catch(function(e){ console.warn('[anon] check_match reject:', e); });
+    }
+
+    // Live countdown for the user (visual reassurance)
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(function(){
+      var ms = deadlineRef.current - Date.now();
+      setSecsLeft(Math.max(0, Math.ceil(ms / 1000)));
+    }, 250);
+
+    // Step 1: enqueue + first match attempt
+    sb.rpc('anonymous_enqueue_and_match', {
+      p_interests: interests,
+      p_same_geo: sameGeo,
+      p_geo_country: null,
+      p_geo_city: null,
+      p_exclude: useExclude,
+    }).then(function(r){
+      if (!r || r.error) {
+        console.warn('[anon] enqueue error:', r && r.error);
+        stopSearching();
+        setErr('Could not start search: ' + ((r && r.error && r.error.message) || 'unknown error'));
+        return;
+      }
+      if (r.data && r.data.status === 'matched') { handleMatched(r.data); return; }
+      // Step 2: start polling every 2 sec until match or timeout
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(pollOnce, 2000);
+    }).catch(function(e){
+      console.warn('[anon] enqueue reject:', e);
+      stopSearching();
+      setErr('Network error — try again');
+    });
+  }
+
+  /* Cancel button — user explicitly wants to stop searching. */
+  function cancelSearch(){
+    stopSearching();
+    setErr(null);
   }
 
   function skip() {
-    // ROUND-9 FIX #11a: build the new exclude list locally and pass it
-    // directly to find() so we don't race the setState that wouldn't
-    // have committed by the time find() reads `exclude` from closure.
+    /* Skipped a match — add the partner to exclude list and re-find. */
     if (!match) return;
     var skippedId = match.user_id || match.id;
     var newExclude = (exclude || []).concat(skippedId ? [skippedId] : []);
@@ -72,16 +167,31 @@ export default function AnonymousConnect(props) {
     find(newExclude);
   }
 
+  /* Cleanup on unmount — leave the queue + clear timers so we don't keep
+   * polling after the screen is gone. */
+  useEffect(function(){
+    return function(){ stopSearching(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div', {style:{position:'sticky',top:0,zIndex:10,background:'var(--bg2)',padding:'14px 18px',display:'flex',alignItems:'center',gap:'12px',borderBottom:'1px solid var(--border)'}},
       React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
     ),
 
-    // Searching
+    // Searching — R29: live 30-sec countdown + cancel button
     searching && React.createElement('div', {style:{padding:'48px 24px',textAlign:'center'}},
       React.createElement('div', {style:{width:'80px',height:'80px',borderRadius:'50%',margin:'0 auto 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'32px',animation:'pulse 1.5s ease-in-out infinite'}}, '📞'),
-      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)'}}, 'Finding someone...'),
-      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginTop:'6px'}}, sameGeo ? 'Searching in your area' : 'Searching globally')
+      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)'}}, 'Finding someone…'),
+      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginTop:'6px'}}, sameGeo ? 'Searching in your area' : 'Searching globally'),
+      React.createElement('div', {style:{fontSize:'13px',color:'var(--ac)',marginTop:'18px',fontWeight:700,letterSpacing:'0.5px'}}, secsLeft + 's left'),
+      interests.length > 0
+        ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'8px'}}, 'Looking for shared interests: ' + interests.join(', '))
+        : React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'8px'}}, 'Anyone available right now'),
+      React.createElement('button', {
+        onClick: cancelSearch,
+        style:{marginTop:'24px',padding:'10px 24px',background:'transparent',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+      }, 'Cancel search')
     ),
 
     // Match found

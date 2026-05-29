@@ -1,12 +1,15 @@
 {
-  "version": "2026.0529.2010",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2010.zip",
-  "published_at": "2026-05-29T20:10:00Z",
+  "version": "2026.0529.2030",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2030.zip",
+  "published_at": "2026-05-29T20:30:00Z",
   "git_sha": "manual",
-  "title": "R28 — Hide 'Install RingIn' banner on native app",
+  "title": "R29 — Real Anonymous Connect matchmaker (30-sec queue)",
   "notes": [
-    "FIX: The 'Install RingIn → Tap menu (⋮)' banner no longer shows inside the native APK. It's a PWA install prompt meant only for users visiting the website in a browser — pointless when the app is already installed natively.",
-    "Detection now checks Capacitor.isNativePlatform() first; bails out early if running inside the native shell.",
-    "Includes all R23+R24+R25+R26+R27 features from previous bundle (verification, subscriptions, Workshops + Anonymous Connect restored)."
+    "NEW: Anonymous Connect now uses a real Supabase queue. When you tap 'Find Someone', you join a live queue and the system polls every 2 sec for a partner. If found within 30 sec, both sides auto-start a free voice call via the existing Agora pipeline.",
+    "NEW: Live countdown timer shows 'Xs left' during the 30-sec search window. Cancel button lets you bail out anytime.",
+    "NEW: Interest-based scoring — users with the most shared interests get matched first. Then by oldest waiter (fairness).",
+    "NEW: Skip logic preserved — skipped partners stay in your exclude list for the session so you don't re-match them.",
+    "REQUIRES: Migration 0019_anonymous_queue.sql applied in Supabase (creates the anonymous_queue table + RPCs).",
+    "Includes all R23+R24+R25+R26+R27+R28 features."
   ]
 }
