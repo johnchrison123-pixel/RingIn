@@ -33,6 +33,12 @@ export default function AnonymousConnect(props) {
   var pollRef = useRef(null);
   var countdownRef = useRef(null);
   var deadlineRef = useRef(0);
+  /* R30: availability toggle + live count of who's online. FRND-style. */
+  var availableS = useState(false); var available = availableS[0]; var setAvailable = availableS[1];
+  var availTogglingS = useState(false); var availToggling = availTogglingS[0]; var setAvailToggling = availTogglingS[1];
+  var onlineCountS = useState(0); var onlineCount = onlineCountS[0]; var setOnlineCount = onlineCountS[1];
+  var countPollRef = useRef(null);
+  var heartbeatRef = useRef(null);
 
   function addInterest(i) {
     var v = (i || '').trim().toLowerCase();
@@ -83,6 +89,12 @@ export default function AnonymousConnect(props) {
 
   function find(excludeOverride) {
     if (!userId) { toastError('Please log in'); return; }
+    /* R30: auto-enable availability so others can see + match with us. */
+    if (!available) {
+      setAvailable(true);
+      try { sb.rpc('set_anon_available', { p_available: true }).then(function(){}).catch(function(){}); } catch(_){}
+      setOnlineCount(function(c){ return c + 1; });
+    }
     /* R29 — real matchmaking queue with 30-sec poll.
      *
      * Flow:
@@ -174,9 +186,107 @@ export default function AnonymousConnect(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* R30: load initial availability state + start polling the live count
+   * every 15 sec. Also heartbeat the expiry every 5 min so the user
+   * stays "available" while the screen is open. */
+  useEffect(function(){
+    if (!userId) return;
+    var cancelled = false;
+    // Initial fetch: am I available?
+    try {
+      sb.from('profiles').select('is_available_anon,available_until').eq('id', userId).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) {
+          var stillValid = !r.data.available_until || new Date(r.data.available_until) > new Date();
+          setAvailable(!!r.data.is_available_anon && stillValid);
+        }
+      }).catch(function(){});
+    } catch(_){}
+    function pollCount(){
+      try {
+        sb.from('available_anon_count').select('count').maybeSingle().then(function(r){
+          if (cancelled) return;
+          if (r && !r.error && r.data) setOnlineCount(r.data.count || 0);
+        }).catch(function(){});
+      } catch(_){}
+    }
+    pollCount();
+    countPollRef.current = setInterval(pollCount, 15000);
+    return function(){
+      cancelled = true;
+      if (countPollRef.current) { clearInterval(countPollRef.current); countPollRef.current = null; }
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  /* When available is ON, heartbeat the 30-min expiry every 5 min. When OFF,
+   * clear the heartbeat. */
+  useEffect(function(){
+    if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+    if (!available) return;
+    heartbeatRef.current = setInterval(function(){
+      try { sb.rpc('touch_anon_availability').then(function(){}).catch(function(){}); } catch(_){}
+    }, 5 * 60 * 1000);
+    return function(){
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+    };
+  }, [available]);
+
+  function toggleAvailable(){
+    if (availToggling) return;
+    setAvailToggling(true);
+    var next = !available;
+    /* Optimistic flip — feels instant. Roll back on RPC failure. */
+    setAvailable(next);
+    sb.rpc('set_anon_available', { p_available: next }).then(function(r){
+      setAvailToggling(false);
+      if (r && r.error) {
+        console.warn('[anon] toggle error:', r.error);
+        setAvailable(!next); // rollback
+        toastError('Could not update availability');
+        return;
+      }
+      /* Bump the live count immediately so the UI reflects our own flip
+       * without waiting for the next poll. */
+      setOnlineCount(function(c){ return Math.max(0, c + (next ? 1 : -1)); });
+    }).catch(function(e){
+      setAvailToggling(false);
+      console.warn('[anon] toggle reject:', e);
+      setAvailable(!next); // rollback
+      toastError('Network error — try again');
+    });
+  }
+
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div', {style:{position:'sticky',top:0,zIndex:10,background:'var(--bg2)',padding:'14px 18px',display:'flex',alignItems:'center',gap:'12px',borderBottom:'1px solid var(--border)'}},
       React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
+    ),
+
+    /* R30: live-online card. Always visible at the top. Big animated green
+     * dot when ON + live count of available users in the entire app. */
+    React.createElement('div', {style:{margin:'14px 16px 0',padding:'16px',background:'var(--bg2)',border:'1px solid '+(available ? 'rgba(39,201,106,0.35)' : 'var(--border)'),borderRadius:'14px',display:'flex',alignItems:'center',gap:'14px',boxShadow:available?'0 0 0 1px rgba(39,201,106,0.2),0 4px 16px rgba(39,201,106,0.15)':'none',transition:'all 0.25s'}},
+      // Dot + label
+      React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
+        React.createElement('div', {style:{position:'relative',width:'12px',height:'12px',flexShrink:0}},
+          React.createElement('div', {style:{position:'absolute',inset:0,borderRadius:'50%',background:available?'#27C96A':'var(--t3)',boxShadow:available?'0 0 12px rgba(39,201,106,0.7)':'none',transition:'all 0.2s'}}),
+          available ? React.createElement('div', {style:{position:'absolute',inset:-3,borderRadius:'50%',border:'2px solid #27C96A',opacity:0.6,animation:'pulse 1.8s ease-in-out infinite'}}) : null
+        ),
+        React.createElement('div', {style:{flex:1,minWidth:0}},
+          React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, available ? "You're available to chat" : 'Set yourself available'),
+          React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}}, onlineCount > 0
+            ? ('🟢 ' + onlineCount + ' ' + (onlineCount === 1 ? 'person' : 'people') + ' online now')
+            : 'Be the first one online')
+        )
+      ),
+      // Toggle
+      React.createElement('button', {
+        onClick: toggleAvailable,
+        disabled: availToggling,
+        style:{width:'46px',height:'26px',borderRadius:'13px',background:available?'#27C96A':'var(--border)',border:'none',cursor:availToggling?'wait':'pointer',position:'relative',flexShrink:0,transition:'background 0.2s',opacity:availToggling?0.6:1}
+      },
+        React.createElement('div', {style:{position:'absolute',top:'3px',left:available?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+      )
     ),
 
     // Searching — R29: live 30-sec countdown + cancel button

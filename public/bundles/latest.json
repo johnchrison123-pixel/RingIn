@@ -1,15 +1,15 @@
 {
-  "version": "2026.0529.2030",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2030.zip",
-  "published_at": "2026-05-29T20:30:00Z",
+  "version": "2026.0529.2055",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2055.zip",
+  "published_at": "2026-05-29T20:55:00Z",
   "git_sha": "manual",
-  "title": "R29 — Real Anonymous Connect matchmaker (30-sec queue)",
+  "title": "R30 — Online toggle + live online count (FRND-style)",
   "notes": [
-    "NEW: Anonymous Connect now uses a real Supabase queue. When you tap 'Find Someone', you join a live queue and the system polls every 2 sec for a partner. If found within 30 sec, both sides auto-start a free voice call via the existing Agora pipeline.",
-    "NEW: Live countdown timer shows 'Xs left' during the 30-sec search window. Cancel button lets you bail out anytime.",
-    "NEW: Interest-based scoring — users with the most shared interests get matched first. Then by oldest waiter (fairness).",
-    "NEW: Skip logic preserved — skipped partners stay in your exclude list for the session so you don't re-match them.",
-    "REQUIRES: Migration 0019_anonymous_queue.sql applied in Supabase (creates the anonymous_queue table + RPCs).",
-    "Includes all R23+R24+R25+R26+R27+R28 features."
+    "NEW: 'I'm available to chat' toggle at the top of Anonymous Connect. Green pulsing dot when ON, FRND-style.",
+    "NEW: Live count of who's online — '🟢 23 people online now'. Updates every 15 sec automatically.",
+    "NEW: Tapping Find Someone auto-enables your availability (so partners can find you).",
+    "NEW: Availability auto-expires after 30 min idle. Heartbeat keeps it fresh while the screen is open.",
+    "REQUIRES: Migration 0020_anon_availability.sql applied in Supabase (adds is_available_anon + available_until columns + RPCs + count view).",
+    "Includes all R23–R29 features."
   ]
 }
