@@ -2,22 +2,7 @@
 import React, {useState, useRef, useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
-
-// R31: removed SUGGESTED chips per user request. Interests are now free-text
-// with space-to-add UX.
-
-// R31: 6 anonymous avatars — 3 "girl"-styled + 3 "boy"-styled. Uses emoji
-// so we don't ship image assets; each gets a distinct gradient background
-// for visual variety. The 'id' is what's stored in profiles.anon_avatar.
-var ANON_AVATARS = [
-  { id:'girl1', emoji:'👩',  gender:'f', bg:'linear-gradient(135deg,#FF6B9D,#E84D9A)' },
-  { id:'girl2', emoji:'👧',  gender:'f', bg:'linear-gradient(135deg,#A78BFA,#7B6EFF)' },
-  { id:'girl3', emoji:'🧕',  gender:'f', bg:'linear-gradient(135deg,#FB7185,#F43F5E)' },
-  { id:'boy1',  emoji:'👨',  gender:'m', bg:'linear-gradient(135deg,#3B82F6,#1D4ED8)' },
-  { id:'boy2',  emoji:'👦',  gender:'m', bg:'linear-gradient(135deg,#10B981,#059669)' },
-  { id:'boy3',  emoji:'🧔',  gender:'m', bg:'linear-gradient(135deg,#F59E0B,#D97706)' },
-];
-function getAvatar(id){ return ANON_AVATARS.find(function(a){ return a.id === id; }) || ANON_AVATARS[0]; }
+import {ANON_AVATARS, getAvatar} from '../utils/anonAvatars'; /* R37: single source of truth */
 
 // Inject pulse keyframes once
 if (typeof document !== 'undefined' && !document.getElementById('ringin-pulse-kf')) {
@@ -36,9 +21,13 @@ export default function AnonymousConnect(props) {
   var inputS = useState(''); var input = inputS[0]; var setInput = inputS[1];
   var geoS = useState(true); var sameGeo = geoS[0]; var setSameGeo = geoS[1];
   var searchingS = useState(false); var searching = searchingS[0]; var setSearching = searchingS[1];
-  var matchS = useState(null); var match = matchS[0]; var setMatch = matchS[1];
+  /* R37: removed the dead `match` preview state. We auto-connect on match
+   * (Omegle/FRND-style). Post-call sheet handles Add Connection / Next. */
   var excludeS = useState([]); var exclude = excludeS[0]; var setExclude = excludeS[1];
   var errS = useState(null); var err = errS[0]; var setErr = errS[1];
+  /* R37: post-call sheet — bottom drawer that pops up when an anon call
+   * ends so the user can Add Connection / Find Next / Block + Report. */
+  var postCallS = useState(null); var postCall = postCallS[0]; var setPostCall = postCallS[1];
   /* R29: countdown shown during the 30-sec search window so the user sees
    * "Searching... 24s left" rather than a static spinner. */
   var secsLeftS = useState(30); var secsLeft = secsLeftS[0]; var setSecsLeft = secsLeftS[1];
@@ -70,7 +59,7 @@ export default function AnonymousConnect(props) {
   var obAvatarS = useState(''); var obAvatar = obAvatarS[0]; var setObAvatar = obAvatarS[1];
   var obPrefS = useState('both'); var obPref = obPrefS[0]; var setObPref = obPrefS[1];
   var obSubmittingS = useState(false); var obSubmitting = obSubmittingS[0]; var setObSubmitting = obSubmittingS[1];
-  var obStepS = useState(1); var obStep = obStepS[0]; var setObStep = obStepS[1];
+  /* R37: obStep state removed — never used. */
   /* R33: 4-tab structure (Connections / Messages / Call Logs / Profile).
    * Default landing tab is connections (where Find Someone + connection
    * list live). Profile is where the identity + preferences + interests
@@ -97,7 +86,11 @@ export default function AnonymousConnect(props) {
 
   function addLanguage(l){
     var v = (l || '').trim();
-    if (v && languages.indexOf(v) < 0) setLanguages(languages.concat([v]));
+    if (!v) { setLangInput(''); return; }
+    /* R37: case-insensitive dedup — "English" and "english" should be one. */
+    var lower = v.toLowerCase();
+    var dupe = languages.some(function(x){ return x.toLowerCase() === lower; });
+    if (!dupe) setLanguages(languages.concat([v]));
     setLangInput('');
   }
   function removeLanguage(l){ setLanguages(languages.filter(function(x){ return x !== l; })); }
@@ -160,16 +153,15 @@ export default function AnonymousConnect(props) {
   /* When the matchmaker returns 'matched' for us, fire the actual call.
    * Deterministic role assignment via is_caller (larger UUID dials). Same
    * call_invites + Agora pipeline as expert calls — rate=0 so no coin
-   * deduction. The callee gets the standard incoming call ring. */
+   * deduction. The callee gets the standard incoming call ring.
+   * R37: Omegle/FRND-style auto-connect — no preview, no confirmation.
+   * The match → call transition is instant. After the call ends, the
+   * post-call sheet shows Add Connection / Find Next / Block. */
   async function startMatchedCall(matchData){
     var partner = matchData.partner_id;
     if (matchData.is_caller) {
       /* R36: fetch fresh identity (guards against stale 'Anonymous' nick). */
       var me = await getMyIdentityForCall();
-      /* R33: pass my own nickname + avatar via target._myNickname / _myAvatar
-       * so App.js.startOutgoingCall can stamp them onto call_invites.
-       * R34: pass partner's avatar emoji as initials + bg as color so
-       * CallScreen shows a big emoji during the call. */
       var pa34 = getAvatar(matchData.partner_avatar || 'girl1');
       var target = {
         id: partner,
@@ -191,17 +183,18 @@ export default function AnonymousConnect(props) {
           toastError('Call pipeline not ready — try again');
         }
       } catch(e){ console.warn('[anon] start call failed:', e); toastError('Could not start call'); }
-    } else {
-      /* Callee side — the partner is dialing us via the standard call_invites
-       * pipeline. App.js's incoming-call listener will pop the ring modal.
-       * Nothing for us to do except wait + show a quick toast. */
-      try { toastInfo('Matched! Incoming call from a stranger…'); } catch(_){}
     }
+    /* R37: Bug #6 fixed — removed the toastInfo on the callee side.
+     * The IncomingCallModal from App.js already fires; the double-toast was
+     * redundant + noisy. Callee gets a normal incoming-call ring instead. */
   }
 
   function find(excludeOverride) {
     if (!userId) { toastError('Please log in'); return; }
-    /* R30: auto-enable availability so others can see + match with us. */
+    /* R37: dismiss any leftover post-call sheet when starting a new search. */
+    setPostCall(null);
+    /* R30: auto-enable availability so others can see + match with us.
+     * R37: Bug #7 fix — only bump count if we were OFF before (no double-counting). */
     if (!available) {
       setAvailable(true);
       try { sb.rpc('set_anon_available', { p_available: true }).then(function(){}).catch(function(){}); } catch(_){}
@@ -218,7 +211,7 @@ export default function AnonymousConnect(props) {
      *     my row flips to 'matched' and the poll detects it.
      *  4. On timeout (30 sec, no match) → leave queue + show toast.
      */
-    setSearching(true); setErr(null); setMatch(null); setSecsLeft(30);
+    setSearching(true); setErr(null); setSecsLeft(30);
     var useExclude = Array.isArray(excludeOverride) ? excludeOverride : exclude;
     deadlineRef.current = Date.now() + 30 * 1000;
 
@@ -283,14 +276,21 @@ export default function AnonymousConnect(props) {
     setErr(null);
   }
 
-  function skip() {
-    /* Skipped a match — add the partner to exclude list and re-find. */
-    if (!match) return;
-    var skippedId = match.user_id || match.id;
-    var newExclude = (exclude || []).concat(skippedId ? [skippedId] : []);
-    setExclude(newExclude);
-    setMatch(null);
-    find(newExclude);
+  /* R37: skip() removed — the match preview screen never showed (Bug #2)
+   * and we now go straight from match → call (Omegle/FRND-style). To get
+   * a new person, user ends the call and the post-call sheet's "Find
+   * Next" button calls find() with the partner pushed onto exclude. */
+  function findNext(){
+    var p = postCall && postCall.partner_id;
+    if (p) {
+      var nextExclude = (exclude || []).concat([p]);
+      setExclude(nextExclude);
+      setPostCall(null);
+      find(nextExclude);
+    } else {
+      setPostCall(null);
+      find();
+    }
   }
 
   /* Cleanup on unmount — leave the queue + clear timers so we don't keep
@@ -299,6 +299,32 @@ export default function AnonymousConnect(props) {
     return function(){ stopSearching(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* R37: Bug #9 fix — Capacitor Android hardware-back button should close
+   * any open modal/sheet first (instead of exiting the app). Falls back
+   * to no-op on web (browser back is handled by the React Router root). */
+  useEffect(function(){
+    var Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return;
+    var handle = null;
+    (async function(){
+      try {
+        var mod = await import('@capacitor/app');
+        var App = mod && (mod.App || mod.default || mod);
+        if (!App || !App.addListener) return;
+        handle = await App.addListener('backButton', function(){
+          /* Close in priority order — most-recent UI first. */
+          if (viewingProfile) { setViewingProfile(null); return; }
+          if (editProfileOpen) { setEditProfileOpen(false); return; }
+          if (postCall) { setPostCall(null); return; }
+          if (searching) { cancelSearch(); return; }
+          /* Nothing to close — let the OS handle it (exits the app). */
+          try { App.exitApp(); } catch(_){}
+        });
+      } catch(_){}
+    })();
+    return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
+  }, [viewingProfile, editProfileOpen, postCall, searching]);
 
   /* R30: load initial availability state + start polling the live count
    * every 15 sec. Also heartbeat the expiry every 5 min so the user
@@ -364,7 +390,8 @@ export default function AnonymousConnect(props) {
     return function(){
       cancelled = true;
       if (countPollRef.current) { clearInterval(countPollRef.current); countPollRef.current = null; }
-      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+      /* R37: Bug #14 — removed dup heartbeat cleanup here; the [available]
+       * effect below owns the heartbeat lifecycle. */
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -389,7 +416,11 @@ export default function AnonymousConnect(props) {
    * RLS update policy on their own row handles it). */
   useEffect(function(){
     if (!userId) return;
-    // Don't save on initial mount before we've loaded
+    /* R37: Bug #3 fix — gate save on profileSavedRef being TRUE (set after
+     * the initial load completes). Without this, the debounced save fires
+     * on mount with empty state and nukes the user's saved nickname when
+     * the load takes >600ms. */
+    if (!profileSavedRef.current) return;
     if (saveProfileTimerRef.current) clearTimeout(saveProfileTimerRef.current);
     saveProfileTimerRef.current = setTimeout(function(){
       try {
@@ -400,7 +431,6 @@ export default function AnonymousConnect(props) {
           p_preference: preference,
         }).then(function(r){
           if (r && r.error) console.warn('[anon] save profile error:', r.error);
-          else profileSavedRef.current = true;
         }).catch(function(){});
       } catch(_){}
       /* R34: extended fields — try direct update, swallow column-missing errors. */
@@ -443,6 +473,20 @@ export default function AnonymousConnect(props) {
           loadCallLogs();
         }).catch(function(){});
       } catch(_){}
+      /* R37: pop the post-call sheet (Omegle/FRND-style) so the user can
+       * Add Connection / Find Next / Block right after hanging up. */
+      if (d.partner_id) {
+        setPostCall({
+          partner_id: d.partner_id,
+          nickname: d.partner_nickname || 'Anonymous',
+          avatar: d.partner_avatar || 'girl1',
+          gender: d.partner_gender || null,
+          duration_seconds: d.duration_seconds || 0,
+        });
+        /* Land them on the Connections tab if they're elsewhere so they
+         * see the sheet (post-call sheet only renders in Connections). */
+        setActiveTab('connections');
+      }
     }
     window.addEventListener('ringin:anoncallend', onAnonCallEnd);
 
@@ -530,13 +574,14 @@ export default function AnonymousConnect(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, onboarded]);
 
-  /* R33: send a connection request to the last person we just matched with. */
+  /* R33: send a connection request to the last person we just matched with.
+   * R37: prefer postCall (most recent — set when call ends) over
+   * lastMatchPartner (set when match was made — could be stale). */
   function sendConnectionRequest(){
-    if (!lastMatchPartner || !lastMatchPartner.partner_id) {
-      toastError('No recent match to connect with'); return;
-    }
+    var pid = (postCall && postCall.partner_id) || (lastMatchPartner && lastMatchPartner.partner_id);
+    if (!pid) { toastError('No recent match to connect with'); return; }
     setConnReqSending(true);
-    sb.rpc('request_anon_connection', { p_recipient: lastMatchPartner.partner_id }).then(function(r){
+    sb.rpc('request_anon_connection', { p_recipient: pid }).then(function(r){
       setConnReqSending(false);
       if (r && r.error) {
         console.warn('[anon] conn request error:', r.error);
@@ -545,24 +590,38 @@ export default function AnonymousConnect(props) {
       }
       var st = r && r.data && r.data.status;
       if (st === 'already_connected') {
-        try { toastInfo('You\'re already connected.'); } catch(_){}
+        try { toastInfo("You're already connected."); } catch(_){}
       } else {
         try { toastInfo('Request sent! Waiting for them to accept.'); } catch(_){}
       }
       setLastMatchPartner(null);
+      setPostCall(null); /* dismiss post-call sheet on success */
     }).catch(function(e){
       setConnReqSending(false); console.warn('[anon] conn request reject:', e);
       toastError('Network error — try again');
     });
   }
 
-  /* R33: respond to an incoming connection request. */
+  /* R33: respond to an incoming connection request.
+   * R37: Bug #8 fix — optimistically remove from pendingReqs so the tab
+   * badge clears immediately (was waiting up to 30 sec for next poll). */
   function respondToRequest(reqId, accept){
+    var snapshot = pendingReqs;
+    setPendingReqs(pendingReqs.filter(function(r){ return r.id !== reqId; }));
     sb.rpc('respond_anon_connection', { p_request_id: reqId, p_accept: accept }).then(function(r){
-      if (r && r.error) { console.warn('[anon] respond error:', r.error); toastError('Action failed'); return; }
+      if (r && r.error) {
+        console.warn('[anon] respond error:', r.error);
+        toastError('Action failed');
+        setPendingReqs(snapshot); /* rollback */
+        return;
+      }
       try { toastInfo(accept ? 'Connected!' : 'Request declined.'); } catch(_){}
       loadConnectionsAndRequests();
-    }).catch(function(e){ console.warn('[anon] respond reject:', e); toastError('Network error'); });
+    }).catch(function(e){
+      console.warn('[anon] respond reject:', e);
+      toastError('Network error');
+      setPendingReqs(snapshot); /* rollback */
+    });
   }
 
   /* R33: call a connection directly (re-use the existing call pipeline). */
@@ -796,66 +855,41 @@ export default function AnonymousConnect(props) {
       }, 'Cancel search')
     ),
 
-    // Match found — R31: shows partner's avatar emoji + nickname + gender
-    match && !searching && (function(){
-      var pa = getAvatar(match.partner_avatar || match.avatarId || 'girl1');
-      return React.createElement('div', {style:{padding:'24px',margin:'16px',background:'linear-gradient(135deg,rgba(123,110,255,0.15),rgba(232,77,154,0.1))',border:'1px solid var(--ac)',borderRadius:'14px',textAlign:'center'}},
-        React.createElement('div', {style:{width:'80px',height:'80px',borderRadius:'50%',background:pa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px',margin:'0 auto'}}, pa.emoji),
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)',marginTop:'14px'}}, match.partner_nickname || 'Anonymous'),
-        match.partner_gender ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'4px'}}, match.partner_gender === 'f' ? '👧 Girl' : '👦 Boy') : null,
-      // R27: Connect Voice — uses same window.__ringInStartCall pipeline as expert calls
-      React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'20px',justifyContent:'center',flexWrap:'wrap'}},
-        React.createElement('button', {
-          onClick:skip,
-          style:{padding:'10px 14px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer'}
-        }, 'Skip'),
-        React.createElement('button', {
-          onClick: async function(){
-            /* R36: await fresh identity so we never stamp 'Anonymous' into
-             * caller_name on the invite row when nick state is stale. */
-            var me = await getMyIdentityForCall();
-            var pa34b = getAvatar(match.partner_avatar || 'girl1');
-            var target = {
-              id: match.partner_id || match.user_id,
-              name: match.partner_nickname || 'Anonymous',
-              avatar: null,
-              initials: pa34b.emoji,
-              color: pa34b.bg,
-              role: 'Anonymous Connect',
-              online: true,
-              /* R33: pass my nickname/avatar via _my* so App.js's startCall can
-               * use them as caller_name/caller_avatar on call_invites.
-               * R34: also pass partner avatar/gender for call-log completeness.
-               * R36: nickname/avatar now come from getMyIdentityForCall(). */
-              _myNickname: me.nickname,
-              _myAvatar: me.avatar,
-              _partnerAvatar: match.partner_avatar || null,
-              _partnerGender: match.partner_gender || null,
-            };
-            if (!target.id) { toastError('Match has no user id — cannot connect'); return; }
-            try {
-              if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
-                /* Anonymous calls are free — rate=0 means no coin deduction. */
-                window.__ringInStartCall(target, { rate: 0, anonymous: true });
-              } else {
-                toastError('Call pipeline not ready — try again in a sec');
-              }
-            } catch(e){ console.warn('[anon-connect] start call failed:', e); toastError('Could not start call'); }
-          },
-          style:{padding:'10px 16px',borderRadius:'10px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(39,201,106,0.35)'}
-        }, '📞 Connect Voice'),
-        /* R33: Add as Connection — sends connection request to this partner. */
-        React.createElement('button', {
-          onClick:sendConnectionRequest,
-          disabled: connReqSending,
-          style:{padding:'10px 14px',borderRadius:'10px',background:'transparent',border:'1px solid var(--ac)',color:'var(--ac)',fontSize:'12px',fontWeight:700,cursor:connReqSending?'wait':'pointer',opacity:connReqSending?0.6:1}
-        }, connReqSending ? '...' : '➕ Add Connection')
-      )
-    );
+    /* R37: Dead match-preview UI removed (Bug #2). Match → call is now
+     * instant (Omegle/FRND-style). All "Add Connection / Skip" controls
+     * live on the CallScreen (during the call) and the post-call sheet
+     * (after hang-up) instead of in a pre-call preview that never showed. */
+
+    /* R37: Post-call sheet — pops up when an anon call ends. */
+    postCall && !searching && (function(){
+      var pa = getAvatar(postCall.avatar || 'girl1');
+      var dur = postCall.duration_seconds || 0;
+      var durStr = dur < 60 ? (dur + 's') : (Math.floor(dur/60) + 'm ' + (dur%60) + 's');
+      return React.createElement('div', {style:{padding:'20px',margin:'12px 16px',background:'linear-gradient(135deg,rgba(123,110,255,0.12),rgba(232,77,154,0.08))',border:'1px solid var(--ac)',borderRadius:'14px',textAlign:'center'}},
+        React.createElement('div', {style:{width:'72px',height:'72px',borderRadius:'50%',background:pa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'34px',margin:'0 auto'}}, pa.emoji),
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'18px',fontWeight:700,color:'var(--text)',marginTop:'10px'}}, postCall.nickname || 'Anonymous'),
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'4px'}}, dur > 0 ? 'Call ended · ' + durStr : 'Call ended'),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'16px',justifyContent:'center',flexWrap:'wrap'}},
+          React.createElement('button', {
+            onClick: sendConnectionRequest,
+            disabled: connReqSending,
+            style:{padding:'10px 16px',borderRadius:'10px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:connReqSending?'wait':'pointer',opacity:connReqSending?0.6:1}
+          }, connReqSending ? '...' : '➕ Add Connection'),
+          React.createElement('button', {
+            onClick: findNext,
+            style:{padding:'10px 16px',borderRadius:'10px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer'}
+          }, '⏭ Find Next'),
+          React.createElement('button', {
+            onClick: function(){ setPostCall(null); },
+            style:{padding:'10px 14px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer'}
+          }, 'Close')
+        )
+      );
     })(),
 
-    /* ── Connections tab body when NOT searching and NOT showing match ── */
-    !searching && !match && React.createElement('div', {style:{padding:'16px'}},
+    /* ── Connections tab body — main list area. R37: removed dead `match`
+     * check; post-call sheet now renders ABOVE this block instead. ── */
+    !searching && React.createElement('div', {style:{padding:'16px'}},
 
       /* R33: Pending incoming connection requests */
       pendingReqs.length > 0 ? React.createElement('div', {style:{marginBottom:'16px'}},
@@ -897,7 +931,9 @@ export default function AnonymousConnect(props) {
                 React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, c.nickname || 'Anonymous'),
                 React.createElement('div', {style:{fontSize:'10px',color:c.is_online?'#27C96A':'var(--t3)',marginTop:'1px'}}, c.is_online ? '🟢 Online now' : 'Offline')
               ),
-              React.createElement('button', {onClick:function(){ setActiveTab('messages'); /* TODO: open chat with this connection */ },style:{padding:'7px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, '💬'),
+              /* R37: Bug #5 fix — was switching to a dead-end "Coming Soon"
+               * Messages tab. Show toast instead until chat ships. */
+              React.createElement('button', {onClick:function(){ try{ toastInfo('Messaging launches soon — for now, give them a call!'); }catch(_){} },style:{padding:'7px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, '💬'),
               React.createElement('button', {onClick:function(){ callConnection(c); },disabled:!c.is_online,style:{padding:'7px 12px',background:c.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:c.is_online?'none':'1px solid var(--border)',borderRadius:'8px',color:c.is_online?'#fff':'var(--t3)',fontSize:'11px',fontWeight:700,cursor:c.is_online?'pointer':'not-allowed',fontFamily:'inherit'}}, '📞')
             );
           })

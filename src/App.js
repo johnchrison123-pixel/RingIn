@@ -25,6 +25,7 @@ import {clearFcmToken} from './utils/firebase'; /* R16 FIX #3 */
 import {playSound} from './utils/soundEngine';
 import {prefetchAgora} from './utils/agora';
 import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
+import {ANON_AVATAR_LOOKUP} from './utils/anonAvatars'; /* R37: shared with AnonymousConnect — single source of truth */
 // Final polish: native alert() blocks the JS thread + looks system-y on Android.
 // Replaced with non-blocking toasts via the existing toast utility.
 import {toastError, toastWarn} from './utils/toast';
@@ -543,18 +544,10 @@ export default function App() {
    * event when the call ends — AnonymousConnect listens and saves a row to
    * anon_call_logs. Cleared in the onEnd handler. */
   var anonCallContextRef = useRef(null);
-  /* Tiny anon-avatar lookup so the call screen can render a big emoji for
-   * incoming anonymous calls (CallScreen uses expert.initials as the
-   * fallback when expert.img is null). Duplicated here so App.js doesn't
-   * have to import AnonymousConnect's table. */
-  var ANON_AVATAR_LOOKUP = {
-    girl1: { emoji:'👧', bg:'linear-gradient(135deg,#FF6B9D,#C44569)' },
-    girl2: { emoji:'🧕', bg:'linear-gradient(135deg,#A18CD1,#FBC2EB)' },
-    girl3: { emoji:'👩', bg:'linear-gradient(135deg,#FAB1A0,#FF7675)' },
-    boy1:  { emoji:'👦', bg:'linear-gradient(135deg,#74B9FF,#0984E3)' },
-    boy2:  { emoji:'🧑',  bg:'linear-gradient(135deg,#55EFC4,#00B894)' },
-    boy3:  { emoji:'👨', bg:'linear-gradient(135deg,#FDCB6E,#E17055)' },
-  };
+  /* R37: ANON_AVATAR_LOOKUP imported from utils/anonAvatars (was duplicated
+   * here with different emoji/gradient values — caused caller and callee
+   * to see different avatars for the same person). Now both screens
+   * literally share the same JavaScript object. */
   useEffect(function(){ activeCallRef.current = activeCall; },[activeCall]);
   useEffect(function(){ incomingCallRef.current = incomingCall; },[incomingCall]);
 
