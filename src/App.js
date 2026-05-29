@@ -539,6 +539,22 @@ export default function App() {
   var incomingCallRef = useRef(null);
   var dismissedInvitesRef = useRef(new Set());  // invites we've already handled — never re-show
   var outgoingPendingRef = useRef(false);       // double-tap guard for outgoing call button
+  /* R34: track anon call context so we can dispatch a 'ringin:anoncallend'
+   * event when the call ends — AnonymousConnect listens and saves a row to
+   * anon_call_logs. Cleared in the onEnd handler. */
+  var anonCallContextRef = useRef(null);
+  /* Tiny anon-avatar lookup so the call screen can render a big emoji for
+   * incoming anonymous calls (CallScreen uses expert.initials as the
+   * fallback when expert.img is null). Duplicated here so App.js doesn't
+   * have to import AnonymousConnect's table. */
+  var ANON_AVATAR_LOOKUP = {
+    girl1: { emoji:'👧', bg:'linear-gradient(135deg,#FF6B9D,#C44569)' },
+    girl2: { emoji:'🧕', bg:'linear-gradient(135deg,#A18CD1,#FBC2EB)' },
+    girl3: { emoji:'👩', bg:'linear-gradient(135deg,#FAB1A0,#FF7675)' },
+    boy1:  { emoji:'👦', bg:'linear-gradient(135deg,#74B9FF,#0984E3)' },
+    boy2:  { emoji:'🧑',  bg:'linear-gradient(135deg,#55EFC4,#00B894)' },
+    boy3:  { emoji:'👨', bg:'linear-gradient(135deg,#FDCB6E,#E17055)' },
+  };
   useEffect(function(){ activeCallRef.current = activeCall; },[activeCall]);
   useEffect(function(){ incomingCallRef.current = incomingCall; },[incomingCall]);
 
@@ -678,6 +694,25 @@ export default function App() {
     setIncomingCall(null);
     // Update DB so the caller knows we accepted (also stops further ringing events)
     supabase.from('call_invites').update({status:'accepted', started_at: new Date().toISOString()}).eq('id', inv.id).then(function(){});
+    /* R34: for anonymous calls, render the anon avatar emoji big in CallScreen
+     * (ImgWithFallback uses expert.initials as the fallback text). Also stash
+     * partner info so the call-end log save fires. */
+    var isAnon = !!inv.is_anonymous;
+    var anonAv = isAnon && inv.caller_avatar ? ANON_AVATAR_LOOKUP[inv.caller_avatar] : null;
+    var initials = anonAv ? anonAv.emoji : safeInitials(inv.caller_name);
+    var color = anonAv ? anonAv.bg : 'linear-gradient(135deg,#7B6EFF,#E84D9A)';
+    if (isAnon) {
+      anonCallContextRef.current = {
+        startedAt: Date.now(),
+        partner_id: inv.caller_id,
+        partner_nickname: inv.caller_name || 'Anonymous',
+        partner_avatar: inv.caller_avatar || null,
+        partner_gender: null, /* not on the invite row; null is fine for log */
+        wasCaller: false,
+      };
+    } else {
+      anonCallContextRef.current = null;
+    }
     setActiveCall({
       isIncoming: true,
       inviteId: inv.id,
@@ -687,11 +722,11 @@ export default function App() {
       expert: {
         id: inv.caller_id,
         name: inv.caller_name || 'User',
-        img: inv.caller_avatar,
-        initials: safeInitials(inv.caller_name), /* FIX #10 */
-        color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-        role: 'Member',
-        rate: inv.rate_per_min || 30,
+        img: null, /* anon callers don't have a real image URL */
+        initials: initials,
+        color: color,
+        role: isAnon ? 'Anonymous Connect' : 'Member',
+        rate: isAnon ? 0 : (inv.rate_per_min || 30),
       },
     });
   }
@@ -726,6 +761,17 @@ export default function App() {
     if (isAnonCall) {
       callerName = (otherUser && otherUser._myNickname) || 'Anonymous';
       callerAvatar = (otherUser && otherUser._myAvatar) || null;
+      /* R34: stash partner info so onEnd can save a call log row. */
+      anonCallContextRef.current = {
+        startedAt: Date.now(),
+        partner_id: calleeId,
+        partner_nickname: (otherUser && otherUser.name) || 'Anonymous',
+        partner_avatar: (otherUser && otherUser._partnerAvatar) || null,
+        partner_gender: (otherUser && otherUser._partnerGender) || null,
+        wasCaller: true,
+      };
+    } else {
+      anonCallContextRef.current = null;
     }
     // Double-tap guard — don't fire two inserts for one button press
     if(activeCallRef.current){ console.log('[ringin] startOutgoingCall ignored — already on a call'); return; }
@@ -1099,7 +1145,19 @@ export default function App() {
           // a real number to start with.
           coins: appCoinBal || getCachedCoinBalance(appUserId) || 0,
           onCoinsChange: function(){},
-          onEnd: function(){ setActiveCall(null); },
+          onEnd: function(){
+            /* R34: if this was an anonymous call, fire a window event so
+             * AnonymousConnect can save the call log + refresh the Call Logs tab. */
+            try {
+              var ctx = anonCallContextRef.current;
+              if (ctx) {
+                var dur = Math.max(0, Math.round((Date.now() - ctx.startedAt) / 1000));
+                window.dispatchEvent(new CustomEvent('ringin:anoncallend', { detail: Object.assign({}, ctx, { duration_seconds: dur }) }));
+                anonCallContextRef.current = null;
+              }
+            } catch(e){ console.warn('[ringin] anon call-end dispatch failed:', e); }
+            setActiveCall(null);
+          },
         })
       )
     ) : null,

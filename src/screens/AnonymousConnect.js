@@ -82,6 +82,50 @@ export default function AnonymousConnect(props) {
   var connReqSendingS = useState(false); var connReqSending = connReqSendingS[0]; var setConnReqSending = connReqSendingS[1];
   var connectionsPollRef = useRef(null);
 
+  /* R34: extended anonymous profile fields (caption, languages, from). The
+   * Profile tab now renders as a real profile view (avatar + nickname +
+   * caption + chips) with an Edit Profile button that opens a modal. */
+  var captionS = useState(''); var caption = captionS[0]; var setCaption = captionS[1];
+  var languagesS = useState([]); var languages = languagesS[0]; var setLanguages = languagesS[1];
+  var fromLocS = useState(''); var fromLoc = fromLocS[0]; var setFromLoc = fromLocS[1];
+  var langInputS = useState(''); var langInput = langInputS[0]; var setLangInput = langInputS[1];
+  var editProfileOpenS = useState(false); var editProfileOpen = editProfileOpenS[0]; var setEditProfileOpen = editProfileOpenS[1];
+  /* R34: profile-view modal for tapping a connection (their avatar + bio). */
+  var viewingProfileS = useState(null); var viewingProfile = viewingProfileS[0]; var setViewingProfile = viewingProfileS[1];
+  /* R34: call logs */
+  var callLogsS = useState([]); var callLogs = callLogsS[0]; var setCallLogs = callLogsS[1];
+
+  function addLanguage(l){
+    var v = (l || '').trim();
+    if (v && languages.indexOf(v) < 0) setLanguages(languages.concat([v]));
+    setLangInput('');
+  }
+  function removeLanguage(l){ setLanguages(languages.filter(function(x){ return x !== l; })); }
+  function onLangInputChange(e){
+    var raw = e.target.value;
+    if (raw.length > 0 && raw.endsWith(' ')) { var w = raw.trim(); if (w) addLanguage(w); return; }
+    setLangInput(raw);
+  }
+
+  function loadCallLogs(){
+    try {
+      sb.rpc('list_anon_call_logs').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setCallLogs(r.data);
+      }).catch(function(){});
+    } catch(_){}
+  }
+
+  function openConnectionProfile(conn){
+    /* Try server fetch (returns latest data + RLS-gates to connections);
+     * fall back to the cached `conn` row if RPC fails. */
+    try {
+      sb.rpc('get_anon_profile', { p_user_id: conn.user_id }).then(function(r){
+        if (r && !r.error && r.data && r.data[0]) setViewingProfile(r.data[0]);
+        else setViewingProfile(conn);
+      }).catch(function(){ setViewingProfile(conn); });
+    } catch(_){ setViewingProfile(conn); }
+  }
+
   function addInterest(i) {
     var v = (i || '').trim().toLowerCase();
     if (v && interests.indexOf(v) < 0) setInterests(interests.concat([v]));
@@ -122,16 +166,24 @@ export default function AnonymousConnect(props) {
     if (matchData.is_caller) {
       /* R33: pass my own nickname + avatar via target._myNickname / _myAvatar
        * so App.js.startOutgoingCall can stamp them onto call_invites.
-       * Without this, the callee sees the REAL name from my profile
-       * (the anonymity leak bug). */
+       * Without this, the callee sees the REAL name from my profile.
+       * R34: also pass the partner's avatar emoji as `initials` + bg as `color`
+       * so CallScreen shows a big emoji during the call (ImgWithFallback
+       * uses initials when img is null). And pass _partnerAvatar/_partnerGender
+       * so App.js can save a call-log row when the call ends. */
+      var pa34 = getAvatar(matchData.partner_avatar || 'girl1');
       var target = {
         id: partner,
         name: matchData.partner_nickname || 'Anonymous',
         avatar: null,
+        initials: pa34.emoji,
+        color: pa34.bg,
         role: 'Anonymous Connect',
         online: true,
         _myNickname: nick || 'Anonymous',
         _myAvatar: avatarId || null,
+        _partnerAvatar: matchData.partner_avatar || null,
+        _partnerGender: matchData.partner_gender || null,
       };
       try {
         if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
@@ -258,14 +310,28 @@ export default function AnonymousConnect(props) {
     var cancelled = false;
     // Initial fetch: availability + anonymous profile + REAL gender + onboarded flag
     try {
-      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference,gender,anon_onboarded,full_name').eq('id', userId).maybeSingle().then(function(r){
+      /* R34: forward-compatible select — anon_caption/anon_languages/anon_from
+       * may not exist yet if migration 0024 hasn't run. Try the wide select
+       * first; on column-missing error fall back to the narrow one. */
+      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference,gender,anon_onboarded,full_name,anon_caption,anon_languages,anon_from').eq('id', userId).maybeSingle().then(function(r){
         if (cancelled) return;
+        if (r && r.error && /column .* does not exist/i.test(r.error.message || '')) {
+          /* fall back without the new columns */
+          return sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference,gender,anon_onboarded,full_name').eq('id', userId).maybeSingle();
+        }
+        return r;
+      }).then(function(r){
+        if (cancelled || !r) return;
         setCheckingOnboard(false);
         if (r && !r.error && r.data) {
           var stillValid = !r.data.available_until || new Date(r.data.available_until) > new Date();
           setAvailable(!!r.data.is_available_anon && stillValid);
           if (r.data.anon_nickname) setNick(r.data.anon_nickname);
           if (r.data.anon_avatar)   setAvatarId(r.data.anon_avatar);
+          // R34: extended profile fields
+          if (r.data.anon_caption)  setCaption(r.data.anon_caption);
+          if (r.data.anon_languages && Array.isArray(r.data.anon_languages)) setLanguages(r.data.anon_languages);
+          if (r.data.anon_from)     setFromLoc(r.data.anon_from);
           // R32: gender is REAL gender (from profiles.gender) — not editable here
           var realGender = r.data.gender || r.data.anon_gender || 'f';
           setGender(realGender);
@@ -318,7 +384,10 @@ export default function AnonymousConnect(props) {
   }, [available]);
 
   /* R31: debounced save of anonymous profile. Runs 600ms after the user
-   * stops typing/changing — avoids spamming the RPC on every keystroke. */
+   * stops typing/changing — avoids spamming the RPC on every keystroke.
+   * R34: also persists caption/languages/from via a direct UPDATE
+   * (set_anon_profile RPC doesn't know about those columns; the user's
+   * RLS update policy on their own row handles it). */
   useEffect(function(){
     if (!userId) return;
     // Don't save on initial mount before we've loaded
@@ -335,11 +404,51 @@ export default function AnonymousConnect(props) {
           else profileSavedRef.current = true;
         }).catch(function(){});
       } catch(_){}
+      /* R34: extended fields — try direct update, swallow column-missing errors. */
+      try {
+        sb.from('profiles').update({
+          anon_caption: caption || null,
+          anon_languages: languages || [],
+          anon_from: fromLoc || null,
+        }).eq('id', userId).then(function(r){
+          if (r && r.error && !/column .* does not exist/i.test(r.error.message || '')) {
+            console.warn('[anon] extended profile save error:', r.error);
+          }
+        }).catch(function(){});
+      } catch(_){}
     }, 600);
     return function(){
       if (saveProfileTimerRef.current) { clearTimeout(saveProfileTimerRef.current); saveProfileTimerRef.current = null; }
     };
-  }, [nick, avatarId, gender, preference, userId]);
+  }, [nick, avatarId, gender, preference, caption, languages, fromLoc, userId]);
+
+  /* R34: load anon call logs on mount + when this tab is opened. Listen for
+   * the global 'ringin:anoncallend' event dispatched by App.js when an
+   * anonymous call ends — save a row to anon_call_logs + refresh the list. */
+  useEffect(function(){
+    if (!userId) return;
+    loadCallLogs();
+    function onAnonCallEnd(ev){
+      var d = ev && ev.detail;
+      if (!d) return;
+      try {
+        sb.rpc('save_anon_call_log', {
+          p_partner_id: d.partner_id || null,
+          p_partner_nickname: d.partner_nickname || null,
+          p_partner_avatar: d.partner_avatar || null,
+          p_partner_gender: d.partner_gender || null,
+          p_duration_seconds: d.duration_seconds || 0,
+          p_was_caller: !!d.wasCaller,
+        }).then(function(r){
+          if (r && r.error) console.warn('[anon] save call log error:', r.error);
+          loadCallLogs();
+        }).catch(function(){});
+      } catch(_){}
+    }
+    window.addEventListener('ringin:anoncallend', onAnonCallEnd);
+    return function(){ window.removeEventListener('ringin:anoncallend', onAnonCallEnd); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   /* R32: complete onboarding — saves real gender + anon nickname/avatar/pref
    * in one RPC. After this, the wizard never shows again for this user. */
@@ -434,16 +543,22 @@ export default function AnonymousConnect(props) {
   }
 
   /* R33: call a connection directly (re-use the existing call pipeline). */
+  /* R34: re-call an accepted connection with full anon context. */
   function callConnection(conn){
     if (!conn || !conn.user_id) { toastError('Invalid connection'); return; }
+    var pa = getAvatar(conn.avatar || 'girl1');
     var target = {
       id: conn.user_id,
       name: conn.nickname || 'Anonymous',
       avatar: null,
+      initials: pa.emoji,
+      color: pa.bg,
       role: 'Anonymous Connection',
       online: !!conn.is_online,
       _myNickname: nick || 'Anonymous',
       _myAvatar: avatarId || null,
+      _partnerAvatar: conn.avatar || null,
+      _partnerGender: conn.gender || null,
     };
     try {
       if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
@@ -564,32 +679,14 @@ export default function AnonymousConnect(props) {
   var pendingCount = (pendingReqs && pendingReqs.length) || 0;
 
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
-    React.createElement('div', {style:{position:'sticky',top:0,zIndex:10,background:'var(--bg2)',padding:'14px 18px 0',display:'flex',flexDirection:'column',gap:'10px',borderBottom:'1px solid var(--border)'}},
-      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect'),
-      /* R33: tab bar */
-      React.createElement('div', {style:{display:'flex',gap:'0',overflowX:'auto',scrollbarWidth:'none'}},
-        TABS.map(function(t){
-          var sel = activeTab === t.key;
-          var badge = (t.key === 'connections' && pendingCount > 0) ? pendingCount : 0;
-          return React.createElement('button', {
-            key:t.key,
-            onClick:function(){ setActiveTab(t.key); },
-            style:{flex:1,padding:'10px 4px',background:'transparent',border:'none',borderBottom:'2px solid '+(sel?'var(--ac)':'transparent'),color:sel?'var(--text)':'var(--t3)',fontSize:'12px',fontWeight:sel?700:500,cursor:'pointer',fontFamily:'inherit',position:'relative',whiteSpace:'nowrap'}
-          },
-            t.icon + ' ' + t.label,
-            badge > 0 ? React.createElement('span', {style:{position:'absolute',top:'4px',right:'8px',background:'#FF4757',color:'#fff',fontSize:'9px',fontWeight:700,padding:'1px 5px',borderRadius:'10px',minWidth:'15px',textAlign:'center'}}, badge) : null
-          );
-        })
-      )
+    /* R34: simple header (title only, no longer sticky). */
+    React.createElement('div', {style:{padding:'14px 18px 4px'}},
+      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
     ),
 
-    /* ════════ CONNECTIONS TAB ════════ */
-    activeTab === 'connections' && React.createElement(React.Fragment, null,
-
-    /* R30: live-online card. Always visible at the top. Big animated green
-     * dot when ON + live count of available users in the entire app. */
-    React.createElement('div', {style:{margin:'14px 16px 0',padding:'16px',background:'var(--bg2)',border:'1px solid '+(available ? 'rgba(39,201,106,0.35)' : 'var(--border)'),borderRadius:'14px',display:'flex',alignItems:'center',gap:'14px',boxShadow:available?'0 0 0 1px rgba(39,201,106,0.2),0 4px 16px rgba(39,201,106,0.15)':'none',transition:'all 0.25s'}},
-      // Dot + label
+    /* R34: Online toggle card — moved OUT of connections tab so it's visible
+     * on every tab (per user feedback). */
+    React.createElement('div', {style:{margin:'8px 16px 0',padding:'16px',background:'var(--bg2)',border:'1px solid '+(available ? 'rgba(39,201,106,0.35)' : 'var(--border)'),borderRadius:'14px',display:'flex',alignItems:'center',gap:'14px',boxShadow:available?'0 0 0 1px rgba(39,201,106,0.2),0 4px 16px rgba(39,201,106,0.15)':'none',transition:'all 0.25s'}},
       React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',flex:1,minWidth:0}},
         React.createElement('div', {style:{position:'relative',width:'12px',height:'12px',flexShrink:0}},
           React.createElement('div', {style:{position:'absolute',inset:0,borderRadius:'50%',background:available?'#27C96A':'var(--t3)',boxShadow:available?'0 0 12px rgba(39,201,106,0.7)':'none',transition:'all 0.2s'}}),
@@ -602,15 +699,35 @@ export default function AnonymousConnect(props) {
             : 'Be the first one online')
         )
       ),
-      // Toggle
       React.createElement('button', {
-        onClick: toggleAvailable,
-        disabled: availToggling,
+        onClick: toggleAvailable, disabled: availToggling,
         style:{width:'46px',height:'26px',borderRadius:'13px',background:available?'#27C96A':'var(--border)',border:'none',cursor:availToggling?'wait':'pointer',position:'relative',flexShrink:0,transition:'background 0.2s',opacity:availToggling?0.6:1}
       },
         React.createElement('div', {style:{position:'absolute',top:'3px',left:available?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
       )
     ),
+
+    /* R34: BIGGER tab bar — sits below the online card now. Card-style
+     * pills with icon-above-label, much more tappable than the old thin
+     * underline bar. */
+    React.createElement('div', {style:{display:'flex',gap:'6px',padding:'14px 12px 8px',overflowX:'auto',scrollbarWidth:'none'}},
+      TABS.map(function(t){
+        var sel = activeTab === t.key;
+        var badge = (t.key === 'connections' && pendingCount > 0) ? pendingCount : 0;
+        return React.createElement('button', {
+          key:t.key,
+          onClick:function(){ setActiveTab(t.key); },
+          style:{flex:1,minWidth:'70px',padding:'12px 6px',background:sel?'linear-gradient(135deg,rgba(123,110,255,0.20),rgba(232,77,154,0.14))':'var(--bg2)',border:sel?'1.5px solid var(--ac)':'1px solid var(--border)',borderRadius:'14px',color:sel?'var(--text)':'var(--t2)',fontSize:'11px',fontWeight:sel?700:600,cursor:'pointer',fontFamily:'inherit',position:'relative',whiteSpace:'nowrap',display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',transition:'all 0.18s'}
+        },
+          React.createElement('span', {style:{fontSize:'22px',lineHeight:1}}, t.icon),
+          React.createElement('span', null, t.label),
+          badge > 0 ? React.createElement('span', {style:{position:'absolute',top:'6px',right:'8px',background:'#FF4757',color:'#fff',fontSize:'10px',fontWeight:700,padding:'2px 6px',borderRadius:'10px',minWidth:'18px',textAlign:'center'}}, badge) : null
+        );
+      })
+    ),
+
+    /* ════════ CONNECTIONS TAB ════════ */
+    activeTab === 'connections' && React.createElement(React.Fragment, null,
 
     // Searching — R29: live 30-sec countdown + cancel button
     searching && React.createElement('div', {style:{padding:'48px 24px',textAlign:'center'}},
@@ -642,17 +759,24 @@ export default function AnonymousConnect(props) {
         }, 'Skip'),
         React.createElement('button', {
           onClick:function(){
+            var pa34b = getAvatar(match.partner_avatar || 'girl1');
             var target = {
               id: match.partner_id || match.user_id,
               name: match.partner_nickname || 'Anonymous',
               avatar: null,
+              initials: pa34b.emoji,
+              color: pa34b.bg,
               role: 'Anonymous Connect',
               online: true,
               /* R33: pass my nickname/avatar via _my* so App.js's startCall can
                * use them as caller_name/caller_avatar on the call_invites row
-               * (fixes name-leak bug where real email was shown to recipient). */
+               * (fixes name-leak bug where real email was shown to recipient).
+               * R34: also pass partner avatar/gender so the call log row is
+               * complete on the caller's side. */
               _myNickname: nick || 'Anonymous',
               _myAvatar: avatarId || null,
+              _partnerAvatar: match.partner_avatar || null,
+              _partnerGender: match.partner_gender || null,
             };
             if (!target.id) { toastError('Match has no user id — cannot connect'); return; }
             try {
@@ -710,11 +834,12 @@ export default function AnonymousConnect(props) {
         : connections.map(function(c){
             var ca = getAvatar(c.avatar || 'girl1');
             return React.createElement('div', {key:c.user_id,style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px'}},
-              React.createElement('div', {style:{width:'42px',height:'42px',borderRadius:'50%',background:ca.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',flexShrink:0,position:'relative'}},
+              /* R34: tap avatar OR name to open the profile-view modal. */
+              React.createElement('div', {onClick:function(){ openConnectionProfile(c); }, style:{width:'42px',height:'42px',borderRadius:'50%',background:ca.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',flexShrink:0,position:'relative',cursor:'pointer'}},
                 ca.emoji,
                 c.is_online ? React.createElement('div', {style:{position:'absolute',bottom:'-2px',right:'-2px',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg)'}}) : null
               ),
-              React.createElement('div', {style:{flex:1,minWidth:0}},
+              React.createElement('div', {onClick:function(){ openConnectionProfile(c); }, style:{flex:1,minWidth:0,cursor:'pointer'}},
                 React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, c.nickname || 'Anonymous'),
                 React.createElement('div', {style:{fontSize:'10px',color:c.is_online?'#27C96A':'var(--t3)',marginTop:'1px'}}, c.is_online ? '🟢 Online now' : 'Offline')
               ),
@@ -732,31 +857,93 @@ export default function AnonymousConnect(props) {
       React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Once you have connections, you\'ll be able to chat with them here — even when they\'re offline.')
     ),
 
-    /* ════════ CALL LOGS TAB ════════ */
-    activeTab === 'calllogs' && React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
-      React.createElement('div', {style:{fontSize:'52px',marginBottom:'12px',opacity:0.4}}, '📞'),
-      React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'Call Logs Coming Soon'),
-      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Your history of anonymous calls — who you talked to, when, how long — will show up here.')
+    /* ════════ CALL LOGS TAB (R34: real data from anon_call_logs) ════════ */
+    activeTab === 'calllogs' && (callLogs.length === 0
+      ? React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
+          React.createElement('div', {style:{fontSize:'52px',marginBottom:'12px',opacity:0.4}}, '📞'),
+          React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No calls yet'),
+          React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Make your first anonymous call from the Connections tab — call history saves automatically.')
+        )
+      : React.createElement('div', {style:{padding:'12px 16px 16px'}},
+          React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, 'Recent Calls (' + callLogs.length + ')'),
+          callLogs.map(function(log){
+            var la = getAvatar(log.partner_avatar || 'girl1');
+            var dur = log.duration_seconds || 0;
+            var durStr = dur < 60 ? (dur + 's') : (Math.floor(dur/60) + 'm ' + (dur%60) + 's');
+            var when = log.ended_at ? new Date(log.ended_at) : null;
+            var whenStr = when ? when.toLocaleString() : '';
+            return React.createElement('div', {key:log.id, style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px'}},
+              React.createElement('div', {style:{width:'44px',height:'44px',borderRadius:'50%',background:la.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',flexShrink:0}}, la.emoji),
+              React.createElement('div', {style:{flex:1,minWidth:0}},
+                React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, log.partner_nickname || 'Anonymous'),
+                React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, (log.was_caller ? '📤 Outgoing' : '📥 Incoming') + ' · ' + whenStr)
+              ),
+              React.createElement('div', {style:{fontSize:'12px',color:dur > 0 ? 'var(--ac)' : 'var(--t3)',fontWeight:700,flexShrink:0}}, dur > 0 ? durStr : 'Missed')
+            );
+          })
+        )
     ),
 
-    /* ════════ PROFILE TAB ════════ */
-    activeTab === 'profile' && React.createElement('div', {style:{padding:'16px'}},
+    /* ════════ PROFILE TAB (R34: clean profile VIEW + Edit button) ════════ */
+    activeTab === 'profile' && (function(){
+      var pa = getAvatar(avatarId || 'girl1');
+      return React.createElement('div', {style:{padding:'16px',display:'flex',flexDirection:'column',alignItems:'center'}},
+        /* Big avatar */
+        React.createElement('div', {style:{width:'120px',height:'120px',borderRadius:'50%',background:pa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'60px',margin:'4px 0 14px',boxShadow:'0 6px 20px rgba(123,110,255,0.25)'}}, pa.emoji),
+        /* Nickname */
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,color:'var(--text)',textAlign:'center'}}, nick || 'Set your nickname'),
+        /* Gender (read-only badge under name) */
+        React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginTop:'4px'}},
+          gender === 'm' ? '👦 Boy' : gender === 'f' ? '👧 Girl' : '🌈 Other'
+        ),
+        /* Caption */
+        caption ? React.createElement('div', {style:{fontSize:'13px',color:'var(--t2)',textAlign:'center',marginTop:'14px',fontStyle:'italic',maxWidth:'320px',lineHeight:1.4,padding:'0 12px'}}, '"' + caption + '"') : null,
+        /* From */
+        fromLoc ? React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',marginTop:'12px',display:'flex',alignItems:'center',gap:'4px'}}, '📍 ' + fromLoc) : null,
+        /* Languages chips */
+        languages.length > 0 ? React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',marginTop:'12px',padding:'0 16px'}},
+          languages.map(function(l){
+            return React.createElement('span', {key:l, style:{padding:'5px 10px',borderRadius:'14px',background:'var(--bg3)',color:'var(--text)',fontSize:'11px',fontWeight:600}}, '🗣 ' + l);
+          })
+        ) : null,
+        /* Interests chips */
+        interests.length > 0 ? React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',marginTop:'8px',padding:'0 16px'}},
+          interests.map(function(i){
+            return React.createElement('span', {key:i, style:{padding:'5px 10px',borderRadius:'14px',background:'var(--acg)',color:'var(--ac)',fontSize:'11px',fontWeight:600}}, '#' + i);
+          })
+        ) : null,
+        /* Preference */
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'16px'}}, 'Looking for: ',
+          React.createElement('span', {style:{color:'var(--text)',fontWeight:700}},
+            preference === 'women' ? '👧 Girls' : preference === 'men' ? '👦 Boys' : '✨ Anyone'
+          )
+        ),
+        /* Edit button */
+        React.createElement('button', {
+          onClick:function(){ setEditProfileOpen(true); },
+          style:{marginTop:'24px',padding:'12px 32px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(123,110,255,0.35)'}
+        }, '✏️ Edit Profile')
+      );
+    })(),
 
-      // ── R31: Anonymous identity card (nickname + avatar + gender) ──
-      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'12px'}}, 'Your Anonymous Identity'),
-        // Nickname
-        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'Nickname'),
-        React.createElement('input', {
-          value:nick,
-          onChange:function(e){setNick(e.target.value.slice(0,30));},
-          placeholder:'e.g. Riya, Arjun, Whoever',
-          maxLength:30,
-          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
-        }),
-        // Avatar grid — R33 BUG FIX: filter by user's gender so a boy only sees boy
-        // avatars and vice versa. "Other" sees all 6.
-        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, 'Pick an avatar'),
+    /* ════════ EDIT PROFILE MODAL ════════ */
+    editProfileOpen ? React.createElement('div', {
+      onClick:function(){ setEditProfileOpen(false); },
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick:function(e){ e.stopPropagation(); },
+        style:{width:'100%',maxWidth:'520px',maxHeight:'90vh',overflowY:'auto',background:'var(--bg)',borderRadius:'18px 18px 0 0',padding:'18px',boxSizing:'border-box'}
+      },
+        /* Modal header */
+        React.createElement('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'18px',fontWeight:800,color:'var(--text)'}}, 'Edit Profile'),
+          React.createElement('button', {onClick:function(){ setEditProfileOpen(false); }, style:{background:'transparent',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer'}}, '✕')
+        ),
+        React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',textAlign:'right',marginBottom:'12px'}}, 'Auto-saves as you type'),
+
+        /* Avatar picker (gender-filtered) */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, 'Avatar'),
         (function(){
           var filtered = gender === 'm' ? ANON_AVATARS.filter(function(a){ return a.gender === 'm'; })
                        : gender === 'f' ? ANON_AVATARS.filter(function(a){ return a.gender === 'f'; })
@@ -765,45 +952,57 @@ export default function AnonymousConnect(props) {
             filtered.map(function(a){
               var sel = avatarId === a.id;
               return React.createElement('button', {
-                key:a.id,
-                onClick:function(){ setAvatarId(a.id); },
-                style:{aspectRatio:'1/1',borderRadius:'50%',background:a.bg,border:sel?'3px solid #fff':'3px solid transparent',outline:sel?'2px solid var(--ac)':'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',cursor:'pointer',padding:0,boxShadow:sel?'0 4px 14px rgba(123,110,255,0.5)':'none',transition:'all 0.15s'},
-                title:a.id
+                key:a.id, onClick:function(){ setAvatarId(a.id); },
+                style:{aspectRatio:'1/1',borderRadius:'50%',background:a.bg,border:sel?'3px solid #fff':'3px solid transparent',outline:sel?'2px solid var(--ac)':'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',cursor:'pointer',padding:0,boxShadow:sel?'0 4px 14px rgba(123,110,255,0.5)':'none',transition:'all 0.15s'}
               }, a.emoji);
             })
           );
         })(),
-        // R32: Gender is now READ-ONLY here (set during onboarding, lives on
-        // the user's real profile). Shown as a small badge for clarity.
-        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'4px'}},
-          'Your gender: ',
-          React.createElement('span', {style:{color:'var(--text)',fontWeight:600}},
-            gender === 'm' ? '👦 Boy' : gender === 'f' ? '👧 Girl' : '🌈 Other'
-          ),
-          React.createElement('span', {style:{color:'var(--t3)',marginLeft:'6px',fontSize:'10px'}}, '(from your RingIn profile)')
-        )
-      ),
 
-      // ── R31: Preference filter — who do you want to match with? ──
-      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, 'I want to talk to'),
-        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginBottom:'12px'}}, "We'll only match you with people who also want to talk to your gender."),
-        React.createElement('div', {style:{display:'flex',gap:'8px'}},
-          [{k:'women',l:'👧 Girls'},{k:'men',l:'👦 Boys'},{k:'both',l:'✨ Anyone'}].map(function(p){
-            var sel = preference === p.k;
-            return React.createElement('button', {
-              key:p.k, onClick:function(){ setPreference(p.k); },
-              style:{flex:1,padding:'10px 6px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-            }, p.l);
+        /* Nickname */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'Nickname'),
+        React.createElement('input', {
+          value:nick, onChange:function(e){setNick(e.target.value.slice(0,30));},
+          placeholder:'e.g. Riya, Arjun', maxLength:30,
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
+        }),
+
+        /* Caption */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'Caption / Bio'),
+        React.createElement('input', {
+          value:caption, onChange:function(e){setCaption(e.target.value.slice(0,80));},
+          placeholder:'Tell people something about you', maxLength:80,
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
+        }),
+
+        /* From */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'From'),
+        React.createElement('input', {
+          value:fromLoc, onChange:function(e){setFromLoc(e.target.value.slice(0,40));},
+          placeholder:'e.g. Mumbai, India', maxLength:40,
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
+        }),
+
+        /* Languages (space-to-add chips) */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'Languages'),
+        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'8px'}},
+          languages.map(function(l){
+            return React.createElement('span', {key:l, style:{padding:'5px 10px',borderRadius:'14px',background:'var(--bg3)',color:'var(--text)',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'6px'}},
+              l,
+              React.createElement('span', {onClick:function(){removeLanguage(l);}, style:{cursor:'pointer',fontSize:'14px',lineHeight:1}}, '×')
+            );
           })
-        )
-      ),
+        ),
+        React.createElement('input', {
+          value:langInput, onChange:onLangInputChange,
+          onKeyDown:function(e){ if (e.key === 'Enter' && langInput.trim()) addLanguage(langInput); },
+          placeholder:'Type a language + space (English Hindi Tamil)',
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
+        }),
 
-      // ── R31: Interests (no chip suggestions, space-to-add) ──
-      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'12px'}},
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, 'Your Interests'),
-        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginBottom:'10px'}}, 'Type and hit space to add. People with shared interests get matched first.'),
-        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px',minHeight:interests.length===0?'0':'30px'}},
+        /* Interests */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'Interests'),
+        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'8px'}},
           interests.map(function(i){
             return React.createElement('span', {key:i, style:{padding:'5px 10px',borderRadius:'14px',background:'var(--acg)',color:'var(--ac)',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'6px'}},
               i,
@@ -812,32 +1011,82 @@ export default function AnonymousConnect(props) {
           })
         ),
         React.createElement('input', {
-          value:input,
-          onChange:onInterestInputChange,
-          onKeyDown:function(e){
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()) {
-              addInterest(input);
-            }
-          },
-          placeholder:'Type an interest + space (e.g. music tech travel)',
-          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',fontFamily:'inherit'}
-        })
-      ),
+          value:input, onChange:onInterestInputChange,
+          onKeyDown:function(e){ if (e.key === 'Enter' && input.trim()) addInterest(input); },
+          placeholder:'Type an interest + space (music tech travel)',
+          style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
+        }),
 
-      // ── Geography toggle ──
-      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-        React.createElement('div', null,
-          React.createElement('div', {style:{fontWeight:600,fontSize:'13px',color:'var(--text)'}}, 'Match local users only'),
-          React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, 'Prefer people in your city/state')
+        /* Preference */
+        React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, 'I want to talk to'),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'14px'}},
+          [{k:'women',l:'👧 Girls'},{k:'men',l:'👦 Boys'},{k:'both',l:'✨ Anyone'}].map(function(p){
+            var sel = preference === p.k;
+            return React.createElement('button', {
+              key:p.k, onClick:function(){ setPreference(p.k); },
+              style:{flex:1,padding:'10px 6px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+            }, p.l);
+          })
         ),
-        React.createElement('button', {onClick:function(){setSameGeo(!sameGeo);}, style:{width:'44px',height:'24px',borderRadius:'12px',background:sameGeo?'var(--ac)':'var(--bg4)',border:'none',position:'relative',cursor:'pointer'}},
-          React.createElement('div', {style:{position:'absolute',top:'2px',left:sameGeo?'22px':'2px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s'}})
-        )
-      ),
 
-      /* R33: Find Someone button was moved to Connections tab. Profile tab
-       * is now just for editing the anonymous identity. */
-      React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',textAlign:'center',marginTop:'8px'}}, 'Changes save automatically. Switch to Connections tab to find someone.')
-    )
+        /* Geo toggle */
+        React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',marginBottom:'14px',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}},
+          React.createElement('div', null,
+            React.createElement('div', {style:{fontSize:'12px',fontWeight:600,color:'var(--text)'}}, 'Match local users only'),
+            React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, 'Prefer your city/state')
+          ),
+          React.createElement('button', {onClick:function(){setSameGeo(!sameGeo);}, style:{width:'44px',height:'24px',borderRadius:'12px',background:sameGeo?'var(--ac)':'var(--bg4)',border:'none',position:'relative',cursor:'pointer'}},
+            React.createElement('div', {style:{position:'absolute',top:'2px',left:sameGeo?'22px':'2px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s'}})
+          )
+        ),
+
+        /* Done button */
+        React.createElement('button', {
+          onClick:function(){ setEditProfileOpen(false); },
+          style:{width:'100%',padding:'13px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer'}
+        }, 'Done')
+      )
+    ) : null,
+
+    /* ════════ VIEW CONNECTION PROFILE MODAL ════════ */
+    viewingProfile ? (function(){
+      var vp = viewingProfile;
+      var va = getAvatar(vp.avatar || 'girl1');
+      var vlangs = (vp.languages && Array.isArray(vp.languages)) ? vp.languages : [];
+      return React.createElement('div', {
+        onClick:function(){ setViewingProfile(null); },
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
+      },
+        React.createElement('div', {
+          onClick:function(e){ e.stopPropagation(); },
+          style:{width:'100%',maxWidth:'380px',background:'var(--bg)',borderRadius:'18px',padding:'24px 20px',boxSizing:'border-box',textAlign:'center',position:'relative'}
+        },
+          React.createElement('button', {onClick:function(){ setViewingProfile(null); }, style:{position:'absolute',top:'10px',right:'12px',background:'transparent',border:'none',color:'var(--t2)',fontSize:'20px',cursor:'pointer'}}, '✕'),
+          React.createElement('div', {style:{width:'110px',height:'110px',borderRadius:'50%',background:va.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'54px',margin:'4px auto 14px',boxShadow:'0 6px 20px rgba(123,110,255,0.25)',position:'relative'}},
+            va.emoji,
+            vp.is_online ? React.createElement('div', {style:{position:'absolute',bottom:'6px',right:'6px',width:'16px',height:'16px',borderRadius:'50%',background:'#27C96A',border:'3px solid var(--bg)'}}) : null
+          ),
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)'}}, vp.nickname || 'Anonymous'),
+          React.createElement('div', {style:{fontSize:'12px',color:vp.is_online?'#27C96A':'var(--t3)',marginTop:'4px'}}, vp.is_online ? '🟢 Online now' : 'Offline'),
+          vp.gender ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'6px'}}, vp.gender === 'm' ? '👦 Boy' : vp.gender === 'f' ? '👧 Girl' : '🌈 Other') : null,
+          vp.caption ? React.createElement('div', {style:{fontSize:'13px',color:'var(--t2)',marginTop:'12px',fontStyle:'italic',lineHeight:1.4}}, '"' + vp.caption + '"') : null,
+          vp.from_loc ? React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',marginTop:'10px'}}, '📍 ' + vp.from_loc) : null,
+          vlangs.length > 0 ? React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',marginTop:'12px'}},
+            vlangs.map(function(l){ return React.createElement('span', {key:l, style:{padding:'4px 9px',borderRadius:'12px',background:'var(--bg3)',color:'var(--text)',fontSize:'11px',fontWeight:600}}, '🗣 ' + l); })
+          ) : null,
+          React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'20px',justifyContent:'center'}},
+            React.createElement('button', {
+              onClick:function(){ setViewingProfile(null); setActiveTab('messages'); },
+              style:{padding:'10px 20px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer'}
+            }, '💬 Message'),
+            React.createElement('button', {
+              onClick:function(){ setViewingProfile(null); callConnection({ user_id: vp.user_id, nickname: vp.nickname, avatar: vp.avatar, gender: vp.gender, is_online: vp.is_online }); },
+              disabled: !vp.is_online,
+              style:{padding:'10px 22px',borderRadius:'10px',background:vp.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:vp.is_online?'none':'1px solid var(--border)',color:vp.is_online?'#fff':'var(--t3)',fontSize:'12px',fontWeight:700,cursor:vp.is_online?'pointer':'not-allowed'}
+            }, '📞 Call')
+          )
+        )
+      );
+    })() : null
   );
 }
