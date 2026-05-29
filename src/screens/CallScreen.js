@@ -132,6 +132,43 @@ export default function CallScreen(props){
   var errorS = useState(null); var error = errorS[0]; var setError = errorS[1];
   var endReasonS = useState(null); var endReason = endReasonS[0]; var setEndReason = endReasonS[1];
 
+  /* R35: anonymous-call in-call actions — View Partner Profile + Add as Connection.
+   * Only shown when expert.role indicates an anonymous-mode call. */
+  var isAnonCallView = !!(expert && expert.role && expert.role.indexOf('Anonymous') === 0);
+  var reqSendingS = useState(false); var reqSending = reqSendingS[0]; var setReqSending = reqSendingS[1];
+  var reqSentS    = useState(false); var reqSent    = reqSentS[0];    var setReqSent    = reqSentS[1];
+  var reqErrS     = useState(null);  var reqErr     = reqErrS[0];     var setReqErr     = reqErrS[1];
+
+  function callViewAnonProfile(){
+    /* Fire a window event picked up by AnonymousConnect — it opens its
+     * existing profile-view modal with the partner data we already have
+     * here (nickname + avatar emoji + gender). The modal uses a z-index
+     * above this call screen, so the call keeps running underneath. */
+    try {
+      window.dispatchEvent(new CustomEvent('ringin:viewanonpartner', { detail: {
+        user_id: expert.id,
+        nickname: expert.name || 'Anonymous',
+        avatar: expert._partnerAvatar || null,
+        gender: expert._partnerGender || null,
+        is_online: true, /* obviously — they're on a call with us */
+      } }));
+    } catch(e){ /* never break the call */ }
+  }
+  function callAddAnonConnection(){
+    if (reqSending || reqSent || !expert || !expert.id) return;
+    setReqSending(true);
+    setReqErr(null);
+    try {
+      sb.rpc('request_anon_connection', { p_recipient: expert.id }).then(function(r){
+        setReqSending(false);
+        if (r && r.error) { setReqErr(r.error.message || 'Failed'); return; }
+        var status = r && r.data && r.data.status;
+        if (status === 'already_connected') { setReqSent(true); setReqErr(null); return; }
+        setReqSent(true);
+      }).catch(function(e){ setReqSending(false); setReqErr(e && e.message ? e.message : 'Failed'); });
+    } catch(e){ setReqSending(false); setReqErr('Failed'); }
+  }
+
   var sessionRef = useRef(null);   // holds the Agora controller {leave, setMuted}
   var endedRef = useRef(false);    // guard against double-end
   var wakeLockRef = useRef(null);  // navigator.wakeLock — keeps screen on (Chrome Android)
@@ -667,6 +704,21 @@ export default function CallScreen(props){
       ),
       React.createElement('div',{style:{fontSize:'20px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
       React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'8px'}},expert.role||'Member'),
+      /* R35: anon in-call actions — View Profile + Add Connection (ringing state) */
+      isAnonCallView ? React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'12px',justifyContent:'center'}},
+        React.createElement('button', {
+          onClick: callViewAnonProfile,
+          style:{padding:'7px 14px',borderRadius:'14px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'11px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, '👤 View Profile'),
+        reqSent
+          ? React.createElement('div', {style:{padding:'7px 14px',borderRadius:'14px',background:'rgba(39,201,106,0.15)',border:'1px solid rgba(39,201,106,0.4)',color:'#27C96A',fontSize:'11px',fontWeight:700}}, '✓ Request sent')
+          : React.createElement('button', {
+              onClick: callAddAnonConnection,
+              disabled: reqSending,
+              style:{padding:'7px 14px',borderRadius:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'11px',fontWeight:700,cursor:reqSending?'wait':'pointer',opacity:reqSending?0.6:1,fontFamily:'inherit'}
+            }, reqSending ? '...' : '➕ Add Connection')
+      ) : null,
+      reqErr ? React.createElement('div', {style:{fontSize:'10px',color:'#ef4444',marginBottom:'8px',textAlign:'center'}}, reqErr) : null,
       React.createElement('div',{style:{fontSize:'13px',color:'var(--t3)',marginBottom:'40px',display:'flex',alignItems:'center',gap:'6px'}},
         React.createElement('span',null,'Ringing'),
         React.createElement('span',{style:{letterSpacing:'2px'}},['.','..',  '...'][ringSecs%3])
@@ -733,6 +785,21 @@ export default function CallScreen(props){
     ),
     React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
     React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'6px'}},expert.role||'Member'),
+    /* R35: anon in-call actions — View Profile + Add Connection (connected state) */
+    isAnonCallView ? React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'12px',justifyContent:'center'}},
+      React.createElement('button', {
+        onClick: callViewAnonProfile,
+        style:{padding:'7px 14px',borderRadius:'14px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'11px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+      }, '👤 View Profile'),
+      reqSent
+        ? React.createElement('div', {style:{padding:'7px 14px',borderRadius:'14px',background:'rgba(39,201,106,0.15)',border:'1px solid rgba(39,201,106,0.4)',color:'#27C96A',fontSize:'11px',fontWeight:700}}, '✓ Request sent')
+        : React.createElement('button', {
+            onClick: callAddAnonConnection,
+            disabled: reqSending,
+            style:{padding:'7px 14px',borderRadius:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'11px',fontWeight:700,cursor:reqSending?'wait':'pointer',opacity:reqSending?0.6:1,fontFamily:'inherit'}
+          }, reqSending ? '...' : '➕ Add Connection')
+    ) : null,
+    reqErr ? React.createElement('div', {style:{fontSize:'10px',color:'#ef4444',marginBottom:'8px',textAlign:'center'}}, reqErr) : null,
     React.createElement('div',{style:{fontSize:'12px',color: phase==='connected' ? 'var(--green)' : (phase==='connecting' ? 'var(--amber)' : 'var(--t3)'),marginBottom:'20px',display:'flex',alignItems:'center',gap:'5px'}},
       React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background: phase==='connected' ? 'var(--green)' : (phase==='connecting' ? 'var(--amber)' : 'var(--t3)'),display:'inline-block'}}),
       phase==='connected' ? 'Connected' : (phase==='connecting' ? 'Connecting…' : 'Call ended')

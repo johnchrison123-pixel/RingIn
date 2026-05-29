@@ -446,7 +446,31 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     }
     window.addEventListener('ringin:anoncallend', onAnonCallEnd);
-    return function(){ window.removeEventListener('ringin:anoncallend', onAnonCallEnd); };
+
+    /* R35: CallScreen dispatches this when the user taps "View Profile"
+     * during an anonymous call. We open the profile-view modal with what
+     * the call screen already knows (nickname + avatar + gender), then
+     * try to upgrade with a get_anon_profile RPC call in the background
+     * (will succeed silently if they're already connected). */
+    function onViewAnonPartner(ev){
+      var d = ev && ev.detail;
+      if (!d) return;
+      var seed = { user_id: d.user_id, nickname: d.nickname, avatar: d.avatar, gender: d.gender, is_online: !!d.is_online };
+      setViewingProfile(seed);
+      if (d.user_id) {
+        try {
+          sb.rpc('get_anon_profile', { p_user_id: d.user_id }).then(function(r){
+            if (r && !r.error && r.data && r.data[0]) setViewingProfile(r.data[0]);
+          }).catch(function(){});
+        } catch(_){}
+      }
+    }
+    window.addEventListener('ringin:viewanonpartner', onViewAnonPartner);
+
+    return function(){
+      window.removeEventListener('ringin:anoncallend', onAnonCallEnd);
+      window.removeEventListener('ringin:viewanonpartner', onViewAnonPartner);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -1055,7 +1079,10 @@ export default function AnonymousConnect(props) {
       var vlangs = (vp.languages && Array.isArray(vp.languages)) ? vp.languages : [];
       return React.createElement('div', {
         onClick:function(){ setViewingProfile(null); },
-        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
+        /* R35: zIndex 950 so this overlay sits ABOVE the in-progress
+         * CallScreen (which is at zIndex 900). Lets the user view a
+         * connection's profile during a call without ending the call. */
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:950,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
       },
         React.createElement('div', {
           onClick:function(e){ e.stopPropagation(); },

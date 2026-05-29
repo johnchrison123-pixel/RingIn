@@ -727,6 +727,10 @@ export default function App() {
         color: color,
         role: isAnon ? 'Anonymous Connect' : 'Member',
         rate: isAnon ? 0 : (inv.rate_per_min || 30),
+        /* R35: pass partner-avatar id through so the CallScreen's
+         * "View Profile" button has data to show. */
+        _partnerAvatar: isAnon ? (inv.caller_avatar || null) : null,
+        _partnerGender: null,
       },
     });
   }
