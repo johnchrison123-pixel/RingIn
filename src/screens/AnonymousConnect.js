@@ -161,16 +161,15 @@ export default function AnonymousConnect(props) {
    * Deterministic role assignment via is_caller (larger UUID dials). Same
    * call_invites + Agora pipeline as expert calls — rate=0 so no coin
    * deduction. The callee gets the standard incoming call ring. */
-  function startMatchedCall(matchData){
+  async function startMatchedCall(matchData){
     var partner = matchData.partner_id;
     if (matchData.is_caller) {
+      /* R36: fetch fresh identity (guards against stale 'Anonymous' nick). */
+      var me = await getMyIdentityForCall();
       /* R33: pass my own nickname + avatar via target._myNickname / _myAvatar
        * so App.js.startOutgoingCall can stamp them onto call_invites.
-       * Without this, the callee sees the REAL name from my profile.
-       * R34: also pass the partner's avatar emoji as `initials` + bg as `color`
-       * so CallScreen shows a big emoji during the call (ImgWithFallback
-       * uses initials when img is null). And pass _partnerAvatar/_partnerGender
-       * so App.js can save a call-log row when the call ends. */
+       * R34: pass partner's avatar emoji as initials + bg as color so
+       * CallScreen shows a big emoji during the call. */
       var pa34 = getAvatar(matchData.partner_avatar || 'girl1');
       var target = {
         id: partner,
@@ -180,8 +179,8 @@ export default function AnonymousConnect(props) {
         color: pa34.bg,
         role: 'Anonymous Connect',
         online: true,
-        _myNickname: nick || 'Anonymous',
-        _myAvatar: avatarId || null,
+        _myNickname: me.nickname,
+        _myAvatar: me.avatar,
         _partnerAvatar: matchData.partner_avatar || null,
         _partnerGender: matchData.partner_gender || null,
       };
@@ -567,9 +566,38 @@ export default function AnonymousConnect(props) {
   }
 
   /* R33: call a connection directly (re-use the existing call pipeline). */
-  /* R34: re-call an accepted connection with full anon context. */
-  function callConnection(conn){
+  /* R36: defensive identity fetch — guarantees the caller_name field on
+   * call_invites is the user's REAL anon nickname (or a derived fallback
+   * from full_name), never literal 'Anonymous' just because `nick` state
+   * was stale at call time. Called by every code path that starts a call. */
+  async function getMyIdentityForCall(){
+    /* 1) Use state if it's already populated. */
+    if (nick && nick.trim()) return { nickname: nick.trim(), avatar: avatarId || 'girl1' };
+    /* 2) State empty — fetch fresh from DB. */
+    try {
+      var r = await sb.from('profiles').select('anon_nickname,anon_avatar,full_name').eq('id', userId).maybeSingle();
+      if (r && !r.error && r.data) {
+        var n = (r.data.anon_nickname && r.data.anon_nickname.trim())
+              || (r.data.full_name && r.data.full_name.trim().split(' ')[0])
+              || null;
+        var av = r.data.anon_avatar || avatarId || 'girl1';
+        if (n) {
+          /* Cache for next time so we don't re-fetch every call. */
+          setNick(n);
+          if (r.data.anon_avatar) setAvatarId(r.data.anon_avatar);
+          return { nickname: n, avatar: av };
+        }
+      }
+    } catch(_) {}
+    /* 3) Truly nothing — last-resort fallback. */
+    return { nickname: 'Anonymous', avatar: avatarId || 'girl1' };
+  }
+
+  /* R34: re-call an accepted connection with full anon context.
+   * R36: now async — awaits identity fetch to guarantee a real nickname. */
+  async function callConnection(conn){
     if (!conn || !conn.user_id) { toastError('Invalid connection'); return; }
+    var me = await getMyIdentityForCall();
     var pa = getAvatar(conn.avatar || 'girl1');
     var target = {
       id: conn.user_id,
@@ -579,8 +607,8 @@ export default function AnonymousConnect(props) {
       color: pa.bg,
       role: 'Anonymous Connection',
       online: !!conn.is_online,
-      _myNickname: nick || 'Anonymous',
-      _myAvatar: avatarId || null,
+      _myNickname: me.nickname,
+      _myAvatar: me.avatar,
       _partnerAvatar: conn.avatar || null,
       _partnerGender: conn.gender || null,
     };
@@ -782,7 +810,10 @@ export default function AnonymousConnect(props) {
           style:{padding:'10px 14px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer'}
         }, 'Skip'),
         React.createElement('button', {
-          onClick:function(){
+          onClick: async function(){
+            /* R36: await fresh identity so we never stamp 'Anonymous' into
+             * caller_name on the invite row when nick state is stale. */
+            var me = await getMyIdentityForCall();
             var pa34b = getAvatar(match.partner_avatar || 'girl1');
             var target = {
               id: match.partner_id || match.user_id,
@@ -793,12 +824,11 @@ export default function AnonymousConnect(props) {
               role: 'Anonymous Connect',
               online: true,
               /* R33: pass my nickname/avatar via _my* so App.js's startCall can
-               * use them as caller_name/caller_avatar on the call_invites row
-               * (fixes name-leak bug where real email was shown to recipient).
-               * R34: also pass partner avatar/gender so the call log row is
-               * complete on the caller's side. */
-              _myNickname: nick || 'Anonymous',
-              _myAvatar: avatarId || null,
+               * use them as caller_name/caller_avatar on call_invites.
+               * R34: also pass partner avatar/gender for call-log completeness.
+               * R36: nickname/avatar now come from getMyIdentityForCall(). */
+              _myNickname: me.nickname,
+              _myAvatar: me.avatar,
               _partnerAvatar: match.partner_avatar || null,
               _partnerGender: match.partner_gender || null,
             };
