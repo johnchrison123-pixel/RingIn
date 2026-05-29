@@ -9,7 +9,7 @@ import {useMomentUserIds} from '../utils/momentUsers';
 import {useHideLikes} from '../utils/likeDisplayPref';
 import {useCloseFriends, addCloseFriend, removeCloseFriend} from '../utils/closeFriends';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
-import {toastSuccess,toastError} from '../utils/toast';
+import {toastSuccess,toastError,toastInfo,toastWarn} from '../utils/toast';
 import {useCoinBalance} from '../utils/coinBalance';
 import {sb as sbProfileCoin} from '../utils/supabase';
 /* R18: timezone-aware date display + safe localStorage wrapper */
@@ -303,6 +303,51 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   var expertAppExpS=useState(''); var expertAppExp=expertAppExpS[0]; var setExpertAppExp=expertAppExpS[1];
   var expertAppRateS=useState(''); var expertAppRate=expertAppRateS[0]; var setExpertAppRate=expertAppRateS[1];
   var expertAppSubmittedS=useState(false); var expertAppSubmitted=expertAppSubmittedS[0]; var setExpertAppSubmitted=expertAppSubmittedS[1];
+  /* R25: Creator Subscriptions feature. Only shown to verified experts
+   * (users who have submitted the Expert Application — their profile bio
+   * JSON contains an `expert_request` key). Server-side enforcement lives
+   * in supabase/migrations/0017_creator_subscriptions.sql RLS policies. */
+  var isExpertS=useState(false); var isExpert=isExpertS[0]; var setIsExpert=isExpertS[1];
+  var showSubsMgrS=useState(false); var showSubsMgr=showSubsMgrS[0]; var setShowSubsMgr=showSubsMgrS[1];
+  var subOfferS=useState(null); var subOffer=subOfferS[0]; var setSubOffer=subOfferS[1];
+  var subOfferLoadingS=useState(false); var subOfferLoading=subOfferLoadingS[0]; var setSubOfferLoading=subOfferLoadingS[1];
+  /* Form state — mirrors creator_subscriptions_offered columns. Defaults
+   * are sensible "first-time enable" values that the creator tweaks. */
+  var subEnabledFormS=useState(false); var subEnabledForm=subEnabledFormS[0]; var setSubEnabledForm=subEnabledFormS[1];
+  var subPriceCentsS=useState(499); var subPriceCents=subPriceCentsS[0]; var setSubPriceCents=subPriceCentsS[1];
+  var subCurrencyS=useState('USD'); var subCurrency=subCurrencyS[0]; var setSubCurrency=subCurrencyS[1];
+  var subCoinGiftPriceS=useState(500); var subCoinGiftPrice=subCoinGiftPriceS[0]; var setSubCoinGiftPrice=subCoinGiftPriceS[1];
+  var subTrialDaysS=useState(0); var subTrialDays=subTrialDaysS[0]; var setSubTrialDays=subTrialDaysS[1];
+  var subDescriptionS=useState(''); var subDescription=subDescriptionS[0]; var setSubDescription=subDescriptionS[1];
+  var subPerksS=useState(['sub_badge','priority_queue']); var subPerks=subPerksS[0]; var setSubPerks=subPerksS[1];
+  var subSavingS=useState(false); var subSaving=subSavingS[0]; var setSubSaving=subSavingS[1];
+  var subActiveCountS=useState(0); var subActiveCount=subActiveCountS[0]; var setSubActiveCount=subActiveCountS[1];
+  /* R26: Verification system. Subscriptions are now gated on is_verified
+   * (any user can apply for a verified badge — not just experts). Manual
+   * admin review + yearly coin fee. See 0018_verification.sql. */
+  var isVerifiedS=useState(false); var isVerified=isVerifiedS[0]; var setIsVerified=isVerifiedS[1];
+  var verifiedUntilS=useState(null); var verifiedUntil=verifiedUntilS[0]; var setVerifiedUntil=verifiedUntilS[1];
+  var isAdminS=useState(false); var isAdmin=isAdminS[0]; var setIsAdmin=isAdminS[1];
+  // verifStatus: 'none' | 'pending' | 'approved' | 'rejected'
+  var verifStatusS=useState('none'); var verifStatus=verifStatusS[0]; var setVerifStatus=verifStatusS[1];
+  var showVerifyAppS=useState(false); var showVerifyApp=showVerifyAppS[0]; var setShowVerifyApp=showVerifyAppS[1];
+  var showAdminReviewS=useState(false); var showAdminReview=showAdminReviewS[0]; var setShowAdminReview=showAdminReviewS[1];
+  // Verification application form fields
+  var vfNameS=useState(''); var vfName=vfNameS[0]; var setVfName=vfNameS[1];
+  var vfCategoryS=useState('influencer'); var vfCategory=vfCategoryS[0]; var setVfCategory=vfCategoryS[1];
+  var vfInstaS=useState(''); var vfInsta=vfInstaS[0]; var setVfInsta=vfInstaS[1];
+  var vfYoutubeS=useState(''); var vfYoutube=vfYoutubeS[0]; var setVfYoutube=vfYoutubeS[1];
+  var vfTiktokS=useState(''); var vfTiktok=vfTiktokS[0]; var setVfTiktok=vfTiktokS[1];
+  var vfTwitterS=useState(''); var vfTwitter=vfTwitterS[0]; var setVfTwitter=vfTwitterS[1];
+  var vfFollowersS=useState(''); var vfFollowers=vfFollowersS[0]; var setVfFollowers=vfFollowersS[1];
+  var vfFollowerPlatformS=useState('Instagram'); var vfFollowerPlatform=vfFollowerPlatformS[0]; var setVfFollowerPlatform=vfFollowerPlatformS[1];
+  var vfReasonS=useState(''); var vfReason=vfReasonS[0]; var setVfReason=vfReasonS[1];
+  var vfSubmittingS=useState(false); var vfSubmitting=vfSubmittingS[0]; var setVfSubmitting=vfSubmittingS[1];
+  var vfPayingS=useState(false); var vfPaying=vfPayingS[0]; var setVfPaying=vfPayingS[1];
+  // Admin review queue
+  var adminQueueS=useState([]); var adminQueue=adminQueueS[0]; var setAdminQueue=adminQueueS[1];
+  var adminQueueLoadingS=useState(false); var adminQueueLoading=adminQueueLoadingS[0]; var setAdminQueueLoading=adminQueueLoadingS[1];
+  var VERIF_FEE_COINS = 1000; // yearly fee — must match pay_verification_fee() in 0018
   var soundPrefsS=useState(function(){try{var s=localStorage.getItem('ringin_sound_prefs');if(s)return Object.assign({typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}},JSON.parse(s));}catch(e){}return {typing:{variant:0,volume:0.55,enabled:true},emoji:{variant:0,volume:0.55,enabled:true},send:{variant:0,volume:0.55,enabled:true},like:{variant:0,volume:0.55,enabled:true},likeThumb:{variant:0,volume:0.55,enabled:true},notification:{variant:0,volume:0.55,enabled:true}};}); var soundPrefs=soundPrefsS[0]; var setSoundPrefs=soundPrefsS[1];
   var hapticsOnS=useState(getHapticsEnabled); var hapticsOn=hapticsOnS[0]; var setHapticsOn=hapticsOnS[1];
   // Support state
@@ -346,6 +391,12 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   var postTextS=useState(''); var postText=postTextS[0]; var setPostText=postTextS[1];
   var showEmojiS=useState(false); var showEmoji=showEmojiS[0]; var setShowEmoji=showEmojiS[1];
   var showEditProfileS=useState(false); var showEditProfile=showEditProfileS[0]; var setShowEditProfile=showEditProfileS[1];
+  // R23: in-app confirm modals replacing window.confirm() (banned per CLAUDE.md).
+  // showDeleteConfirm gates the Delete Account flow; deletePostId carries the
+  // id of the post being deleted (null = no modal). Both close on backdrop
+  // click and on the Cancel button.
+  var showDeleteConfirmS=useState(false); var showDeleteConfirm=showDeleteConfirmS[0]; var setShowDeleteConfirm=showDeleteConfirmS[1];
+  var deletePostIdS=useState(null); var deletePostId=deletePostIdS[0]; var setDeletePostId=deletePostIdS[1];
   var editNameS=useState(''); var editName=editNameS[0]; var setEditName=editNameS[1];
   var editTagS=useState(''); var editTag=editTagS[0]; var setEditTag=editTagS[1];
   var editAboutS=useState(''); var editAbout=editAboutS[0]; var setEditAbout=editAboutS[1];
@@ -641,6 +692,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       if (showBlocked) return consume(function(){ setShowBlocked(false); });
       if (showMuted) return consume(function(){ setShowMuted(false); });
       if (showExpertApp) return consume(function(){ setShowExpertApp(false); });
+      if (showSubsMgr) return consume(function(){ setShowSubsMgr(false); }); /* R25 */
+      if (showVerifyApp) return consume(function(){ setShowVerifyApp(false); }); /* R26 */
+      if (showAdminReview) return consume(function(){ setShowAdminReview(false); }); /* R26 */
       if (showRate) return consume(function(){ setShowRate(false); });
       // ─── Settings panel itself — closes back to the Profile screen ───
       if (showSettings) return consume(function(){ setShowSettings(false); });
@@ -653,7 +707,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     editPostProfData,
     showEditProfile, showAvatarView, showAvatarMenu, showCoverAdjust, showAdjust, showEmoji, showLikersProf,
     showCountryPicker, showPhoneCodePicker, showTzPicker,
-    showCloseFriends, showAcct, showPrivacy, showSupport, showNotif, showActivityLog, showSound, showBlocked, showMuted, showExpertApp, showRate,
+    showCloseFriends, showAcct, showPrivacy, showSupport, showNotif, showActivityLog, showSound, showBlocked, showMuted, showExpertApp, showSubsMgr, showVerifyApp, showAdminReview, showRate,
     showSettings,
   ]);
 
@@ -698,6 +752,98 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       }
     });
   },[userId]);
+
+  /* R26: load verification status + admin flag + subscription offer.
+   * Subscriptions are now gated on profiles.is_verified (anyone can apply
+   * for a verified badge — not just experts). We read is_verified,
+   * verified_until, is_admin from profiles, and the user's own
+   * verification_requests row to know whether they're pending/approved. */
+  useEffect(function(){
+    if (!userId) return;
+    var cancelled = false;
+    // 1) Verification + admin flags from profiles
+    try {
+      sbProfile.from('profiles').select('is_verified,verified_until,is_admin').eq('id', userId).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) {
+          setIsVerified(!!r.data.is_verified);
+          setVerifiedUntil(r.data.verified_until || null);
+          setIsAdmin(!!r.data.is_admin);
+        }
+      }).catch(function(){ /* columns may not exist if 0018 not applied — keep defaults */ });
+    } catch(_){}
+    // 1b) The user's own verification request status (pending/approved/rejected)
+    try {
+      sbProfile.from('verification_requests').select('status').eq('user_id', userId).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data && r.data.status) setVerifStatus(r.data.status);
+        else setVerifStatus('none');
+      }).catch(function(){});
+    } catch(_){}
+    // 2) Load current subscription offer (if any)
+    try {
+      setSubOfferLoading(true);
+      sbProfile.from('creator_subscriptions_offered').select('*').eq('creator_id', userId).maybeSingle().then(function(r){
+        if (cancelled) return;
+        setSubOfferLoading(false);
+        if (r && !r.error && r.data) {
+          setSubOffer(r.data);
+          setSubEnabledForm(!!r.data.enabled);
+          setSubPriceCents(r.data.price_cents || 499);
+          setSubCurrency(r.data.currency || 'USD');
+          setSubCoinGiftPrice(r.data.coin_gift_price || 500);
+          setSubTrialDays(r.data.trial_days || 0);
+          setSubDescription(r.data.description || '');
+          var p = r.data.perks;
+          if (Array.isArray(p)) setSubPerks(p);
+          else if (typeof p === 'string') { try { var parsed = JSON.parse(p); if (Array.isArray(parsed)) setSubPerks(parsed); } catch(_){} }
+        }
+      }).catch(function(e){ setSubOfferLoading(false); console.warn('[ringin] sub offer fetch reject:', e && e.message); });
+    } catch(e){ setSubOfferLoading(false); console.warn('[ringin] sub offer fetch throw:', e && e.message); }
+    // 3) Load active subscriber count for the creator dashboard
+    try {
+      sbProfile.from('creator_subscriber_count').select('active_count').eq('creator_id', userId).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) setSubActiveCount(r.data.active_count || 0);
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  /* R23: Privacy settings — fetch from the server so the user's settings
+   * travel across devices. Wrapped in try/catch + a separate query so an
+   * older DB without the privacy columns (migration 0016 not yet applied)
+   * doesn't break the profile load. Falls back to whatever localStorage
+   * had on prior versions. */
+  useEffect(function(){
+    if(!userId) return;
+    try {
+      sbProfile.from('profiles')
+        .select('profile_visibility,is_locked,hide_likes_in_feed')
+        .eq('id', userId)
+        .single()
+        .then(function(res){
+          if (!res || res.error || !res.data) {
+            // Column doesn't exist (migration not yet applied) or row missing
+            // — keep local state from localStorage, do nothing.
+            if (res && res.error) console.warn('[ringin] privacy fetch:', res.error.message);
+            return;
+          }
+          var vis = res.data.profile_visibility || 'public';
+          var locked = !!res.data.is_locked;
+          // Update local state + localStorage so any same-session reads stay
+          // consistent with the server. (hide_likes lives in its own hook;
+          // we just sync it to LS via the setHideLikes setter pattern.)
+          setProfileVis(vis);
+          setProfileLocked(locked);
+          try { localStorage.setItem('profile_vis', vis); } catch(_){}
+          try { localStorage.setItem('profile_locked', locked ? '1' : '0'); } catch(_){}
+        })
+        .catch(function(e){ console.warn('[ringin] privacy fetch reject:', e && e.message); });
+    } catch(_) {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // FIX #3: prefill Account Settings form from server on first open, so blank
   // localStorage doesn't trick the user into saving an empty profile. Only
@@ -1009,7 +1155,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         setShowAdjust(false);
         var fileName = userId+'.jpg';
         supabase.storage.from('avatars').upload(fileName,blob,{upsert:true,contentType:'image/jpeg'}).then(function(res){
-          if(res.error){alert('Something went wrong. Please try again.');setUploading(false);return;}
+          if(res.error){try{toastError('Avatar upload failed. Please try again.');}catch(_){}setUploading(false);return;}
           var pub = supabase.storage.from('avatars').getPublicUrl(fileName);
           var url = pub.data.publicUrl+'?t='+Date.now();
           setAvatarUrl(url);
@@ -1094,7 +1240,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         setShowCoverAdjust(false);
         var fileName = userId+'_cover.jpg';
         supabase.storage.from('covers').upload(fileName, blob, {upsert:true, contentType:'image/jpeg'}).then(function(res){
-          if(res.error){alert('Cover upload failed: '+(res.error.message||'storage error'));setUploading(false);return;}
+          if(res.error){try{toastError('Cover upload failed: '+(res.error.message||'storage error'));}catch(_){}setUploading(false);return;}
           var pub = supabase.storage.from('covers').getPublicUrl(fileName);
           var url = pub.data.publicUrl+'?t='+Date.now();
           setCoverUrl(url);
@@ -1171,8 +1317,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   }
 
   function submitPost(){
-    if(!postText.trim()){alert('Write something first!');return;}
-    if(!userId){alert('Please log in to post');return;}
+    if(!postText.trim()){try{toastWarn('Write something first!');}catch(_){}return;}
+    if(!userId){try{toastWarn('Please log in to post');}catch(_){}return;}
     playProfPostSound();
     var postData = {
       user_id: userId,
@@ -1185,7 +1331,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       comments_count: 0
     };
     sbProfile.from('posts').insert([postData]).select().then(function(res){
-      if(res.error){alert('Something went wrong. Please try again.');return;}
+      if(res.error){try{toastError('Failed to post. Please try again.');}catch(_){}return;}
       if(res.data&&res.data[0]){
         var newPost={
           id:res.data[0].id,
@@ -1307,7 +1453,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             // so the user has a record of what they submitted. Server-side
             // schema isn't ready, so localStorage is the safer fallback.
             onClick:function(){
-              if(!supportEmail.trim()||!supportMsg.trim()){alert('Please fill in your email and describe your issue.');return;}
+              if(!supportEmail.trim()||!supportMsg.trim()){try{toastWarn('Please fill in your email and describe your issue.');}catch(_){}return;}
               try {
                 var key = 'ringin_support_msgs';
                 var cur = [];
@@ -1656,7 +1802,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#27C96A,#1FA858)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'12px',flexShrink:0}}, '★'),
           React.createElement('div',{style:{flex:1,fontSize:'12px',color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, fid.substring(0, 16) + '…'),
           React.createElement('button',{
-            onClick:function(){ removeCloseFriend(fid).catch(function(e){ alert('Failed to remove: '+(e&&e.message)); }); },
+            onClick:function(){ removeCloseFriend(fid).catch(function(e){ try{toastError('Failed to remove: '+(e&&e.message));}catch(_){} }); },
             style:{padding:'5px 10px',background:'rgba(239,71,71,0.12)',border:'1px solid rgba(239,71,71,0.3)',borderRadius:'8px',color:'#ef4747',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
           },'Remove')
         );
@@ -1687,9 +1833,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('button',{
             onClick:function(){
               if (alreadyOn) {
-                removeCloseFriend(p.id).catch(function(e){ alert('Failed: '+(e&&e.message)); });
+                removeCloseFriend(p.id).catch(function(e){ try{toastError('Failed: '+(e&&e.message));}catch(_){} });
               } else {
-                addCloseFriend(p.id).catch(function(e){ alert('Failed: '+(e&&e.message)); });
+                addCloseFriend(p.id).catch(function(e){ try{toastError('Failed: '+(e&&e.message));}catch(_){} });
               }
             },
             style:{padding:'6px 12px',background:alreadyOn?'rgba(239,71,71,0.12)':'rgba(39,201,106,0.12)',border:'1px solid '+(alreadyOn?'rgba(239,71,71,0.3)':'rgba(39,201,106,0.4)'),borderRadius:'8px',color:alreadyOn?'#ef4747':'#27C96A',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
@@ -1734,7 +1880,22 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                         // R16 FIX #6: resetPasswordForEmail had no .catch — if
                         // the network rejected, setPwResetLoad(true) was never
                         // cleared and the "Sending…" button stayed disabled.
-                        sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:'https://ring-in.vercel.app'}).then(function(res){
+                        /* R23: use the live origin instead of hardcoded production URL.
+                         * On the deployed website this resolves to the website itself
+                         * (correct). On the Capacitor APK the WebView runs at
+                         * https://localhost so we explicitly fall back to the prod URL
+                         * — the appUrlOpen listener in App.js handles the round-trip
+                         * back into the native app via Android App Links / custom scheme. */
+                        var _resetRedirect = (function(){
+                          try{
+                            var loc = (typeof window !== 'undefined') ? window.location : null;
+                            var host = loc && loc.hostname;
+                            // Inside Capacitor WebView the hostname is 'localhost' — use the prod URL.
+                            if (!host || host === 'localhost' || host === '') return 'https://ring-in.vercel.app/reset-password';
+                            return loc.origin + '/reset-password';
+                          }catch(_){ return 'https://ring-in.vercel.app/reset-password'; }
+                        })();
+                        sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:_resetRedirect}).then(function(res){
                           setPwResetLoad(false);
                           if(res.error) setPwResetErr(res.error.message);
                           else setPwResetSent(true);
@@ -1812,7 +1973,26 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
         [['public','🌐','Public','Anyone can see your profile and posts'],['followers','👥','Followers Only','Only people you follow back can see your posts'],['private','🔒','Private','Only you can see your posts']].map(function(opt,i,arr){
           var isSelected=profileVis===opt[0];
-          return React.createElement('div',{key:opt[0],onClick:function(){setProfileVis(opt[0]);try{localStorage.setItem('profile_vis',opt[0]);}catch(e){}},style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer',background:isSelected?'rgba(123,110,255,0.08)':'transparent'}},
+          return React.createElement('div',{key:opt[0],onClick:function(){
+            var newVis = opt[0];
+            setProfileVis(newVis);
+            try{ localStorage.setItem('profile_vis', newVis); }catch(e){}
+            /* R23: persist server-side so the privacy setting is real
+             * (previously it was localStorage-only and RLS ignored it).
+             * Migration 0016_privacy.sql adds the column + restrictive RLS.
+             * Wrapped in try/catch so old envs without the migration still
+             * work — the localStorage update above is the fallback. */
+            if(userId){
+              try{
+                sbProfile.from('profiles').update({profile_visibility:newVis}).eq('id',userId).then(function(r){
+                  if(r && r.error){
+                    console.warn('[ringin] profile_visibility write failed:', r.error.message);
+                    try{ toastWarn('Privacy setting saved locally only — DB update failed.'); }catch(_){}
+                  }
+                }).catch(function(e){ console.warn('[ringin] profile_visibility reject:', e && e.message); });
+              }catch(_){}
+            }
+          },style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer',background:isSelected?'rgba(123,110,255,0.08)':'transparent'}},
             React.createElement('span',{style:{fontSize:'20px'}},opt[1]),
             React.createElement('div',{style:{flex:1}},
               React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},opt[2]),
@@ -1866,7 +2046,25 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',lineHeight:1.5,maxWidth:'230px'}},'People must send a follow request and you must approve it before they can see your posts and full profile.')
           ),
           React.createElement('button',{
-            onClick:function(){var n=!profileLocked;setProfileLocked(n);try{localStorage.setItem('profile_locked',n?'1':'0');}catch(e){}},
+            onClick:function(){
+              var n=!profileLocked;
+              setProfileLocked(n);
+              try{ localStorage.setItem('profile_locked',n?'1':'0'); }catch(e){}
+              /* R23: persist server-side. Was localStorage-only; the column
+               * was added by migration 0016_privacy.sql. is_locked is a
+               * follow-request gate (Instagram-style); the request-approval
+               * flow itself is future work but the column is live now. */
+              if(userId){
+                try{
+                  sbProfile.from('profiles').update({is_locked:n}).eq('id',userId).then(function(r){
+                    if(r && r.error){
+                      console.warn('[ringin] is_locked write failed:', r.error.message);
+                      try{ toastWarn('Lock setting saved locally only — DB update failed.'); }catch(_){}
+                    }
+                  }).catch(function(e){ console.warn('[ringin] is_locked reject:', e && e.message); });
+                }catch(_){}
+              }
+            },
             style:{width:'46px',height:'26px',borderRadius:'13px',background:profileLocked?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
           },
             React.createElement('div',{style:{position:'absolute',top:'3px',left:profileLocked?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
@@ -1907,31 +2105,12 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         [
           {icon:'🚫',label:'Blocked Users',sub:'Manage people you\'ve blocked',fn:function(){setShowBlocked(true);}},
           {icon:'🔇',label:'Muted Words',sub:'Hide posts containing specific words',fn:function(){setShowMuted(true);}},
-          {icon:'📥',label:'Download My Data',sub:'Get a copy of your RingIn data',fn:function(){var uid=userId;if(!uid){alert('Please log in first');return;}Promise.all([sbProfile.from('posts').select('*').eq('user_id',uid),sbProfile.from('comments').select('*').eq('user_id',uid)]).then(function(results){var data={exported_at:new Date().toISOString(),user_id:uid,email:email,posts:results[0].data||[],comments:results[1].data||[]};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ringin-data-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);});}},
+          {icon:'📥',label:'Download My Data',sub:'Get a copy of your RingIn data',fn:function(){var uid=userId;if(!uid){try{toastWarn('Please log in first');}catch(_){}return;}Promise.all([sbProfile.from('posts').select('*').eq('user_id',uid),sbProfile.from('comments').select('*').eq('user_id',uid)]).then(function(results){var data={exported_at:new Date().toISOString(),user_id:uid,email:email,posts:results[0].data||[],comments:results[1].data||[]};var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ringin-data-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);});}},
           {icon:'🗑️',label:'Delete Account',sub:'30-day cooling-off — sign back in to cancel',fn:function(){
-            // Real delete flow (T2.9). Calls the request_account_deletion
-            // RPC defined in supabase/migrations/0011_account_deletion.sql.
-            // - Sets profiles.deleted_at = now() → account hidden from app.
-            // - User signs back in within 30 days to cancel.
-            // - After 30 days a scheduled job purges PII.
-            // If the migration hasn't been applied, RPC returns "function does
-            // not exist" → fall back to the email-support message.
-            if(!window.confirm('Delete your RingIn account?\n\n• You will be signed out.\n• You have 30 days to cancel by signing back in.\n• After 30 days, your name, email and avatar are permanently scrubbed.\n• Your posts and comments stay, anonymised.')) return;
-            sbProfile.rpc('request_account_deletion').then(function(r){
-              if(r.error){
-                console.warn('[ringin] delete account RPC error', r.error);
-                /* R21 FIX #5: alert → toast (long-text; use longer duration) */
-                try { toastError('Could not start deletion. Please email support@ringin.app to process manually.', 5500); } catch(_){}
-                return;
-              }
-              // Sign out — supabase client clears the session.
-              try { sbProfile.auth.signOut(); } catch(_){}
-              try { toastSuccess('Account scheduled for deletion. Sign back in within 30 days to cancel.', 5500); } catch(_){}
-            }).catch(function(e){
-              /* R21 — also handle raw network reject */
-              console.warn('[ringin] delete account RPC reject', e);
-              try { toastError('Network error — please email support@ringin.app to delete manually.', 5500); } catch(_){}
-            });
+            // R23: replaced window.confirm with in-app modal.
+            // Just flip the state; modal renders below in showSettings return
+            // and runs the RPC on confirm.
+            setShowDeleteConfirm(true);
           },red:true},
         ].map(function(item,i,arr){
           return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}},
@@ -1944,7 +2123,49 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           );
         })
       )
-    )
+    ),
+    /* R23: in-app Delete Account confirmation modal — replaces window.confirm
+     * which was banned per CLAUDE.md (renders as "ring-in.vercel.app says..."
+     * on native shell, breaking the brand). Backdrop click and Cancel both
+     * close without deleting; Delete runs the request_account_deletion RPC. */
+    showDeleteConfirm ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:500,backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)'},
+        onClick:function(){ setShowDeleteConfirm(false); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{position:'fixed',left:'50%',top:'50%',transform:'translate(-50%,-50%)',zIndex:501,background:'var(--bg2,#161028)',border:'1px solid var(--border)',borderRadius:'16px',padding:'20px 22px 16px',minWidth:'280px',maxWidth:'340px',boxShadow:'0 16px 48px rgba(0,0,0,0.6)',color:'var(--text)',fontFamily:'inherit'}
+      },
+        React.createElement('div',{style:{fontSize:'17px',fontWeight:700,marginBottom:'8px',color:'#ef4747'}}, 'Delete your account?'),
+        React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'16px'}},
+          'You will be signed out immediately. You have 30 days to cancel by signing back in. After 30 days your name, email and avatar are permanently scrubbed. Your posts and comments stay, anonymised.'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}},
+          React.createElement('button',{
+            onClick:function(){ setShowDeleteConfirm(false); },
+            style:{padding:'10px 16px',borderRadius:'10px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Cancel'),
+          React.createElement('button',{
+            onClick:function(){
+              setShowDeleteConfirm(false);
+              sbProfile.rpc('request_account_deletion').then(function(r){
+                if(r.error){
+                  console.warn('[ringin] delete account RPC error', r.error);
+                  try { toastError('Could not start deletion. Please email support@ringin.app to process manually.', 5500); } catch(_){}
+                  return;
+                }
+                try { sbProfile.auth.signOut(); } catch(_){}
+                try { toastSuccess('Account scheduled for deletion. Sign back in within 30 days to cancel.', 5500); } catch(_){}
+              }).catch(function(e){
+                console.warn('[ringin] delete account RPC reject', e);
+                try { toastError('Network error — please email support@ringin.app to delete manually.', 5500); } catch(_){}
+              });
+            },
+            style:{padding:'10px 16px',borderRadius:'10px',background:'#ef4747',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Delete')
+        )
+      )
+    ) : null
   );
 
   if(showSound){
@@ -2019,7 +2240,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
               if(!ok){
                 // Fall back to a quick visual nudge — alert is acceptable here since the
                 // user explicitly asked to test and we have no other channel to report.
-                try { alert('Vibration is not supported on this browser (iOS Safari and most desktop browsers).'); } catch(e){}
+                try { toastInfo('Vibration is not supported on this device/browser.'); } catch(e){}
               }
             },
             disabled: !isHapticSupported(),
@@ -2205,6 +2426,431 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     )
   );
 
+  /* R26: load the admin verification queue (pending requests). Called when
+   * the admin opens the review screen. Reads the verification_pending_queue
+   * view which joins request + applicant profile. */
+  function loadAdminQueue(){
+    setAdminQueueLoading(true);
+    sbProfile.from('verification_pending_queue').select('*').then(function(r){
+      setAdminQueueLoading(false);
+      if (r && !r.error && Array.isArray(r.data)) setAdminQueue(r.data);
+      else { setAdminQueue([]); if (r && r.error) console.warn('[ringin] admin queue error:', r.error.message); }
+    }).catch(function(e){ setAdminQueueLoading(false); console.warn('[ringin] admin queue reject:', e && e.message); });
+  }
+
+  /* R26: VERIFICATION APPLICATION screen. Any user applies for a verified
+   * badge here. Captures the details the admin uses to vet genuineness:
+   * Instagram + other socials, follower count, category, and a reason.
+   * On submit → upsert verification_requests (status defaults to 'pending').
+   * If the request is already 'approved', this screen shows the PAY step
+   * (yearly fee in coins) instead of the form. */
+  if(showVerifyApp){
+    var VERIF_CATEGORIES = [
+      {key:'influencer',     label:'Influencer'},
+      {key:'creator',        label:'Content Creator'},
+      {key:'expert',         label:'Expert / Professional'},
+      {key:'business',       label:'Business / Brand'},
+      {key:'public_figure',  label:'Public Figure'},
+      {key:'other',          label:'Other'},
+    ];
+    function submitVerification(){
+      if (!userId) { try { toastWarn('Please log in first'); } catch(_){} return; }
+      if (!vfInsta.trim() && !vfYoutube.trim() && !vfTiktok.trim() && !vfTwitter.trim()) {
+        try { toastWarn('Add at least one social link so we can verify you'); } catch(_){} return;
+      }
+      if (!vfReason.trim()) { try { toastWarn('Tell us why you want to be verified'); } catch(_){} return; }
+      setVfSubmitting(true);
+      var payload = {
+        user_id: userId,
+        status: 'pending',
+        full_name: (vfName || (profileInfo && profileInfo.name) || '').slice(0,120),
+        category: vfCategory,
+        instagram_url: vfInsta.trim() || null,
+        youtube_url: vfYoutube.trim() || null,
+        tiktok_url: vfTiktok.trim() || null,
+        twitter_url: vfTwitter.trim() || null,
+        follower_count: parseInt(vfFollowers, 10) || null,
+        follower_platform: vfFollowerPlatform,
+        reason: vfReason.trim().slice(0,500),
+        submitted_at: new Date().toISOString(),
+      };
+      sbProfile.from('verification_requests').upsert(payload, { onConflict: 'user_id' }).then(function(r){
+        setVfSubmitting(false);
+        if (r && r.error) { console.error('[ringin] verif submit error:', r.error); try { toastError('Could not submit: ' + (r.error.message||'unknown')); } catch(_){} return; }
+        setVerifStatus('pending');
+        try { toastSuccess('Application submitted! We\'ll review it shortly.'); } catch(_){}
+      }).catch(function(e){ setVfSubmitting(false); console.warn('[ringin] verif submit reject:', e&&e.message); try { toastError('Network error — try again'); } catch(_){} });
+    }
+    function payVerificationFee(){
+      setVfPaying(true);
+      sbProfile.rpc('pay_verification_fee').then(function(r){
+        setVfPaying(false);
+        if (r && r.error) { console.error('[ringin] pay verif error:', r.error); try { toastError(r.error.message && r.error.message.indexOf('insufficient')>=0 ? 'Not enough coins — top up your wallet first' : ('Payment failed: ' + (r.error.message||'unknown'))); } catch(_){} return; }
+        setIsVerified(true);
+        if (r && r.data && r.data.verified_until) setVerifiedUntil(r.data.verified_until);
+        setShowVerifyApp(false);
+        try { toastSuccess('🎉 You\'re verified! Your badge is live for 1 year. You can now offer subscriptions.'); } catch(_){}
+      }).catch(function(e){ setVfPaying(false); console.warn('[ringin] pay verif reject:', e&&e.message); try { toastError('Network error — try again'); } catch(_){} });
+    }
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowVerifyApp(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Get Verified'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}}, verifStatus==='pending'?'Under review':verifStatus==='approved'?'Approved — payment pending':'Apply for a verified badge')
+        )
+      ),
+      React.createElement('div',{style:{padding:'16px 18px 80px'}},
+        // ── APPROVED → PAY step ──
+        verifStatus === 'approved' ? React.createElement('div',null,
+          React.createElement('div',{style:{textAlign:'center',padding:'24px 16px',background:'linear-gradient(135deg,rgba(29,158,117,0.15),rgba(39,201,106,0.08))',border:'1px solid rgba(39,201,106,0.4)',borderRadius:'16px',marginBottom:'18px'}},
+            React.createElement('div',{style:{fontSize:'42px',marginBottom:'8px'}},'✅'),
+            React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},'You\'re approved!'),
+            React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5}},'Pay the yearly verification fee to activate your blue badge. It stays live for 12 months.')
+          ),
+          React.createElement('div',{style:{textAlign:'center',padding:'18px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',marginBottom:'16px'}},
+            React.createElement('div',{style:{fontSize:'26px',fontWeight:800,color:'var(--text)'}}, VERIF_FEE_COINS + ' coins'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}},'per year · ≈ ₹999 / SAR 49')
+          ),
+          React.createElement('button',{
+            onClick:payVerificationFee, disabled:vfPaying,
+            style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#1D9E75,#27C96A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:vfPaying?'wait':'pointer',opacity:vfPaying?0.7:1,fontFamily:'inherit'}
+          }, vfPaying ? 'Processing…' : ('Pay ' + VERIF_FEE_COINS + ' coins & activate badge')),
+          React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginTop:'8px'}},'Real-money yearly billing wires up in v1.5. For now the fee is paid in coins.')
+        ) :
+        // ── PENDING state ──
+        verifStatus === 'pending' ? React.createElement('div',{style:{textAlign:'center',padding:'40px 20px'}},
+          React.createElement('div',{style:{fontSize:'42px',marginBottom:'12px'}},'⏳'),
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}},'Application under review'),
+          React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.55,maxWidth:'280px',margin:'0 auto'}},'We\'re reviewing your verification request. You\'ll be able to pay the yearly fee and activate your badge once it\'s approved.')
+        ) :
+        // ── APPLICATION FORM (none / rejected) ──
+        React.createElement('div',null,
+          verifStatus === 'rejected' ? React.createElement('div',{style:{padding:'12px 14px',background:'rgba(239,71,71,0.1)',border:'1px solid rgba(239,71,71,0.3)',borderRadius:'10px',marginBottom:'16px',fontSize:'12px',color:'#ef4747'}},'Your previous application wasn\'t approved. You can update your details and re-apply below.') : null,
+          React.createElement('div',{style:{background:'linear-gradient(135deg,rgba(24,119,242,0.12),rgba(66,179,255,0.08))',border:'1px solid rgba(24,119,242,0.3)',borderRadius:'14px',padding:'14px 16px',marginBottom:'18px'}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}},'✔️  Why get verified?'),
+            React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.55}},'A blue verified badge builds trust and unlocks Creator Subscriptions so your fans can subscribe to you monthly. Yearly fee applies once approved.')
+          ),
+          // Full name
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'6px'}},'Full Name'),
+          React.createElement('input',{value:vfName||((profileInfo&&profileInfo.name)||''),onChange:function(e){setVfName(e.target.value);},placeholder:'Your real name',style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'16px'}}),
+          // Category
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'6px'}},'Category'),
+          React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'16px'}},
+            VERIF_CATEGORIES.map(function(c){
+              var sel = vfCategory === c.key;
+              return React.createElement('button',{key:c.key,onClick:function(){setVfCategory(c.key);},style:{padding:'8px 12px',border:sel?'2px solid var(--ac)':'1px solid var(--border)',background:sel?'rgba(123,110,255,0.12)':'var(--bg3)',color:sel?'var(--ac)':'var(--text)',borderRadius:'20px',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, c.label);
+            })
+          ),
+          // Instagram (primary)
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'6px'}},'Instagram Profile Link'),
+          React.createElement('input',{value:vfInsta,onChange:function(e){setVfInsta(e.target.value);},placeholder:'https://instagram.com/yourhandle',style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'16px'}}),
+          // Other socials
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'6px'}},'Other Links (optional)'),
+          React.createElement('input',{value:vfYoutube,onChange:function(e){setVfYoutube(e.target.value);},placeholder:'YouTube channel link',style:{width:'100%',padding:'11px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'8px'}}),
+          React.createElement('input',{value:vfTiktok,onChange:function(e){setVfTiktok(e.target.value);},placeholder:'TikTok profile link',style:{width:'100%',padding:'11px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'8px'}}),
+          React.createElement('input',{value:vfTwitter,onChange:function(e){setVfTwitter(e.target.value);},placeholder:'X / Twitter profile link',style:{width:'100%',padding:'11px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'16px'}}),
+          // Follower count + platform
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'6px'}},'Follower Count'),
+          React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
+            React.createElement('input',{type:'number',value:vfFollowers,onChange:function(e){setVfFollowers(e.target.value);},placeholder:'e.g. 25000',style:{flex:1,padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}),
+            React.createElement('select',{value:vfFollowerPlatform,onChange:function(e){setVfFollowerPlatform(e.target.value);},style:{padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',outline:'none',fontFamily:'inherit'}},
+              ['Instagram','YouTube','TikTok','X/Twitter','Facebook','Other'].map(function(p){return React.createElement('option',{key:p,value:p},p);})
+            )
+          ),
+          // Reason
+          React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'6px'}},'Why do you want to be verified?'),
+          React.createElement('textarea',{value:vfReason,onChange:function(e){setVfReason(e.target.value.slice(0,500));},placeholder:'Tell us about yourself and why you should get a verified badge.',maxLength:500,style:{width:'100%',minHeight:'90px',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'13px',resize:'vertical',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'4px'}}),
+          React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'right',marginBottom:'18px'}}, vfReason.length + ' / 500'),
+          // Submit
+          React.createElement('button',{
+            onClick:submitVerification, disabled:vfSubmitting,
+            style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#1877F2,#42B3FF)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:vfSubmitting?'wait':'pointer',opacity:vfSubmitting?0.7:1,fontFamily:'inherit',boxShadow:'0 4px 16px rgba(24,119,242,0.3)'}
+          }, vfSubmitting ? 'Submitting…' : (verifStatus==='rejected'?'Re-apply for Verification':'Submit Application'))
+        )
+      )
+    );
+  }
+
+  /* R26: ADMIN VERIFICATION REVIEW screen. Only reachable by is_admin users
+   * (the tile is gated, and the RPCs re-check admin server-side). Lists
+   * pending requests with applicant profile + social links + reason +
+   * follower count, and Approve / Reject buttons. */
+  if(showAdminReview){
+    function reviewAction(reqId, action){
+      var rpc = action === 'approve' ? 'approve_verification' : 'reject_verification';
+      var args = action === 'approve' ? { req_id: reqId } : { req_id: reqId, notes: 'Rejected by admin' };
+      sbProfile.rpc(rpc, args).then(function(r){
+        if (r && r.error) { console.error('[ringin] review error:', r.error); try { toastError('Action failed: ' + (r.error.message||'unknown')); } catch(_){} return; }
+        try { toastSuccess(action === 'approve' ? 'Approved — user can now pay & activate' : 'Rejected'); } catch(_){}
+        // Remove from local queue
+        setAdminQueue(function(prev){ return (prev||[]).filter(function(x){ return x.id !== reqId; }); });
+      }).catch(function(e){ console.warn('[ringin] review reject:', e&&e.message); try { toastError('Network error'); } catch(_){} });
+    }
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowAdminReview(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Verification Review'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}}, adminQueueLoading ? 'Loading…' : ((adminQueue&&adminQueue.length||0) + ' pending'))
+        ),
+        React.createElement('button',{onClick:loadAdminQueue,style:{marginLeft:'auto',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'12px',padding:'6px 12px',cursor:'pointer',fontFamily:'inherit'}},'↻ Refresh')
+      ),
+      React.createElement('div',{style:{padding:'14px 16px 80px'}},
+        adminQueueLoading ? React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'var(--t3)',fontSize:'13px'}},'Loading requests…') :
+        (!adminQueue || adminQueue.length === 0) ? React.createElement('div',{style:{textAlign:'center',padding:'50px 20px'}},
+          React.createElement('div',{style:{fontSize:'40px',marginBottom:'10px'}},'✅'),
+          React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)',marginBottom:'4px'}},'No pending requests'),
+          React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)'}},'New verification applications will appear here.')
+        ) :
+        adminQueue.map(function(req){
+          return React.createElement('div',{key:req.id,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'12px'}},
+            // Applicant header
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}},
+              React.createElement('div',{style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'14px',overflow:'hidden',flexShrink:0}},
+                req.profile_avatar ? React.createElement('img',{src:req.profile_avatar,alt:'',style:{width:'100%',height:'100%',objectFit:'cover'}}) : ((req.full_name||req.profile_name||'?').substring(0,2).toUpperCase())
+              ),
+              React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}}, req.full_name || req.profile_name || 'Unknown'),
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}}, (req.category||'—') + ' · ' + (req.follower_count ? (Number(req.follower_count).toLocaleString() + ' followers on ' + (req.follower_platform||'?')) : 'no follower count'))
+              )
+            ),
+            // Reason
+            req.reason ? React.createElement('div',{style:{fontSize:'12px',color:'var(--text)',lineHeight:1.5,padding:'10px 12px',background:'var(--bg4)',borderRadius:'8px',marginBottom:'10px',fontStyle:'italic'}}, '"' + req.reason + '"') : null,
+            // Links
+            React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'12px'}},
+              [['Instagram',req.instagram_url],['YouTube',req.youtube_url],['TikTok',req.tiktok_url],['X',req.twitter_url]].filter(function(l){return l[1];}).map(function(l){
+                return React.createElement('a',{key:l[0],href:l[1],target:'_blank',rel:'noreferrer noopener',style:{fontSize:'11px',padding:'5px 10px',background:'rgba(24,119,242,0.12)',border:'1px solid rgba(24,119,242,0.3)',borderRadius:'8px',color:'#42B3FF',textDecoration:'none',fontWeight:600}}, '↗ ' + l[0]);
+              })
+            ),
+            // Actions
+            React.createElement('div',{style:{display:'flex',gap:'8px'}},
+              React.createElement('button',{onClick:function(){reviewAction(req.id,'reject');},style:{flex:1,padding:'10px',background:'rgba(239,71,71,0.12)',border:'1px solid rgba(239,71,71,0.4)',borderRadius:'10px',color:'#ef4747',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Reject'),
+              React.createElement('button',{onClick:function(){reviewAction(req.id,'approve');},style:{flex:1,padding:'10px',background:'linear-gradient(135deg,#1D9E75,#27C96A)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Approve')
+            )
+          );
+        })
+      )
+    );
+  }
+
+  /* R25: Creator Subscriptions Manager screen — verified experts only.
+   * Lets the creator enable/disable subscriptions, pick a price tier from
+   * a fixed picklist (Instagram pattern), choose perks, set a trial period,
+   * and add a public description shown on the Subscribe modal.
+   *
+   * Price picklist is currency-aware: INR shows ₹99/₹199/₹499/₹999/₹1,999;
+   * SAR shows SAR 5/19/49/99/199; USD shows $0.99/$1.99/$4.99/$9.99/$19.99.
+   * The stored value is always integer cents (price_cents) + currency code.
+   *
+   * Save flow: UPSERT to creator_subscriptions_offered. RLS enforces that
+   * the creator_id matches auth.uid() AND the user is a verified expert.
+   * Client + server both gate this — defence in depth. */
+  if(showSubsMgr) {
+    var SUB_TIERS_BY_CURRENCY = {
+      'INR': [
+        {label:'₹99 / month',  price_cents: 9900,   coins: 99},
+        {label:'₹199 / month', price_cents: 19900,  coins: 199},
+        {label:'₹499 / month', price_cents: 49900,  coins: 499},
+        {label:'₹999 / month', price_cents: 99900,  coins: 999},
+        {label:'₹1,999 / month', price_cents: 199900, coins: 1999},
+      ],
+      'SAR': [
+        {label:'SAR 5 / month',  price_cents: 500,   coins: 50},
+        {label:'SAR 19 / month', price_cents: 1900,  coins: 190},
+        {label:'SAR 49 / month', price_cents: 4900,  coins: 490},
+        {label:'SAR 99 / month', price_cents: 9900,  coins: 990},
+        {label:'SAR 199 / month',price_cents: 19900, coins: 1990},
+      ],
+      'USD': [
+        {label:'$0.99 / month',  price_cents: 99,    coins: 100},
+        {label:'$1.99 / month',  price_cents: 199,   coins: 200},
+        {label:'$4.99 / month',  price_cents: 499,   coins: 500},
+        {label:'$9.99 / month',  price_cents: 999,   coins: 1000},
+        {label:'$19.99 / month', price_cents: 1999,  coins: 2000},
+      ],
+    };
+    var SUB_PERKS = [
+      {key:'sub_badge',        icon:'💜', label:'Subscriber badge',         sub:'Purple badge with tenure months next to subscriber\'s name in your rooms + DMs'},
+      {key:'priority_queue',   icon:'⚡',       label:'Priority call queue',      sub:'Subs jump the queue + get 10% off your per-minute rate'},
+      {key:'sub_only_rooms',   icon:'🎤', label:'Sub-only voice rooms',     sub:'Host private rooms only your subscribers can enter'},
+      {key:'sub_only_dms',     icon:'✉',       label:'Sub-only DMs',             sub:'You can reply privately only to subscribers'},
+      {key:'sub_only_drops',   icon:'🎧', label:'Sub-only voice drops',     sub:'Recorded voice messages on your profile only subs can play'},
+      {key:'entrance_sting',   icon:'🔔', label:'Voice entrance sting',     sub:'A short sound plays when a sub enters your room'},
+    ];
+    var currentTiers = SUB_TIERS_BY_CURRENCY[subCurrency] || SUB_TIERS_BY_CURRENCY['USD'];
+    function togglePerk(key){
+      setSubPerks(function(prev){
+        if (!Array.isArray(prev)) prev = [];
+        if (prev.indexOf(key) >= 0) return prev.filter(function(k){ return k !== key; });
+        return prev.concat([key]);
+      });
+    }
+    function saveSubscriptionOffer(){
+      if (!userId) { try { toastWarn('Please log in first'); } catch(_){} return; }
+      setSubSaving(true);
+      var payload = {
+        creator_id: userId,
+        enabled: !!subEnabledForm,
+        price_cents: parseInt(subPriceCents, 10) || 499,
+        currency: subCurrency || 'USD',
+        coin_gift_price: parseInt(subCoinGiftPrice, 10) || 500,
+        trial_days: parseInt(subTrialDays, 10) || 0,
+        description: (subDescription || '').slice(0, 280),
+        perks: Array.isArray(subPerks) ? subPerks : [],
+      };
+      sbProfile.from('creator_subscriptions_offered').upsert(payload, { onConflict: 'creator_id' }).then(function(r){
+        setSubSaving(false);
+        if (r && r.error) {
+          console.error('[ringin] sub offer save error:', r.error);
+          try { toastError('Could not save: ' + (r.error.message || 'unknown error')); } catch(_){}
+          return;
+        }
+        setSubOffer(Object.assign({}, subOffer || {}, payload));
+        try { toastSuccess(subEnabledForm ? 'Subscriptions enabled — your profile now shows a Subscribe button' : 'Subscription offer saved'); } catch(_){}
+      }).catch(function(e){
+        setSubSaving(false);
+        console.warn('[ringin] sub offer save reject:', e && e.message);
+        try { toastError('Network error — please try again'); } catch(_){}
+      });
+    }
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      // Header
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowSubsMgr(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Creator Subscriptions'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},subOffer && subOffer.enabled ? ('Live · ' + subActiveCount + ' active subscriber' + (subActiveCount===1?'':'s')) : 'Not enabled yet')
+        )
+      ),
+      React.createElement('div',{style:{padding:'16px 18px 80px'}},
+        // Top explainer card
+        React.createElement('div',{style:{background:'linear-gradient(135deg,rgba(123,110,255,0.12),rgba(232,77,154,0.08))',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'14px',padding:'14px 16px',marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}},'💜  Subscriptions, Instagram-style'),
+          React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.55}},
+            'Pick a monthly price. Subscribers unlock the perks you choose below. You keep 70% of every subscription. Subscribers can cancel anytime; they keep access until the end of the month.')
+        ),
+
+        // ── Enable toggle ──
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'14px 16px',marginBottom:'14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          React.createElement('div',{style:{flex:1,paddingRight:'12px'}},
+            React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},'Enable Subscriptions'),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',lineHeight:1.5}},'Show a Subscribe button on your profile so people can subscribe to you')
+          ),
+          React.createElement('button',{
+            onClick:function(){ setSubEnabledForm(!subEnabledForm); },
+            style:{width:'46px',height:'26px',borderRadius:'13px',background:subEnabledForm?'var(--ac)':'var(--border)',border:'none',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}
+          },
+            React.createElement('div',{style:{position:'absolute',top:'3px',left:subEnabledForm?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+          )
+        ),
+
+        // ── Currency picker ──
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Currency'),
+        React.createElement('div',{style:{display:'flex',gap:'6px',marginBottom:'18px'}},
+          ['INR','SAR','USD'].map(function(cur){
+            var isSel = subCurrency === cur;
+            return React.createElement('button',{
+              key:cur,
+              onClick:function(){ setSubCurrency(cur); /* reset price to the first tier of new currency */ var tiers = SUB_TIERS_BY_CURRENCY[cur]; if (tiers && tiers.length) { setSubPriceCents(tiers[2].price_cents); setSubCoinGiftPrice(tiers[2].coins); } },
+              style:{flex:1,padding:'10px 0',border:isSel?'2px solid var(--ac)':'1px solid var(--border)',background:isSel?'rgba(123,110,255,0.12)':'var(--bg3)',color:isSel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+            }, cur);
+          })
+        ),
+
+        // ── Price tier picker ──
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Monthly Subscription Price'),
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',overflow:'hidden',marginBottom:'18px'}},
+          currentTiers.map(function(t, i){
+            var isSel = subPriceCents === t.price_cents;
+            return React.createElement('div',{
+              key:t.label,
+              onClick:function(){ setSubPriceCents(t.price_cents); setSubCoinGiftPrice(t.coins); },
+              style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 16px',borderBottom:i<currentTiers.length-1?'1px solid var(--border)':'none',cursor:'pointer',background:isSel?'rgba(123,110,255,0.08)':'transparent'}
+            },
+              React.createElement('div',null,
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}}, t.label),
+                React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',marginTop:'1px'}}, 'You receive ~' + Math.round((t.price_cents * 0.70) / 100) + ' ' + (subCurrency === 'USD' ? 'USD' : (subCurrency === 'INR' ? '₹ (rupees)' : 'SAR')) + ' after platform fees')
+              ),
+              React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',border:'2px solid '+(isSel?'var(--ac)':'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
+                isSel ? React.createElement('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:'var(--ac)'}}) : null
+              )
+            );
+          })
+        ),
+
+        // ── Gift-a-sub coin price (auto-set but editable) ──
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Gift-a-Sub Price (coins)'),
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'14px 16px',marginBottom:'18px'}},
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
+            React.createElement('span',{style:{fontSize:'18px'}},'🪙'),
+            React.createElement('input',{
+              type:'number',
+              value:subCoinGiftPrice,
+              onChange:function(e){ setSubCoinGiftPrice(parseInt(e.target.value, 10) || 0); },
+              min:1,
+              max:1000000,
+              style:{flex:1,padding:'8px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit'}
+            }),
+            React.createElement('span',{style:{fontSize:'12px',color:'var(--t2)'}},'coins / month')
+          ),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginTop:'6px',lineHeight:1.5}},'Friends can gift a 1-month subscription to others using coins. Defaults to match your monthly price.')
+        ),
+
+        // ── Perks multi-select ──
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Subscriber Perks'),
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',overflow:'hidden',marginBottom:'18px'}},
+          SUB_PERKS.map(function(p, i){
+            var isOn = Array.isArray(subPerks) && subPerks.indexOf(p.key) >= 0;
+            return React.createElement('div',{
+              key:p.key,
+              onClick:function(){ togglePerk(p.key); },
+              style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 16px',borderBottom:i<SUB_PERKS.length-1?'1px solid var(--border)':'none',cursor:'pointer'}
+            },
+              React.createElement('span',{style:{fontSize:'18px',width:'24px',textAlign:'center'}},p.icon),
+              React.createElement('div',{style:{flex:1}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'2px'}},p.label),
+                React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',lineHeight:1.45}},p.sub)
+              ),
+              React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'5px',border:'2px solid '+(isOn?'var(--ac)':'var(--border)'),background:isOn?'var(--ac)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:'11px',fontWeight:800,color:'#fff'}}, isOn ? '✓' : '')
+            );
+          })
+        ),
+
+        // ── Trial days ──
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Free Trial Period'),
+        React.createElement('div',{style:{display:'flex',gap:'6px',marginBottom:'18px'}},
+          [0,3,7,14].map(function(d){
+            var isSel = subTrialDays === d;
+            return React.createElement('button',{
+              key:d,
+              onClick:function(){ setSubTrialDays(d); },
+              style:{flex:1,padding:'10px 0',border:isSel?'2px solid var(--ac)':'1px solid var(--border)',background:isSel?'rgba(123,110,255,0.12)':'var(--bg3)',color:isSel?'var(--ac)':'var(--text)',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+            }, d === 0 ? 'None' : (d + ' days'));
+          })
+        ),
+
+        // ── Description ──
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Description (shown on Subscribe button)'),
+        React.createElement('textarea',{
+          value:subDescription,
+          onChange:function(e){ setSubDescription(e.target.value.slice(0, 280)); },
+          placeholder:'Tell potential subscribers what they get. e.g., "Weekly voice drops, monthly Q&A rooms, priority on my expert calls."',
+          maxLength:280,
+          style:{width:'100%',minHeight:'80px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',fontSize:'13px',color:'var(--text)',resize:'vertical',outline:'none',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'4px'}
+        }),
+        React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'right',marginBottom:'20px'}}, (subDescription || '').length + ' / 280'),
+
+        // ── Save button ──
+        React.createElement('button',{
+          onClick:saveSubscriptionOffer,
+          disabled:subSaving,
+          style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#534AB7,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:subSaving?'wait':'pointer',marginTop:'4px',boxShadow:'0 4px 16px rgba(123,110,255,0.3)',opacity:subSaving?0.7:1,fontFamily:'inherit'}
+        }, subSaving ? 'Saving…' : (subOffer ? 'Save Changes' : 'Save & Enable'))
+      )
+    );
+  }
+
   if(showExpertApp) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
       React.createElement('button',{onClick:function(){setShowExpertApp(false);setExpertAppSubmitted(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
@@ -2271,7 +2917,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           ),
           React.createElement('button',{
             onClick:function(){
-              if(!userId){alert('Please log in first');return;}
+              if(!userId){try{toastWarn('Please log in first');}catch(_){}return;}
               // FIX #18: validate all required fields (was: name+bio only)
               if(!expertAppName.trim()||!expertAppBio.trim()||!String(expertAppExp).trim()||!String(expertAppRate).trim()){
                 toastError('Please fill in all required fields (name, bio, experience, rate).');
@@ -2294,7 +2940,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                   expert_request:{name:expertAppName,area:expertAppArea,bio:expertAppBio,exp:expertAppExp,rate:expertAppRate,applied_at:new Date().toISOString()}
                 });
                 sbProfile.from('profiles').update({bio:JSON.stringify(merged)}).eq('id',userId).then(function(r){
-                  if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error && r.error.message ? r.error.message : 'Unknown error');alert('Something went wrong. Please try again.');return;}
+                  if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error && r.error.message ? r.error.message : 'Unknown error');try{toastError('Something went wrong. Please try again.');}catch(_){}return;}
                   setExpertAppSubmitted(true);
                 });
               });
@@ -2327,7 +2973,22 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         })
       ),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',overflow:'hidden',marginBottom:'16px'}},
+        /* R25: Creator Subscriptions tile is dynamically prepended for
+         * verified experts. Non-experts don't see the row at all. The
+         * Filter pattern below keeps the array literal clean. */
         [
+          /* R26: Get Verified tile — shown to everyone who isn't verified yet.
+           * Label reflects their current state in the apply→approve→pay flow. */
+          !isVerified ? {icon:'✔️',label:'Get Verified',sub:(
+            verifStatus === 'pending' ? 'Application under review' :
+            verifStatus === 'approved' ? 'Approved! Pay the yearly fee to activate' :
+            verifStatus === 'rejected' ? 'Not approved — tap to re-apply' :
+            'Apply for a verified badge to unlock subscriptions'
+          ),fn:function(){setShowVerifyApp(true);}} : null,
+          /* R26: Creator Subscriptions — now gated on is_verified (was expert-only). */
+          isVerified ? {icon:'💜',label:'Creator Subscriptions',sub:(subOffer && subOffer.enabled ? ('Active · ' + subActiveCount + ' subscriber' + (subActiveCount===1?'':'s')) : 'Set your monthly price + perks'),fn:function(){setShowSubsMgr(true);}} : null,
+          /* R26: Admin tile — only for is_admin. Review pending verification requests. */
+          isAdmin ? {icon:'🛡️',label:'Verification Review (Admin)',sub:'Approve or reject pending verification requests',fn:function(){setShowAdminReview(true);loadAdminQueue();}} : null,
           {icon:'👤',label:'Account Settings',sub:'Name, phone, country, timezone',fn:function(){setShowAcct(true);}},
           {icon:'🔒',label:'Privacy & Security',sub:'Password, visibility, locked profile',fn:function(){setShowPrivacy(true);}},
           {icon:'🔔',label:'Notification Settings',sub:'Manage your alerts',fn:function(){setShowNotif(true);}},
@@ -2335,7 +2996,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           {icon:'📋',label:'Activity Log',sub:'Your logins, posts, likes & more',fn:function(){setShowActivityLog(true);}},
           {icon:'💬',label:'Help & Support',sub:'FAQs and contact us',fn:function(){setShowSupport(true);}},
           {icon:'⭐',label:'Rate the App',sub:'Enjoying RingIn? Let us know!',fn:function(){setShowRate(true);}},
-        ].map(function(item,i,arr){
+        ].filter(Boolean).map(function(item,i,arr){
           return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none',cursor:'pointer'}},
             React.createElement('span',{style:{fontSize:'18px',width:'28px',textAlign:'center'}},item.icon),
             React.createElement('div',{style:{flex:1}},
@@ -2358,7 +3019,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.43';
+              var APK_VERSION = 'v3.47';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -2372,7 +3033,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         React.createElement('div',{
           onClick:function(){
             import('../utils/otaUpdater').then(function(mod){
-              if (!mod || typeof mod.checkOnly !== 'function') { alert('Update checker not available.'); return; }
+              if (!mod || typeof mod.checkOnly !== 'function') { try{toastError('Update checker not available.');}catch(_){} return; }
               mod.checkOnly().then(function(r){
                 if (r && r.available) {
                   // If auto-update is ON, apply silently. Otherwise show popup.
@@ -2777,7 +3438,16 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     // Name row
     React.createElement('div',{style:{padding:'50px 18px 8px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
-        React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},profileInfo.name||email.split('@')[0]),
+        /* R26: profile name + blue verified tick when is_verified. The tick
+         * uses the same Twitter/Insta-style design — gradient blue with a
+         * white checkmark, sized to match the name's baseline. */
+        React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'5px'}},
+          profileInfo.name||email.split('@')[0],
+          isVerified ? React.createElement('span',{
+            title:'Verified',
+            style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'18px',height:'18px',borderRadius:'50%',background:'linear-gradient(135deg,#1877F2,#42B3FF)',color:'#fff',fontSize:'11px',fontWeight:800,boxShadow:'0 2px 6px rgba(24,119,242,0.4)'}
+          }, '✓') : null
+        ),
         profileInfo.tag ? React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag) : null,
         profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},renderAbout(profileInfo.about)) : null,
         (profileInfo.website_name||profileInfo.website_url) ? React.createElement('a',{href:profileInfo.website_url||(profileInfo.website_name&&profileInfo.website_name.startsWith('http')?profileInfo.website_name:'https://'+profileInfo.website_name),target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+(profileInfo.website_name||profileInfo.website_url)) : null,
@@ -2858,7 +3528,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
                 // Previous code optimistically removed from myPosts but never
                 // checked the result — a failure left the post live in DB yet
                 // gone from UI until refresh.
-                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){var snap=myPosts.slice();setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbProfile.from('posts').delete().eq('id',p.id).then(function(r){if(r&&r.error){console.error('[ringin] delete post (profile) failed:',r.error);setMyPosts(snap);try{toastError('Failed to delete post');}catch(_){}}}).catch(function(e){console.warn('[ringin] delete post (profile) reject:',e);setMyPosts(snap);try{toastError('Failed to delete post');}catch(_){}});}}},
+                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);setDeletePostId(p.id);}},
                 {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuProf(null);}},
                 // FIX #4: open real edit modal instead of "coming soon" alert
                 {icon:'✏️',label:'Edit Post',fn:function(){setEditPostProfData({id:p.id,content:p.text||''});setPostMenuProf(null);}},
@@ -3043,6 +3713,49 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         React.createElement('div',{style:{display:'flex',gap:'10px',marginTop:'14px',justifyContent:'flex-end'}},
           React.createElement('button',{onClick:function(){setEditPostProfData(null);},style:{padding:'8px 18px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}},'Cancel'),
           React.createElement('button',{onClick:saveEditPostProf,style:{padding:'8px 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'13px',cursor:'pointer',fontWeight:600}},'Save')
+        )
+      )
+    ) : null,
+    /* R23: in-app Delete Post confirmation modal — replaces window.confirm. */
+    deletePostId ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:500,backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)'},
+        onClick:function(){ setDeletePostId(null); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{position:'fixed',left:'50%',top:'50%',transform:'translate(-50%,-50%)',zIndex:501,background:'var(--bg2,#161028)',border:'1px solid var(--border)',borderRadius:'16px',padding:'18px 20px 14px',minWidth:'260px',maxWidth:'320px',boxShadow:'0 16px 48px rgba(0,0,0,0.6)',color:'var(--text)',fontFamily:'inherit'}
+      },
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}, 'Delete this post?'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.4,marginBottom:'14px'}},
+          'This will permanently remove the post from your profile and feed. This cannot be undone.'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}},
+          React.createElement('button',{
+            onClick:function(){ setDeletePostId(null); },
+            style:{padding:'8px 14px',borderRadius:'8px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Cancel'),
+          React.createElement('button',{
+            onClick:function(){
+              var pid = deletePostId;
+              setDeletePostId(null);
+              /* Snapshot + optimistic + rollback (same as the prior window.confirm
+               * path — just without the native dialog). FIX R10-5 retained. */
+              var snap = myPosts.slice();
+              setMyPosts(function(prev){ return prev.filter(function(x){ return x.id !== pid; }); });
+              sbProfile.from('posts').delete().eq('id', pid).then(function(r){
+                if (r && r.error) {
+                  console.error('[ringin] delete post (profile) failed:', r.error);
+                  setMyPosts(snap);
+                  try { toastError('Failed to delete post'); } catch(_){}
+                }
+              }).catch(function(e){
+                console.warn('[ringin] delete post (profile) reject:', e);
+                setMyPosts(snap);
+                try { toastError('Failed to delete post'); } catch(_){}
+              });
+            },
+            style:{padding:'8px 14px',borderRadius:'8px',background:'#FF4757',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Delete')
         )
       )
     ) : null

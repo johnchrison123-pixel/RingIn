@@ -34,41 +34,16 @@ function _copyWithToast(text, onSuccess, onFail){
   }
 }
 
-// ── Mock moment slides used when no real data is wired up ─────────────────
-// Each "expert" gets a deterministic set of 3–4 gradient cards with captions
-// — chosen by hashing their id so the same person always sees the same set.
-var SAMPLE_SETS = [
-  [
-    { id:'s0-1', bg:'linear-gradient(135deg,#FF6B6B,#FFE66D)', text:'Available for calls today 🎯' },
-    { id:'s0-2', bg:'linear-gradient(135deg,#4ECDC4,#45B7D1)', text:'Just wrapped a great session — thanks for the trust 💜' },
-    { id:'s0-3', bg:'linear-gradient(135deg,#7B6EFF,#E84D9A)', text:'Tip of the day: small consistent steps win.' },
-  ],
-  [
-    { id:'s1-1', bg:'linear-gradient(135deg,#A8E063,#56AB2F)', text:'Online now — let\'s talk 📞' },
-    { id:'s1-2', bg:'linear-gradient(135deg,#F093FB,#F5576C)', text:'New article dropping this week' },
-    { id:'s1-3', bg:'linear-gradient(135deg,#4FACFE,#00F2FE)', text:'Q&A this Friday at 7pm' },
-    { id:'s1-4', bg:'linear-gradient(135deg,#FA709A,#FEE140)', text:'Sunset coffee thoughts ☕' },
-  ],
-  [
-    { id:'s2-1', bg:'linear-gradient(135deg,#667EEA,#764BA2)', text:'3 callers helped today, 2 slots left ✨' },
-    { id:'s2-2', bg:'linear-gradient(135deg,#F7971E,#FFD200)', text:'New skill unlocked. Ask me about it.' },
-    { id:'s2-3', bg:'linear-gradient(135deg,#11998E,#38EF7D)', text:'Grateful for this community 🌱' },
-  ],
-  [
-    { id:'s3-1', bg:'linear-gradient(135deg,#FC466B,#3F5EFB)', text:'Behind the scenes today' },
-    { id:'s3-2', bg:'linear-gradient(135deg,#FDBB2D,#22C1C3)', text:'New session times posted on my profile' },
-    { id:'s3-3', bg:'linear-gradient(135deg,#EE0979,#FF6A00)', text:'Hot take 🔥 simple > clever' },
-    { id:'s3-4', bg:'linear-gradient(135deg,#00C9FF,#92FE9D)', text:'Tap the Call button — let\'s connect' },
-  ],
-];
-
-function setForId(id){
-  if (id == null) return SAMPLE_SETS[0];
-  var s = String(id);
-  var n = 0;
-  for (var i = 0; i < s.length; i++) n = (n + s.charCodeAt(i)) | 0;
-  return SAMPLE_SETS[Math.abs(n) % SAMPLE_SETS.length];
-}
+// R24: SAMPLE_SETS + setForId were a dev placeholder that filled moments
+// for users with no real slides yet (fake "Tip of the day" cards attributed
+// to mock experts like Dr. Priya Nair). Removed pre-launch — production
+// moments now must come from Supabase. If a moment row somehow has no
+// slides, the viewer renders an empty gradient background (safe no-op)
+// instead of pretending we have content.
+//
+// To resolve a moment's slides safely, callers just do:
+//   var slides = (m.slides && m.slides.length > 0) ? m.slides : [];
+// — no helper function needed.
 
 // ── MomentViewer — full-screen Insta-style story player ───────────────────
 function MomentViewer(props){
@@ -1550,11 +1525,10 @@ function MomentViewer(props){
   // is set once at mount and never touched again.
   function renderGhost(m, offset, refToAttach, halfDepthPx){
     if (!m) return null;
-    // Use the SAME slide-resolution as openViewerFor so mock-expert
-    // moments (without real slides) get their gradient + text from
-    // setForId(). Without this, ghosts showed a generic pink-purple
-    // gradient instead of the user's actual colour.
-    var slides = (m.slides && m.slides.length > 0) ? m.slides : setForId(m.id);
+    // R24: SAMPLE_SETS fallback removed (no more mock "Tip of the day"
+    // cards shipping to prod). If a moment has no slides, the ghost
+    // renders with the user's gradient/color/avatar but no caption.
+    var slides = (m.slides && m.slides.length > 0) ? m.slides : [];
     var first = (slides && slides[0]) || null;
     var hasImg = !!(first && first.imageUrl);
     var bg = hasImg ? '#000'
@@ -1817,12 +1791,12 @@ function MomentViewer(props){
 // can be added later by wiring `moments` prop to a fetch / realtime sub.
 // ──────────────────────────────────────────────────────────────────────────
 
-// R23: switched from heart clip-path to Instagram-style round shape.
-// HEART_CLIP_PATH kept in source as a deprecated reference in case the
-// "heart" look is ever wanted again (e.g. Valentine's theme). To revert,
-// re-apply this clip-path in heartWrapStyle + heartInnerStyle below.
-var HEART_CLIP_PATH =
-  'polygon(50% 95%, 20% 80%, 3% 50%, 3% 25%, 20% 5%, 35% 5%, 50% 22%, 65% 5%, 80% 5%, 97% 25%, 97% 50%, 80% 80%)';
+// R24: removed the deprecated HEART_CLIP_PATH constant. It was kept after
+// the R23 heart→round redesign as a "just-in-case Valentine's revert"
+// reference, but two audit passes both misread its line numbers and
+// concluded the tiles were still heart-shaped (they're not — see
+// heartWrapStyle + heartInnerStyle below, which use borderRadius: '50%').
+// Git history preserves the polygon if it's ever wanted back.
 
 // One moment tile. Renders the avatar (or initials) inside a round
 // (Instagram-style) clip, optionally wrapped in a gradient "unread" ring.
@@ -2027,9 +2001,10 @@ export default function Moments(props){
   var clickGuard = clickGuardS[0]; var setClickGuard = clickGuardS[1];
 
   function openViewerFor(m, enterDir){
-    // Real moments come with their own slides (image + caption); mock
-    // expert moments fall back to deterministic gradient sample sets.
-    var slides = (m.slides && m.slides.length > 0) ? m.slides : setForId(m.id);
+    // R24: SAMPLE_SETS fallback removed. Real moments come with their own
+    // slides from Supabase; rows without slides open with an empty viewer
+    // (safe — MomentViewer's renderer falls back to user gradient).
+    var slides = (m.slides && m.slides.length > 0) ? m.slides : [];
     setViewer({
       user: { name: m.userName || '', avatar: m.userAvatar || null },
       slides: slides,

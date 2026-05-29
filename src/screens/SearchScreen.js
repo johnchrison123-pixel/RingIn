@@ -8,23 +8,200 @@ import TopBarAvatar from '../components/TopBarAvatar';
 import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 
-const EXPERTS = [
-  {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
-  {id:2,initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',rate:80,rating:4.8,calls:631,followers:'1.4k',online:true,color:'linear-gradient(135deg,#534AB7,#7C6FFF)',cover:'linear-gradient(135deg,#0a0a2e,#534AB7)',loc:'Remote',bio:'10+ years in full-stack development. Google and Meta alumni. Specializes in system design and technical interviews.',tags:['System Design','React','Node.js'],img:'https://i.pravatar.cc/150?img=12'},
-  {id:3,initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',rate:60,rating:4.7,calls:412,followers:'3.2k',online:true,color:'linear-gradient(135deg,#C84B8A,#E84D9A)',cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)',loc:'Abu Dhabi',bio:'Certified career coach with 8 years experience. Helped 500+ professionals land their dream jobs.',tags:['Career Strategy','LinkedIn','Interviews'],img:'https://i.pravatar.cc/150?img=23'},
-  {id:4,initials:'AK',name:'Ahmed Al Kaabi',role:'Legal Advisor',rate:150,rating:4.9,calls:389,followers:'1.8k',online:true,color:'linear-gradient(135deg,#B8860B,#FFD700)',cover:'linear-gradient(135deg,#2e2200,#B8860B)',loc:'Dubai, UAE',bio:'Senior lawyer with 12 years in UAE corporate law.',tags:['Corporate Law','Contracts'],img:'https://i.pravatar.cc/150?img=33'},
-  {id:5,initials:'LK',name:'Dr. Layla Khalid',role:'Psychologist',rate:90,rating:4.8,calls:521,followers:'2.7k',online:true,color:'linear-gradient(135deg,#9B59B6,#D98EF0)',cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)',loc:'Abu Dhabi',bio:'Clinical psychologist specializing in anxiety and stress.',tags:['Anxiety','CBT','Stress'],img:'https://i.pravatar.cc/150?img=44'},
-  {id:6,initials:'JT',name:'James Tanner',role:'Fitness & Nutrition Coach',rate:50,rating:4.7,calls:298,followers:'4.1k',online:true,color:'linear-gradient(135deg,#E8401A,#FF6B35)',cover:'linear-gradient(135deg,#2e0a00,#E8401A)',loc:'Remote',bio:'Certified personal trainer and nutritionist.',tags:['Weight Loss','Nutrition','Fitness'],img:'https://i.pravatar.cc/150?img=15'},
+// R24: hardcoded EXPERTS array (with i.pravatar.cc fake avatars) removed
+// pre-launch. The list now comes from real Supabase profiles who have
+// submitted an expert application (bio JSON contains an `expert_request`
+// object). See loadRealExperts() inside SearchScreen — gracefully falls
+// back to an empty state when no experts have applied yet.
+//
+// Color palette for synthesizing the gradient + cover when the profile
+// doesn't have brand colors yet. Deterministic by user id so the same
+// person always gets the same colors.
+var EXPERT_PALETTE = [
+  { color:'linear-gradient(135deg,#1D9E75,#5DCAA5)', cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)' },
+  { color:'linear-gradient(135deg,#534AB7,#7C6FFF)', cover:'linear-gradient(135deg,#0a0a2e,#534AB7)' },
+  { color:'linear-gradient(135deg,#C84B8A,#E84D9A)', cover:'linear-gradient(135deg,#2e0a1f,#C84B8A)' },
+  { color:'linear-gradient(135deg,#B8860B,#FFD700)', cover:'linear-gradient(135deg,#2e2200,#B8860B)' },
+  { color:'linear-gradient(135deg,#9B59B6,#D98EF0)', cover:'linear-gradient(135deg,#1a0a2e,#9B59B6)' },
+  { color:'linear-gradient(135deg,#E8401A,#FF6B35)', cover:'linear-gradient(135deg,#2e0a00,#E8401A)' },
 ];
 
-function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded, onGoToMessages}){
-  // FIX #6: namespace mock-expert follow IDs with 'mock_' to prevent
-  // collisions with real UUID follows from the `follows` table. Numeric
-  // mock IDs (1..6) would otherwise overlap with future real UUIDs that
-  // happen to start with the same digit, or with localStorage entries
-  // that other code writes using real IDs.
-  var mockKey = 'mock_' + expert.id;
-  var isFollowing = following ? !!following[mockKey] : false;
+// Pick a deterministic palette entry for a given user id.
+function paletteForId(id){
+  var s = String(id || '');
+  var n = 0;
+  for (var i = 0; i < s.length; i++) n = (n + s.charCodeAt(i)) | 0;
+  return EXPERT_PALETTE[Math.abs(n) % EXPERT_PALETTE.length];
+}
+
+// Map a Supabase profiles row into the shape the rest of the screen expects.
+// Pulls expert_request from bio JSON (set by the Expert Application form
+// in ProfileScreen). Falls back gracefully when fields are missing.
+function profileToExpert(p){
+  var bioJson = {};
+  try {
+    if (p && p.bio) {
+      var b = (typeof p.bio === 'string') ? JSON.parse(p.bio) : p.bio;
+      if (b && typeof b === 'object') bioJson = b;
+    }
+  } catch(_){}
+  var req = bioJson.expert_request || {};
+  var name = (req.name && String(req.name).trim()) || (p.full_name && String(p.full_name).trim()) || (p.email ? String(p.email).split('@')[0] : 'Expert');
+  var initials = name.substring(0,2).toUpperCase();
+  var pal = paletteForId(p.id);
+  // expert_request.rate is the per-minute coin rate the applicant set.
+  var rate = parseInt(req.rate, 10);
+  if (!rate || Number.isNaN(rate)) rate = 30;
+  return {
+    id: p.id,
+    initials: initials,
+    name: name,
+    role: req.area || bioJson.tag || 'RingIn Expert',
+    rate: rate,
+    // Real metrics will require schema work. Placeholder defaults — UI shows
+    // them as 0/—; we deliberately avoid faking 4.9★/842 calls/etc.
+    rating: null,
+    calls: 0,
+    followers: '',
+    online: false,
+    color: pal.color,
+    cover: pal.cover,
+    loc: (bioJson.location && (bioJson.location.country_name || bioJson.location.country)) || '',
+    bio: req.bio || bioJson.about || '',
+    tags: [],
+    img: p.avatar_url || null,
+  };
+}
+
+function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded, onGoToMessages, currentUserId}){
+  // R24: experts are now real Supabase profiles (real UUIDs). The previous
+  // `'mock_' + expert.id` namespacing was a workaround for the hardcoded
+  // numeric IDs (1..6) that would have collided with real UUIDs in the
+  // follows table. With real UUIDs everywhere, that prefix is no longer
+  // needed — the follow key IS the expert's profile id directly.
+  var followKey = expert.id;
+  var isFollowing = following ? !!following[followKey] : false;
+
+  /* R25: Creator subscription state.
+   *  - subOffer = the expert's creator_subscriptions_offered row (if any)
+   *  - mySubscription = my row in subscriptions_active for this creator (if any)
+   *  - showSubModal = controls the Subscribe modal
+   *  - subBuying = while a subscribe RPC is in flight (prevents double-tap)
+   *
+   * Fetched in a single useEffect on mount. Both queries fail-gracefully
+   * (try/catch + maybeSingle) so a missing 0017 migration doesn't break
+   * the profile screen — the Subscribe button just hides. */
+  var subOfferS = useState(null); var subOffer = subOfferS[0]; var setSubOffer = subOfferS[1];
+  var mySubS = useState(null); var mySub = mySubS[0]; var setMySub = mySubS[1];
+  var showSubModalS = useState(false); var showSubModal = showSubModalS[0]; var setShowSubModal = showSubModalS[1];
+  var subBuyingS = useState(false); var subBuying = subBuyingS[0]; var setSubBuying = subBuyingS[1];
+  var subCountS = useState(0); var subCount = subCountS[0]; var setSubCount = subCountS[1];
+
+  useEffect(function(){
+    if (!expert || !expert.id) return;
+    var cancelled = false;
+    try {
+      sb.from('creator_subscriptions_offered').select('*').eq('creator_id', expert.id).eq('enabled', true).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) setSubOffer(r.data);
+      }).catch(function(){});
+    } catch(_){}
+    if (currentUserId) {
+      try {
+        sb.from('subscriptions_active').select('*').eq('subscriber_id', currentUserId).eq('creator_id', expert.id).maybeSingle().then(function(r){
+          if (cancelled) return;
+          if (r && !r.error && r.data) setMySub(r.data);
+        }).catch(function(){});
+      } catch(_){}
+    }
+    try {
+      sb.from('creator_subscriber_count').select('active_count').eq('creator_id', expert.id).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) setSubCount(r.data.active_count || 0);
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expert && expert.id, currentUserId]);
+
+  // Format a price_cents + currency into a display string.
+  function formatPrice(cents, currency){
+    if (cents == null) return '';
+    var amount = cents / 100;
+    if (currency === 'INR') return '₹' + amount.toLocaleString('en-IN', {maximumFractionDigits: 0});
+    if (currency === 'SAR') return 'SAR ' + amount.toLocaleString('en-US', {maximumFractionDigits: 0});
+    if (currency === 'USD') return '$' + amount.toFixed(2);
+    return amount + ' ' + (currency || '');
+  }
+
+  // Human-readable perk labels.
+  var PERK_LABELS = {
+    'sub_badge':      {icon:'💜', label:'Subscriber badge in chats &amp; rooms'},
+    'priority_queue': {icon:'⚡',       label:'Priority call queue + 10% off the per-min rate'},
+    'sub_only_rooms': {icon:'🎤', label:'Access to subscriber-only voice rooms'},
+    'sub_only_dms':   {icon:'✉',       label:'Direct replies from the creator'},
+    'sub_only_drops': {icon:'🎧', label:'Subscriber-only voice drops on the profile'},
+    'entrance_sting': {icon:'🔔', label:'Voice entrance sting in creator\'s rooms'},
+  };
+
+  function startSubscription(mode){
+    if (!currentUserId) { try { window.alert('Please log in first'); } catch(_){} return; }
+    if (!subOffer) return;
+    setSubBuying(true);
+    var nowMs = Date.now();
+    var trialMs = (subOffer.trial_days || 0) * 24 * 60 * 60 * 1000;
+    var monthMs = 30 * 24 * 60 * 60 * 1000;
+    var row;
+    if (mode === 'trial') {
+      row = {
+        subscriber_id: currentUserId,
+        creator_id: expert.id,
+        status: 'trialing',
+        payment_method: 'trial',
+        started_at: new Date(nowMs).toISOString(),
+        expires_at: new Date(nowMs + (trialMs || monthMs)).toISOString(),
+        renewal_enabled: false,
+      };
+    } else {
+      // mode === 'real' — record the subscription intent. Real-money billing
+      // wiring (Razorpay subscriptions / Apple-Google IAP) lands in v1.5.
+      // For now we create a 'pending' row with a 30-day expires_at placeholder
+      // so the UX flow works end-to-end; once payment lands, a webhook flips
+      // status to 'active' and sets the real expires_at.
+      row = {
+        subscriber_id: currentUserId,
+        creator_id: expert.id,
+        status: 'pending',
+        payment_method: 'real',
+        payment_amount_cents: subOffer.price_cents,
+        payment_currency: subOffer.currency,
+        started_at: new Date(nowMs).toISOString(),
+        expires_at: new Date(nowMs + monthMs).toISOString(),
+        renewal_enabled: true,
+      };
+    }
+    sb.from('subscriptions_active').upsert(row, { onConflict: 'subscriber_id,creator_id' }).select('*').maybeSingle().then(function(r){
+      setSubBuying(false);
+      if (r && r.error) {
+        console.error('[ringin] subscribe error:', r.error);
+        try { window.alert('Could not subscribe: ' + (r.error.message || 'unknown error')); } catch(_){}
+        return;
+      }
+      setMySub(r.data || row);
+      setShowSubModal(false);
+      try {
+        if (mode === 'trial') {
+          window.alert('Free trial started! You have access for ' + (subOffer.trial_days || 7) + ' days.');
+        } else {
+          window.alert('Subscription pending — real-money billing wires up in v1.5. Your access is recorded.');
+        }
+      } catch(_){}
+    }).catch(function(e){
+      setSubBuying(false);
+      console.warn('[ringin] subscribe reject:', e && e.message);
+      try { window.alert('Network error — please try again'); } catch(_){}
+    });
+  }
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     React.createElement('button',{onClick:onBack,title:'Back',style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.55)',border:'none',borderRadius:'50%',width:'34px',height:'34px',color:'#fff',padding:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},
       React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
@@ -42,13 +219,20 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
       React.createElement('div',{style:{display:'flex',alignItems:'flex-end',justifyContent:'flex-end',marginBottom:'10px'}},
         React.createElement('div',{style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
           React.createElement('button',{
-            // FIX #6: use the mockKey so the follow state lives under a
-            // dedicated namespace (matches the read above).
-            onClick:function(){toggleFollow(mockKey,expert.name,expert.img,expert.role);},
+            // R24: real expert UUID is the follow key now (no more 'mock_').
+            onClick:function(){toggleFollow(followKey,expert.name,expert.img,expert.role);},
             style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px'}
           }, isFollowing ? 'Following' : '+ Follow'),
           React.createElement('button',{onClick:function(){if(onGoToMessages)onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
-          React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
+          React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call'),
+          /* R25: Subscribe button — only renders if the expert has enabled
+           * subscriptions (subOffer is non-null because we filtered on
+           * enabled=true in the fetch). If the user is already subscribed,
+           * shows a purple "Subscribed" badge instead. */
+          subOffer ? React.createElement('button',{
+            onClick:function(){ setShowSubModal(true); },
+            style:{padding:'6px 12px',background: mySub ? 'rgba(123,110,255,0.18)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border: mySub ? '1px solid var(--ac)' : 'none',borderRadius:'8px',color: mySub ? 'var(--ac)' : '#fff',fontSize:'11px',fontWeight:700,cursor:'pointer'}
+          }, mySub ? '💜 Subscribed' : '💜 Subscribe') : null
         )
       ),
       React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},expert.name),
@@ -73,7 +257,70 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'12px',marginBottom:'8px'}},
         React.createElement('div',{style:{fontSize:'12px',color:'var(--text)',lineHeight:1.5}},'No posts yet.')
       )
-    )
+    ),
+    /* R25: Subscribe modal — opens when the user taps the Subscribe button.
+     * Shows price, perks, social proof (subscriber count), trial offer if
+     * available, and a description set by the creator. Backdrop click and
+     * Cancel both dismiss without subscribing. */
+    showSubModal && subOffer ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)'},
+        onClick:function(){ setShowSubModal(false); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{position:'fixed',left:'50%',top:'50%',transform:'translate(-50%,-50%)',zIndex:501,background:'linear-gradient(180deg,#1a1438 0%,#0f0b24 100%)',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'20px',padding:'22px 22px 18px',width:'90%',maxWidth:'360px',maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7),0 0 80px rgba(123,110,255,0.15)',color:'var(--text)',fontFamily:'inherit'}
+      },
+        // Creator avatar + name header
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'16px'}},
+          React.createElement('div',{style:{width:'56px',height:'56px',borderRadius:'50%',background:expert.color||'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'18px',overflow:'hidden',flexShrink:0}},
+            expert.img ? React.createElement('img',{src:expert.img,alt:expert.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (expert.initials || expert.name.substring(0,2).toUpperCase())
+          ),
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}}, 'Subscribe to ' + expert.name),
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}}, subCount > 0 ? ('Join ' + subCount + ' other ' + (subCount===1?'subscriber':'subscribers')) : 'Be the first to subscribe')
+          )
+        ),
+        // Price hero
+        React.createElement('div',{style:{textAlign:'center',padding:'18px',background:'linear-gradient(135deg,rgba(123,110,255,0.18),rgba(232,77,154,0.14))',border:'1px solid rgba(123,110,255,0.4)',borderRadius:'14px',marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'28px',fontWeight:800,color:'#fff',marginBottom:'2px'}}, formatPrice(subOffer.price_cents, subOffer.currency)),
+          React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.7)'}}, 'per month')
+        ),
+        // Description
+        subOffer.description ? React.createElement('div',{style:{fontSize:'13px',color:'var(--text)',lineHeight:1.55,marginBottom:'14px',padding:'12px 14px',background:'rgba(255,255,255,0.04)',borderRadius:'10px',fontStyle:'italic'}}, '"' + subOffer.description + '"') : null,
+        // Perks list
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.7px',marginBottom:'8px'}}, 'What you get'),
+        React.createElement('div',{style:{marginBottom:'18px'}},
+          (Array.isArray(subOffer.perks) ? subOffer.perks : []).map(function(perkKey){
+            var p = PERK_LABELS[perkKey];
+            if (!p) return null;
+            return React.createElement('div',{key:perkKey,style:{display:'flex',alignItems:'flex-start',gap:'10px',padding:'8px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
+              React.createElement('span',{style:{fontSize:'15px',width:'22px',textAlign:'center',flexShrink:0}}, p.icon),
+              React.createElement('span',{style:{fontSize:'12px',color:'var(--text)',lineHeight:1.5}}, p.label)
+            );
+          })
+        ),
+        // Trial CTA (if creator offers a free trial AND user has no prior sub)
+        subOffer.trial_days > 0 && !mySub ? React.createElement('button',{
+          onClick:function(){ startSubscription('trial'); },
+          disabled:subBuying,
+          style:{width:'100%',padding:'13px',background:'rgba(39,201,106,0.18)',border:'1px solid rgba(39,201,106,0.5)',borderRadius:'12px',color:'#27C96A',fontSize:'13px',fontWeight:700,cursor:subBuying?'wait':'pointer',marginBottom:'10px',fontFamily:'inherit',opacity:subBuying?0.6:1}
+        }, subBuying ? 'Starting trial…' : ('Start free ' + subOffer.trial_days + '-day trial')) : null,
+        // Real-money Subscribe CTA
+        React.createElement('button',{
+          onClick:function(){ startSubscription('real'); },
+          disabled:subBuying || !!mySub,
+          style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:(subBuying||mySub)?'not-allowed':'pointer',marginBottom:'8px',fontFamily:'inherit',boxShadow:'0 4px 16px rgba(123,110,255,0.4)',opacity:(subBuying||mySub)?0.5:1}
+        }, mySub ? 'Already subscribed' : (subBuying ? 'Processing…' : ('Subscribe for ' + formatPrice(subOffer.price_cents, subOffer.currency) + '/mo'))),
+        // Fine print
+        React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginBottom:'8px',lineHeight:1.5}}, 'Cancel anytime. Access until the end of the billing cycle. Real-money billing wires up in v1.5 — current subscriptions are recorded as pending.'),
+        // Cancel
+        React.createElement('button',{
+          onClick:function(){ setShowSubModal(false); },
+          style:{width:'100%',padding:'10px',background:'transparent',border:'1px solid rgba(255,255,255,0.15)',borderRadius:'10px',color:'rgba(255,255,255,0.7)',fontSize:'12px',cursor:'pointer',fontFamily:'inherit'}
+        }, 'Maybe later')
+      )
+    ) : null
   );
 }
 
@@ -101,6 +348,49 @@ export default function SearchScreen(props){
   // R17 FIX #6: live mirror of searchQ so an in-flight RPC's .then() can
   // see the CURRENT input state (the effect closure's `searchQ` is stale).
   var searchQLiveRef = useRef('');
+  // R24: real experts list (replaces hardcoded EXPERTS array). Initialized
+  // empty; populated by the useEffect below from Supabase profiles with an
+  // expert_request in their bio JSON.
+  var expertsS = useState([]); var experts = expertsS[0]; var setExperts = expertsS[1];
+  var expertsLoadingS = useState(true); var expertsLoading = expertsLoadingS[0]; var setExpertsLoading = expertsLoadingS[1];
+
+  // Fetch real experts on mount. Wrapped in try/catch + handles each
+  // failure mode (network reject, RLS reject, malformed bio JSON) so the
+  // screen still renders even when the query fails.
+  useEffect(function(){
+    var cancelled = false;
+    try {
+      // Note: filtering server-side requires a JSON-path operator that some
+      // older Supabase clients don't expose. Easier: fetch all profiles
+      // (small early-stage population) and filter client-side.
+      sb.from('profiles')
+        .select('id,full_name,email,avatar_url,bio')
+        .not('bio', 'is', null)
+        .limit(200)
+        .then(function(res){
+          if (cancelled) return;
+          if (res.error) {
+            console.warn('[ringin] experts fetch error:', res.error.message);
+            setExperts([]); setExpertsLoading(false); return;
+          }
+          var rows = res.data || [];
+          var mapped = rows
+            .filter(function(p){ return p && typeof p.bio === 'string' && p.bio.indexOf('expert_request') >= 0; })
+            .map(profileToExpert);
+          setExperts(mapped);
+          setExpertsLoading(false);
+        })
+        .catch(function(e){
+          if (cancelled) return;
+          console.warn('[ringin] experts fetch reject:', e && e.message);
+          setExperts([]); setExpertsLoading(false);
+        });
+    } catch (e) {
+      console.warn('[ringin] experts fetch throw:', e && e.message);
+      setExperts([]); setExpertsLoading(false);
+    }
+    return function(){ cancelled = true; };
+  }, []);
 
   // ── T2.12: Trending hashtags from the materialized view (0014_trending.sql).
   // Shown when there's no active search query. Tap a tag → seeds search with #tag.
@@ -193,6 +483,12 @@ export default function SearchScreen(props){
     },
     onBack:function(){setSelected(null);if(props.onBack)props.onBack();},
     onGoToMessages: props.onGoToMessages,
+    /* R25: pass current user id so the Subscribe modal can check whether
+     * the viewer already has a subscription to this creator (toggles the
+     * button label to "Subscribed"). Computed inline from props.session
+     * because the `currentUserId` var lower in the function isn't yet
+     * defined at the point of this early return. */
+    currentUserId: (props.session && props.session.user) ? props.session.user.id : null,
   });
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
@@ -247,17 +543,26 @@ export default function SearchScreen(props){
     ) : null,
     (function(){
       var q = (searchQ||'').trim().toLowerCase();
-      var filtered = !q ? EXPERTS : EXPERTS.filter(function(e){
+      // R24: use real experts state (populated from Supabase) instead of
+      // the deleted hardcoded EXPERTS array. Same filter logic.
+      var filtered = !q ? experts : experts.filter(function(e){
         if((e.name||'').toLowerCase().indexOf(q) >= 0) return true;
         if((e.role||'').toLowerCase().indexOf(q) >= 0) return true;
         if((e.loc||'').toLowerCase().indexOf(q) >= 0) return true;
         if(Array.isArray(e.tags) && e.tags.some(function(t){return (t||'').toLowerCase().indexOf(q) >= 0;})) return true;
         return false;
       });
+      // Choose the right empty-state copy:
+      //   loading → "Loading experts…"
+      //   loaded, no query, zero results → "No experts have joined yet."
+      //   loaded, query, zero results → "No experts match "<query>"."
+      var emptyMsg = expertsLoading
+        ? 'Loading experts…'
+        : (q ? ('No experts match "'+searchQ+'"') : 'No experts have joined yet. Be the first — apply via Profile → Become an Expert.');
       return React.createElement('div',{style:{padding:'0 18px 14px'}},
         React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'8px'}}, q ? ('Results for "'+searchQ+'" ('+filtered.length+')') : 'All Experts'),
         filtered.length === 0
-          ? React.createElement('div',{style:{padding:'24px 0',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No experts match "'+searchQ+'"')
+          ? React.createElement('div',{style:{padding:'24px 0',textAlign:'center',color:'var(--t3)',fontSize:'13px',lineHeight:1.5}}, emptyMsg)
           : filtered.map(function(e){
         return React.createElement('div',{
           key:e.id,
@@ -281,16 +586,15 @@ export default function SearchScreen(props){
           ),
           React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}},
             React.createElement('button',{
-              // ROUND-9 FIX #1: list-view Call button was using legacy
-              // setActiveCall(e) path — bypassed call_invites pipeline so
-              // callee never got a ring. Same fix already applied to
-              // ExpertProfile.onCall (above); apply here too. For mock
-              // experts (numeric ids), App.js's startOutgoingCall UUID
-              // guard alerts gracefully. For real experts the global
-              // path creates a real call_invites row + fires FCM push.
+              // R24: experts are real Supabase profiles now — pass their
+              // real UUID through to __ringInStartCall so the call_invites
+              // row is created with a valid receiver_id and the FCM push
+              // delivery actually reaches the callee. (Previously this
+              // wrapped the id with 'mock_' which made the UUID regex
+              // reject the call.)
               onClick:function(ev){
                 ev.stopPropagation();
-                var target = Object.assign({}, e, {id: 'mock_' + e.id, rate: e.rate || 30});
+                var target = Object.assign({}, e, {rate: e.rate || 30});
                 if (typeof window !== 'undefined' && window.__ringInStartCall) {
                   window.__ringInStartCall(target, {rate: e.rate || 30});
                 } else {
@@ -299,10 +603,9 @@ export default function SearchScreen(props){
               },
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             },'Call'),
-            // FIX #6: namespace the mock expert follow IDs with 'mock_' to
-            // avoid colliding with real UUIDs from the `follows` table.
+            // R24: real expert UUIDs — no more 'mock_' prefix on the follow key.
             (function(){
-              var ek = 'mock_' + e.id;
+              var ek = e.id;
               var isF = !!following[ek];
               return React.createElement('button',{
                 onClick:function(ev){ev.stopPropagation();toggleFollow(ek,e.name,e.img,e.role);},

@@ -74,6 +74,13 @@ export default function App() {
   var loginS = useState(true); var isLogin = loginS[0]; var setIsLogin = loginS[1];
   var loadS = useState(false); var loading = loadS[0]; var setLoading = loadS[1];
   var msgS = useState(''); var message = msgS[0]; var setMessage = msgS[1];
+  // R23: show/hide password toggle (industry-standard mobile UX baseline)
+  var showPwS = useState(false); var showPw = showPwS[0]; var setShowPw = showPwS[1];
+  // R23: Forgot Password flow on the login screen. forgotMode = false (login),
+  // 'enter' (collecting email), 'sent' (reset email dispatched).
+  var forgotModeS = useState(false); var forgotMode = forgotModeS[0]; var setForgotMode = forgotModeS[1];
+  var forgotLoadS = useState(false); var forgotLoad = forgotLoadS[0]; var setForgotLoad = forgotLoadS[1];
+  var forgotErrS = useState(''); var forgotErr = forgotErrS[0]; var setForgotErr = forgotErrS[1];
   var appUserId = session&&session.user?session.user.id:null;
   var appFollowHook = useFollow(supabase, appUserId);
   var appFollowing = appFollowHook.following;
@@ -170,6 +177,64 @@ export default function App() {
     };
   }, []);
 
+  // R23: Capacitor appUrlOpen deep-link listener.
+  // When the OS opens the app via a URL — e.g. a password-reset email link, an
+  // Android App Link click, or a custom-scheme handoff — Capacitor fires the
+  // `appUrlOpen` event with the full URL string. We parse it and route the
+  // user accordingly. Currently we handle:
+  //   - /reset-password?code=...        → land on the auth/Privacy reset flow
+  //   - /post/<id>, /profile/<id>, etc  → existing rewrite handlers cover SSR
+  //
+  // For the password-reset case Supabase's email link contains a recovery
+  // session token; the supabase-js client already picks it up automatically
+  // from the URL hash, so we just need to make sure the WebView navigates
+  // there. We set window.location.hash so the auth state listener picks up
+  // the PASSWORD_RECOVERY event.
+  useEffect(function(){
+    var cancelled = false;
+    var handleRef = { current: null };
+    var Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return; // web/PWA picks links up via normal nav
+    try {
+      import('@capacitor/app').then(function(mod){
+        if (cancelled) return;
+        var CapApp = mod && (mod.App || mod.default || mod);
+        if (!CapApp || !CapApp.addListener) return;
+        CapApp.addListener('appUrlOpen', function(data){
+          try {
+            var url = data && data.url;
+            if (!url) return;
+            console.log('[ringin] appUrlOpen:', url);
+            // Strip any custom scheme / host so we get just the path+search+hash
+            var u;
+            try { u = new URL(url); } catch(_){ u = null; }
+            if (!u) return;
+            // Route by path. Supabase recovery emails put the session token in
+            // the URL fragment (#access_token=...&type=recovery) — supabase-js
+            // auto-detects this when the location updates, so just navigate.
+            if (u.pathname && /reset-password|recovery/i.test(u.pathname + u.hash)) {
+              try {
+                window.location.hash = u.hash || '';
+                // Drop the user on the login screen — supabase will fire
+                // PASSWORD_RECOVERY which the auth listener (below) handles.
+              } catch(_){}
+            }
+            // Future deep links (post, profile, moment) can be added here.
+          } catch (e) {
+            console.warn('[ringin] appUrlOpen handler failed:', e);
+          }
+        }).then(function(h){
+          if (cancelled) { try { if (h && h.remove) h.remove(); } catch(_){} return; }
+          handleRef.current = h;
+        }).catch(function(){});
+      }).catch(function(){});
+    } catch(_) {}
+    return function(){
+      cancelled = true;
+      try { if (handleRef.current && handleRef.current.remove) handleRef.current.remove(); } catch(_){}
+    };
+  }, []);
+
   // PWA shortcut deep-link — manifest.json advertises `/?tab=messages` and
   // `/?tab=search` as home-screen long-press shortcuts. Read the query once on
   // mount and jump to the requested tab. Pure additive: if there's no `?tab=`
@@ -178,7 +243,9 @@ export default function App() {
     try{
       var params = new URLSearchParams(window.location.search);
       var requestedTab = params.get('tab');
-      var allowed = {home:1, messages:1, search:1, workshops:1, profile:1};
+      /* R24: removed 'workshops' from the PWA-shortcut allowlist along with
+       * its bottom-nav entry — feature is mock-only until real impl lands. */
+      var allowed = {home:1, messages:1, search:1, profile:1};
       if(requestedTab && allowed[requestedTab]){
         setActiveTab(requestedTab);
       }
@@ -787,6 +854,66 @@ export default function App() {
   };
 
   if (!session) {
+    // R23: Forgot Password flow — when forgotMode is set, render the reset
+    // screen instead of the login form. Lives inside the same `if(!session)`
+    // branch so we don't accidentally route to the rest of the app.
+    if (forgotMode) {
+      var doSendReset = function(e){
+        if (e && e.preventDefault) e.preventDefault();
+        var addr = (email||'').trim();
+        if (!addr) { setForgotErr('Enter your email'); return; }
+        setForgotLoad(true); setForgotErr('');
+        // R23: redirectTo uses the live web origin so the email link lands
+        // somewhere we control. For native deep-link, App Links or a custom
+        // scheme can be wired later — the appUrlOpen listener below already
+        // re-routes any matching URL into the app.
+        var redirect = (typeof window !== 'undefined' && window.location && window.location.origin)
+          ? window.location.origin + '/reset-password'
+          : 'https://ring-in.vercel.app/reset-password';
+        supabase.auth.resetPasswordForEmail(addr, { redirectTo: redirect }).then(function(res){
+          setForgotLoad(false);
+          if (res.error) { setForgotErr(res.error.message || 'Could not send reset email'); return; }
+          setForgotMode('sent');
+        }).catch(function(err){
+          setForgotLoad(false);
+          console.warn('[ringin] forgot password reject:', err);
+          setForgotErr('Network error — try again');
+        });
+      };
+      return React.createElement('div', {className:'auth-container'},
+        React.createElement('div', {className:'auth-box'},
+          React.createElement('div', {className:'auth-logo'},
+            React.createElement('span', {className:'logo-ring'}, 'Ring'),
+            React.createElement('span', {className:'logo-in'}, 'In')
+          ),
+          React.createElement('p', {className:'auth-tagline'},
+            forgotMode === 'sent' ? 'Check your inbox' : 'Reset your password'),
+          forgotMode === 'sent'
+            ? React.createElement('div', {style:{textAlign:'center',padding:'20px 8px'}},
+                React.createElement('div', {style:{fontSize:'42px',marginBottom:'12px'}}, '📧'),
+                React.createElement('p', {style:{fontSize:'14px',color:'var(--text)',marginBottom:'18px',lineHeight:1.5}},
+                  'If an account exists for ', React.createElement('strong', null, email || 'that email'),
+                  ', a reset link has been sent. Check your inbox (and spam folder).'),
+                React.createElement('button', {
+                  className:'auth-btn',
+                  onClick:function(){ setForgotMode(false); setForgotErr(''); },
+                }, 'Back to login')
+              )
+            : React.createElement(React.Fragment, null,
+                React.createElement('p', {style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',textAlign:'center',marginBottom:'14px'}},
+                  'Enter the email you signed up with. We\'ll send you a link to reset your password.'),
+                React.createElement('form', {onSubmit:doSendReset},
+                  React.createElement('input', {className:'auth-input',type:'email',placeholder:'Email',value:email,onChange:function(e){setEmail(e.target.value);},required:true,autoFocus:true}),
+                  React.createElement('button', {className:'auth-btn',type:'submit',disabled:forgotLoad},
+                    forgotLoad ? 'Sending…' : 'Send reset link')
+                ),
+                forgotErr ? React.createElement('p', {className:'auth-message'}, forgotErr) : null,
+                React.createElement('p', {className:'auth-switch',onClick:function(){ setForgotMode(false); setForgotErr(''); }},
+                  '← Back to login')
+              )
+        )
+      );
+    }
     return React.createElement('div', {className:'auth-container'},
       React.createElement('div', {className:'auth-box'},
         React.createElement('div', {className:'auth-logo'},
@@ -796,11 +923,35 @@ export default function App() {
         React.createElement('p', {className:'auth-tagline'}, 'Connect with expert minds, instantly.'),
         React.createElement('form', {onSubmit:handleAuth},
           React.createElement('input', {className:'auth-input',type:'email',placeholder:'Email',value:email,onChange:function(e){setEmail(e.target.value);},required:true}),
-          React.createElement('input', {className:'auth-input',type:'password',placeholder:'Password',value:password,onChange:function(e){setPassword(e.target.value);},required:true}),
+          // R23: password input now has a show/hide eye toggle wrapper.
+          React.createElement('div', {style:{position:'relative',width:'100%'}},
+            React.createElement('input', {
+              className:'auth-input',
+              type: showPw ? 'text' : 'password',
+              placeholder:'Password',
+              value:password,
+              onChange:function(e){setPassword(e.target.value);},
+              required:true,
+              style:{paddingRight:'48px',width:'100%',boxSizing:'border-box'}
+            }),
+            React.createElement('button', {
+              type:'button',
+              onClick:function(){ setShowPw(!showPw); },
+              'aria-label': showPw ? 'Hide password' : 'Show password',
+              style:{position:'absolute',right:'10px',top:'50%',transform:'translateY(-50%)',background:'transparent',border:'none',color:'rgba(255,255,255,0.7)',cursor:'pointer',padding:'6px 10px',fontSize:'13px',fontFamily:'inherit'}
+            }, showPw ? 'Hide' : 'Show')
+          ),
           React.createElement('button', {className:'auth-btn',type:'submit',disabled:loading}, loading ? 'Please wait...' : isLogin ? 'Log In' : 'Sign Up')
         ),
         message ? React.createElement('p', {className:'auth-message'}, message) : null,
-        React.createElement('p', {className:'auth-switch',onClick:function(){setIsLogin(!isLogin);}},
+        // R23: Forgot Password — only on Login mode, since Sign Up users
+        // haven't set a password they could forget yet.
+        isLogin ? React.createElement('p', {
+          className:'auth-switch',
+          onClick:function(){ setForgotMode('enter'); setForgotErr(''); setMessage(''); },
+          style:{marginTop:'6px',fontSize:'13px',opacity:0.85}
+        }, 'Forgot password?') : null,
+        React.createElement('p', {className:'auth-switch',onClick:function(){setIsLogin(!isLogin); setMessage('');}},
           isLogin ? "Don't have an account? Sign up" : 'Already have an account? Log in'
         )
       )
@@ -841,7 +992,13 @@ export default function App() {
   var tabs = [
     {id:'home', label:'Home', svg:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'},
     {id:'search', label:'Experts', svg:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'},
-    {id:'workshops', label:'Workshops', svg:'M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'},
+    /* R24: Workshops tab hidden from bottom nav. The entire feature is mock
+     * (LIVE/UPCOMING arrays hardcoded in WorkshopsScreen.js; LiveWorkshopScreen
+     * SEED is fake chat with a randomly-incrementing viewer counter). Until
+     * the real workshop scheduling + voice infra lands, keeping this tab
+     * visible would be shipping dead UI to users. The screen file stays in
+     * the repo so it's a one-line restore when the feature is real. */
+    // {id:'workshops', label:'Workshops', svg:'M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'},
     {id:'messages', label:'Messages', svg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
   ];
 
@@ -994,28 +1151,18 @@ export default function App() {
           ),
           React.createElement('span', null, tab.label)
         );
-        // Insert anonymous connect orb after Experts (search)
-        if (tab.id === 'search') {
-          var orb = React.createElement('button', {
-            key:'connect-orb',
-            onClick:function(){setPrevTab(activeTab);setActiveTab('connect');},
-            style:{
-              width:'40px',height:'40px',borderRadius:'50%',
-              background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
-              border:'none',cursor:'pointer',position:'relative',
-              display:'flex',alignItems:'center',justifyContent:'center',
-              boxShadow:activeTab==='connect'?'0 0 0 3px rgba(123,110,255,0.4),0 4px 14px rgba(232,77,154,0.5)':'0 3px 10px rgba(232,77,154,0.4)',
-              flexShrink:0,margin:'0 2px',
-            },
-            title:'Anonymous Connect',
-          },
-            React.createElement('svg',{viewBox:'0 0 24 24',width:18,height:18,fill:'none',stroke:'#fff',strokeWidth:2.4},
-              React.createElement('path',{d:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z'})
-            ),
-            React.createElement('span',{style:{position:'absolute',top:'2px',right:'2px',width:'8px',height:'8px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
-          );
-          return [btn, orb];
-        }
+        /* R24: Anonymous Connect orb hidden pre-launch. The AnonymousConnect
+         * screen has no Connect Voice button (intentionally removed per FIX #8
+         * because voice infra isn't wired up yet — pressing "Skip" just finds
+         * a new match and offers nothing to do). Until matchmaking can hand
+         * off to an actual voice room, exposing this entry-point is a dead
+         * surface. Restore by uncommenting once voice handoff lands.
+         *
+         * if (tab.id === 'search') {
+         *   var orb = React.createElement('button', { ... }, ...);
+         *   return [btn, orb];
+         * }
+         */
         return btn;
       })
     )

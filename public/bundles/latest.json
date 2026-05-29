@@ -1,13 +1,19 @@
 {
-  "version": "2026.0518.2249",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0518.2249.zip",
-  "published_at": "2026-05-18T22:49:00Z",
+  "version": "2026.0529.1856",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.1856.zip",
+  "published_at": "2026-05-29T18:56:00Z",
   "git_sha": "manual",
-  "title": "Moments tiles: heart → round (Instagram-style)",
+  "title": "R23+R24+R25+R26 — Verification + Subscriptions + Auth polish",
   "notes": [
-    "DESIGN: Moments strip tiles are now round Instagram-style circles instead of heart-shaped.",
-    "DESIGN: Unread-moment gradient ring + 2px gap between ring and avatar (matches Instagram exactly).",
-    "DESIGN: '+ add' badge on your own tile moved to bottom-right of the circle (was offset for the heart's pointy bottom).",
-    "Close Friends green-ring variant preserved. The separate chat-reaction heart-emoji lever in messages is unchanged (different feature)."
+    "NEW: Creator Subscriptions — verified users can offer monthly subs (Instagram-style) with custom price + perks. Subscribers get badge, priority queue, sub-only rooms.",
+    "NEW: Verification badge system — apply via Settings → Get Verified, admin reviews, pay yearly fee in coins to activate the blue tick.",
+    "NEW: Forgot Password link + show/hide password toggle on login screen.",
+    "NEW: Capacitor appUrlOpen deep-link listener for password reset emails.",
+    "FIX: 22+ alert() calls in ProfileScreen replaced with toasts (no more 'ring-in.vercel.app says').",
+    "FIX: Delete Account + Delete Post use in-app modals instead of window.confirm.",
+    "FIX: Mock data killed — fake EXPERTS, EXPERT_CONVOS_BASE, SAMPLE_SETS, mock posts seed all removed.",
+    "FIX: Workshops tab + Anonymous Connect orb hidden (100% mock features) until real impl lands.",
+    "FIX: CallScreen — toggleSpeaker bug, speaker state reset on unmount, localCoins no longer shows 'undefined coins remaining'.",
+    "FIX: Privacy settings (Profile Visibility, Lock Profile, Hide Likes) now wired to Supabase + RLS enforcement, not localStorage-only."
   ]
 }

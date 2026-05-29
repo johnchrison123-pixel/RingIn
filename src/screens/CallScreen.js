@@ -107,13 +107,18 @@ export default function CallScreen(props){
 
   var secsS = useState(0); var secs = secsS[0]; var setSecs = secsS[1];
   var ringSecsS = useState(0); var ringSecs = ringSecsS[0]; var setRingSecs = ringSecsS[1];
-  var localCoinsS = useState(coins); var localCoins = localCoinsS[0]; var setLocalCoins = localCoinsS[1];
+  // R24 FIX: default to 0 if coins prop arrives as undefined/null.
+  // Was: useState(coins) — produced "undefined coins remaining" briefly
+  // when the parent's useCoinBalance hook hadn't resolved its initial fetch.
+  // Same fix on localCoinsRef below.
+  var _initCoins = (typeof coins === 'number' && !Number.isNaN(coins)) ? coins : 0;
+  var localCoinsS = useState(_initCoins); var localCoins = localCoinsS[0]; var setLocalCoins = localCoinsS[1];
   // Ref mirror of localCoins — needed because hangup() is a plain
   // function (not memoized) and the per-minute interval captures it via
   // stale closure. Reading `localCoins` directly inside hangup would
   // return the at-render value, so the final DB write would undo every
   // deduction. The ref is updated in a useEffect below.
-  var localCoinsRef = useRef(coins);
+  var localCoinsRef = useRef(_initCoins);
   useEffect(function(){ localCoinsRef.current = localCoins; }, [localCoins]);
   // ROUND 8 FIX #6: phaseRef mirror — the 'ringin:back-call' listener is
   // registered once with empty deps so it can't read the latest `phase`
@@ -544,6 +549,19 @@ export default function CallScreen(props){
           navigator.audioSession.type = 'auto';
         }
       }catch(e){}
+      // R24 FIX: also reset the native plugin's OS-level routing so the
+      // OS doesn't stay in loudspeaker mode after the call ends (R3 audit).
+      // Without this, the next ringtone / notification plays through the
+      // loudspeaker even though the user "hung up" — confusing on lock screen.
+      // endCallMode resets AudioManager.MODE_NORMAL on Android and the
+      // AVAudioSession category on iOS. No-op on web.
+      try{
+        if (typeof NativeAudio.endCallMode === 'function') {
+          NativeAudio.endCallMode();
+        } else if (typeof NativeAudio.setSpeakerphone === 'function') {
+          NativeAudio.setSpeakerphone(false);
+        }
+      }catch(e){}
     };
   }, []);
 
@@ -590,7 +608,12 @@ export default function CallScreen(props){
   var toggleSpeaker = useCallback(function(){
     setSpeakerOn(function(on){
       var next = !on;
-      try{ setAudioOutputMode('earpiece'); }catch(e){}
+      // R24 FIX: pass the requested mode so future implementations that respect
+      // the parameter route correctly. Current setAudioOutputMode (agora.js)
+      // intentionally ignores `mode` and always sets play-and-record, but
+      // the call site should still express intent rather than hardcode
+      // 'earpiece' regardless of toggle direction (caught by R3 audit).
+      try{ setAudioOutputMode(next ? 'speaker' : 'earpiece'); }catch(e){}
       // Native plugin path (Capacitor) — true OS audio routing switch.
       // No-op on web/PWA. Surface the result on screen so we can see
       // whether the native plugin is being called + what AudioManager state

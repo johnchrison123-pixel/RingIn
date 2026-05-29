@@ -100,8 +100,15 @@ ${regLines}
     log('✔ Patched', mainActivityPath, '(onCreate added with: ' + TO_REGISTER.join(', ') + ')');
   }
 
-  // 3. Ensure the app has the RECORD_AUDIO permission (Agora needs it; users
-  //    will see the system mic prompt on first call).
+  // 3. Ensure the app has all required permissions.
+  //    Re-running this script (or running it for the first time after
+  //    `npx cap add android`) re-injects any missing permission. Idempotent.
+  //
+  //    R23: added POST_NOTIFICATIONS (Android 13+ runtime permission to show
+  //    notifications at all), VIBRATE (incoming-call haptic ringtone +
+  //    per-message vibration), WAKE_LOCK (wake the screen on incoming call
+  //    push), and USE_FULL_SCREEN_INTENT (full-screen ringer notification
+  //    on Android 14+ — required to present incoming calls like WhatsApp).
   const manifestPath = path.join(androidRoot, 'app', 'src', 'main', 'AndroidManifest.xml');
   if (exists(manifestPath)) {
     let manifest = read(manifestPath);
@@ -109,6 +116,11 @@ ${regLines}
       'android.permission.RECORD_AUDIO',
       'android.permission.MODIFY_AUDIO_SETTINGS',
       'android.permission.INTERNET',
+      // R23 — push + call wake
+      'android.permission.POST_NOTIFICATIONS',
+      'android.permission.VIBRATE',
+      'android.permission.WAKE_LOCK',
+      'android.permission.USE_FULL_SCREEN_INTENT',
     ];
     let patched = false;
     for (const perm of perms) {
@@ -122,7 +134,7 @@ ${regLines}
     }
     if (patched) {
       write(manifestPath, manifest);
-      log('✔ Patched AndroidManifest.xml (added mic + audio settings permissions)');
+      log('✔ Patched AndroidManifest.xml (added missing permissions)');
     } else {
       log('• AndroidManifest.xml already has required permissions');
     }
