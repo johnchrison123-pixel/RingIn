@@ -1796,10 +1796,12 @@ export default function MessagesScreen(props){
       var cc=localStorage.getItem('convos_'+myId);
       if(cc){
         var parsed = JSON.parse(cc);
-        // Drop the cache if (a) most entries are stale "User" placeholders, OR
+        // Drop the cache if (a) most entries are stale placeholder names, OR
         // (b) most entries are missing avatars but localStorage has them — that means
         // the cache was written before we started cross-caching other users' avatars.
-        var staleName = parsed.filter(function(c){return !c.name||c.name==='User';}).length;
+        // R38: 'system' + 'user' added as stale markers — older cached convos
+        // got polluted by call-log sender_name='system' before R38 filter shipped.
+        var staleName = parsed.filter(function(c){return !c.name||c.name==='User'||c.name==='system'||c.name==='user';}).length;
         var missingAvatar = 0;
         parsed.forEach(function(c){
           if(!c.img && c.otherId){
@@ -1912,6 +1914,13 @@ export default function MessagesScreen(props){
       var convMap = {};
       res.data.forEach(function(m){
         if(!convMap[m.conversation_id]){
+          /* R38 FIX: CallScreen inserts call-log messages with
+           * sender_name='system' as a render marker. Don't use that as the
+           * conversation's otherName — it poisons the displayName fallback
+           * (when profiles.full_name is empty, chat list showed 'system').
+           * Same for the legacy 'user' fallback. */
+          var _sn0 = m.sender_name;
+          if (_sn0 === 'system' || _sn0 === 'user') _sn0 = '';
           convMap[m.conversation_id] = {
             id: m.conversation_id,
             convId: m.conversation_id,
@@ -1919,9 +1928,9 @@ export default function MessagesScreen(props){
             lastTime: m.created_at,
             unreadCount: 0,
             otherId: m.sender_id===myId ? m.receiver_id : m.sender_id,
-            otherName: m.sender_id===myId ? '' : (m.sender_name||''),
+            otherName: m.sender_id===myId ? '' : (_sn0||''),
           };
-        } else if(!convMap[m.conversation_id].otherName && m.sender_id!==myId && m.sender_name){
+        } else if(!convMap[m.conversation_id].otherName && m.sender_id!==myId && m.sender_name && m.sender_name !== 'system' && m.sender_name !== 'user'){
           // Capture the other person's name from any of their messages (latest may be mine)
           convMap[m.conversation_id].otherName = m.sender_name;
         }
@@ -2067,10 +2076,14 @@ export default function MessagesScreen(props){
       });
       var convMap={};
       res.data.forEach(function(m){
+        /* R38 FIX: same filter as the other branch — 'system' and 'user'
+         * are CallScreen markers, not real names. */
+        var _sn = m.sender_name;
+        if (_sn === 'system' || _sn === 'user') _sn = '';
         if(!convMap[m.conversation_id]){
-          convMap[m.conversation_id]={id:m.conversation_id,convId:m.conversation_id,lastMsg:m.text,lastTime:m.created_at,unreadCount:0,otherId:m.sender_id===myId?m.receiver_id:m.sender_id,otherName:m.sender_id===myId?'':(m.sender_name||'')};
-        } else if(!convMap[m.conversation_id].otherName && m.sender_id!==myId && m.sender_name){
-          convMap[m.conversation_id].otherName = m.sender_name;
+          convMap[m.conversation_id]={id:m.conversation_id,convId:m.conversation_id,lastMsg:m.text,lastTime:m.created_at,unreadCount:0,otherId:m.sender_id===myId?m.receiver_id:m.sender_id,otherName:m.sender_id===myId?'':(_sn||'')};
+        } else if(!convMap[m.conversation_id].otherName && m.sender_id!==myId && _sn){
+          convMap[m.conversation_id].otherName = _sn;
         }
         if(!m.read&&m.sender_id!==myId) convMap[m.conversation_id].unreadCount++;
       });
