@@ -30,6 +30,25 @@ function isStandalone(){
   }catch(e){ return false; }
 }
 
+// R28: detect Capacitor native shell. If the app is already running inside
+// the installed APK, the whole "Install RingIn" banner is nonsense — there's
+// nothing to install, the user is already on the native app. Returning true
+// here short-circuits the whole prompt.
+function isNativeCapacitor(){
+  try{
+    if (typeof window === 'undefined') return false;
+    var Cap = window.Capacitor;
+    if (Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform()) return true;
+    // Legacy/fallback: getPlatform() returns 'android' or 'ios' inside the
+    // native shell, 'web' in a regular browser.
+    if (Cap && typeof Cap.getPlatform === 'function') {
+      var p = Cap.getPlatform();
+      if (p === 'android' || p === 'ios') return true;
+    }
+    return false;
+  }catch(_){ return false; }
+}
+
 // Final polish: stricter iOS detection. The old `/Mac/ && maxTouchPoints>1`
 // branch tripped on touchscreen MacBooks (rare today but increasingly real
 // — and any future hybrid Mac). True iPadOS reports as Macintosh in UA but
@@ -89,6 +108,7 @@ export default function InstallPrompt(){
   var platformRef = useRef('other');
 
   useEffect(function(){
+    if (isNativeCapacitor()) return;     // R28: already in native app — banner makes no sense
     if (isStandalone()) return;          // Already installed
     if (wasRecentlyDismissed()) return;  // User said no recently
 

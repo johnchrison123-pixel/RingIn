@@ -1,13 +1,12 @@
 {
-  "version": "2026.0529.1956",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.1956.zip",
-  "published_at": "2026-05-29T19:56:00Z",
+  "version": "2026.0529.2010",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2010.zip",
+  "published_at": "2026-05-29T20:10:00Z",
   "git_sha": "manual",
-  "title": "R27 — Workshops + Anonymous Connect Voice restored",
+  "title": "R28 — Hide 'Install RingIn' banner on native app",
   "notes": [
-    "RESTORED: Workshops tab back in bottom nav (still placeholder data, real impl coming).",
-    "RESTORED: Anonymous Connect orb (purple/pink circle between Experts and Messages).",
-    "NEW: Anonymous Connect Voice now WORKS — uses same Agora pipeline as expert calls. Tap '📞 Connect Voice' on a match → creates real call_invites row → fires push to matched user → both join Agora channel. Anonymous calls are free (rate=0).",
-    "Includes all R23+R24+R25+R26 features from previous bundle (verification, subscriptions, Forgot Password, in-app modals)."
+    "FIX: The 'Install RingIn → Tap menu (⋮)' banner no longer shows inside the native APK. It's a PWA install prompt meant only for users visiting the website in a browser — pointless when the app is already installed natively.",
+    "Detection now checks Capacitor.isNativePlatform() first; bails out early if running inside the native shell.",
+    "Includes all R23+R24+R25+R26+R27 features from previous bundle (verification, subscriptions, Workshops + Anonymous Connect restored)."
   ]
 }
