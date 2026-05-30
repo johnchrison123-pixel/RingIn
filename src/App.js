@@ -1202,6 +1202,13 @@ export default function App() {
              * Always go home from a top-level tab unless caller overrides. */
             setPrevTab('home');
             setActiveTab(tab.id);
+            /* R43 fix: clear the UserProfileView stack. renderScreen() returns
+             * UserProfileView when viewUserStack is non-empty REGARDLESS of
+             * activeTab — so tapping a tab while viewing someone's profile
+             * silently did nothing (only Back popped the stack). Clearing it
+             * here lets the tab navigation actually navigate. No-op when stack
+             * is already empty (normal nav unaffected). */
+            if (viewUserStack && viewUserStack.length > 0) setViewUserStack([]);
           }
         },
           React.createElement('div', {style:{position:'relative',display:'inline-flex',alignItems:'center',justifyContent:'center'}},
@@ -1224,7 +1231,13 @@ export default function App() {
         if (tab.id === 'search') {
           var orb = React.createElement('button', {
             key:'connect-orb',
-            onClick:function(){setPrevTab(activeTab);setActiveTab('connect');},
+            onClick:function(){
+              setPrevTab(activeTab);
+              setActiveTab('connect');
+              /* R43: same fix as tab buttons — clear UserProfileView stack so
+               * the Anonymous Connect orb works from inside a profile view. */
+              if (viewUserStack && viewUserStack.length > 0) setViewUserStack([]);
+            },
             style:{
               width:'40px',height:'40px',borderRadius:'50%',
               background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
