@@ -130,7 +130,14 @@ async function fetchToken(channel, uid) {
 // Options:
 //   channel          string  required — Agora channel name
 //   uidString        string  required — caller's Supabase user id (used to derive uint32 uid)
-//   onRemoteJoined   fn      optional — fires when the other peer joins
+//   onRemoteJoined   fn      optional — fires when the other peer PUBLISHES audio
+//                                       (NOT just joins — they have to publish too).
+//                                       Use for "audio is flowing" indicators.
+//   onRemotePresent  fn      optional — fires the instant the other peer joins the
+//                                       channel (BEFORE they publish). Use this for
+//                                       UI phase transitions so 'connecting' flips
+//                                       to 'connected' without waiting for a publish
+//                                       that may be slow or even fail. R42 fix.
 //   onRemoteLeft     fn      optional — fires when peer leaves
 //   onError          fn      optional — fires on join/publish failure
 //   onConnectionState fn     optional — passes Agora connection state changes
@@ -223,6 +230,19 @@ export async function startCallSession(opts) {
       }
     } catch (e) { /* ignore */ }
   }
+
+  /* R42 fix: separate the "peer is in the channel" event from the
+   * "peer started publishing audio" event. Previously we only listened
+   * for user-published, so if the remote side's mic publish failed or
+   * was slow (mic permission delay, Android wakelock, etc.), the caller
+   * stayed on "Connecting…" forever even though the call had been
+   * accepted and both peers were in the channel. user-joined gives an
+   * earlier, more reliable "we're connected" signal. */
+  client.on('user-joined', function (user) {
+    try {
+      if (opts.onRemotePresent) opts.onRemotePresent(user);
+    } catch (e) { /* ignore */ }
+  });
 
   client.on('user-published', async function (user, mediaType) {
     try {

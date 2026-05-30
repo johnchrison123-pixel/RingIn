@@ -289,21 +289,34 @@ export default function CallScreen(props){
         var s = await startCallSession({
           channel: channel,
           uidString: myUserId || ('anon-'+Math.random().toString(36).slice(2)),
-          onRemoteJoined: function(){
+          /* R42: flip phase to 'connected' the INSTANT the remote peer joins
+           * the channel, before they publish audio. Without this, if the
+           * other side's mic publish was slow or failing, one user saw
+           * "Connecting…" indefinitely while the other side already showed
+           * "Connected" with a running timer. Now both sides transition
+           * together as soon as both are in the channel. Also writes the
+           * accepted/started_at to call_invites here (was only inside the
+           * publish callback, so it never fired if the other side never
+           * published — leaving status='ringing' forever). */
+          onRemotePresent: function(){
             if(cancelled) return;
-            setPhase('connected');
-            // Default to EARPIECE-style audio when the call goes live:
-            //  - audioSession pinned to play-and-record (mic alive)
-            //  - Agora's setVolume reduced to 50 (private feel) on web/PWA
-            //  - In native (Capacitor) shell, the native plugin handles real
-            //    earpiece routing.
+            setPhase(function(prev){ return prev === 'connected' ? prev : 'connected'; });
             try{ setAudioOutputMode('earpiece'); }catch(e){}
-            var s = sessionRef.current;
-            if (s) { try { s.setRemoteVolume(50); } catch(_){} }
-            // Once both peers are present, mark the invite as accepted/started
+            var s2 = sessionRef.current;
+            if (s2) { try { s2.setRemoteVolume(50); } catch(_){} }
             if(inviteId){
               sb.from('call_invites').update({status:'accepted',started_at:new Date().toISOString()}).eq('id',inviteId).then(function(){});
             }
+          },
+          /* Audio-publish event — still useful so we know when the OTHER
+           * side's mic is actually working. Kept around for any future
+           * audio-quality UI (e.g. "their mic isn't working" warning). */
+          onRemoteJoined: function(){
+            if(cancelled) return;
+            /* Already 'connected' from onRemotePresent; no phase change needed.
+             * If for some reason onRemotePresent didn't fire, ensure we're
+             * connected here too. */
+            setPhase(function(prev){ return prev === 'connected' ? prev : 'connected'; });
           },
           onRemoteLeft: function(){
             if(cancelled) return;
