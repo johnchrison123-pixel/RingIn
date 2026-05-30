@@ -239,6 +239,46 @@ export function UserProfileView(props){
 
   // Post menu state
   var postMenuUS=useState(null); var postMenuU=postMenuUS[0]; var setPostMenuU=postMenuUS[1];
+
+  /* R44: subscription state for THIS user's profile (the person being viewed).
+   * If subOfferU.enabled, render a Subscribe button beside Follow/Message.
+   * mySubU = my active subscription row (if any) — controls Subscribed/Subscribe label.
+   * Loads in a single effect on mount; forward-compatible (errors swallowed). */
+  var subOfferUS=useState(null); var subOfferU=subOfferUS[0]; var setSubOfferU=subOfferUS[1];
+  var mySubUS=useState(null); var mySubU=mySubUS[0]; var setMySubU=mySubUS[1];
+  var subbingUS=useState(false); var subbingU=subbingUS[0]; var setSubbingU=subbingUS[1];
+  useEffect(function(){
+    if (!user || !user.id) return;
+    try {
+      sbHome.from('creator_subscriptions_offered').select('*').eq('creator_id', user.id).eq('enabled', true).maybeSingle().then(function(r){
+        if (r && !r.error && r.data) setSubOfferU(r.data);
+      }).catch(function(){});
+    } catch(_){}
+    if (currentUserId) {
+      try {
+        sbHome.from('subscriptions_active').select('*').eq('creator_id', user.id).eq('subscriber_id', currentUserId).in('status',['active','trialing']).maybeSingle().then(function(r){
+          if (r && !r.error && r.data) setMySubU(r.data);
+        }).catch(function(){});
+      } catch(_){}
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user && user.id, currentUserId]);
+  function startCoinSubscribe(){
+    if (subbingU || !subOfferU || mySubU) return;
+    var price = subOfferU.coin_gift_price || 500;
+    var ok = window.confirm('Subscribe to ' + (user.full_name || 'this creator') + ' for ' + price + ' coins (30 days)?');
+    if (!ok) return;
+    setSubbingU(true);
+    sbHome.rpc('subscribe_with_coins', { p_creator_id: user.id }).then(function(r){
+      setSubbingU(false);
+      if (r && r.error) { try{ window.alert('Subscribe failed: ' + r.error.message); }catch(_){} return; }
+      var status = r && r.data && r.data.status;
+      if (status === 'already_subscribed') { try{ window.alert('You\'re already subscribed.'); }catch(_){} return; }
+      /* success — refresh local state */
+      setMySubU({ status:'active', creator_id:user.id, subscriber_id:currentUserId });
+      try{ window.alert('Subscribed! Posts will appear in Messages → Subs.'); }catch(_){}
+    }).catch(function(){ setSubbingU(false); try{ window.alert('Network error — try again.'); }catch(_){} });
+  }
   // Local edit-post state (separate from HomeScreen's — UserProfileView is
   // a sibling component, can't reach HomeScreen's modal state). Same shape.
   var editPostUDataS=useState(null); var editPostUData=editPostUDataS[0]; var setEditPostUData=editPostUDataS[1];
@@ -630,7 +670,15 @@ export function UserProfileView(props){
             if(props.onGoToMessages) props.onGoToMessages(convo);
           },
           style:{padding:'8px 16px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer'}
-        },'Message')
+        },'Message'),
+        /* R44: Subscribe button — only when this creator has subscriptions
+         * enabled. Tapping confirms + spends coins via subscribe_with_coins.
+         * Doesn't appear when viewing your own profile (currentUserId === user.id). */
+        (subOfferU && String(user.id) !== String(currentUserId)) ? React.createElement('button',{
+          onClick: startCoinSubscribe,
+          disabled: subbingU || !!mySubU,
+          style:{padding:'8px 16px',background: mySubU ? 'rgba(123,110,255,0.18)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border: mySubU ? '1px solid var(--ac)' : 'none',borderRadius:'20px',color: mySubU ? '#7B6EFF' : '#fff',fontSize:'13px',fontWeight:700,cursor: subbingU ? 'wait' : (mySubU ? 'default' : 'pointer'),whiteSpace:'nowrap',opacity:subbingU?0.7:1}
+        }, mySubU ? '💜 Subscribed' : (subbingU ? '...' : ('💜 Subscribe · ' + (subOfferU.coin_gift_price || 500) + ' 🪙'))) : null
       )
     ),
     // Moments — this user's Instagram-style round Stories tiles. UI-only;

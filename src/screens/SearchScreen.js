@@ -225,11 +225,13 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
           }, isFollowing ? 'Following' : '+ Follow'),
           React.createElement('button',{onClick:function(){if(onGoToMessages)onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
           React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call'),
-          /* R25: Subscribe button — only renders if the expert has enabled
-           * subscriptions (subOffer is non-null because we filtered on
-           * enabled=true in the fetch). If the user is already subscribed,
-           * shows a purple "Subscribed" badge instead. */
-          subOffer ? React.createElement('button',{
+          /* R25: Subscribe button on expert profiles.
+           * R44: hidden — per user direction, subscriptions are a separate
+           * product from expert calls. Fans subscribe via UserProfileView
+           * (tap any verified creator's profile from a post/comment/message
+           * header). Subs tab in Messages then surfaces their feed. The
+           * modal + state are kept around for any future re-enable. */
+          false && subOffer ? React.createElement('button',{
             onClick:function(){ setShowSubModal(true); },
             style:{padding:'6px 12px',background: mySub ? 'rgba(123,110,255,0.18)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border: mySub ? '1px solid var(--ac)' : 'none',borderRadius:'8px',color: mySub ? 'var(--ac)' : '#fff',fontSize:'11px',fontWeight:700,cursor:'pointer'}
           }, mySub ? '💜 Subscribed' : '💜 Subscribe') : null

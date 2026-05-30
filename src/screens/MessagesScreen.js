@@ -1859,6 +1859,28 @@ export default function MessagesScreen(props){
   //   'experts'  → expert profile chats (users with role='expert')
   //   'business' → business profile chats (users with role='business')
   var tabS = useState('friends'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
+  /* R44: Creator Subscriptions in Messages.
+   *   - mySubscriptions: creators THIS user subscribes to (drives Subs tab)
+   *   - myFansSubOffer:  THIS user's own subscription offer (presence + .enabled
+   *                      drives whether the "My Fans" tab is visible)
+   *   - viewingCreator:  when fan taps a creator in Subs, this is set to the
+   *                      creator record + opens a feed view of that creator's
+   *                      posts. Cleared by back button.
+   *   - creatorPosts:    post feed for the currently viewed creator
+   *   - myFansPosts:     my OWN posts (visible in the My Fans tab)
+   *   - newPostText:     composer text in My Fans
+   * The Subs tab is shown ONLY when mySubscriptions.length > 0 — keeps the
+   * inbox clean for users who haven't subscribed to anyone. The My Fans tab
+   * is shown ONLY when the user is a creator with subscriptions enabled. */
+  var mySubscriptionsS=useState([]); var mySubscriptions=mySubscriptionsS[0]; var setMySubscriptions=mySubscriptionsS[1];
+  var myFansSubOfferS=useState(null); var myFansSubOffer=myFansSubOfferS[0]; var setMyFansSubOffer=myFansSubOfferS[1];
+  var viewingCreatorS=useState(null); var viewingCreator=viewingCreatorS[0]; var setViewingCreator=viewingCreatorS[1];
+  var creatorPostsS=useState([]); var creatorPosts=creatorPostsS[0]; var setCreatorPosts=creatorPostsS[1];
+  var myFansPostsS=useState([]); var myFansPosts=myFansPostsS[0]; var setMyFansPosts=myFansPostsS[1];
+  var newPostTextS=useState(''); var newPostText=newPostTextS[0]; var setNewPostText=newPostTextS[1];
+  var postingS=useState(false); var posting=postingS[0]; var setPosting=postingS[1];
+  var giftCoinsS=useState(50); var giftCoins=giftCoinsS[0]; var setGiftCoins=giftCoinsS[1];
+  var giftingPostIdS=useState(null); var giftingPostId=giftingPostIdS[0]; var setGiftingPostId=giftingPostIdS[1];
   var typingTimerRef=useRef(null);
   // R17 FIX #1c: monotonically-increasing sequence guard for the people
   // search query — a slower earlier resolve can't overwrite a newer one.
@@ -1879,6 +1901,79 @@ export default function MessagesScreen(props){
   // when the channel was first subscribed.
   var inboxRestrictedSetRef=useRef(new Set());
   useEffect(function(){ inboxRestrictedSetRef.current = inboxRestrictedSet; },[inboxRestrictedSet]);
+
+  /* R44: load my subscriptions list + my own creator sub offer once on mount.
+   * Both queries are forward-compatible — if migration 0027 hasn't run yet
+   * they just return empty and the tabs stay hidden. Zero impact on the
+   * existing Friends/Experts/etc flow. */
+  useEffect(function(){
+    if (!myId || myId === 'guest') return;
+    try {
+      sb.rpc('list_my_subscriptions').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setMySubscriptions(r.data);
+      }).catch(function(){});
+    } catch(_){}
+    try {
+      sb.from('creator_subscriptions_offered').select('*').eq('creator_id', myId).maybeSingle().then(function(r){
+        if (r && !r.error && r.data) setMyFansSubOffer(r.data);
+      }).catch(function(){});
+    } catch(_){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myId]);
+
+  /* R44: load the post feed for a creator I'm viewing in the Subs tab.
+   * RPC list_creator_posts is RLS-gated to active subscribers + creator. */
+  function loadCreatorPosts(creatorId){
+    if (!creatorId) return;
+    try {
+      sb.rpc('list_creator_posts', { p_creator_id: creatorId, p_limit: 50 }).then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setCreatorPosts(r.data);
+      }).catch(function(){});
+    } catch(_){}
+  }
+  /* R44: load my own posts for the My Fans tab. */
+  function loadMyFansPosts(){
+    if (!myId || myId === 'guest') return;
+    try {
+      sb.rpc('list_creator_posts', { p_creator_id: myId, p_limit: 50 }).then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setMyFansPosts(r.data);
+      }).catch(function(){});
+    } catch(_){}
+  }
+  /* R44: creator publishes a new text post. */
+  function publishPost(){
+    var text = (newPostText || '').trim();
+    if (!text || posting) return;
+    setPosting(true);
+    sb.rpc('create_creator_post', { p_content_type: 'text', p_text: text, p_media_url: null }).then(function(r){
+      setPosting(false);
+      if (r && r.error) { try { toastError ? toastError('Could not post: ' + r.error.message) : alert('Could not post: ' + r.error.message); } catch(_){} return; }
+      setNewPostText('');
+      loadMyFansPosts();
+    }).catch(function(){ setPosting(false); });
+  }
+  /* R44: delete one of my posts. */
+  function deleteMyPost(postId){
+    if (!postId) return;
+    sb.rpc('delete_creator_post', { p_post_id: postId }).then(function(){ loadMyFansPosts(); }).catch(function(){});
+  }
+  /* R44: fan reacts to a post with an emoji (toggle). */
+  function reactToPost(postId, emoji){
+    if (!postId || !emoji) return;
+    sb.rpc('react_to_creator_post', { p_post_id: postId, p_emoji: emoji }).then(function(){
+      if (viewingCreator) loadCreatorPosts(viewingCreator.creator_id);
+    }).catch(function(){});
+  }
+  /* R44: fan gifts coins on a post. Server debits + credits atomically. */
+  function sendGiftToPost(postId){
+    var coins = parseInt(giftCoins, 10) || 0;
+    if (!postId || coins <= 0) return;
+    sb.rpc('gift_creator_post', { p_post_id: postId, p_coins: coins }).then(function(r){
+      if (r && r.error) { try { (window.alert || function(){})('Gift failed: ' + r.error.message); } catch(_){} return; }
+      setGiftingPostId(null);
+      if (viewingCreator) loadCreatorPosts(viewingCreator.creator_id);
+    }).catch(function(){});
+  }
   // FIX #7: warm up the server-side blocks cache (blocks.js) so the send()
   // guard in ChatBox has fresh data the first time it runs.
   useEffect(function(){
@@ -2302,12 +2397,30 @@ export default function MessagesScreen(props){
         borderBottom:'1px solid var(--border)',
       }
     },
-      ['friends','experts','groups','business'].map(function(tab){
-        var labels = { friends:'Friends', experts:'Experts', groups:'Groups', business:'Business' };
+      /* R44: prepend 'subs' (always when user has any subscriptions) and
+       * 'fans' (only when user is a verified creator with sub enabled).
+       * Keeps the existing 4-tab logic untouched — just adds prefix items. */
+      (function(){
+        var tabsArr = [];
+        if (mySubscriptions && mySubscriptions.length > 0) tabsArr.push('subs');
+        if (myFansSubOffer && myFansSubOffer.enabled) tabsArr.push('fans');
+        tabsArr.push('friends','experts','groups','business');
+        return tabsArr;
+      })().map(function(tab){
+        var labels = { subs:'Subs', fans:'My Fans', friends:'Friends', experts:'Experts', groups:'Groups', business:'Business' };
         var isActive = activeTab === tab;
         return React.createElement('button',{
           key:tab,
-          onClick:function(){ setActiveTab(tab); },
+          onClick:function(){
+            setActiveTab(tab);
+            /* R44: load post feeds lazily when their tab is opened. */
+            if (tab === 'fans') loadMyFansPosts();
+            if (tab === 'subs') {
+              /* refresh in case a new post landed since mount */
+              try { sb.rpc('list_my_subscriptions').then(function(r){ if (r && !r.error && Array.isArray(r.data)) setMySubscriptions(r.data); }).catch(function(){}); } catch(_){}
+            }
+            if (tab !== 'subs') setViewingCreator(null); /* exit feed view if leaving Subs */
+          },
           style:{
             background:'none', border:'none',
             padding:'6px 2px', cursor:'pointer',
@@ -2494,6 +2607,133 @@ export default function MessagesScreen(props){
           )
         );
       }) : null,
+      /* R44: SUBS TAB — fan view. Either list of subscribed creators OR (if
+       * viewingCreator is set) that creator's post feed with back button. */
+      activeTab === 'subs' && !viewingCreator ? React.createElement('div', null,
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}}, '💜 Your Subscriptions'),
+        mySubscriptions.length === 0
+          ? React.createElement('div',{style:{textAlign:'center',padding:'40px 24px',color:'var(--t3)',fontSize:'12px',lineHeight:1.5}}, 'When you subscribe to a creator, their posts will show up here.')
+          : mySubscriptions.map(function(s){
+              return React.createElement('div',{
+                key:s.creator_id,
+                onClick:function(){ setViewingCreator(s); loadCreatorPosts(s.creator_id); },
+                style:{display:'flex',alignItems:'center',gap:'11px',padding:'12px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}
+              },
+                React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0,fontSize:'16px',fontWeight:700,color:'#fff'}},
+                  s.creator_avatar
+                    ? React.createElement('img',{src:s.creator_avatar,alt:s.creator_name||'',style:{width:'100%',height:'100%',objectFit:'cover'}})
+                    : (s.creator_name||'?').substring(0,2).toUpperCase()
+                ),
+                React.createElement('div',{style:{flex:1,minWidth:0}},
+                  React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',display:'flex',alignItems:'center',gap:'5px'}},
+                    React.createElement('span',null, s.creator_name || 'Creator'),
+                    s.creator_is_verified ? React.createElement(VerificationBadge,{size:13}) : null
+                  ),
+                  React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px'}},
+                    s.last_post_at ? ('New post ' + timeAgo(s.last_post_at)) : 'No posts yet'
+                  )
+                ),
+                React.createElement('div',{style:{fontSize:'18px',color:'var(--t3)'}}, '›')
+              );
+            })
+      ) : null,
+      activeTab === 'subs' && viewingCreator ? React.createElement('div', null,
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
+          React.createElement('button',{onClick:function(){ setViewingCreator(null); setCreatorPosts([]); },style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center'}},
+            React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+              React.createElement('polyline',{points:'15 18 9 12 15 6'})
+            )
+          ),
+          React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'14px'}},
+            viewingCreator.creator_avatar
+              ? React.createElement('img',{src:viewingCreator.creator_avatar,alt:'',style:{width:'100%',height:'100%',objectFit:'cover'}})
+              : (viewingCreator.creator_name||'?').substring(0,2).toUpperCase()
+          ),
+          React.createElement('div',{style:{flex:1,minWidth:0}},
+            React.createElement('div',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)',display:'flex',alignItems:'center',gap:'4px'}},
+              React.createElement('span',null, viewingCreator.creator_name || 'Creator'),
+              viewingCreator.creator_is_verified ? React.createElement(VerificationBadge,{size:13}) : null
+            ),
+            React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}}, 'Posts only · No replies')
+          )
+        ),
+        creatorPosts.length === 0
+          ? React.createElement('div',{style:{textAlign:'center',padding:'40px 24px',color:'var(--t3)',fontSize:'12px'}}, 'No posts yet from this creator.')
+          : creatorPosts.map(function(p){
+              var myReacts = (p.my_reactions && Array.isArray(p.my_reactions)) ? p.my_reactions : [];
+              return React.createElement('div',{key:p.id,style:{padding:'14px 0',borderBottom:'1px solid var(--border)'}},
+                React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginBottom:'6px'}}, timeAgo(p.created_at)),
+                p.text ? React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.55,whiteSpace:'pre-wrap',marginBottom:'10px'}}, p.text) : null,
+                /* Reactions row */
+                React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',marginBottom:'8px',flexWrap:'wrap'}},
+                  ['❤️','🔥','👏','😍','⭐'].map(function(e){
+                    var sel = myReacts.indexOf(e) >= 0;
+                    return React.createElement('button',{
+                      key:e,
+                      onClick:function(){ reactToPost(p.id, e); },
+                      style:{padding:'5px 10px',borderRadius:'14px',background:sel?'rgba(232,77,154,0.18)':'var(--bg3)',border:'1px solid '+(sel?'var(--ac)':'var(--border)'),fontSize:'14px',cursor:'pointer',fontFamily:'inherit'}
+                    }, e);
+                  }),
+                  React.createElement('button',{
+                    onClick:function(){ setGiftingPostId(giftingPostId === p.id ? null : p.id); setGiftCoins(50); },
+                    style:{padding:'5px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+                  }, '🎁 Gift')
+                ),
+                /* Gift composer */
+                giftingPostId === p.id ? React.createElement('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'8px',background:'var(--bg3)',padding:'8px',borderRadius:'8px'}},
+                  [10,50,100,500].map(function(v){
+                    var sel = giftCoins === v;
+                    return React.createElement('button',{key:v,onClick:function(){setGiftCoins(v);},style:{padding:'6px 10px',borderRadius:'8px',background:sel?'var(--ac)':'var(--bg4)',color:sel?'#fff':'var(--text)',border:'none',fontSize:'12px',fontWeight:700,cursor:'pointer'}}, '🪙 ' + v);
+                  }),
+                  React.createElement('button',{onClick:function(){sendGiftToPost(p.id);},style:{marginLeft:'auto',padding:'6px 12px',borderRadius:'8px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',color:'#fff',border:'none',fontSize:'12px',fontWeight:700,cursor:'pointer'}}, 'Send')
+                ) : null,
+                /* Counters */
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},
+                  (p.reactions_count||0) + ' reactions · ' + (p.gifts_count||0) + ' gifts · ' + (p.gifts_total_coins||0) + ' 🪙'
+                )
+              );
+            })
+      ) : null,
+
+      /* R44: MY FANS TAB — creator view. Composer + own post feed. */
+      activeTab === 'fans' ? React.createElement('div', null,
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}}, '💜 Broadcast to your subscribers'),
+        /* Composer */
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'14px'}},
+          React.createElement('textarea',{
+            value:newPostText,
+            onChange:function(e){ setNewPostText(e.target.value.slice(0,1000)); },
+            placeholder:'Share something with your fans…',
+            rows:3,
+            style:{width:'100%',padding:'10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'8px'}
+          }),
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+            React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',flex:1}}, (newPostText||'').length + '/1000 · Image/video coming soon'),
+            React.createElement('button',{
+              onClick:publishPost,
+              disabled: posting || !newPostText.trim(),
+              style:{padding:'8px 18px',borderRadius:'10px',background:posting||!newPostText.trim()?'var(--bg4)':'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:posting||!newPostText.trim()?'var(--t3)':'#fff',fontSize:'13px',fontWeight:700,cursor:posting||!newPostText.trim()?'not-allowed':'pointer',fontFamily:'inherit'}
+            }, posting ? '...' : 'Post')
+          )
+        ),
+        /* Own post feed */
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'6px 0',textTransform:'uppercase',letterSpacing:'0.5px'}}, 'Your posts (' + myFansPosts.length + ')'),
+        myFansPosts.length === 0
+          ? React.createElement('div',{style:{textAlign:'center',padding:'30px 24px',color:'var(--t3)',fontSize:'12px'}}, 'You haven\'t posted anything yet.')
+          : myFansPosts.map(function(p){
+              return React.createElement('div',{key:p.id,style:{padding:'12px 0',borderBottom:'1px solid var(--border)'}},
+                React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'}},
+                  React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}}, timeAgo(p.created_at)),
+                  React.createElement('button',{onClick:function(){ if(window.confirm('Delete this post?')) deleteMyPost(p.id); },style:{background:'none',border:'none',color:'var(--t3)',fontSize:'14px',cursor:'pointer'}}, '🗑')
+                ),
+                p.text ? React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.55,whiteSpace:'pre-wrap',marginBottom:'8px'}}, p.text) : null,
+                React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},
+                  '❤️ ' + (p.reactions_count||0) + ' · 🎁 ' + (p.gifts_count||0) + ' (' + (p.gifts_total_coins||0) + ' 🪙)'
+                )
+              );
+            })
+      ) : null,
+
       // Empty state for Groups tab (group conversations not wired up yet).
       activeTab === 'groups' ? React.createElement('div',{
         style:{
