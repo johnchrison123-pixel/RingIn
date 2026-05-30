@@ -84,6 +84,24 @@ export default function AnonymousConnect(props) {
   /* R34: call logs */
   var callLogsS = useState([]); var callLogs = callLogsS[0]; var setCallLogs = callLogsS[1];
 
+  /* R45: Anonymous messaging state.
+   *  - anonConvos: list of conversation rows (one per connection) with last
+   *    message + unread count, sorted by last_message_at desc.
+   *  - activeChat: { partner_id, nickname, avatar, gender, is_online } —
+   *    when set, the Messages tab renders a chat view for this partner.
+   *    Null = show conversation list.
+   *  - chatMessages: rows from anon_messages for the active chat (asc by
+   *    created_at so the bubble feed reads bottom-up like every chat app).
+   *  - chatInput: composer text. */
+  var anonConvosS = useState([]); var anonConvos = anonConvosS[0]; var setAnonConvos = anonConvosS[1];
+  var activeChatS = useState(null); var activeChat = activeChatS[0]; var setActiveChat = activeChatS[1];
+  var chatMessagesS = useState([]); var chatMessages = chatMessagesS[0]; var setChatMessages = chatMessagesS[1];
+  var chatInputS = useState(''); var chatInput = chatInputS[0]; var setChatInput = chatInputS[1];
+  var chatSendingS = useState(false); var chatSending = chatSendingS[0]; var setChatSending = chatSendingS[1];
+  var anonConvosPollRef = useRef(null);
+  var chatRealtimeRef = useRef(null);
+  var chatScrollRef = useRef(null);
+
   function addLanguage(l){
     var v = (l || '').trim();
     if (!v) { setLangInput(''); return; }
@@ -98,6 +116,98 @@ export default function AnonymousConnect(props) {
     var raw = e.target.value;
     if (raw.length > 0 && raw.endsWith(' ')) { var w = raw.trim(); if (w) addLanguage(w); return; }
     setLangInput(raw);
+  }
+
+  /* R45: load conversation list (one row per connection with last msg + unread).
+   * Called on Messages-tab open + every 15s while that tab is active +
+   * after every send/receive. Forward-compatible — silently no-ops if
+   * migration 0028 hasn't been pasted yet. */
+  function loadAnonConvos(){
+    if (!userId) return;
+    try {
+      sb.rpc('list_anon_conversations').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setAnonConvos(r.data);
+      }).catch(function(){});
+    } catch(_){}
+  }
+
+  /* R45: load chat history for the active conversation. */
+  function loadAnonChat(partnerId){
+    if (!partnerId) return;
+    try {
+      sb.rpc('list_anon_messages', { p_partner_id: partnerId, p_limit: 200 }).then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) {
+          setChatMessages(r.data);
+          /* Scroll to bottom on next paint. */
+          setTimeout(function(){
+            if (chatScrollRef.current) { try { chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; } catch(_){} }
+          }, 50);
+        }
+      }).catch(function(){});
+    } catch(_){}
+    /* Mark anything I haven't read yet as read. */
+    try { sb.rpc('mark_anon_chat_read', { p_partner_id: partnerId }).then(function(){}).catch(function(){}); } catch(_){}
+  }
+
+  /* R45: send a text message in the active chat. Optimistic — append to
+   * chatMessages immediately, roll back if the RPC fails. */
+  function sendAnonChatMessage(){
+    if (chatSending || !activeChat || !activeChat.partner_id) return;
+    var text = (chatInput || '').trim();
+    if (!text) return;
+    setChatSending(true);
+    var tempId = 'tmp-' + Date.now();
+    var optimistic = {
+      id: tempId,
+      sender_id: userId,
+      receiver_id: activeChat.partner_id,
+      text: text,
+      read: false,
+      created_at: new Date().toISOString(),
+    };
+    setChatMessages(function(prev){ return prev.concat([optimistic]); });
+    setChatInput('');
+    setTimeout(function(){
+      if (chatScrollRef.current) { try { chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; } catch(_){} }
+    }, 50);
+    sb.rpc('send_anon_message', { p_recipient: activeChat.partner_id, p_text: text }).then(function(r){
+      setChatSending(false);
+      if (r && r.error) {
+        /* Rollback the optimistic row + restore the draft. */
+        setChatMessages(function(prev){ return prev.filter(function(m){ return m.id !== tempId; }); });
+        setChatInput(text);
+        try { toastError('Could not send: ' + (r.error.message || 'unknown')); } catch(_){}
+        return;
+      }
+      /* Replace temp id with real id from server. */
+      var realId = r && r.data && r.data.id;
+      if (realId) {
+        setChatMessages(function(prev){ return prev.map(function(m){ return m.id === tempId ? Object.assign({}, m, { id: realId }) : m; }); });
+      }
+      loadAnonConvos(); /* refresh last-msg preview on the list */
+    }).catch(function(){
+      setChatSending(false);
+      setChatMessages(function(prev){ return prev.filter(function(m){ return m.id !== tempId; }); });
+      setChatInput(text);
+      try { toastError('Network error — try again'); } catch(_){}
+    });
+  }
+
+  /* R45: open chat with a specific connection (called from the
+   * connections-list 💬 button + from the conversation list). */
+  function openAnonChat(conn){
+    if (!conn || !conn.user_id) return;
+    var seed = {
+      partner_id: conn.user_id,
+      nickname: conn.nickname || 'Anonymous',
+      avatar: conn.avatar || 'girl1',
+      gender: conn.gender || null,
+      is_online: !!conn.is_online,
+    };
+    setActiveChat(seed);
+    setChatMessages([]);
+    setActiveTab('messages');
+    loadAnonChat(conn.user_id);
   }
 
   function loadCallLogs(){
@@ -316,6 +426,8 @@ export default function AnonymousConnect(props) {
           /* Close in priority order — most-recent UI first. */
           if (viewingProfile) { setViewingProfile(null); return; }
           if (editProfileOpen) { setEditProfileOpen(false); return; }
+          /* R45: chat view goes back to conversation list before closing. */
+          if (activeChat) { setActiveChat(null); setChatMessages([]); loadAnonConvos(); return; }
           if (postCall) { setPostCall(null); return; }
           if (searching) { cancelSearch(); return; }
           /* Nothing to close — let the OS handle it (exits the app). */
@@ -324,7 +436,7 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     })();
     return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
-  }, [viewingProfile, editProfileOpen, postCall, searching]);
+  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching]);
 
   /* R30: load initial availability state + start polling the live count
    * every 15 sec. Also heartbeat the expiry every 5 min so the user
@@ -450,6 +562,57 @@ export default function AnonymousConnect(props) {
       if (saveProfileTimerRef.current) { clearTimeout(saveProfileTimerRef.current); saveProfileTimerRef.current = null; }
     };
   }, [nick, avatarId, gender, preference, caption, languages, fromLoc, userId]);
+
+  /* R45: load conversation list whenever Messages tab is open + poll every
+   * 15s to catch new messages. Realtime subscription handles instant updates
+   * for messages while a chat is open; the poll is the safety net for the
+   * list view when no chat is active. */
+  useEffect(function(){
+    if (!userId || !onboarded) return;
+    if (activeTab !== 'messages') return;
+    loadAnonConvos();
+    anonConvosPollRef.current = setInterval(loadAnonConvos, 15000);
+    return function(){
+      if (anonConvosPollRef.current) { clearInterval(anonConvosPollRef.current); anonConvosPollRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, onboarded, activeTab]);
+
+  /* R45: realtime subscription on anon_messages targeted at me. Used to
+   * append incoming messages to the active chat instantly + bump the convo
+   * list to the top. RLS already gates this — Supabase realtime only
+   * forwards rows where my SELECT policy returns true. */
+  useEffect(function(){
+    if (!userId) return;
+    var ch = sb.channel('anon-msg-' + userId)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'anon_messages',
+        filter: 'receiver_id=eq.' + userId,
+      }, function(p){
+        var m = p && p.new;
+        if (!m) return;
+        /* If chat with this partner is open, append the bubble + mark read. */
+        if (activeChat && activeChat.partner_id === m.sender_id) {
+          setChatMessages(function(prev){
+            /* dedupe by id */
+            if (prev.some(function(x){ return x.id === m.id; })) return prev;
+            return prev.concat([m]);
+          });
+          setTimeout(function(){
+            if (chatScrollRef.current) { try { chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; } catch(_){} }
+          }, 50);
+          try { sb.rpc('mark_anon_chat_read', { p_partner_id: m.sender_id }).then(function(){}).catch(function(){}); } catch(_){}
+        }
+        /* Bump conversation list (cheap refresh — RPC returns sorted). */
+        loadAnonConvos();
+      })
+      .subscribe();
+    chatRealtimeRef.current = ch;
+    return function(){ try { sb.removeChannel(ch); } catch(_){} chatRealtimeRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeChat && activeChat.partner_id]);
 
   /* R34: load anon call logs on mount + when this tab is opened. Listen for
    * the global 'ringin:anoncallend' event dispatched by App.js when an
@@ -931,21 +1094,128 @@ export default function AnonymousConnect(props) {
                 React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, c.nickname || 'Anonymous'),
                 React.createElement('div', {style:{fontSize:'10px',color:c.is_online?'#27C96A':'var(--t3)',marginTop:'1px'}}, c.is_online ? '🟢 Online now' : 'Offline')
               ),
-              /* R37: Bug #5 fix — was switching to a dead-end "Coming Soon"
-               * Messages tab. Show toast instead until chat ships. */
-              React.createElement('button', {onClick:function(){ try{ toastInfo('Messaging launches soon — for now, give them a call!'); }catch(_){} },style:{padding:'7px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, '💬'),
+              /* R45: 💬 now opens the anon chat with this connection.
+               * (R37 had toast → "coming soon"; chat ships in R45.) */
+              React.createElement('button', {onClick:function(){ openAnonChat(c); },style:{padding:'7px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, '💬'),
               React.createElement('button', {onClick:function(){ callConnection(c); },disabled:!c.is_online,style:{padding:'7px 12px',background:c.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:c.is_online?'none':'1px solid var(--border)',borderRadius:'8px',color:c.is_online?'#fff':'var(--t3)',fontSize:'11px',fontWeight:700,cursor:c.is_online?'pointer':'not-allowed',fontFamily:'inherit'}}, '📞')
             );
           })
     )
     ), /* close activeTab === 'connections' fragment */
 
-    /* ════════ MESSAGES TAB ════════ */
-    activeTab === 'messages' && React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
-      React.createElement('div', {style:{fontSize:'52px',marginBottom:'12px',opacity:0.4}}, '💬'),
-      React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'Messages Coming Soon'),
-      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Once you have connections, you\'ll be able to chat with them here — even when they\'re offline.')
+    /* ════════ MESSAGES TAB (R45) ════════ */
+    /* Two render modes: conversation list (default) vs active chat view. */
+    activeTab === 'messages' && !activeChat && React.createElement('div', {style:{padding:'12px 16px 16px'}},
+      anonConvos.length === 0
+        ? React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
+            React.createElement('div', {style:{fontSize:'52px',marginBottom:'12px',opacity:0.4}}, '💬'),
+            React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No conversations yet'),
+            React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Tap the 💬 button on any connection to start a chat. Messages are private to the two of you.')
+          )
+        : (function(){
+            return React.createElement(React.Fragment, null,
+              React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, 'Conversations (' + anonConvos.length + ')'),
+              anonConvos.map(function(c){
+                var ca = getAvatar(c.partner_avatar || 'girl1');
+                var preview = c.last_message
+                  ? ((c.last_sender_id === userId ? 'You: ' : '') + c.last_message)
+                  : 'No messages yet — say hi 👋';
+                var when = c.last_message_at ? new Date(c.last_message_at) : null;
+                var whenStr = when ? when.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+                return React.createElement('div', {
+                  key: c.partner_id,
+                  onClick: function(){ openAnonChat({ user_id: c.partner_id, nickname: c.partner_nickname, avatar: c.partner_avatar, is_online: c.partner_is_online }); },
+                  style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px',cursor:'pointer'}
+                },
+                  React.createElement('div', {style:{width:'46px',height:'46px',borderRadius:'50%',background:ca.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0,position:'relative'}},
+                    ca.emoji,
+                    c.partner_is_online ? React.createElement('div', {style:{position:'absolute',bottom:'-2px',right:'-2px',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg)'}}) : null
+                  ),
+                  React.createElement('div', {style:{flex:1,minWidth:0}},
+                    React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}},
+                      React.createElement('div', {style:{fontSize:'13px',fontWeight: c.unread_count > 0 ? 800 : 700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, c.partner_nickname || 'Anonymous'),
+                      whenStr ? React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',flexShrink:0}}, whenStr) : null
+                    ),
+                    React.createElement('div', {style:{fontSize:'11px',color: c.unread_count > 0 ? 'var(--text)' : 'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontWeight: c.unread_count > 0 ? 600 : 400}}, preview)
+                  ),
+                  c.unread_count > 0 ? React.createElement('div', {style:{minWidth:'20px',height:'20px',borderRadius:'10px',background:'#E84D9A',color:'#fff',fontSize:'10px',fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 6px',flexShrink:0}}, String(c.unread_count)) : null
+                );
+              })
+            );
+          })()
     ),
+
+    /* ── Active chat view — renders ABOVE the tab content area when set. ── */
+    activeTab === 'messages' && activeChat && (function(){
+      var pa = getAvatar(activeChat.avatar || 'girl1');
+      return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'calc(100vh - 260px)',minHeight:'400px',background:'var(--bg)'}},
+        /* Chat header */
+        React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}},
+          React.createElement('button', {
+            onClick: function(){ setActiveChat(null); setChatMessages([]); loadAnonConvos(); },
+            style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center'}
+          },
+            React.createElement('svg', {viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+              React.createElement('polyline', {points:'15 18 9 12 15 6'})
+            )
+          ),
+          React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:pa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0,position:'relative'}},
+            pa.emoji,
+            activeChat.is_online ? React.createElement('div', {style:{position:'absolute',bottom:'-1px',right:'-1px',width:'10px',height:'10px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg)'}}) : null
+          ),
+          React.createElement('div', {style:{flex:1,minWidth:0}},
+            React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}}, activeChat.nickname || 'Anonymous'),
+            React.createElement('div', {style:{fontSize:'10px',color: activeChat.is_online ? '#27C96A' : 'var(--t3)'}}, activeChat.is_online ? '🟢 Online' : 'Offline')
+          ),
+          /* Call shortcut — only when partner is online */
+          activeChat.is_online ? React.createElement('button', {
+            onClick: function(){ callConnection({ user_id: activeChat.partner_id, nickname: activeChat.nickname, avatar: activeChat.avatar, gender: activeChat.gender, is_online: true }); },
+            style:{padding:'7px 10px',borderRadius:'8px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'13px',cursor:'pointer'}
+          }, '📞') : null
+        ),
+        /* Message bubbles */
+        React.createElement('div', {
+          ref: chatScrollRef,
+          style:{flex:1,overflowY:'auto',padding:'12px 14px'}
+        },
+          chatMessages.length === 0
+            ? React.createElement('div', {style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',padding:'30px 16px'}}, 'No messages yet. Say something 👋')
+            : chatMessages.map(function(m){
+                var mine = m.sender_id === userId;
+                return React.createElement('div', {
+                  key: m.id,
+                  style:{display:'flex',justifyContent: mine ? 'flex-end' : 'flex-start',marginBottom:'6px'}
+                },
+                  React.createElement('div', {
+                    style:{maxWidth:'78%',padding:'8px 12px',borderRadius: mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px',background: mine ? 'linear-gradient(135deg,#7B6EFF,#E84D9A)' : 'var(--bg3)',color: mine ? '#fff' : 'var(--text)',fontSize:'13px',lineHeight:1.45,whiteSpace:'pre-wrap',wordBreak:'break-word'}
+                  }, m.text)
+                );
+              })
+        ),
+        /* Composer */
+        React.createElement('div', {style:{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',alignItems:'flex-end',background:'var(--bg2)'}},
+          React.createElement('textarea', {
+            value: chatInput,
+            onChange: function(e){ setChatInput(e.target.value.slice(0, 2000)); },
+            onKeyDown: function(e){
+              /* Enter sends; Shift+Enter inserts newline. */
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                e.preventDefault();
+                sendAnonChatMessage();
+              }
+            },
+            placeholder: 'Type a message…',
+            rows: 1,
+            style:{flex:1,padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'18px',color:'var(--text)',fontSize:'13px',outline:'none',resize:'none',fontFamily:'inherit',maxHeight:'120px',boxSizing:'border-box'}
+          }),
+          React.createElement('button', {
+            onClick: sendAnonChatMessage,
+            disabled: chatSending || !chatInput.trim(),
+            style:{padding:'10px 16px',borderRadius:'18px',background: chatSending || !chatInput.trim() ? 'var(--bg4)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color: chatSending || !chatInput.trim() ? 'var(--t3)' : '#fff',fontSize:'13px',fontWeight:700,cursor: chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer',fontFamily:'inherit',flexShrink:0}
+          }, chatSending ? '...' : 'Send')
+        )
+      );
+    })(),
 
     /* ════════ CALL LOGS TAB (R34: real data from anon_call_logs) ════════ */
     activeTab === 'calllogs' && (callLogs.length === 0
@@ -1169,7 +1439,8 @@ export default function AnonymousConnect(props) {
           ) : null,
           React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'20px',justifyContent:'center'}},
             React.createElement('button', {
-              onClick:function(){ setViewingProfile(null); setActiveTab('messages'); },
+              /* R45: opens the chat with this connection directly. */
+              onClick:function(){ setViewingProfile(null); openAnonChat({ user_id: vp.user_id, nickname: vp.nickname, avatar: vp.avatar, gender: vp.gender, is_online: vp.is_online }); },
               style:{padding:'10px 20px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer'}
             }, '💬 Message'),
             React.createElement('button', {
