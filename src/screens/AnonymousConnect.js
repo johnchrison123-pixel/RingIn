@@ -4,6 +4,27 @@ import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
 import {ANON_AVATARS, getAvatar} from '../utils/anonAvatars'; /* R37: single source of truth */
 
+/* R47: virtual gift catalog (Tango/Bigo-style 3-tier model).
+ * - sticker: small cheap reactions (10-25 coins)
+ * - premium: signature gifts (50-200 coins)
+ * - mega: full-screen celebration gifts (500-2000 coins)
+ * Recipient earns 70% of every gift in coins. */
+var GIFT_CATALOG = [
+  /* Tier: sticker */
+  { key:'wave',  emoji:'👋', name:'Wave',     tier:'sticker', coins:10 },
+  { key:'heart', emoji:'❤️', name:'Heart',    tier:'sticker', coins:15 },
+  { key:'rose',  emoji:'🌹', name:'Rose',     tier:'sticker', coins:25 },
+  /* Tier: premium */
+  { key:'cake',  emoji:'🎂', name:'Cake',     tier:'premium', coins:50 },
+  { key:'kiss',  emoji:'💋', name:'Kiss',     tier:'premium', coins:100 },
+  { key:'crown', emoji:'👑', name:'Crown',    tier:'premium', coins:200 },
+  /* Tier: mega */
+  { key:'car',     emoji:'🏎',  name:'Sports Car', tier:'mega', coins:500 },
+  { key:'castle',  emoji:'🏰', name:'Castle',    tier:'mega', coins:1000 },
+  { key:'diamond', emoji:'💎', name:'Diamond',   tier:'mega', coins:2000 },
+];
+function getGiftByKey(k){ return GIFT_CATALOG.find(function(g){ return g.key === k; }) || null; }
+
 // Inject pulse keyframes once
 if (typeof document !== 'undefined' && !document.getElementById('ringin-pulse-kf')) {
   var s = document.createElement('style');
@@ -113,6 +134,18 @@ export default function AnonymousConnect(props) {
   var reportSheetForS = useState(null); var reportSheetFor = reportSheetForS[0]; var setReportSheetFor = reportSheetForS[1];
   var reportSendingS = useState(false); var reportSending = reportSendingS[0]; var setReportSending = reportSendingS[1];
 
+  /* R47: chat gifts + reactions state.
+   *  - giftDrawerOpen: toggles the slide-up gift picker in chat
+   *  - giftSendingKey: which gift is mid-send (disables tile)
+   *  - chatGifts: gift rows from anon_chat_gifts for the active chat
+   *  - chatReactions: { message_id: [{emoji, count, mine}, ...] }
+   *  - reactionPickerFor: message_id currently showing the 5-emoji picker */
+  var giftDrawerOpenS = useState(false); var giftDrawerOpen = giftDrawerOpenS[0]; var setGiftDrawerOpen = giftDrawerOpenS[1];
+  var giftSendingKeyS = useState(null); var giftSendingKey = giftSendingKeyS[0]; var setGiftSendingKey = giftSendingKeyS[1];
+  var chatGiftsS = useState([]); var chatGifts = chatGiftsS[0]; var setChatGifts = chatGiftsS[1];
+  var chatReactionsS = useState({}); var chatReactions = chatReactionsS[0]; var setChatReactions = chatReactionsS[1];
+  var reactionPickerForS = useState(null); var reactionPickerFor = reactionPickerForS[0]; var setReactionPickerFor = reactionPickerForS[1];
+
   function addLanguage(l){
     var v = (l || '').trim();
     if (!v) { setLangInput(''); return; }
@@ -142,22 +175,106 @@ export default function AnonymousConnect(props) {
     } catch(_){}
   }
 
-  /* R45: load chat history for the active conversation. */
+  /* R45: load chat history for the active conversation.
+   * R47: also load gifts + reactions for the chat. */
   function loadAnonChat(partnerId){
     if (!partnerId) return;
     try {
       sb.rpc('list_anon_messages', { p_partner_id: partnerId, p_limit: 200 }).then(function(r){
         if (r && !r.error && Array.isArray(r.data)) {
           setChatMessages(r.data);
-          /* Scroll to bottom on next paint. */
+          /* R47: after we have the message ids, fetch their reactions in one call. */
+          var ids = r.data.map(function(m){ return m.id; }).filter(function(x){ return !!x; });
+          if (ids.length > 0) {
+            try {
+              sb.rpc('list_anon_message_reactions', { p_message_ids: ids }).then(function(rr){
+                if (rr && !rr.error && Array.isArray(rr.data)) {
+                  var grouped = {};
+                  rr.data.forEach(function(row){
+                    if (!grouped[row.message_id]) grouped[row.message_id] = [];
+                    grouped[row.message_id].push({ emoji: row.emoji, count: row.count, mine: !!row.mine });
+                  });
+                  setChatReactions(grouped);
+                }
+              }).catch(function(){});
+            } catch(_){}
+          } else {
+            setChatReactions({});
+          }
           setTimeout(function(){
             if (chatScrollRef.current) { try { chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; } catch(_){} }
           }, 50);
         }
       }).catch(function(){});
     } catch(_){}
-    /* Mark anything I haven't read yet as read. */
+    /* R47: load chat gifts. */
+    try {
+      sb.rpc('list_anon_chat_gifts', { p_partner_id: partnerId, p_limit: 200 }).then(function(r){
+        if (r && !r.error && Array.isArray(r.data)) setChatGifts(r.data);
+      }).catch(function(){});
+    } catch(_){}
     try { sb.rpc('mark_anon_chat_read', { p_partner_id: partnerId }).then(function(){}).catch(function(){}); } catch(_){}
+  }
+
+  /* R47: send a gift in the active chat. Atomic on the server — debits +
+   * credits + inserts. Refreshes gift list on success. */
+  function sendChatGift(gift){
+    if (!gift || !activeChat || !activeChat.partner_id) return;
+    if (giftSendingKey) return;
+    setGiftSendingKey(gift.key);
+    sb.rpc('send_anon_chat_gift', {
+      p_recipient: activeChat.partner_id,
+      p_gift_key: gift.key,
+      p_emoji: gift.emoji,
+      p_tier: gift.tier,
+      p_coins: gift.coins,
+      p_message_id: null,
+    }).then(function(r){
+      setGiftSendingKey(null);
+      if (r && r.error) { try { toastError(r.error.message || 'Gift failed'); } catch(_){} return; }
+      try { toastInfo('You sent a ' + gift.emoji + ' ' + gift.name + ' (' + gift.coins + ' 🪙)'); } catch(_){}
+      setGiftDrawerOpen(false);
+      /* Reload the gift list so the new bubble appears. */
+      if (activeChat && activeChat.partner_id) {
+        try {
+          sb.rpc('list_anon_chat_gifts', { p_partner_id: activeChat.partner_id, p_limit: 200 }).then(function(rr){
+            if (rr && !rr.error && Array.isArray(rr.data)) setChatGifts(rr.data);
+          }).catch(function(){});
+        } catch(_){}
+      }
+      /* Scroll to bottom. */
+      setTimeout(function(){
+        if (chatScrollRef.current) { try { chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; } catch(_){} }
+      }, 100);
+    }).catch(function(){
+      setGiftSendingKey(null);
+      try { toastError('Network error'); } catch(_){}
+    });
+  }
+
+  /* R47: toggle an emoji reaction on a message. Optimistic update + rollback. */
+  function reactToMsg(messageId, emoji){
+    if (!messageId || !emoji) return;
+    /* Optimistic flip in chatReactions. */
+    var prev = chatReactions;
+    var existing = (prev[messageId] || []).slice();
+    var idx = -1; for (var i=0;i<existing.length;i++) if (existing[i].emoji === emoji) { idx = i; break; }
+    if (idx >= 0) {
+      if (existing[idx].mine) {
+        existing[idx] = Object.assign({}, existing[idx], { count: Math.max(0, existing[idx].count - 1), mine: false });
+        if (existing[idx].count === 0) existing.splice(idx, 1);
+      } else {
+        existing[idx] = Object.assign({}, existing[idx], { count: existing[idx].count + 1, mine: true });
+      }
+    } else {
+      existing.push({ emoji: emoji, count: 1, mine: true });
+    }
+    var next = Object.assign({}, prev); next[messageId] = existing;
+    setChatReactions(next);
+    setReactionPickerFor(null);
+    sb.rpc('react_to_anon_message', { p_message_id: messageId, p_emoji: emoji }).then(function(r){
+      if (r && r.error) { setChatReactions(prev); try { toastError('Reaction failed'); } catch(_){} }
+    }).catch(function(){ setChatReactions(prev); });
   }
 
   /* R45: send a text message in the active chat. Optimistic — append to
@@ -486,7 +603,9 @@ export default function AnonymousConnect(props) {
         if (!App || !App.addListener) return;
         handle = await App.addListener('backButton', function(){
           /* Close in priority order — most-recent UI first. */
-          /* R46: safety sheets take top priority since they're the most recent. */
+          /* R47: gift drawer takes top priority when open. */
+          if (giftDrawerOpen) { setGiftDrawerOpen(false); return; }
+          /* R46: safety sheets take next priority. */
           if (reportSheetFor) { setReportSheetFor(null); return; }
           if (safetySheetFor) { setSafetySheetFor(null); return; }
           if (viewingProfile) { setViewingProfile(null); return; }
@@ -501,7 +620,7 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     })();
     return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
-  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor]);
+  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen]);
 
   /* R46: listen for events from CallScreen — tap ⋯ on the in-call action row
    * dispatches `ringin:anonsafety` with the partner context. */
@@ -1292,32 +1411,88 @@ export default function AnonymousConnect(props) {
             style:{padding:'7px 10px',borderRadius:'8px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'13px',cursor:'pointer'}
           }, '📞') : null
         ),
-        /* Message bubbles */
+        /* Message bubbles — R47: interleaved with gift bubbles by timestamp.
+         * Gifts render as a special centered bubble with a big emoji + name +
+         * coin amount; reaction taps show a 5-emoji picker, counts appear
+         * under the bubble. */
         React.createElement('div', {
           ref: chatScrollRef,
           style:{flex:1,overflowY:'auto',padding:'12px 14px'}
         },
-          chatMessages.length === 0
-            ? React.createElement('div', {style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',padding:'30px 16px'}}, 'No messages yet. Say something 👋')
-            : chatMessages.map(function(m){
-                var mine = m.sender_id === userId;
+          (function(){
+            /* Merge messages + gifts into one sorted feed. */
+            var feed = [];
+            chatMessages.forEach(function(m){ feed.push({ kind:'msg', t: m.created_at, data: m }); });
+            chatGifts.forEach(function(g){ feed.push({ kind:'gift', t: g.created_at, data: g }); });
+            feed.sort(function(a,b){ return new Date(a.t) - new Date(b.t); });
+            if (feed.length === 0) {
+              return React.createElement('div', {style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',padding:'30px 16px'}}, 'No messages yet. Say something 👋');
+            }
+            return feed.map(function(item){
+              if (item.kind === 'gift') {
+                var g = item.data;
+                var sentByMe = g.sender_id === userId;
+                var tierBg = g.tier === 'mega' ? 'linear-gradient(135deg,rgba(255,215,0,0.18),rgba(232,77,154,0.18))'
+                           : g.tier === 'premium' ? 'linear-gradient(135deg,rgba(123,110,255,0.18),rgba(232,77,154,0.12))'
+                           : 'rgba(123,110,255,0.10)';
+                var tierBorder = g.tier === 'mega' ? '1px solid rgba(255,215,0,0.5)'
+                               : g.tier === 'premium' ? '1px solid rgba(123,110,255,0.4)'
+                               : '1px solid var(--border)';
                 return React.createElement('div', {
-                  key: m.id,
-                  style:{display:'flex',justifyContent: mine ? 'flex-end' : 'flex-start',marginBottom:'6px'}
+                  key: 'gift-' + g.id,
+                  style:{display:'flex',justifyContent:'center',marginBottom:'10px'}
                 },
                   React.createElement('div', {
-                    style:{maxWidth:'78%',padding:'8px 12px',borderRadius: mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px',background: mine ? 'linear-gradient(135deg,#7B6EFF,#E84D9A)' : 'var(--bg3)',color: mine ? '#fff' : 'var(--text)',fontSize:'13px',lineHeight:1.45,whiteSpace:'pre-wrap',wordBreak:'break-word'}
-                  }, m.text)
+                    style:{maxWidth:'86%',padding:'12px 18px',borderRadius:'16px',background: tierBg, border: tierBorder, textAlign:'center'}
+                  },
+                    React.createElement('div', {style:{fontSize: g.tier === 'mega' ? '44px' : (g.tier === 'premium' ? '36px' : '28px'),lineHeight:1,marginBottom:'4px'}}, g.emoji),
+                    React.createElement('div', {style:{fontSize:'11px',color:'var(--text)',fontWeight:700}}, (sentByMe ? 'You sent' : 'They sent you') + ' a ' + (getGiftByKey(g.gift_key) ? getGiftByKey(g.gift_key).name : 'gift')),
+                    React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, g.coins + ' 🪙')
+                  )
                 );
-              })
+              }
+              /* msg */
+              var m = item.data;
+              var mine = m.sender_id === userId;
+              var reactions = chatReactions[m.id] || [];
+              return React.createElement('div', {
+                key: m.id,
+                style:{display:'flex',flexDirection:'column',alignItems: mine ? 'flex-end' : 'flex-start',marginBottom:'8px'}
+              },
+                React.createElement('div', {
+                  onClick: function(){ setReactionPickerFor(reactionPickerFor === m.id ? null : m.id); },
+                  style:{maxWidth:'78%',padding:'8px 12px',borderRadius: mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px',background: mine ? 'linear-gradient(135deg,#7B6EFF,#E84D9A)' : 'var(--bg3)',color: mine ? '#fff' : 'var(--text)',fontSize:'13px',lineHeight:1.45,whiteSpace:'pre-wrap',wordBreak:'break-word',cursor:'pointer'}
+                }, m.text),
+                /* Reaction counts row */
+                reactions.length > 0 ? React.createElement('div', {style:{display:'flex',gap:'4px',marginTop:'3px',flexWrap:'wrap',justifyContent: mine ? 'flex-end' : 'flex-start'}},
+                  reactions.map(function(r){
+                    return React.createElement('button', {
+                      key: r.emoji,
+                      onClick: function(e){ e.stopPropagation(); reactToMsg(m.id, r.emoji); },
+                      style:{padding:'2px 7px',borderRadius:'10px',background: r.mine ? 'rgba(232,77,154,0.18)' : 'var(--bg3)',border:'1px solid '+(r.mine ? 'var(--ac)' : 'var(--border)'),fontSize:'11px',cursor:'pointer',fontFamily:'inherit'}
+                    }, r.emoji + ' ' + r.count);
+                  })
+                ) : null,
+                /* Reaction picker — appears when this message is tapped */
+                reactionPickerFor === m.id ? React.createElement('div', {style:{display:'flex',gap:'4px',marginTop:'4px',padding:'4px 8px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px'}},
+                  ['❤️','🔥','😂','😮','🙏'].map(function(e){
+                    return React.createElement('button', {
+                      key: e,
+                      onClick: function(ev){ ev.stopPropagation(); reactToMsg(m.id, e); },
+                      style:{padding:'4px 8px',background:'transparent',border:'none',fontSize:'18px',cursor:'pointer',lineHeight:1}
+                    }, e);
+                  })
+                ) : null
+              );
+            });
+          })()
         ),
-        /* Composer */
-        React.createElement('div', {style:{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',alignItems:'flex-end',background:'var(--bg2)'}},
+        /* Composer — R47: 🎁 gift button between textarea and Send */
+        React.createElement('div', {style:{padding:'10px 12px',borderTop:'1px solid var(--border)',display:'flex',gap:'6px',alignItems:'flex-end',background:'var(--bg2)'}},
           React.createElement('textarea', {
             value: chatInput,
             onChange: function(e){ setChatInput(e.target.value.slice(0, 2000)); },
             onKeyDown: function(e){
-              /* Enter sends; Shift+Enter inserts newline. */
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
                 e.preventDefault();
                 sendAnonChatMessage();
@@ -1327,10 +1502,15 @@ export default function AnonymousConnect(props) {
             rows: 1,
             style:{flex:1,padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'18px',color:'var(--text)',fontSize:'13px',outline:'none',resize:'none',fontFamily:'inherit',maxHeight:'120px',boxSizing:'border-box'}
           }),
+          /* R47: 🎁 opens the gift drawer. */
+          React.createElement('button', {
+            onClick: function(){ setGiftDrawerOpen(true); },
+            style:{padding:'10px 12px',borderRadius:'18px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'18px',cursor:'pointer',fontFamily:'inherit',flexShrink:0,lineHeight:1}
+          }, '🎁'),
           React.createElement('button', {
             onClick: sendAnonChatMessage,
             disabled: chatSending || !chatInput.trim(),
-            style:{padding:'10px 16px',borderRadius:'18px',background: chatSending || !chatInput.trim() ? 'var(--bg4)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color: chatSending || !chatInput.trim() ? 'var(--t3)' : '#fff',fontSize:'13px',fontWeight:700,cursor: chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer',fontFamily:'inherit',flexShrink:0}
+            style:{padding:'10px 14px',borderRadius:'18px',background: chatSending || !chatInput.trim() ? 'var(--bg4)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color: chatSending || !chatInput.trim() ? 'var(--t3)' : '#fff',fontSize:'13px',fontWeight:700,cursor: chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer',fontFamily:'inherit',flexShrink:0}
           }, chatSending ? '...' : 'Send')
         )
       );
@@ -1621,6 +1801,49 @@ export default function AnonymousConnect(props) {
         )
       );
     })() : null,
+
+    /* ════════ R47: Gift drawer — Tango/Bigo-style 3-tier picker ════════ */
+    giftDrawerOpen && activeChat ? React.createElement('div', {
+      onClick: function(){ if (!giftSendingKey) setGiftDrawerOpen(false); },
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:960,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.4)',maxHeight:'80vh',overflowY:'auto'}
+      },
+        React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 16px'}}),
+        React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}},
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'17px',fontWeight:800,color:'var(--text)',flex:1}}, 'Send a gift to ' + (activeChat.nickname || 'Anonymous'))
+        ),
+        /* Tier sections */
+        ['sticker','premium','mega'].map(function(tier){
+          var label = tier === 'sticker' ? '💌 Stickers' : tier === 'premium' ? '💎 Premium' : '🚀 Mega';
+          var gifts = GIFT_CATALOG.filter(function(g){ return g.tier === tier; });
+          return React.createElement('div', {key: tier, style:{marginBottom:'18px'}},
+            React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, label),
+            React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}},
+              gifts.map(function(g){
+                var sending = giftSendingKey === g.key;
+                return React.createElement('button', {
+                  key: g.key,
+                  onClick: function(){ sendChatGift(g); },
+                  disabled: !!giftSendingKey,
+                  style:{padding:'14px 8px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',cursor: giftSendingKey ? 'wait' : 'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:'6px',opacity: giftSendingKey && !sending ? 0.5 : 1, transition:'transform 0.12s'}
+                },
+                  React.createElement('div', {style:{fontSize: tier === 'mega' ? '34px' : (tier === 'premium' ? '30px' : '26px'),lineHeight:1}}, g.emoji),
+                  React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--text)'}}, g.name),
+                  React.createElement('div', {style:{fontSize:'10px',color:'var(--ac)',fontWeight:700}}, sending ? 'Sending…' : (g.coins + ' 🪙'))
+                );
+              })
+            )
+          );
+        }),
+        React.createElement('button', {
+          onClick: function(){ if (!giftSendingKey) setGiftDrawerOpen(false); },
+          style:{width:'100%',padding:'13px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor: giftSendingKey ? 'wait' : 'pointer',marginTop:'8px'}
+        }, 'Close')
+      )
+    ) : null,
 
     /* ════════ R46: Report-reason picker ════════ */
     reportSheetFor ? (function(){
