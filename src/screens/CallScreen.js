@@ -154,6 +154,19 @@ export default function CallScreen(props){
       } }));
     } catch(e){ /* never break the call */ }
   }
+  /* R46: open the safety sheet (Block / Report) — dispatches an event that
+   * AnonymousConnect listens for so the sheet renders above this CallScreen. */
+  function callOpenSafety(){
+    try {
+      window.dispatchEvent(new CustomEvent('ringin:anonsafety', { detail: {
+        partner_id: expert.id,
+        nickname: expert.name || 'Anonymous',
+        avatar: expert._partnerAvatar || null,
+        context: 'call',
+        context_id: props.inviteId || null,
+      }}));
+    } catch(e){ /* never break the call */ }
+  }
   function callAddAnonConnection(){
     if (reqSending || reqSent || !expert || !expert.id) return;
     setReqSending(true);
@@ -729,7 +742,13 @@ export default function CallScreen(props){
               onClick: callAddAnonConnection,
               disabled: reqSending,
               style:{padding:'7px 14px',borderRadius:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'11px',fontWeight:700,cursor:reqSending?'wait':'pointer',opacity:reqSending?0.6:1,fontFamily:'inherit'}
-            }, reqSending ? '...' : '➕ Add Connection')
+            }, reqSending ? '...' : '➕ Add Connection'),
+        /* R46: ⋯ opens the Block/Report sheet via AnonymousConnect window event. */
+        React.createElement('button', {
+          onClick: callOpenSafety,
+          title: 'More',
+          style:{padding:'7px 12px',borderRadius:'14px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1}
+        }, '⋯')
       ) : null,
       reqErr ? React.createElement('div', {style:{fontSize:'10px',color:'#ef4444',marginBottom:'8px',textAlign:'center'}}, reqErr) : null,
       React.createElement('div',{style:{fontSize:'13px',color:'var(--t3)',marginBottom:'40px',display:'flex',alignItems:'center',gap:'6px'}},

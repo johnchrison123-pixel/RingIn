@@ -102,6 +102,17 @@ export default function AnonymousConnect(props) {
   var chatRealtimeRef = useRef(null);
   var chatScrollRef = useRef(null);
 
+  /* R46: Modern Block/Report bottom-sheet state.
+   *   - safetySheetFor:  { partner_id, nickname, avatar, context }
+   *                      context = 'call' | 'connection' | 'profile' | 'message'
+   *                      Setting this non-null opens the first-level sheet.
+   *   - reportSheetFor:  same shape; opens the reason-picker after Report is tapped
+   *   - reportSendingFor: post id being reported (disables Send button while in-flight)
+   * Both sheets dismiss to null on backdrop/cancel tap, Hardware-back, or after action. */
+  var safetySheetForS = useState(null); var safetySheetFor = safetySheetForS[0]; var setSafetySheetFor = safetySheetForS[1];
+  var reportSheetForS = useState(null); var reportSheetFor = reportSheetForS[0]; var setReportSheetFor = reportSheetForS[1];
+  var reportSendingS = useState(false); var reportSending = reportSendingS[0]; var setReportSending = reportSendingS[1];
+
   function addLanguage(l){
     var v = (l || '').trim();
     if (!v) { setLangInput(''); return; }
@@ -208,6 +219,54 @@ export default function AnonymousConnect(props) {
     setChatMessages([]);
     setActiveTab('messages');
     loadAnonChat(conn.user_id);
+  }
+
+  /* R46: open safety sheet for a user (call / post-call / connection / profile). */
+  function openSafetySheet(target, context){
+    if (!target) return;
+    setSafetySheetFor({
+      partner_id: target.partner_id || target.user_id || target.id,
+      nickname: target.nickname || target.partner_nickname || target.name || 'Anonymous',
+      avatar: target.avatar || target.partner_avatar || 'girl1',
+      context: context || 'call',
+      context_id: target.context_id || null,
+    });
+  }
+  /* R46: confirm + perform block. */
+  function performBlock(){
+    var s = safetySheetFor; if (!s || !s.partner_id) return;
+    setSafetySheetFor(null);
+    sb.rpc('block_anon', { p_target: s.partner_id }).then(function(r){
+      if (r && r.error) { try { toastError('Block failed: ' + r.error.message); } catch(_){} return; }
+      try { toastInfo('Blocked. You won\'t match with them again.'); } catch(_){}
+      loadConnectionsAndRequests();
+      /* If we're currently on a call with them, end it. */
+      try {
+        if (typeof window !== 'undefined' && window.__ringInHangup) window.__ringInHangup();
+      } catch(_){}
+    }).catch(function(){ try { toastError('Network error'); } catch(_){} });
+  }
+  /* R46: open the report-reason picker. */
+  function openReportPicker(){
+    setReportSheetFor(safetySheetFor);
+    setSafetySheetFor(null);
+  }
+  /* R46: send report with chosen reason. */
+  function performReport(reason){
+    var s = reportSheetFor; if (!s || !s.partner_id || reportSending) return;
+    setReportSending(true);
+    sb.rpc('report_anon', {
+      p_target: s.partner_id,
+      p_reason: reason,
+      p_context: s.context || 'call',
+      p_context_id: s.context_id || null,
+      p_note: null
+    }).then(function(r){
+      setReportSending(false);
+      if (r && r.error) { try { toastError('Report failed: ' + r.error.message); } catch(_){} return; }
+      try { toastInfo('Report sent. Thank you for keeping RingIn safe.'); } catch(_){}
+      setReportSheetFor(null);
+    }).catch(function(){ setReportSending(false); try { toastError('Network error'); } catch(_){} });
   }
 
   function loadCallLogs(){
@@ -389,12 +448,15 @@ export default function AnonymousConnect(props) {
   /* R37: skip() removed — the match preview screen never showed (Bug #2)
    * and we now go straight from match → call (Omegle/FRND-style). To get
    * a new person, user ends the call and the post-call sheet's "Find
-   * Next" button calls find() with the partner pushed onto exclude. */
+   * Next" button calls find() with the partner pushed onto exclude.
+   * R46: also persists the exclude to anon_excluded so we never re-match
+   * the same person even on a fresh app session. */
   function findNext(){
     var p = postCall && postCall.partner_id;
     if (p) {
       var nextExclude = (exclude || []).concat([p]);
       setExclude(nextExclude);
+      try { sb.rpc('add_anon_exclude', { p_target: p }).then(function(){}).catch(function(){}); } catch(_){}
       setPostCall(null);
       find(nextExclude);
     } else {
@@ -424,6 +486,9 @@ export default function AnonymousConnect(props) {
         if (!App || !App.addListener) return;
         handle = await App.addListener('backButton', function(){
           /* Close in priority order — most-recent UI first. */
+          /* R46: safety sheets take top priority since they're the most recent. */
+          if (reportSheetFor) { setReportSheetFor(null); return; }
+          if (safetySheetFor) { setSafetySheetFor(null); return; }
           if (viewingProfile) { setViewingProfile(null); return; }
           if (editProfileOpen) { setEditProfileOpen(false); return; }
           /* R45: chat view goes back to conversation list before closing. */
@@ -436,7 +501,19 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     })();
     return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
-  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching]);
+  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor]);
+
+  /* R46: listen for events from CallScreen — tap ⋯ on the in-call action row
+   * dispatches `ringin:anonsafety` with the partner context. */
+  useEffect(function(){
+    function onSafety(ev){
+      var d = ev && ev.detail; if (!d) return;
+      openSafetySheet({ partner_id: d.partner_id, nickname: d.nickname, avatar: d.avatar, context_id: d.context_id || null }, d.context || 'call');
+    }
+    window.addEventListener('ringin:anonsafety', onSafety);
+    return function(){ window.removeEventListener('ringin:anonsafety', onSafety); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* R30: load initial availability state + start polling the live count
    * every 15 sec. Also heartbeat the expiry every 5 min so the user
@@ -490,10 +567,21 @@ export default function AnonymousConnect(props) {
       }).catch(function(e){ setCheckingOnboard(false); console.warn('[anon] profile fetch reject:', e); });
     } catch(_){ setCheckingOnboard(false); }
     function pollCount(){
+      /* R46: count of users actively waiting in the queue (last 40s), not
+       * the full set of "available" users. Falls back to the old view if
+       * migration 0029 hasn't been applied yet. */
       try {
-        sb.from('available_anon_count').select('count').maybeSingle().then(function(r){
+        sb.from('actively_searching_count').select('count').maybeSingle().then(function(r){
           if (cancelled) return;
-          if (r && !r.error && r.data) setOnlineCount(r.data.count || 0);
+          if (r && !r.error && r.data) {
+            setOnlineCount(r.data.count || 0);
+            return;
+          }
+          /* Forward-compat fallback to old view if the new one is missing. */
+          sb.from('available_anon_count').select('count').maybeSingle().then(function(r2){
+            if (cancelled) return;
+            if (r2 && !r2.error && r2.data) setOnlineCount(r2.data.count || 0);
+          }).catch(function(){});
         }).catch(function(){});
       } catch(_){}
     }
@@ -1045,7 +1133,13 @@ export default function AnonymousConnect(props) {
           React.createElement('button', {
             onClick: function(){ setPostCall(null); },
             style:{padding:'10px 14px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer'}
-          }, 'Close')
+          }, 'Close'),
+          /* R46: ⋯ opens the safety sheet from the post-call view (so you
+           * can block/report someone you just hung up on). */
+          React.createElement('button', {
+            onClick: function(){ openSafetySheet({ partner_id: postCall.partner_id, nickname: postCall.nickname, avatar: postCall.avatar }, 'call'); },
+            style:{padding:'10px 14px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t3)',fontSize:'18px',cursor:'pointer',lineHeight:1}
+          }, '⋯')
         )
       );
     })(),
@@ -1073,6 +1167,29 @@ export default function AnonymousConnect(props) {
 
       /* R33: Find Someone (was at bottom of setup; now top of Connections tab) */
       err && React.createElement('div', {style:{padding:'12px',background:'rgba(239,71,71,0.1)',border:'1px solid var(--red)',borderRadius:'10px',color:'var(--red)',fontSize:'12px',marginBottom:'12px'}}, err),
+      /* R46: Interest chip row — inline so people set match preferences
+       * without diving into the Edit Profile modal. Adds + removes work
+       * on the same `interests` state used by the matchmaker scoring. */
+      React.createElement('div', {style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',padding:'10px 12px',marginBottom:'12px'}},
+        React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}},
+          'Your interests · helps us find better matches'
+        ),
+        interests.length > 0 ? React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'8px'}},
+          interests.map(function(i){
+            return React.createElement('span', {key:i, style:{padding:'5px 10px',borderRadius:'14px',background:'var(--acg)',color:'var(--ac)',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'6px'}},
+              '#' + i,
+              React.createElement('span', {onClick:function(){removeInterest(i);}, style:{cursor:'pointer',fontSize:'14px',lineHeight:1}}, '×')
+            );
+          })
+        ) : null,
+        React.createElement('input', {
+          value: input,
+          onChange: onInterestInputChange,
+          onKeyDown: function(e){ if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()) { e.preventDefault(); addInterest(input); } },
+          placeholder: interests.length > 0 ? 'Add another (type + space)' : 'Type music, tech, travel + space…',
+          style:{width:'100%',padding:'8px 10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'12px',outline:'none',boxSizing:'border-box',fontFamily:'inherit'}
+        })
+      ),
       React.createElement('button', {onClick:find, style:{width:'100%',padding:'14px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'16px'}}, '🎯 Find Someone to Talk To'),
 
       /* R33: Accepted connections list */
@@ -1097,7 +1214,9 @@ export default function AnonymousConnect(props) {
               /* R45: 💬 now opens the anon chat with this connection.
                * (R37 had toast → "coming soon"; chat ships in R45.) */
               React.createElement('button', {onClick:function(){ openAnonChat(c); },style:{padding:'7px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}, '💬'),
-              React.createElement('button', {onClick:function(){ callConnection(c); },disabled:!c.is_online,style:{padding:'7px 12px',background:c.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:c.is_online?'none':'1px solid var(--border)',borderRadius:'8px',color:c.is_online?'#fff':'var(--t3)',fontSize:'11px',fontWeight:700,cursor:c.is_online?'pointer':'not-allowed',fontFamily:'inherit'}}, '📞')
+              React.createElement('button', {onClick:function(){ callConnection(c); },disabled:!c.is_online,style:{padding:'7px 12px',background:c.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:c.is_online?'none':'1px solid var(--border)',borderRadius:'8px',color:c.is_online?'#fff':'var(--t3)',fontSize:'11px',fontWeight:700,cursor:c.is_online?'pointer':'not-allowed',fontFamily:'inherit'}}, '📞'),
+              /* R46: ⋯ opens the safety sheet (Block / Report / Mute). */
+              React.createElement('button', {onClick:function(){ openSafetySheet({ partner_id: c.user_id, nickname: c.nickname, avatar: c.avatar }, 'connection'); },style:{padding:'7px 8px',background:'transparent',border:'none',color:'var(--t3)',fontSize:'18px',cursor:'pointer',fontFamily:'inherit',lineHeight:1}}, '⋯')
             );
           })
     )
@@ -1449,6 +1568,100 @@ export default function AnonymousConnect(props) {
               style:{padding:'10px 22px',borderRadius:'10px',background:vp.is_online?'linear-gradient(135deg,#27C96A,#1D9E75)':'var(--bg4)',border:vp.is_online?'none':'1px solid var(--border)',color:vp.is_online?'#fff':'var(--t3)',fontSize:'12px',fontWeight:700,cursor:vp.is_online?'pointer':'not-allowed'}
             }, '📞 Call')
           )
+        )
+      );
+    })() : null,
+
+    /* ════════ R46: Safety bottom sheet — Block / Report / Mute ════════ */
+    safetySheetFor ? (function(){
+      var sa = getAvatar(safetySheetFor.avatar || 'girl1');
+      return React.createElement('div', {
+        onClick: function(){ setSafetySheetFor(null); },
+        /* zIndex 960 — above the CallScreen (900) and the profile-view modal
+         * (950) so you can pull this up while on a call. */
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:960,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+      },
+        React.createElement('div', {
+          onClick: function(e){ e.stopPropagation(); },
+          style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.4)'}
+        },
+          React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 16px'}}),
+          React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'18px'}},
+            React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:sa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}}, sa.emoji),
+            React.createElement('div', {style:{flex:1,minWidth:0}},
+              React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'15px',fontWeight:800,color:'var(--text)'}}, 'Make a quiet move'),
+              React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)'}}, 'For ' + (safetySheetFor.nickname || 'Anonymous'))
+            )
+          ),
+          /* Block (destructive — red) */
+          React.createElement('button', {
+            onClick: performBlock,
+            style:{width:'100%',padding:'14px',background:'rgba(225,59,47,0.08)',border:'1px solid rgba(225,59,47,0.3)',borderRadius:'12px',color:'#E13B2F',fontSize:'14px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px',textAlign:'left'}
+          },
+            React.createElement('span', {style:{fontSize:'18px'}}, '🚫'),
+            React.createElement('span', null, 'Block & end call'),
+            React.createElement('span', {style:{flex:1}}, ''),
+            React.createElement('span', {style:{fontSize:'11px',color:'rgba(225,59,47,0.6)',fontWeight:500}}, "You won't see them again")
+          ),
+          /* Report */
+          React.createElement('button', {
+            onClick: openReportPicker,
+            style:{width:'100%',padding:'14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:'8px',display:'flex',alignItems:'center',gap:'10px',textAlign:'left'}
+          },
+            React.createElement('span', {style:{fontSize:'18px'}}, '🚩'),
+            React.createElement('span', null, 'Report (anonymous)'),
+            React.createElement('span', {style:{flex:1}}, ''),
+            React.createElement('span', {style:{fontSize:'11px',color:'var(--t3)',fontWeight:500}}, "They won't know")
+          ),
+          /* Cancel */
+          React.createElement('button', {
+            onClick: function(){ setSafetySheetFor(null); },
+            style:{width:'100%',padding:'13px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',marginTop:'6px'}
+          }, 'Cancel')
+        )
+      );
+    })() : null,
+
+    /* ════════ R46: Report-reason picker ════════ */
+    reportSheetFor ? (function(){
+      var reasons = [
+        { k:'harassment', l:'😡 Harassment',     hint:'Threats, hate, abusive language' },
+        { k:'sexual',     l:'🔞 Sexual content', hint:'Explicit or inappropriate' },
+        { k:'underage',   l:'🚸 Underage',       hint:'Appears under 18' },
+        { k:'scam',       l:'💸 Scam / spam',     hint:'Asking for money or links' },
+        { k:'hate',       l:'🛑 Hate speech',     hint:'Targeting identity' },
+        { k:'other',      l:'❓ Other',           hint:'Something else' },
+      ];
+      return React.createElement('div', {
+        onClick: function(){ if (!reportSending) setReportSheetFor(null); },
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:960,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+      },
+        React.createElement('div', {
+          onClick: function(e){ e.stopPropagation(); },
+          style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.4)',maxHeight:'80vh',overflowY:'auto'}
+        },
+          React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 16px'}}),
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'17px',fontWeight:800,color:'var(--text)',marginBottom:'4px'}}, 'Why are you reporting?'),
+          React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginBottom:'16px'}}, 'Reports are anonymous. We review every one.'),
+          reasons.map(function(r){
+            return React.createElement('button', {
+              key: r.k,
+              onClick: function(){ performReport(r.k); },
+              disabled: reportSending,
+              style:{width:'100%',padding:'14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor: reportSending ? 'wait' : 'pointer',fontFamily:'inherit',marginBottom:'8px',display:'flex',alignItems:'center',gap:'12px',textAlign:'left',opacity: reportSending ? 0.5 : 1}
+            },
+              React.createElement('span', {style:{fontSize:'16px',flexShrink:0}}, r.l.split(' ')[0]),
+              React.createElement('div', {style:{flex:1,minWidth:0}},
+                React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, r.l.split(' ').slice(1).join(' ')),
+                React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'1px'}}, r.hint)
+              ),
+              React.createElement('span', {style:{fontSize:'16px',color:'var(--t3)'}}, '›')
+            );
+          }),
+          React.createElement('button', {
+            onClick: function(){ if (!reportSending) setReportSheetFor(null); },
+            style:{width:'100%',padding:'13px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor: reportSending ? 'wait' : 'pointer',marginTop:'10px'}
+          }, 'Cancel')
         )
       );
     })() : null
