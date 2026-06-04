@@ -326,6 +326,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
    * in supabase/migrations/0017_creator_subscriptions.sql RLS policies. */
   var isExpertS=useState(false); var isExpert=isExpertS[0]; var setIsExpert=isExpertS[1];
   var showSubsMgrS=useState(false); var showSubsMgr=showSubsMgrS[0]; var setShowSubsMgr=showSubsMgrS[1];
+  /* R50: Creator Studio — neon balance + earnings preview screen. */
+  var showCreatorStudioS=useState(false); var showCreatorStudio=showCreatorStudioS[0]; var setShowCreatorStudio=showCreatorStudioS[1];
+  var neonSummaryS=useState({balance:0, lifetime_earned:0, last_30_days:0}); var neonSummary=neonSummaryS[0]; var setNeonSummary=neonSummaryS[1];
+  var neonLoadingS=useState(false); var neonLoading=neonLoadingS[0]; var setNeonLoading=neonLoadingS[1];
   var subOfferS=useState(null); var subOffer=subOfferS[0]; var setSubOffer=subOfferS[1];
   var subOfferLoadingS=useState(false); var subOfferLoading=subOfferLoadingS[0]; var setSubOfferLoading=subOfferLoadingS[1];
   /* Form state — mirrors creator_subscriptions_offered columns. Defaults
@@ -710,6 +714,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       if (showMuted) return consume(function(){ setShowMuted(false); });
       if (showExpertApp) return consume(function(){ setShowExpertApp(false); });
       if (showSubsMgr) return consume(function(){ setShowSubsMgr(false); }); /* R25 */
+      if (showCreatorStudio) return consume(function(){ setShowCreatorStudio(false); }); /* R50 */
       if (showVerifyApp) return consume(function(){ setShowVerifyApp(false); }); /* R26 */
       if (showAdminReview) return consume(function(){ setShowAdminReview(false); }); /* R26 */
       if (showRate) return consume(function(){ setShowRate(false); });
@@ -2764,6 +2769,105 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
    * Save flow: UPSERT to creator_subscriptions_offered. RLS enforces that
    * the creator_id matches auth.uid() AND the user is a verified expert.
    * Client + server both gate this — defence in depth. */
+  /* ════════ R50: Creator Studio screen ════════ */
+  if (showCreatorStudio) {
+    /* The catalog used in the "earnings per gift" preview. Mirrors the
+     * gift catalog in AnonymousConnect.js + CallScreen.js so the rates
+     * shown to the creator match what the server actually credits. */
+    var STUDIO_CATALOG = [
+      { emoji:'👋', name:'Wave',        tier:'sticker', coins:10 },
+      { emoji:'❤️', name:'Heart',       tier:'sticker', coins:15 },
+      { emoji:'🌹', name:'Rose',        tier:'sticker', coins:25 },
+      { emoji:'🎂', name:'Cake',        tier:'premium', coins:50 },
+      { emoji:'💋', name:'Kiss',        tier:'premium', coins:100 },
+      { emoji:'👑', name:'Crown',       tier:'premium', coins:200 },
+      { emoji:'🏎',  name:'Sports Car',  tier:'mega', coins:500 },
+      { emoji:'🏰', name:'Castle',      tier:'mega', coins:1000 },
+      { emoji:'💎', name:'Diamond',     tier:'mega', coins:2000 },
+    ];
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      /* Header */
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowCreatorStudio(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center'}},
+          React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+            React.createElement('polyline',{points:'15 18 9 12 15 6'})
+          )
+        ),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}}, 'Creator Studio'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}}, 'Your earnings + how the splits work')
+        )
+      ),
+      React.createElement('div',{style:{padding:'18px',flex:1,overflowY:'auto'}},
+        /* Big balance card */
+        React.createElement('div',{style:{padding:'22px 20px',background:'linear-gradient(135deg,rgba(123,110,255,0.18),rgba(232,77,154,0.12))',border:'1px solid rgba(123,110,255,0.4)',borderRadius:'16px',marginBottom:'18px',textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'4px'}}, 'Your Neon Balance'),
+          React.createElement('div',{style:{fontSize:'44px',fontWeight:800,color:'var(--text)',fontFamily:'Syne, sans-serif',lineHeight:1.1,letterSpacing:'-1px'}}, neonLoading ? '…' : ('✨ ' + (neonSummary.balance||0).toLocaleString())),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'6px'}}, '1 Neon = ₹1 at cashout'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginTop:'4px',fontStyle:'italic'}}, 'Withdrawal opens at 5,000 Neons')
+        ),
+        /* Two-stat row: lifetime + last 30 days */
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'22px'}},
+          React.createElement('div',{style:{padding:'14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',textAlign:'center'}},
+            React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'4px',fontWeight:700}}, 'Last 30 days'),
+            React.createElement('div',{style:{fontSize:'18px',fontWeight:800,color:'var(--text)'}}, '✨ ' + (neonSummary.last_30_days||0).toLocaleString())
+          ),
+          React.createElement('div',{style:{padding:'14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',textAlign:'center'}},
+            React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'4px',fontWeight:700}}, 'Lifetime earned'),
+            React.createElement('div',{style:{fontSize:'18px',fontWeight:800,color:'var(--text)'}}, '✨ ' + (neonSummary.lifetime_earned||0).toLocaleString())
+          )
+        ),
+        /* Split-rate explainer */
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px'}}, 'How earnings work'),
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px'}},
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)'}},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, '💜 Subscriptions'),
+              React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, 'Monthly subs + post gifts')
+            ),
+            React.createElement('div',{style:{fontSize:'14px',fontWeight:800,color:'var(--ac)'}}, '45%')
+          ),
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)'}},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, '🎁 Anonymous gifts'),
+              React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, 'Call gifts + chat gifts')
+            ),
+            React.createElement('div',{style:{fontSize:'14px',fontWeight:800,color:'var(--ac)'}}, '40%')
+          ),
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0'}},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, '📺 Ad revenue'),
+              React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px'}}, 'Coming soon')
+            ),
+            React.createElement('div',{style:{fontSize:'14px',fontWeight:800,color:'var(--t3)'}}, '10%')
+          )
+        ),
+        /* Per-gift preview — anon rate (40%) since these are the main gift contexts */
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px'}}, 'What you earn per gift (40% on anon)'),
+        React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'8px 0',marginBottom:'20px'}},
+          STUDIO_CATALOG.map(function(g, i){
+            var neonsEarned = Math.floor((g.coins * 40) / 100);
+            return React.createElement('div',{key:g.name,style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 16px',borderBottom: i < STUDIO_CATALOG.length-1 ? '1px solid var(--border)' : 'none'}},
+              React.createElement('div',{style:{fontSize:'20px',width:'28px',textAlign:'center'}}, g.emoji),
+              React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}}, g.name),
+                React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginTop:'1px'}}, 'Fan pays ' + g.coins + ' 🪙')
+              ),
+              React.createElement('div',{style:{fontSize:'13px',fontWeight:800,color:'var(--ac)'}}, '+' + neonsEarned + ' ✨')
+            );
+          })
+        ),
+        /* Withdrawal callout (handled outside this build per user direction) */
+        React.createElement('div',{style:{padding:'14px 16px',background:'var(--bg3)',border:'1px dashed var(--border)',borderRadius:'12px'}},
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, '💸 Cashout'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',lineHeight:1.5}},
+            'When you reach ✨ 5,000 Neons (₹5,000), you can request a UPI payout. The cashout form will open soon — meanwhile your neons accrue safely.'
+          )
+        )
+      )
+    );
+  }
+
   if(showSubsMgr) {
     var SUB_TIERS_BY_CURRENCY = {
       'INR': [
@@ -3105,6 +3209,15 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           ),fn:function(){setShowVerifyApp(true);}} : null,
           /* R26: Creator Subscriptions — now gated on is_verified (was expert-only). */
           isVerified ? {icon:'💜',label:'Creator Subscriptions',sub:(subOffer && subOffer.enabled ? ('Active · ' + subActiveCount + ' subscriber' + (subActiveCount===1?'':'s')) : 'Set your monthly price + perks'),fn:function(){setShowSubsMgr(true);}} : null,
+          /* R50: Creator Studio — neon balance + earnings preview. Verified only. */
+          isVerified ? {icon:'✨',label:'Creator Studio',sub:'Neons earned + earnings breakdown',fn:function(){
+            setShowCreatorStudio(true);
+            setNeonLoading(true);
+            sbProfile.rpc('my_neon_summary').then(function(r){
+              setNeonLoading(false);
+              if (r && !r.error && r.data) setNeonSummary({balance: r.data.balance||0, lifetime_earned: r.data.lifetime_earned||0, last_30_days: r.data.last_30_days||0});
+            }).catch(function(){ setNeonLoading(false); });
+          }} : null,
           /* R26: Admin tile — only for is_admin. Review pending verification requests. */
           isAdmin ? {icon:'🛡️',label:'Verification Review (Admin)',sub:'Approve or reject pending verification requests',fn:function(){setShowAdminReview(true);loadAdminQueue();}} : null,
           {icon:'👤',label:'Account Settings',sub:'Name, phone, country, timezone',fn:function(){setShowAcct(true);}},
