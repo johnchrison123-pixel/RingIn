@@ -263,21 +263,27 @@ export function UserProfileView(props){
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user && user.id, currentUserId]);
+  /* R54: replace the old window.confirm() + window.alert() pair with a
+   * styled bottom-sheet confirmation + toast notifications, matching the
+   * rest of the app's modal pattern (safety sheet, gift drawer, etc). */
+  var subConfirmOpenS=useState(false); var subConfirmOpen=subConfirmOpenS[0]; var setSubConfirmOpen=subConfirmOpenS[1];
   function startCoinSubscribe(){
     if (subbingU || !subOfferU || mySubU) return;
-    var price = subOfferU.coin_gift_price || 500;
-    var ok = window.confirm('Subscribe to ' + (user.full_name || 'this creator') + ' for ' + price + ' coins (30 days)?');
-    if (!ok) return;
+    setSubConfirmOpen(true);
+  }
+  function performCoinSubscribe(){
+    if (subbingU || !subOfferU || mySubU) return;
     setSubbingU(true);
+    setSubConfirmOpen(false);
     sbHome.rpc('subscribe_with_coins', { p_creator_id: user.id }).then(function(r){
       setSubbingU(false);
-      if (r && r.error) { try{ window.alert('Subscribe failed: ' + r.error.message); }catch(_){} return; }
+      if (r && r.error) { try{ toastError('Subscribe failed: ' + r.error.message); }catch(_){} return; }
       var status = r && r.data && r.data.status;
-      if (status === 'already_subscribed') { try{ window.alert('You\'re already subscribed.'); }catch(_){} return; }
+      if (status === 'already_subscribed') { try{ toastWarn("You're already subscribed."); }catch(_){} return; }
       /* success — refresh local state */
       setMySubU({ status:'active', creator_id:user.id, subscriber_id:currentUserId });
-      try{ window.alert('Subscribed! Posts will appear in Messages → Subs.'); }catch(_){}
-    }).catch(function(){ setSubbingU(false); try{ window.alert('Network error — try again.'); }catch(_){} });
+      try{ toastSuccess('💜 Subscribed! Posts appear in Messages → Subs.'); }catch(_){}
+    }).catch(function(){ setSubbingU(false); try{ toastError('Network error — try again.'); }catch(_){} });
   }
   // Local edit-post state (separate from HomeScreen's — UserProfileView is
   // a sibling component, can't reach HomeScreen's modal state). Same shape.
@@ -506,6 +512,49 @@ export function UserProfileView(props){
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     // Report modal — replaces previously fake alert("Thank you for reporting...").
     React.createElement(ReportModal,{target:reportTargetU,onClose:function(){setReportTargetU(null);},session:session}),
+    /* R54: Subscribe confirmation sheet — replaces the old window.confirm()
+     * with a styled bottom sheet matching safety + gift drawer patterns. */
+    subConfirmOpen && subOfferU ? React.createElement('div', {
+      onClick:function(){ if(!subbingU) setSubConfirmOpen(false); },
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9500,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick:function(e){ e.stopPropagation(); },
+        style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.4)'}
+      },
+        React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 16px'}}),
+        React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'14px'}},
+          React.createElement('div', {style:{width:'56px',height:'56px',borderRadius:'16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',boxShadow:'0 4px 14px rgba(123,110,255,0.35)'}}, '💜')
+        ),
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'18px',fontWeight:800,color:'var(--text)',textAlign:'center',marginBottom:'6px'}}, 'Subscribe to ' + (displayName || 'this creator')),
+        React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',textAlign:'center',marginBottom:'18px',lineHeight:1.5}}, 'Unlock their posts in Messages → Subs for the next 30 days.'),
+        /* Price card */
+        React.createElement('div', {style:{padding:'14px 16px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',marginBottom:'10px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)'}}, 'Monthly price'),
+          React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'6px'}},
+            React.createElement('span', {style:{fontSize:'18px'}}, '🪙'),
+            React.createElement('span', {style:{fontSize:'18px',fontWeight:800,color:'var(--text)'}}, (subOfferU.coin_gift_price || 500).toLocaleString())
+          )
+        ),
+        React.createElement('div', {style:{padding:'10px 16px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',marginBottom:'16px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)'}}, 'Access until'),
+          React.createElement('div', {style:{fontSize:'12px',color:'var(--text)',fontWeight:600}},
+            (function(){
+              try { var d = new Date(); d.setDate(d.getDate() + 30); return d.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }); } catch(_){ return '30 days from now'; }
+            })()
+          )
+        ),
+        React.createElement('button', {
+          onClick: performCoinSubscribe,
+          disabled: subbingU,
+          style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:800,cursor:subbingU?'wait':'pointer',fontFamily:'inherit',marginBottom:'8px',opacity:subbingU?0.7:1}
+        }, subbingU ? 'Subscribing…' : ('💜 Subscribe for ' + (subOfferU.coin_gift_price || 500) + ' coins')),
+        React.createElement('button', {
+          onClick: function(){ if(!subbingU) setSubConfirmOpen(false); },
+          style:{width:'100%',padding:'12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor: subbingU ? 'wait' : 'pointer',fontFamily:'inherit'}
+        }, 'Cancel')
+      )
+    ) : null,
     // Likes popup modal
     showLikersU ? React.createElement('div',{
       onClick:function(){setShowLikersU(null);},
