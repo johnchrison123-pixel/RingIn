@@ -326,9 +326,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
    * in supabase/migrations/0017_creator_subscriptions.sql RLS policies. */
   var isExpertS=useState(false); var isExpert=isExpertS[0]; var setIsExpert=isExpertS[1];
   var showSubsMgrS=useState(false); var showSubsMgr=showSubsMgrS[0]; var setShowSubsMgr=showSubsMgrS[1];
-  /* R50: Creator Studio — neon balance + earnings preview screen. */
+  /* R50: Creator Studio — neon balance + earnings preview screen.
+   * R51: extended summary shape with `by_source` breakdown:
+   *   { subscriptions, anon_calls, anon_chat_gifts, ads }
+   *   each is { lifetime, last_30_days }. */
   var showCreatorStudioS=useState(false); var showCreatorStudio=showCreatorStudioS[0]; var setShowCreatorStudio=showCreatorStudioS[1];
-  var neonSummaryS=useState({balance:0, lifetime_earned:0, last_30_days:0}); var neonSummary=neonSummaryS[0]; var setNeonSummary=neonSummaryS[1];
+  var neonSummaryS=useState({
+    balance:0, lifetime_earned:0, last_30_days:0,
+    by_source:{
+      subscriptions:{lifetime:0,last_30_days:0},
+      anon_calls:{lifetime:0,last_30_days:0},
+      anon_chat_gifts:{lifetime:0,last_30_days:0},
+      ads:{lifetime:0,last_30_days:0}
+    }
+  });
+  var neonSummary=neonSummaryS[0]; var setNeonSummary=neonSummaryS[1];
   var neonLoadingS=useState(false); var neonLoading=neonLoadingS[0]; var setNeonLoading=neonLoadingS[1];
   var subOfferS=useState(null); var subOffer=subOfferS[0]; var setSubOffer=subOfferS[1];
   var subOfferLoadingS=useState(false); var subOfferLoading=subOfferLoadingS[0]; var setSubOfferLoading=subOfferLoadingS[1];
@@ -2817,6 +2829,38 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             React.createElement('div',{style:{fontSize:'18px',fontWeight:800,color:'var(--text)'}}, '✨ ' + (neonSummary.lifetime_earned||0).toLocaleString())
           )
         ),
+        /* R51: Per-source earnings breakdown. Shows actual numbers per bucket
+         * so the creator sees WHERE their money came from. */
+        React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px'}}, 'Earnings by source'),
+        (function(){
+          var sources = [
+            { key:'subscriptions',   icon:'💜', label:'Subscriptions',  sub:'Monthly subs + post gifts (45%)', accent:'#7B6EFF' },
+            { key:'anon_calls',      icon:'📞', label:'Anonymous calls', sub:'In-call gift drawer (40%)',      accent:'#27C96A' },
+            { key:'anon_chat_gifts', icon:'💬', label:'Anonymous chat',  sub:'Connection gifts + reactions (40%)', accent:'#E84D9A' },
+            { key:'ads',             icon:'📺', label:'Ads revenue',     sub:'Coming soon (10% pool)',         accent:'#FDCB6E' },
+          ];
+          return React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'22px'}},
+            sources.map(function(s){
+              var src = (neonSummary.by_source && neonSummary.by_source[s.key]) || {lifetime:0, last_30_days:0};
+              var dim = s.key === 'ads';
+              return React.createElement('div',{
+                key:s.key,
+                style:{padding:'14px 16px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',display:'flex',alignItems:'center',gap:'12px',opacity: dim ? 0.55 : 1}
+              },
+                React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'10px',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}, s.icon),
+                React.createElement('div',{style:{flex:1,minWidth:0}},
+                  React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, s.label),
+                  React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginTop:'1px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, s.sub)
+                ),
+                React.createElement('div',{style:{textAlign:'right',flexShrink:0}},
+                  React.createElement('div',{style:{fontSize:'15px',fontWeight:800,color:s.accent}}, '✨ ' + (src.lifetime||0).toLocaleString()),
+                  React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',marginTop:'2px'}}, (src.last_30_days||0).toLocaleString() + ' last 30d')
+                )
+              );
+            })
+          );
+        })(),
+
         /* Split-rate explainer */
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px'}}, 'How earnings work'),
         React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px'}},
@@ -3215,7 +3259,22 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             setNeonLoading(true);
             sbProfile.rpc('my_neon_summary').then(function(r){
               setNeonLoading(false);
-              if (r && !r.error && r.data) setNeonSummary({balance: r.data.balance||0, lifetime_earned: r.data.lifetime_earned||0, last_30_days: r.data.last_30_days||0});
+              if (r && !r.error && r.data) {
+                /* R51: extend with by_source breakdown. Fallback to zeros if
+                 * migration 0034 hasn't been pasted yet. */
+                var bs = (r.data && r.data.by_source) || {};
+                setNeonSummary({
+                  balance: r.data.balance||0,
+                  lifetime_earned: r.data.lifetime_earned||0,
+                  last_30_days: r.data.last_30_days||0,
+                  by_source: {
+                    subscriptions:   (bs.subscriptions    || {lifetime:0,last_30_days:0}),
+                    anon_calls:      (bs.anon_calls       || {lifetime:0,last_30_days:0}),
+                    anon_chat_gifts: (bs.anon_chat_gifts  || {lifetime:0,last_30_days:0}),
+                    ads:             (bs.ads              || {lifetime:0,last_30_days:0})
+                  }
+                });
+              }
             }).catch(function(){ setNeonLoading(false); });
           }} : null,
           /* R26: Admin tile — only for is_admin. Review pending verification requests. */
