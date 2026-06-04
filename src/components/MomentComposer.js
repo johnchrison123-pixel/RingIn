@@ -2,9 +2,16 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {createPortal} from 'react-dom';
 
-/* R52: 15 Instagram-style filter presets. Each is a plain CSS filter
- * string — applied via <img style.filter> in the live preview AND via
- * canvas ctx.filter during export so the saved image has it baked in. */
+/* R52/R53: 17 filter presets including HD + 4K enhancement filters at
+ * the END of the list (most-used spot in a horizontal scroll).
+ *
+ * Each filter:
+ *   - css     : applied live to the preview <img> via style.filter
+ *               AND via canvas ctx.filter during export
+ *   - sharpen : (optional) unsharp-mask amount (0–1) applied as a real
+ *               3×3 convolution during canvas export. Gives the HD/4K
+ *               filters actual edge enhancement (not just CSS color punch)
+ *               so the SAVED image really does look sharper. */
 var FILTERS = [
   { key:'original',  name:'Original',  css:'none' },
   { key:'clarendon', name:'Clarendon', css:'contrast(1.2) saturate(1.35)' },
@@ -21,51 +28,93 @@ var FILTERS = [
   { key:'xpro2',     name:'X-Pro II',  css:'contrast(1.3) brightness(1.05) saturate(1.3) sepia(0.3)' },
   { key:'nashville', name:'Nashville', css:'sepia(0.2) contrast(1.2) brightness(1.05) saturate(1.2) hue-rotate(-15deg)' },
   { key:'inkwell',   name:'Inkwell',   css:'sepia(0.3) contrast(1.1) brightness(1.1) grayscale(1)' },
+  /* R53: enhancement filters — make a normal photo look high-end. */
+  { key:'hd',  name:'HD',  css:'contrast(1.18) saturate(1.22) brightness(1.04)', sharpen:0.35 },
+  { key:'4k',  name:'4K',  css:'contrast(1.26) saturate(1.32) brightness(1.06)', sharpen:0.65 },
 ];
 
-/* R52: quality presets. Drives canvas downscale + JPEG encoder quality.
- * Standard is the previous default (Insta-ish). HD bumps resolution for
- * users on faster networks. 4K preserves the full original (or close)
- * for users uploading from modern phone cameras. */
-var QUALITY_PRESETS = [
-  { key:'standard', name:'Standard', short:'SD',  maxWidth:1080, jpegQuality:0.85 },
-  { key:'hd',       name:'HD',       short:'HD',  maxWidth:1920, jpegQuality:0.92 },
-  { key:'4k',       name:'4K',       short:'4K',  maxWidth:3840, jpegQuality:0.95 },
-];
+/* R52/R53: export config — single resolution preset. Larger than the old
+ * 1080px default so HD/4K filters have enough pixels to show their work,
+ * but capped to keep upload sizes sensible. */
+var EXPORT_MAX_WIDTH = 1920;
+var EXPORT_JPEG_QUALITY = 0.92;
 
-/* R52: take a File, render it through canvas with a CSS filter applied
- * and scaled to maxWidth, return a new File. Used by handleShare so the
- * uploaded image has the filter baked in + is right-sized for storage. */
-function applyFilterAndQuality(file, filterCss, maxWidth, jpegQuality){
+/* R53: unsharp-mask convolution applied during canvas export. Strength is
+ * the kernel center weight — higher = more sharpening. Skipped for filters
+ * without a `sharpen` field. */
+function sharpenInPlace(ctx, w, h, strength){
+  if (!strength || strength <= 0) return;
+  try {
+    var imgData = ctx.getImageData(0, 0, w, h);
+    var src = imgData.data;
+    /* Output buffer — we read from src + write to dst so the kernel
+     * sees the original pixels at every position (not the already-
+     * sharpened ones). */
+    var dst = new Uint8ClampedArray(src.length);
+    var s = strength; var center = 1 + 4 * s; var side = -s;
+    for (var y = 1; y < h - 1; y++){
+      for (var x = 1; x < w - 1; x++){
+        var i = (y * w + x) * 4;
+        var iUp = ((y - 1) * w + x) * 4;
+        var iDn = ((y + 1) * w + x) * 4;
+        var iL  = (y * w + (x - 1)) * 4;
+        var iR  = (y * w + (x + 1)) * 4;
+        for (var c = 0; c < 3; c++){
+          var v = src[i + c] * center + (src[iUp + c] + src[iDn + c] + src[iL + c] + src[iR + c]) * side;
+          dst[i + c] = v < 0 ? 0 : (v > 255 ? 255 : v);
+        }
+        dst[i + 3] = src[i + 3]; /* alpha */
+      }
+    }
+    /* Copy the unprocessed border (1px) so we don't leave it black. */
+    for (var k = 0; k < w; k++){
+      var top = k * 4; var bot = ((h - 1) * w + k) * 4;
+      dst[top] = src[top]; dst[top+1] = src[top+1]; dst[top+2] = src[top+2]; dst[top+3] = src[top+3];
+      dst[bot] = src[bot]; dst[bot+1] = src[bot+1]; dst[bot+2] = src[bot+2]; dst[bot+3] = src[bot+3];
+    }
+    for (var m = 0; m < h; m++){
+      var lef = (m * w) * 4; var rig = (m * w + w - 1) * 4;
+      dst[lef] = src[lef]; dst[lef+1] = src[lef+1]; dst[lef+2] = src[lef+2]; dst[lef+3] = src[lef+3];
+      dst[rig] = src[rig]; dst[rig+1] = src[rig+1]; dst[rig+2] = src[rig+2]; dst[rig+3] = src[rig+3];
+    }
+    imgData.data.set(dst);
+    ctx.putImageData(imgData, 0, 0);
+  } catch(_){ /* sharpening is best-effort; export still proceeds without it */ }
+}
+
+/* R52/R53: take a File, render it through canvas with a CSS filter
+ * applied + optional sharpening, return a new File. */
+function applyFilterToFile(file, filterDef){
   return new Promise(function(resolve, reject){
     var img = new Image();
     img.onload = function(){
       try {
-        var ratio = img.naturalWidth > maxWidth ? (maxWidth / img.naturalWidth) : 1;
+        var ratio = img.naturalWidth > EXPORT_MAX_WIDTH ? (EXPORT_MAX_WIDTH / img.naturalWidth) : 1;
         var w = Math.max(1, Math.round(img.naturalWidth * ratio));
         var h = Math.max(1, Math.round(img.naturalHeight * ratio));
         var canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         var ctx = canvas.getContext('2d');
-        /* ctx.filter accepts the same syntax as CSS filter. If the
-         * runtime doesn't support it (very old browser), the image just
-         * exports without the filter — preferable to crashing. */
-        if (filterCss && filterCss !== 'none') {
-          try { ctx.filter = filterCss; } catch(_){}
+        if (filterDef && filterDef.css && filterDef.css !== 'none') {
+          try { ctx.filter = filterDef.css; } catch(_){}
         }
         ctx.drawImage(img, 0, 0, w, h);
+        /* Reset filter before any post-processing so sharpening operates
+         * on the already-filtered pixels (not re-filtered). */
+        try { ctx.filter = 'none'; } catch(_){}
+        if (filterDef && filterDef.sharpen) {
+          sharpenInPlace(ctx, w, h, filterDef.sharpen);
+        }
         canvas.toBlob(function(blob){
           if (!blob) { reject(new Error('Canvas processing failed')); return; }
           try {
             var out = new File([blob], (file.name || 'moment') + '.jpg', { type:'image/jpeg' });
             resolve(out);
           } catch(_){
-            /* Old Android: File ctor unavailable. Fall back to the Blob
-             * directly — Supabase upload accepts Blob, just lacks .name. */
             try { blob.name = 'moment.jpg'; } catch(__){}
             resolve(blob);
           }
-        }, 'image/jpeg', jpegQuality);
+        }, 'image/jpeg', EXPORT_JPEG_QUALITY);
       } catch (e) { reject(e); }
     };
     img.onerror = function(){ reject(new Error('Could not decode image')); };
@@ -90,11 +139,11 @@ export default function MomentComposer(props){
   // green ring variant in the strip).
   var closeFriendsOnlyS = useState(false); var closeFriendsOnly = closeFriendsOnlyS[0]; var setCloseFriendsOnly = closeFriendsOnlyS[1];
 
-  /* R52: Instagram-style color filter + resolution preset for the
-   * shared image. Both apply during preview (CSS filter on the <img>)
-   * AND during export (canvas processing in handleShare). */
+  /* R52/R53: Instagram-style color filter — applies during preview
+   * (CSS filter on the <img>) AND during export (canvas processing in
+   * handleShare). HD + 4K filters additionally run real canvas
+   * sharpening so the saved image looks visibly enhanced. */
   var selectedFilterKeyS = useState('original'); var selectedFilterKey = selectedFilterKeyS[0]; var setSelectedFilterKey = selectedFilterKeyS[1];
-  var selectedQualityKeyS = useState('standard'); var selectedQualityKey = selectedQualityKeyS[0]; var setSelectedQualityKey = selectedQualityKeyS[1];
 
   // ── Pinch-zoom + pan state ────────────────────────────────────────────
   // scale is the zoom factor (1 = natural). translate is the pan offset in
@@ -212,17 +261,16 @@ export default function MomentComposer(props){
     if(uploading || !file) return;
     setUploading(true);
     setError('');
-    /* R52: bake the chosen filter + scale into the exported file BEFORE
-     * uploading, so the saved image matches what the user saw in preview
-     * (filters need to persist on every viewer, not just the composer). */
+    /* R52/R53: bake the chosen filter (and any HD/4K sharpening) into
+     * the exported file BEFORE uploading so the saved image matches the
+     * preview every viewer sees. */
     var filterDef = FILTERS.find(function(f){ return f.key === selectedFilterKey; }) || FILTERS[0];
-    var qualityDef = QUALITY_PRESETS.find(function(q){ return q.key === selectedQualityKey; }) || QUALITY_PRESETS[0];
-    var shouldProcess = filterDef.css !== 'none' || qualityDef.key !== 'standard';
+    var shouldProcess = filterDef.css !== 'none' || filterDef.sharpen;
     var processed = shouldProcess
-      ? applyFilterAndQuality(file, filterDef.css, qualityDef.maxWidth, qualityDef.jpegQuality)
+      ? applyFilterToFile(file, filterDef)
       : Promise.resolve(file);
     processed.then(function(outFile){
-      return Promise.resolve(onShare && onShare(outFile, (caption || '').trim(), { closeFriendsOnly: closeFriendsOnly, filter: filterDef.key, quality: qualityDef.key }));
+      return Promise.resolve(onShare && onShare(outFile, (caption || '').trim(), { closeFriendsOnly: closeFriendsOnly, filter: filterDef.key }));
     }).then(function(){ /* parent closes us */ })
       .catch(function(err){
         setError((err && err.message) ? err.message : 'Failed to share. Please try again.');
@@ -277,15 +325,16 @@ export default function MomentComposer(props){
         }
       })
     ),
-    /* R52: Filter strip — horizontal scroll of 15 thumbnails. Each
+    /* R52/R53: Filter strip — horizontal scroll of 17 thumbnails
+     * (15 color filters + HD + 4K enhancements at the end). Each
      * thumbnail uses the preview URL with that filter pre-applied so
-     * the user sees an instant per-filter preview without re-rendering
-     * the whole image. */
+     * the user sees an instant per-filter preview. HD + 4K thumbnails
+     * also get a tiny ✨ badge to flag them as enhancement filters. */
     React.createElement('div', {
       style:{
         position:'absolute',
         left:0, right:0,
-        bottom:'calc(218px + env(safe-area-inset-bottom, 0px))',
+        bottom:'calc(178px + env(safe-area-inset-bottom, 0px))',
         padding:'0 12px',
         overflowX:'auto',
         WebkitOverflowScrolling:'touch',
@@ -297,6 +346,7 @@ export default function MomentComposer(props){
     },
       FILTERS.map(function(f){
         var sel = selectedFilterKey === f.key;
+        var isEnhancement = !!f.sharpen;
         return React.createElement('button', {
           key: f.key,
           onClick: function(){ setSelectedFilterKey(f.key); },
@@ -320,7 +370,17 @@ export default function MomentComposer(props){
                 width:'100%', height:'100%', objectFit:'cover',
                 filter: f.css, WebkitFilter: f.css,
               }
-            })
+            }),
+            /* ✨ badge for HD / 4K enhancement filters */
+            isEnhancement ? React.createElement('div', {
+              style:{
+                position:'absolute', top:'3px', right:'3px',
+                background:'linear-gradient(135deg,#FFD700,#E84D9A)',
+                color:'#fff', fontSize:'8px', fontWeight:800,
+                padding:'1px 4px', borderRadius:'6px',
+                textShadow:'none',
+              }
+            }, '✨') : null
           ),
           React.createElement('div', {
             style:{
@@ -330,37 +390,6 @@ export default function MomentComposer(props){
             }
           }, f.name)
         );
-      })
-    ),
-
-    /* R52: Quality picker — 3 pills (SD / HD / 4K). */
-    React.createElement('div', {
-      style:{
-        position:'absolute',
-        left:'14px', right:'14px',
-        bottom:'calc(178px + env(safe-area-inset-bottom, 0px))',
-        display:'flex', gap:'6px', alignItems:'center', justifyContent:'center',
-        zIndex:2,
-      }
-    },
-      QUALITY_PRESETS.map(function(q){
-        var sel = selectedQualityKey === q.key;
-        return React.createElement('button', {
-          key: q.key,
-          onClick: function(){ setSelectedQualityKey(q.key); },
-          style:{
-            background: sel ? 'rgba(232,77,154,0.85)' : 'rgba(0,0,0,0.55)',
-            border: '1px solid ' + (sel ? '#E84D9A' : 'rgba(255,255,255,0.35)'),
-            color:'#fff',
-            padding:'5px 14px',
-            borderRadius:'14px',
-            fontSize:'11px',
-            fontWeight: sel ? 800 : 600,
-            cursor:'pointer',
-            fontFamily:'inherit',
-            letterSpacing: '0.5px',
-          }
-        }, q.short);
       })
     ),
 
