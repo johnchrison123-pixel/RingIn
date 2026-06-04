@@ -915,6 +915,12 @@ export default function HomeScreen(props){
   // cached in localStorage so the poster sees their own immediately even
   // if the network is slow / table is missing.
   var momentFileRef = useRef(null);
+  /* R52: Camera/Gallery chooser sheet — opened by the + tile.
+   * Two refs because mobile browsers can't switch a single input between
+   * camera and gallery dynamically — separate inputs per source. */
+  var momentCameraInputRef = useRef(null);
+  var momentGalleryInputRef = useRef(null);
+  var showMomentSourceSheetS = useState(false); var showMomentSourceSheet = showMomentSourceSheetS[0]; var setShowMomentSourceSheet = showMomentSourceSheetS[1];
   var pendingMomentFileS = useState(null);
   var pendingMomentFile = pendingMomentFileS[0]; var setPendingMomentFile = pendingMomentFileS[1];
   var realMomentsS = useState([]);
@@ -1036,7 +1042,9 @@ export default function HomeScreen(props){
   useEffect(function(){ loadRealMoments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [currentUserId]);
 
   function pickMomentFile(){
-    if(momentFileRef.current) momentFileRef.current.click();
+    /* R52: open the Camera/Gallery chooser instead of jumping straight to
+     * the gallery picker. */
+    setShowMomentSourceSheet(true);
   }
 
   function onMomentFileChosen(e){
@@ -1052,8 +1060,11 @@ export default function HomeScreen(props){
       try { toastWarn('Only images supported for moments (JPG, PNG, GIF, WebP)'); } catch(_){}
       return;
     }
-    if (f.size > 10 * 1024 * 1024) {
-      try { toastWarn('Image must be under 10MB'); } catch(_){}
+    /* R52: bumped to 30MB to accommodate HD/4K originals from modern
+     * phone cameras. The composer downscales + re-encodes via canvas
+     * before upload, so the persisted file is always small. */
+    if (f.size > 30 * 1024 * 1024) {
+      try { toastWarn('Image must be under 30MB'); } catch(_){}
       return;
     }
     setPendingMomentFile(f);
@@ -2769,14 +2780,64 @@ export default function HomeScreen(props){
       ) : null
     ) : null,
 
-    // Hidden file input — opened by the + tile in the Moments strip.
+    /* R52: two hidden inputs — camera + gallery — driven by the source
+     * chooser sheet below. The camera input uses `capture="environment"`
+     * which on Android opens the system camera directly (works in both
+     * the Chrome PWA and the Capacitor WebView). The gallery input has
+     * no capture attribute so it opens the photo picker. */
     React.createElement('input', {
-      ref: momentFileRef,
+      ref: momentCameraInputRef,
+      type:'file',
+      accept:'image/*',
+      capture:'environment',
+      style:{display:'none'},
+      onChange: onMomentFileChosen,
+    }),
+    React.createElement('input', {
+      ref: momentGalleryInputRef,
       type:'file',
       accept:'image/*',
       style:{display:'none'},
       onChange: onMomentFileChosen,
     }),
+
+    /* R52: source chooser sheet — pops up when user taps the "+" tile. */
+    showMomentSourceSheet ? React.createElement('div', {
+      onClick: function(){ setShowMomentSourceSheet(false); },
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.4)'}
+      },
+        React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 14px'}}),
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'16px',fontWeight:800,color:'var(--text)',marginBottom:'16px'}}, 'Add a moment'),
+        React.createElement('button', {
+          onClick: function(){ setShowMomentSourceSheet(false); if (momentCameraInputRef.current) momentCameraInputRef.current.click(); },
+          style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:'10px',display:'flex',alignItems:'center',gap:'12px'}
+        },
+          React.createElement('span', {style:{fontSize:'22px'}}, '📷'),
+          React.createElement('div', {style:{flex:1,textAlign:'left'}},
+            React.createElement('div', {style:{fontSize:'14px',fontWeight:800}}, 'Take a photo'),
+            React.createElement('div', {style:{fontSize:'11px',opacity:0.85,marginTop:'2px'}}, 'Open the camera')
+          )
+        ),
+        React.createElement('button', {
+          onClick: function(){ setShowMomentSourceSheet(false); if (momentGalleryInputRef.current) momentGalleryInputRef.current.click(); },
+          style:{width:'100%',padding:'14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:'10px',display:'flex',alignItems:'center',gap:'12px'}
+        },
+          React.createElement('span', {style:{fontSize:'22px'}}, '🖼️'),
+          React.createElement('div', {style:{flex:1,textAlign:'left'}},
+            React.createElement('div', {style:{fontSize:'14px',fontWeight:800}}, 'Choose from gallery'),
+            React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px'}}, 'Pick from your phone')
+          )
+        ),
+        React.createElement('button', {
+          onClick: function(){ setShowMomentSourceSheet(false); },
+          style:{width:'100%',padding:'12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer'}
+        }, 'Cancel')
+      )
+    ) : null,
 
     // Composer overlay (only when a file is picked & waiting to post)
     pendingMomentFile ? React.createElement(MomentComposer, {

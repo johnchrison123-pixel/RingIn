@@ -2,6 +2,77 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {createPortal} from 'react-dom';
 
+/* R52: 15 Instagram-style filter presets. Each is a plain CSS filter
+ * string — applied via <img style.filter> in the live preview AND via
+ * canvas ctx.filter during export so the saved image has it baked in. */
+var FILTERS = [
+  { key:'original',  name:'Original',  css:'none' },
+  { key:'clarendon', name:'Clarendon', css:'contrast(1.2) saturate(1.35)' },
+  { key:'lark',      name:'Lark',      css:'contrast(0.9) brightness(1.1) saturate(1.1) hue-rotate(-7deg)' },
+  { key:'juno',      name:'Juno',      css:'contrast(1.15) saturate(1.4) hue-rotate(-10deg)' },
+  { key:'aden',      name:'Aden',      css:'hue-rotate(-20deg) contrast(0.9) saturate(0.85) brightness(1.2)' },
+  { key:'gingham',   name:'Gingham',   css:'brightness(1.05) hue-rotate(-10deg) sepia(0.04)' },
+  { key:'slumber',   name:'Slumber',   css:'saturate(0.66) brightness(1.05) sepia(0.1)' },
+  { key:'crema',     name:'Crema',     css:'contrast(0.9) brightness(1.1) saturate(0.9) sepia(0.1)' },
+  { key:'reyes',     name:'Reyes',     css:'sepia(0.22) brightness(1.1) contrast(0.85) saturate(0.75)' },
+  { key:'mono',      name:'Mono',      css:'grayscale(1) contrast(1.1)' },
+  { key:'valencia',  name:'Valencia',  css:'sepia(0.25) contrast(1.08) brightness(1.08) saturate(1.5)' },
+  { key:'hudson',    name:'Hudson',    css:'brightness(1.2) contrast(0.9) saturate(1.1) hue-rotate(15deg)' },
+  { key:'xpro2',     name:'X-Pro II',  css:'contrast(1.3) brightness(1.05) saturate(1.3) sepia(0.3)' },
+  { key:'nashville', name:'Nashville', css:'sepia(0.2) contrast(1.2) brightness(1.05) saturate(1.2) hue-rotate(-15deg)' },
+  { key:'inkwell',   name:'Inkwell',   css:'sepia(0.3) contrast(1.1) brightness(1.1) grayscale(1)' },
+];
+
+/* R52: quality presets. Drives canvas downscale + JPEG encoder quality.
+ * Standard is the previous default (Insta-ish). HD bumps resolution for
+ * users on faster networks. 4K preserves the full original (or close)
+ * for users uploading from modern phone cameras. */
+var QUALITY_PRESETS = [
+  { key:'standard', name:'Standard', short:'SD',  maxWidth:1080, jpegQuality:0.85 },
+  { key:'hd',       name:'HD',       short:'HD',  maxWidth:1920, jpegQuality:0.92 },
+  { key:'4k',       name:'4K',       short:'4K',  maxWidth:3840, jpegQuality:0.95 },
+];
+
+/* R52: take a File, render it through canvas with a CSS filter applied
+ * and scaled to maxWidth, return a new File. Used by handleShare so the
+ * uploaded image has the filter baked in + is right-sized for storage. */
+function applyFilterAndQuality(file, filterCss, maxWidth, jpegQuality){
+  return new Promise(function(resolve, reject){
+    var img = new Image();
+    img.onload = function(){
+      try {
+        var ratio = img.naturalWidth > maxWidth ? (maxWidth / img.naturalWidth) : 1;
+        var w = Math.max(1, Math.round(img.naturalWidth * ratio));
+        var h = Math.max(1, Math.round(img.naturalHeight * ratio));
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        /* ctx.filter accepts the same syntax as CSS filter. If the
+         * runtime doesn't support it (very old browser), the image just
+         * exports without the filter — preferable to crashing. */
+        if (filterCss && filterCss !== 'none') {
+          try { ctx.filter = filterCss; } catch(_){}
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(function(blob){
+          if (!blob) { reject(new Error('Canvas processing failed')); return; }
+          try {
+            var out = new File([blob], (file.name || 'moment') + '.jpg', { type:'image/jpeg' });
+            resolve(out);
+          } catch(_){
+            /* Old Android: File ctor unavailable. Fall back to the Blob
+             * directly — Supabase upload accepts Blob, just lacks .name. */
+            try { blob.name = 'moment.jpg'; } catch(__){}
+            resolve(blob);
+          }
+        }, 'image/jpeg', jpegQuality);
+      } catch (e) { reject(e); }
+    };
+    img.onerror = function(){ reject(new Error('Could not decode image')); };
+    try { img.src = URL.createObjectURL(file); } catch(e){ reject(e); }
+  });
+}
+
 // MomentComposer — full-screen overlay that shows the picked photo,
 // lets the user add an optional caption, and posts via the provided
 // onShare callback. Mounted via portal so it always covers the viewport.
@@ -18,6 +89,12 @@ export default function MomentComposer(props){
   // visible to users on the poster's close_friends list (and gets the
   // green ring variant in the strip).
   var closeFriendsOnlyS = useState(false); var closeFriendsOnly = closeFriendsOnlyS[0]; var setCloseFriendsOnly = closeFriendsOnlyS[1];
+
+  /* R52: Instagram-style color filter + resolution preset for the
+   * shared image. Both apply during preview (CSS filter on the <img>)
+   * AND during export (canvas processing in handleShare). */
+  var selectedFilterKeyS = useState('original'); var selectedFilterKey = selectedFilterKeyS[0]; var setSelectedFilterKey = selectedFilterKeyS[1];
+  var selectedQualityKeyS = useState('standard'); var selectedQualityKey = selectedQualityKeyS[0]; var setSelectedQualityKey = selectedQualityKeyS[1];
 
   // ── Pinch-zoom + pan state ────────────────────────────────────────────
   // scale is the zoom factor (1 = natural). translate is the pan offset in
@@ -135,8 +212,18 @@ export default function MomentComposer(props){
     if(uploading || !file) return;
     setUploading(true);
     setError('');
-    Promise.resolve(onShare && onShare(file, (caption || '').trim(), { closeFriendsOnly: closeFriendsOnly }))
-      .then(function(){ /* parent closes us */ })
+    /* R52: bake the chosen filter + scale into the exported file BEFORE
+     * uploading, so the saved image matches what the user saw in preview
+     * (filters need to persist on every viewer, not just the composer). */
+    var filterDef = FILTERS.find(function(f){ return f.key === selectedFilterKey; }) || FILTERS[0];
+    var qualityDef = QUALITY_PRESETS.find(function(q){ return q.key === selectedQualityKey; }) || QUALITY_PRESETS[0];
+    var shouldProcess = filterDef.css !== 'none' || qualityDef.key !== 'standard';
+    var processed = shouldProcess
+      ? applyFilterAndQuality(file, filterDef.css, qualityDef.maxWidth, qualityDef.jpegQuality)
+      : Promise.resolve(file);
+    processed.then(function(outFile){
+      return Promise.resolve(onShare && onShare(outFile, (caption || '').trim(), { closeFriendsOnly: closeFriendsOnly, filter: filterDef.key, quality: qualityDef.key }));
+    }).then(function(){ /* parent closes us */ })
       .catch(function(err){
         setError((err && err.message) ? err.message : 'Failed to share. Please try again.');
         setUploading(false);
@@ -183,9 +270,100 @@ export default function MomentComposer(props){
           willChange: 'transform',
           pointerEvents: 'none',
           WebkitUserDrag: 'none',
+          /* R52: live filter preview. The exported image gets the same
+           * filter baked in via canvas during handleShare. */
+          filter: (FILTERS.find(function(f){ return f.key === selectedFilterKey; }) || FILTERS[0]).css,
+          WebkitFilter: (FILTERS.find(function(f){ return f.key === selectedFilterKey; }) || FILTERS[0]).css,
         }
       })
     ),
+    /* R52: Filter strip — horizontal scroll of 15 thumbnails. Each
+     * thumbnail uses the preview URL with that filter pre-applied so
+     * the user sees an instant per-filter preview without re-rendering
+     * the whole image. */
+    React.createElement('div', {
+      style:{
+        position:'absolute',
+        left:0, right:0,
+        bottom:'calc(218px + env(safe-area-inset-bottom, 0px))',
+        padding:'0 12px',
+        overflowX:'auto',
+        WebkitOverflowScrolling:'touch',
+        zIndex:2,
+        display:'flex',
+        gap:'8px',
+        scrollbarWidth:'none',
+      }
+    },
+      FILTERS.map(function(f){
+        var sel = selectedFilterKey === f.key;
+        return React.createElement('button', {
+          key: f.key,
+          onClick: function(){ setSelectedFilterKey(f.key); },
+          style:{
+            background:'transparent', border:'none', padding:0, cursor:'pointer',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:'4px',
+            flexShrink:0, fontFamily:'inherit',
+          }
+        },
+          React.createElement('div', {
+            style:{
+              width:'58px', height:'58px', borderRadius:'10px',
+              border: sel ? '2px solid #E84D9A' : '2px solid rgba(255,255,255,0.25)',
+              overflow:'hidden', position:'relative',
+              boxShadow: sel ? '0 0 12px rgba(232,77,154,0.5)' : 'none',
+            }
+          },
+            React.createElement('img', {
+              src: previewUrl, alt: f.name,
+              style:{
+                width:'100%', height:'100%', objectFit:'cover',
+                filter: f.css, WebkitFilter: f.css,
+              }
+            })
+          ),
+          React.createElement('div', {
+            style:{
+              color: sel ? '#E84D9A' : 'rgba(255,255,255,0.85)',
+              fontSize:'10px', fontWeight: sel ? 700 : 500,
+              textShadow:'0 1px 3px rgba(0,0,0,0.6)',
+            }
+          }, f.name)
+        );
+      })
+    ),
+
+    /* R52: Quality picker — 3 pills (SD / HD / 4K). */
+    React.createElement('div', {
+      style:{
+        position:'absolute',
+        left:'14px', right:'14px',
+        bottom:'calc(178px + env(safe-area-inset-bottom, 0px))',
+        display:'flex', gap:'6px', alignItems:'center', justifyContent:'center',
+        zIndex:2,
+      }
+    },
+      QUALITY_PRESETS.map(function(q){
+        var sel = selectedQualityKey === q.key;
+        return React.createElement('button', {
+          key: q.key,
+          onClick: function(){ setSelectedQualityKey(q.key); },
+          style:{
+            background: sel ? 'rgba(232,77,154,0.85)' : 'rgba(0,0,0,0.55)',
+            border: '1px solid ' + (sel ? '#E84D9A' : 'rgba(255,255,255,0.35)'),
+            color:'#fff',
+            padding:'5px 14px',
+            borderRadius:'14px',
+            fontSize:'11px',
+            fontWeight: sel ? 800 : 600,
+            cursor:'pointer',
+            fontFamily:'inherit',
+            letterSpacing: '0.5px',
+          }
+        }, q.short);
+      })
+    ),
+
     // Zoom slider — sits above the caption input. Drag handle from 0.5×
     // to 4× zoom; tap "Reset" to snap back to 1× + recentered.
     React.createElement('div', {
