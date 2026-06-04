@@ -2994,7 +2994,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         React.createElement('div',{style:{background:'linear-gradient(135deg,rgba(123,110,255,0.12),rgba(232,77,154,0.08))',border:'1px solid rgba(123,110,255,0.3)',borderRadius:'14px',padding:'14px 16px',marginBottom:'16px'}},
           React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}},'💜  Subscriptions, Instagram-style'),
           React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.55}},
-            'Pick a monthly price. Subscribers unlock the perks you choose below. You keep 70% of every subscription. Subscribers can cancel anytime; they keep access until the end of the month.')
+            /* R55-C3: was "You keep 70%" — server actually credits 45% in
+             * neons per the dual-token economy launched in R50. Fixed to
+             * match reality so creators aren't surprised at cashout. */
+            'Pick a monthly price. Subscribers unlock the perks you choose below. You earn 45% of every subscription as ✨ Neons (1 Neon = ₹1 at cashout). Subscribers can cancel anytime; they keep access until the end of the month.')
         ),
 
         // ── Enable toggle ──
@@ -3036,7 +3039,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
             },
               React.createElement('div',null,
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}}, t.label),
-                React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',marginTop:'1px'}}, 'You receive ~' + Math.round((t.price_cents * 0.70) / 100) + ' ' + (subCurrency === 'USD' ? 'USD' : (subCurrency === 'INR' ? '₹ (rupees)' : 'SAR')) + ' after platform fees')
+                /* R55-C3: was 0.70 multiplier ("You receive 70%"); actual
+                 * server-side split is 45% neons → 1:1 INR cashout.
+                 * Subscription is paid in coins so the displayed math reflects
+                 * the coin price × 45% = neons (≈ ₹ at 1:1). */
+                React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',marginTop:'1px'}}, 'You earn ~' + Math.round((t.coins * 0.45)) + ' ✨ Neons per subscriber (' + Math.round(t.coins * 0.45) + ' INR at cashout)')
               ),
               React.createElement('div',{style:{width:'20px',height:'20px',borderRadius:'50%',border:'2px solid '+(isSel?'var(--ac)':'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
                 isSel ? React.createElement('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:'var(--ac)'}}) : null

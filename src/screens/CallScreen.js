@@ -632,25 +632,45 @@ export default function CallScreen(props){
     // than the at-render value from when this hangup closure was built.
     if (!isIncoming && session && session.user) {
       try {
-        var finalCoins = Math.max(0, Number(localCoinsRef.current) || 0);
-        sb.from('profiles').update({ coins: finalCoins }).eq('id', session.user.id).then(function(r){
-          if (r && r.error) console.warn('[ringin] coin persist failed:', r.error.message || r.error);
-        });
-        // Log the deduction so the user can see it in Wallet transactions.
-        var deducted = (Number(coins) || 0) - finalCoins;
-        if (deducted > 0) {
-          sb.from('transactions').insert([{
-            user_id: session.user.id,
-            type: 'call',
-            label: 'Call with ' + (expert && expert.name ? expert.name : 'expert'),
-            coins: -deducted,
-            amount: 0,
-          }]).then(function(){});
+        /* R55-C5: server-side coin deduction via deduct_call_coins RPC.
+         * Was a client-side UPDATE that any modified JS client could
+         * bypass to grant themselves unlimited free calls. The server
+         * now reads call_invites.started_at + rate_per_min and computes
+         * the truth from its own clock — client can't fabricate minutes
+         * or bypass the deduction. Falls back to the legacy update if
+         * the RPC isn't available (migration 0035 not yet applied) so
+         * we don't break on stale databases. */
+        if (inviteId) {
+          sb.rpc('deduct_call_coins', { p_invite_id: inviteId }).then(function(r){
+            if (r && r.error) {
+              /* Legacy fallback — migration 0035 not yet run. */
+              console.warn('[ringin] deduct_call_coins unavailable, falling back:', r.error.message || r.error);
+              var finalCoinsFb = Math.max(0, Number(localCoinsRef.current) || 0);
+              try { sb.from('profiles').update({ coins: finalCoinsFb }).eq('id', session.user.id).then(function(){}); } catch(_){}
+              var deductedFb = (Number(coins) || 0) - finalCoinsFb;
+              if (deductedFb > 0) {
+                try {
+                  sb.from('transactions').insert([{
+                    user_id: session.user.id, type: 'call',
+                    label: 'Call with ' + (expert && expert.name ? expert.name : 'expert'),
+                    coins: -deductedFb, amount: 0,
+                  }]).then(function(){});
+                } catch(_){}
+              }
+              setSharedCoinBalance(finalCoinsFb, {userId: myUserId});
+              return;
+            }
+            /* Server returned authoritative new balance + amount deducted.
+             * Use the server's number as the source of truth, not localCoinsRef. */
+            var data = r && r.data;
+            var newBal = data && typeof data.new_balance === 'number' ? data.new_balance : null;
+            if (newBal !== null) {
+              setSharedCoinBalance(newBal, {userId: myUserId});
+            }
+          }).catch(function(e){
+            console.warn('[ringin] deduct_call_coins reject:', e && e.message);
+          });
         }
-        // Broadcast one last time in case the per-minute tick missed a
-        // partial-minute deduction at the very end.
-        // FIX #1: pass userId so the per-user cache key gets updated.
-        setSharedCoinBalance(finalCoins, {userId: myUserId});
       } catch(_) {}
     }
 

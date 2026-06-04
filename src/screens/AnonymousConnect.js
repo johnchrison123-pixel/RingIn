@@ -821,6 +821,44 @@ export default function AnonymousConnect(props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, activeChat && activeChat.partner_id]);
 
+  /* R55-C6: realtime subscription on anon_chat_gifts. The audit found this
+   * was missing — the recipient never saw the gift bubble appear in real
+   * time. They only saw it next time loadAnonChat ran (i.e. on chat
+   * reopen). The sender's send-handler refreshed their own list, but the
+   * recipient had no listener. Fix matches the pattern of the message
+   * subscription above. */
+  useEffect(function(){
+    if (!userId) return;
+    var ch = sb.channel('anon-gifts-' + userId)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'anon_chat_gifts',
+        filter: 'receiver_id=eq.' + userId,
+      }, function(p){
+        var g = p && p.new;
+        if (!g) return;
+        /* If a chat with the sender is open, append the gift bubble + scroll. */
+        if (activeChat && activeChat.partner_id === g.sender_id) {
+          setChatGifts(function(prev){
+            /* Dedupe by id (in case both poll + realtime delivered). */
+            if (prev.some(function(x){ return x.id === g.id; })) return prev;
+            return prev.concat([g]);
+          });
+          setTimeout(function(){
+            if (chatScrollRef.current) {
+              try { chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; } catch(_){}
+            }
+          }, 50);
+        }
+        /* Refresh convo list so the preview / unread badge updates too. */
+        loadAnonConvos();
+      })
+      .subscribe();
+    return function(){ try { sb.removeChannel(ch); } catch(_){} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeChat && activeChat.partner_id]);
+
   /* R34: load anon call logs on mount + when this tab is opened. Listen for
    * the global 'ringin:anoncallend' event dispatched by App.js when an
    * anonymous call ends — save a row to anon_call_logs + refresh the list. */
