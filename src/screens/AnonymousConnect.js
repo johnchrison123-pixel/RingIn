@@ -142,6 +142,24 @@ export default function AnonymousConnect(props) {
    *  - reactionPickerFor: message_id currently showing the 5-emoji picker */
   var giftDrawerOpenS = useState(false); var giftDrawerOpen = giftDrawerOpenS[0]; var setGiftDrawerOpen = giftDrawerOpenS[1];
   var giftSendingKeyS = useState(null); var giftSendingKey = giftSendingKeyS[0]; var setGiftSendingKey = giftSendingKeyS[1];
+
+  /* R57: Host mode (FRND-style) state.
+   *   - isHostMode: am I currently in host mode? (gender='f' gated)
+   *   - hostRate: my per-min charge if I am a host
+   *   - hostsList: current "Browse Hosts" list rendered in the sub-view
+   *   - browsingHosts: whether the Browse Hosts sub-view is open
+   *   - hostCallConfirm: { host, rate } pop-up before initiating a paid call
+   *   - randomHostLoading: spinner state when "🎲 Random Host" tapped
+   * All confined to Anonymous Connect — no other surface touches host state. */
+  var isHostModeS = useState(false); var isHostMode = isHostModeS[0]; var setIsHostMode = isHostModeS[1];
+  var hostRateS = useState(15); var hostRate = hostRateS[0]; var setHostRate = hostRateS[1];
+  var hostTotalCallsS = useState(0); var hostTotalCalls = hostTotalCallsS[0]; var setHostTotalCalls = hostTotalCallsS[1];
+  var hostSavingS = useState(false); var hostSaving = hostSavingS[0]; var setHostSaving = hostSavingS[1];
+  var hostsListS = useState([]); var hostsList = hostsListS[0]; var setHostsList = hostsListS[1];
+  var browsingHostsS = useState(false); var browsingHosts = browsingHostsS[0]; var setBrowsingHosts = browsingHostsS[1];
+  var hostsLoadingS = useState(false); var hostsLoading = hostsLoadingS[0]; var setHostsLoading = hostsLoadingS[1];
+  var hostCallConfirmS = useState(null); var hostCallConfirm = hostCallConfirmS[0]; var setHostCallConfirm = hostCallConfirmS[1];
+  var randomHostLoadingS = useState(false); var randomHostLoading = randomHostLoadingS[0]; var setRandomHostLoading = randomHostLoadingS[1];
   var chatGiftsS = useState([]); var chatGifts = chatGiftsS[0]; var setChatGifts = chatGiftsS[1];
   var chatReactionsS = useState({}); var chatReactions = chatReactionsS[0]; var setChatReactions = chatReactionsS[1];
   var reactionPickerForS = useState(null); var reactionPickerFor = reactionPickerForS[0]; var setReactionPickerFor = reactionPickerForS[1];
@@ -646,7 +664,7 @@ export default function AnonymousConnect(props) {
       /* R34: forward-compatible select — anon_caption/anon_languages/anon_from
        * may not exist yet if migration 0024 hasn't run. Try the wide select
        * first; on column-missing error fall back to the narrow one. */
-      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference,gender,anon_onboarded,full_name,anon_caption,anon_languages,anon_from').eq('id', userId).maybeSingle().then(function(r){
+      sb.from('profiles').select('is_available_anon,available_until,anon_nickname,anon_avatar,anon_gender,anon_preference,gender,anon_onboarded,full_name,anon_caption,anon_languages,anon_from,is_host,host_rate_per_min,host_total_calls').eq('id', userId).maybeSingle().then(function(r){
         if (cancelled) return;
         if (r && r.error && /column .* does not exist/i.test(r.error.message || '')) {
           /* fall back without the new columns */
@@ -661,6 +679,10 @@ export default function AnonymousConnect(props) {
           setAvailable(!!r.data.is_available_anon && stillValid);
           if (r.data.anon_nickname) setNick(r.data.anon_nickname);
           if (r.data.anon_avatar)   setAvatarId(r.data.anon_avatar);
+          /* R57: host mode state */
+          if (typeof r.data.is_host === 'boolean') setIsHostMode(r.data.is_host);
+          if (typeof r.data.host_rate_per_min === 'number') setHostRate(r.data.host_rate_per_min);
+          if (typeof r.data.host_total_calls === 'number') setHostTotalCalls(r.data.host_total_calls);
           // R34: extended profile fields
           if (r.data.anon_caption)  setCaption(r.data.anon_caption);
           if (r.data.anon_languages && Array.isArray(r.data.anon_languages)) setLanguages(r.data.anon_languages);
@@ -1086,6 +1108,101 @@ export default function AnonymousConnect(props) {
     } catch(e){ console.warn('[anon] call connection failed:', e); toastError('Could not start call'); }
   }
 
+  /* ════════ R57: Host Mode helpers ════════ */
+
+  /* Toggle host mode (or change rate). Server-side gated on gender='f'. */
+  function saveHostMode(enabled, rate){
+    if (hostSaving) return;
+    setHostSaving(true);
+    var prevEnabled = isHostMode;
+    var prevRate = hostRate;
+    /* optimistic */
+    setIsHostMode(enabled);
+    if (typeof rate === 'number') setHostRate(rate);
+    sb.rpc('set_host_mode', { p_enabled: enabled, p_rate: (typeof rate === 'number' ? rate : null) }).then(function(r){
+      setHostSaving(false);
+      if (r && r.error) {
+        setIsHostMode(prevEnabled);
+        setHostRate(prevRate);
+        try { toastError(r.error.message || 'Could not update host mode'); } catch(_){}
+        return;
+      }
+      try { toastInfo(enabled ? 'Host mode ON — you can receive paid calls now.' : 'Host mode OFF.'); } catch(_){}
+    }).catch(function(){
+      setHostSaving(false);
+      setIsHostMode(prevEnabled);
+      setHostRate(prevRate);
+      try { toastError('Network error'); } catch(_){}
+    });
+  }
+
+  /* Load + cache the list of online hosts for the Browse sub-view. */
+  function loadHostsList(){
+    setHostsLoading(true);
+    sb.rpc('list_available_hosts', { p_limit: 100 }).then(function(r){
+      setHostsLoading(false);
+      if (r && !r.error && Array.isArray(r.data)) setHostsList(r.data);
+    }).catch(function(){ setHostsLoading(false); });
+  }
+
+  /* Open the Browse Hosts sub-view + fetch the list. */
+  function openBrowseHosts(){
+    setBrowsingHosts(true);
+    loadHostsList();
+  }
+
+  /* Pick a random online host and open the confirm modal. */
+  function findRandomHost(){
+    if (randomHostLoading) return;
+    setRandomHostLoading(true);
+    sb.rpc('find_random_host').then(function(r){
+      setRandomHostLoading(false);
+      if (r && r.error) { try { toastError('Could not find a host: ' + r.error.message); } catch(_){} return; }
+      var host = r && r.data && r.data[0];
+      if (!host) { try { toastInfo('No hosts available right now — try again in a moment.'); } catch(_){} return; }
+      setHostCallConfirm({ host: host, rate: host.rate_per_min });
+    }).catch(function(){
+      setRandomHostLoading(false);
+      try { toastError('Network error'); } catch(_){}
+    });
+  }
+
+  /* Initiate a paid call to a host. Uses the standard call_invites + Agora
+   * pipeline with rate > 0, but passes the anon-nickname overrides so the
+   * host sees the caller as anonymous. */
+  async function callHost(host){
+    if (!host || !host.user_id) return;
+    var me = await getMyIdentityForCall();
+    var pa = getAvatar(host.avatar || 'girl1');
+    var target = {
+      id: host.user_id,
+      name: host.nickname || 'Anonymous',
+      avatar: null,
+      initials: pa.emoji,
+      color: pa.bg,
+      role: 'Host',
+      online: true,
+      rate: host.rate_per_min || 15, /* per-minute coins */
+      _myNickname: me.nickname,
+      _myAvatar: me.avatar,
+      _partnerAvatar: host.avatar || null,
+      _partnerGender: host.gender || null,
+    };
+    setHostCallConfirm(null);
+    try {
+      if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
+        /* R57: paidHostCall = anon nickname + paid rate. Caller is charged
+         * per-minute via deduct_call_coins; host earns 40% as neons. */
+        window.__ringInStartCall(target, { rate: host.rate_per_min || 15, paidHostCall: true });
+      } else {
+        toastError('Call pipeline not ready');
+      }
+    } catch(e){
+      console.warn('[anon-host] call failed:', e);
+      toastError('Could not start call');
+    }
+  }
+
   function toggleAvailable(){
     if (availToggling) return;
     setAvailToggling(true);
@@ -1347,7 +1464,32 @@ export default function AnonymousConnect(props) {
           style:{width:'100%',padding:'8px 10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'12px',outline:'none',boxSizing:'border-box',fontFamily:'inherit'}
         })
       ),
-      React.createElement('button', {onClick:find, style:{width:'100%',padding:'14px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'16px'}}, '🎯 Find Someone to Talk To'),
+      /* R57: TWO Host buttons sit ABOVE the free Find Someone — FRND model.
+       * Random Host = server picks an online host (paid per-min).
+       * Browse Hosts = open the list to pick a specific one (paid per-min).
+       * Both go through the host call confirm sheet before charging starts. */
+      React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',paddingLeft:'2px'}}, '👑 Hosts · pay per minute'),
+      React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+        React.createElement('button', {
+          onClick: findRandomHost,
+          disabled: randomHostLoading,
+          style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:800,cursor: randomHostLoading ? 'wait' : 'pointer',fontFamily:'inherit',opacity: randomHostLoading ? 0.7 : 1,display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
+        },
+          React.createElement('div', {style:{fontSize:'15px'}}, randomHostLoading ? '...' : '🎲 Random Host'),
+          React.createElement('div', {style:{fontSize:'9px',opacity:0.85,fontWeight:600}}, 'Server picks one')
+        ),
+        React.createElement('button', {
+          onClick: openBrowseHosts,
+          style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'var(--bg2)',border:'1.5px solid var(--ac)',color:'var(--ac)',fontSize:'13px',fontWeight:800,cursor:'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
+        },
+          React.createElement('div', {style:{fontSize:'15px'}}, '👥 Browse Hosts'),
+          React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',fontWeight:600}}, 'Pick yourself')
+        )
+      ),
+      /* Free random anon (existing). Still works — for people who want
+       * a no-charge random voice chat instead of a host. */
+      React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',marginTop:'10px',paddingLeft:'2px'}}, '🎙 Free anonymous chat'),
+      React.createElement('button', {onClick:find, style:{width:'100%',padding:'13px',borderRadius:'12px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer',marginBottom:'16px'}}, '🎯 Find Someone to Talk To'),
 
       /* R33: Accepted connections list */
       React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, 'Your Connections (' + connections.length + ')'),
@@ -1619,7 +1761,50 @@ export default function AnonymousConnect(props) {
         React.createElement('button', {
           onClick:function(){ setEditProfileOpen(true); },
           style:{marginTop:'24px',padding:'12px 32px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',boxShadow:'0 4px 14px rgba(123,110,255,0.35)'}
-        }, '✏️ Edit Profile')
+        }, '✏️ Edit Profile'),
+
+        /* R57: Host Mode card — only shown when profiles.gender = 'f'.
+         * Lets her become callable for paid calls + set her rate. */
+        gender === 'f' ? React.createElement('div', {style:{width:'100%',marginTop:'28px',padding:'16px',background: isHostMode ? 'linear-gradient(135deg,rgba(255,215,0,0.12),rgba(232,77,154,0.10))' : 'var(--bg2)',border: '1px solid ' + (isHostMode ? 'rgba(255,215,0,0.45)' : 'var(--border)'),borderRadius:'14px',boxShadow: isHostMode ? '0 4px 18px rgba(255,215,0,0.15)' : 'none',transition:'all 0.2s'}},
+          React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}},
+            React.createElement('div', {style:{fontSize:'24px'}}, '👑'),
+            React.createElement('div', {style:{flex:1}},
+              React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:800,color:'var(--text)'}}, 'Host Mode'),
+              React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'1px'}}, isHostMode ? ('🟢 Live · ' + (hostTotalCalls || 0) + ' call' + (hostTotalCalls === 1 ? '' : 's') + ' received') : 'Earn neons from incoming paid calls')
+            ),
+            React.createElement('button', {
+              onClick: function(){ saveHostMode(!isHostMode); },
+              disabled: hostSaving,
+              style:{width:'46px',height:'26px',borderRadius:'13px',background: isHostMode ? '#27C96A' : 'var(--border)',border:'none',cursor: hostSaving ? 'wait' : 'pointer',position:'relative',flexShrink:0,transition:'background 0.2s',opacity: hostSaving ? 0.6 : 1}
+            },
+              React.createElement('div', {style:{position:'absolute',top:'3px',left:isHostMode?'23px':'3px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}})
+            )
+          ),
+          /* Rate slider — only visible when host mode is enabled */
+          isHostMode ? React.createElement('div', null,
+            React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'14px',marginBottom:'6px'}},
+              React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px'}}, 'Your rate per minute'),
+              React.createElement('div', {style:{fontSize:'15px',fontWeight:800,color:'#FFD700'}}, '🪙 ' + hostRate)
+            ),
+            React.createElement('input', {
+              type:'range', min:5, max:50, step:1,
+              value: String(hostRate),
+              onChange: function(e){ var v = parseInt(e.target.value, 10); if (!isNaN(v)) setHostRate(v); },
+              onMouseUp: function(){ saveHostMode(true, hostRate); },
+              onTouchEnd: function(){ saveHostMode(true, hostRate); },
+              style:{width:'100%',accentColor:'#FFD700'}
+            }),
+            React.createElement('div', {style:{display:'flex',justifyContent:'space-between',fontSize:'9px',color:'var(--t3)',marginTop:'2px'}},
+              React.createElement('span', null, '5 / min'),
+              React.createElement('span', null, '50 / min')
+            ),
+            React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'10px',padding:'8px 10px',background:'var(--bg3)',borderRadius:'8px',lineHeight:1.4}},
+              'You earn 40% of every coin spent (' + Math.floor(hostRate * 0.40) + ' ✨ Neons per minute). 1 Neon = ₹1 at cashout.'
+            )
+          ) : React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',lineHeight:1.5,marginTop:'4px'}},
+            'When ON, anyone can call you (random or browse). Set your per-minute rate. End calls anytime.'
+          )
+        ) : null
       );
     })(),
 
@@ -1922,6 +2107,113 @@ export default function AnonymousConnect(props) {
           React.createElement('button', {
             onClick: function(){ if (!reportSending) setReportSheetFor(null); },
             style:{width:'100%',padding:'13px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor: reportSending ? 'wait' : 'pointer',marginTop:'10px'}
+          }, 'Cancel')
+        )
+      );
+    })() : null,
+
+    /* ════════ R57: Browse Hosts sub-view ════════ */
+    browsingHosts ? React.createElement('div', {
+      style:{position:'fixed',inset:0,background:'var(--bg)',zIndex:920,display:'flex',flexDirection:'column'}
+    },
+      /* Sub-view header */
+      React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,background:'var(--bg2)'}},
+        React.createElement('button', {
+          onClick: function(){ setBrowsingHosts(false); },
+          style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center'}
+        },
+          React.createElement('svg', {viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+            React.createElement('polyline', {points:'15 18 9 12 15 6'})
+          )
+        ),
+        React.createElement('div', {style:{flex:1}},
+          React.createElement('div', {style:{fontSize:'16px',fontWeight:800,color:'var(--text)',fontFamily:'Syne, sans-serif'}}, '👥 Available Hosts'),
+          React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px'}}, hostsLoading ? 'Loading…' : (hostsList.length + ' online · pay per minute'))
+        ),
+        React.createElement('button', {
+          onClick: loadHostsList,
+          style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--t2)',padding:'6px 10px',borderRadius:'10px',fontSize:'11px',cursor:'pointer',fontFamily:'inherit'}
+        }, '↻')
+      ),
+      /* List */
+      React.createElement('div', {style:{flex:1,overflowY:'auto',padding:'12px 16px'}},
+        hostsLoading
+          ? React.createElement('div', {style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',padding:'40px 16px'}}, 'Loading hosts…')
+          : hostsList.length === 0
+            ? React.createElement('div', {style:{textAlign:'center',padding:'40px 16px',color:'var(--t3)',fontSize:'12px'}},
+                React.createElement('div', {style:{fontSize:'42px',marginBottom:'8px',opacity:0.4}}, '👑'),
+                React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, 'No hosts online'),
+                'Check back in a moment.'
+              )
+            : hostsList.map(function(h){
+                var ha = getAvatar(h.avatar || 'girl1');
+                return React.createElement('div', {
+                  key: h.user_id,
+                  onClick: function(){ setHostCallConfirm({ host: h, rate: h.rate_per_min }); },
+                  style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',marginBottom:'8px',cursor:'pointer'}
+                },
+                  React.createElement('div', {style:{width:'52px',height:'52px',borderRadius:'50%',background:ha.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',flexShrink:0,position:'relative'}},
+                    ha.emoji,
+                    React.createElement('div', {style:{position:'absolute',bottom:'-2px',right:'-2px',width:'13px',height:'13px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg)'}})
+                  ),
+                  React.createElement('div', {style:{flex:1,minWidth:0}},
+                    React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',display:'flex',alignItems:'center',gap:'4px'}},
+                      React.createElement('span', null, h.nickname || 'Host'),
+                      h.gender === 'f' ? React.createElement('span', {style:{fontSize:'12px'}}, '👧') : (h.gender === 'm' ? React.createElement('span', {style:{fontSize:'12px'}}, '👦') : null)
+                    ),
+                    h.from_loc ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px'}}, '📍 ' + h.from_loc) : null,
+                    (h.languages && h.languages.length > 0)
+                      ? React.createElement('div', {style:{display:'flex',gap:'4px',marginTop:'4px',flexWrap:'wrap'}},
+                          h.languages.slice(0,3).map(function(l){
+                            return React.createElement('span', {key:l, style:{padding:'2px 6px',borderRadius:'8px',background:'var(--bg3)',color:'var(--t2)',fontSize:'9px',fontWeight:600}}, '🗣 ' + l);
+                          })
+                        )
+                      : null
+                  ),
+                  React.createElement('div', {style:{textAlign:'right',flexShrink:0}},
+                    React.createElement('div', {style:{fontSize:'15px',fontWeight:800,color:'#FFD700'}}, '🪙 ' + (h.rate_per_min || 15)),
+                    React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',marginTop:'2px'}}, 'per min'),
+                    React.createElement('div', {style:{marginTop:'4px',padding:'4px 8px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',borderRadius:'8px',color:'#fff',fontSize:'10px',fontWeight:700}}, '📞 Call')
+                  )
+                );
+              })
+      )
+    ) : null,
+
+    /* ════════ R57: Host call confirm sheet ════════ */
+    hostCallConfirm ? (function(){
+      var h = hostCallConfirm.host;
+      var rate = hostCallConfirm.rate || 15;
+      var ha = getAvatar(h.avatar || 'girl1');
+      return React.createElement('div', {
+        onClick: function(){ setHostCallConfirm(null); },
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:970,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+      },
+        React.createElement('div', {
+          onClick: function(e){ e.stopPropagation(); },
+          style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.4)'}
+        },
+          React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 14px'}}),
+          React.createElement('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'12px'}},
+            React.createElement('div', {style:{width:'72px',height:'72px',borderRadius:'50%',background:ha.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'34px',boxShadow:'0 4px 14px rgba(123,110,255,0.35)'}}, ha.emoji)
+          ),
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'18px',fontWeight:800,color:'var(--text)',textAlign:'center',marginBottom:'4px'}}, 'Call ' + (h.nickname || 'host') + '?'),
+          React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginBottom:'14px'}}, 'You\'ll be charged per minute. End the call anytime.'),
+          React.createElement('div', {style:{padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'10px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+            React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)'}}, 'Rate'),
+            React.createElement('div', {style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}}, '🪙 ' + rate + ' / min')
+          ),
+          React.createElement('div', {style:{padding:'12px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+            React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)'}}, 'First minute (min charge)'),
+            React.createElement('div', {style:{fontSize:'14px',fontWeight:800,color:'#FFD700'}}, '🪙 ' + rate)
+          ),
+          React.createElement('button', {
+            onClick: function(){ callHost(h); },
+            style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:800,cursor:'pointer',fontFamily:'inherit',marginBottom:'8px'}
+          }, '📞 Start call'),
+          React.createElement('button', {
+            onClick: function(){ setHostCallConfirm(null); },
+            style:{width:'100%',padding:'12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
           }, 'Cancel')
         )
       );

@@ -755,7 +755,13 @@ export default function App() {
      * stored caller name + avatar with what the anon-profile UI passed in
      * via target.name / target.avatar (those carry the nickname + avatar id). */
     var isAnonCall = !!(opts && opts.anonymous);
-    if (isAnonCall) {
+    /* R57: paidHostCall = anonymous identity (nickname/avatar) + paid rate.
+     * Used by the FRND-style host browser/random-host flows. We still
+     * override caller_name with the anon nickname so identity stays hidden,
+     * but is_anonymous in call_invites stays FALSE so deduct_call_coins
+     * runs the per-minute charge + credits the host 40% as neons. */
+    var isPaidHostCall = !!(opts && opts.paidHostCall);
+    if (isAnonCall || isPaidHostCall) {
       callerName = (otherUser && otherUser._myNickname) || 'Anonymous';
       callerAvatar = (otherUser && otherUser._myAvatar) || null;
       /* R34: stash partner info so onEnd can save a call log row. */
@@ -770,6 +776,10 @@ export default function App() {
     } else {
       anonCallContextRef.current = null;
     }
+    /* R57: is_anonymous flag controls whether deduct_call_coins runs.
+     * Only TRUE for free anon calls (matchmaker). Paid host calls go through
+     * with full charging despite using anon nicknames. */
+    var isAnonInDb = isAnonCall && !isPaidHostCall;
     // Double-tap guard — don't fire two inserts for one button press
     if(activeCallRef.current){ console.log('[ringin] startOutgoingCall ignored — already on a call'); return; }
     if(outgoingPendingRef.current){ console.log('[ringin] startOutgoingCall ignored — already pending'); return; }
@@ -813,8 +823,10 @@ export default function App() {
       status: 'ringing',
       rate_per_min: rate,
       /* R33: tag anonymous calls so the callee UI can show the anonymous
-       * badge instead of treating it like a regular expert call. */
-      is_anonymous: isAnonCall,
+       * badge instead of treating it like a regular expert call.
+       * R57: paid host calls use anon nicknames but are NOT marked
+       * is_anonymous, so deduct_call_coins charges them. */
+      is_anonymous: isAnonInDb,
     };
     console.log('[ringin] inserting call_invite', payload);
     supabase.from('call_invites').insert(payload).then(function(r){
