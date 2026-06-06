@@ -632,36 +632,27 @@ export default function CallScreen(props){
     // than the at-render value from when this hangup closure was built.
     if (!isIncoming && session && session.user) {
       try {
-        /* R55-C5: server-side coin deduction via deduct_call_coins RPC.
-         * Was a client-side UPDATE that any modified JS client could
-         * bypass to grant themselves unlimited free calls. The server
-         * now reads call_invites.started_at + rate_per_min and computes
-         * the truth from its own clock — client can't fabricate minutes
-         * or bypass the deduction. Falls back to the legacy update if
-         * the RPC isn't available (migration 0035 not yet applied) so
-         * we don't break on stale databases. */
+        /* R55-C5 / R58-N3: server-side coin deduction via deduct_call_coins RPC.
+         * The legacy client-side fallback was REMOVED in R58 because it
+         * could be triggered by any malicious client forcing an RPC error
+         * (e.g. passing a null inviteId or simply intercepting the RPC
+         * response). Now if the RPC fails we just log + trust the server.
+         * The server is the source of truth — client can NEVER write coins
+         * directly anymore (column-level REVOKE in migration 0038).
+         *
+         * R58 also adds idempotency on the server side via call_invites.coins_settled,
+         * so network retries don't double-charge. */
         if (inviteId) {
           sb.rpc('deduct_call_coins', { p_invite_id: inviteId }).then(function(r){
             if (r && r.error) {
-              /* Legacy fallback — migration 0035 not yet run. */
-              console.warn('[ringin] deduct_call_coins unavailable, falling back:', r.error.message || r.error);
-              var finalCoinsFb = Math.max(0, Number(localCoinsRef.current) || 0);
-              try { sb.from('profiles').update({ coins: finalCoinsFb }).eq('id', session.user.id).then(function(){}); } catch(_){}
-              var deductedFb = (Number(coins) || 0) - finalCoinsFb;
-              if (deductedFb > 0) {
-                try {
-                  sb.from('transactions').insert([{
-                    user_id: session.user.id, type: 'call',
-                    label: 'Call with ' + (expert && expert.name ? expert.name : 'expert'),
-                    coins: -deductedFb, amount: 0,
-                  }]).then(function(){});
-                } catch(_){}
-              }
-              setSharedCoinBalance(finalCoinsFb, {userId: myUserId});
+              /* No fallback — the user's local balance is just stale until
+               * useCoinBalance's realtime sub pulls the truth. Better to
+               * show an outdated number than to grant a client-side write
+               * path that could be abused. */
+              console.warn('[ringin] deduct_call_coins error (will sync via realtime):', r.error.message || r.error);
               return;
             }
-            /* Server returned authoritative new balance + amount deducted.
-             * Use the server's number as the source of truth, not localCoinsRef. */
+            /* Server returned authoritative new balance — broadcast it. */
             var data = r && r.data;
             var newBal = data && typeof data.new_balance === 'number' ? data.new_balance : null;
             if (newBal !== null) {

@@ -121,50 +121,34 @@ export default function WalletScreen(props){
       // from the DB right before writing it back narrows the race window
       // dramatically (true atomicity would need a Postgres RPC / upsert
       // with `coins = coins + N`; this is the safest no-RPC alternative).
-      sb.from('profiles').select('coins').eq('id',userId).single().then(function(r){
-        var latestServerCoins = (r && r.data && typeof r.data.coins === 'number')
-          ? r.data.coins
-          : balance;
-        var newBalance = latestServerCoins + addedCoins;
-
-        // Write to DB FIRST. Only broadcast the new balance to other
-        // screens after the write succeeds — otherwise a failed write
-        // leaves every chip showing the wrong number.
-        sb.from('profiles').update({coins:newBalance}).eq('id',userId).then(function(rw){
-          if(rw && rw.error){
-            setPaying(false);
-            toastError('Payment failed — try again. ('+(rw.error.message||'')+')');
-            return;
-          }
-          // DB write succeeded — broadcast to every chip in the app.
-          // FIX #1: pass userId so the per-user cache key gets updated.
-          setSharedCoinBalance(newBalance, {userId: userId});
-
-          // Insert transaction row for the Wallet history list.
-          sb.from('transactions').insert([{
-            user_id:userId,
-            type:'purchase',
-            label:'Purchased '+selected.coins+(selected.bonus?'+'+selected.bonus+' bonus':'')+' coins',
-            coins:addedCoins,
-            amount:selected.price,
-          }]).select().then(function(tr){
-            if(tr && tr.data && tr.data[0]){
-              setTransactions(function(prev){return [tr.data[0]].concat(prev);});
-            }
-          }).catch(function(){ /* tx insert failure shouldn't block UI — purchase already succeeded */ });
-
-          setDone(true);
+      /* R58-N2: server-side coin credit via topup_coins RPC. Previously
+       * this was a client-side profiles.update({coins: newBalance}) which
+       * a DevTools breakpoint could set to any value. The RPC caps at
+       * 10000 coins per call, logs a transaction row server-side, and
+       * cannot be bypassed by the client (the direct UPDATE on the coins
+       * column is now revoked from the authenticated role). */
+      var topupLabel = 'Purchased ' + selected.coins + (selected.bonus ? '+' + selected.bonus + ' bonus' : '') + ' coins';
+      sb.rpc('topup_coins', { p_amount: addedCoins, p_label: topupLabel }).then(function(rw){
+        if (rw && rw.error) {
           setPaying(false);
-          toastSuccess('🎉 Payment successful! +'+addedCoins+' coins');
-        }).catch(function(e){
-          // ROUND 8 FIX #3: inner UPDATE network reject left UI stuck on "Processing..."
-          setPaying(false);
-          try{ toastError('Payment failed: '+((e&&e.message)?e.message:'network error')); }catch(_){}
-        });
-      }).catch(function(e){
-        // ROUND 8 FIX #3: outer SELECT network reject left UI stuck on "Processing..."
+          toastError('Payment failed — try again. (' + (rw.error.message || '') + ')');
+          return;
+        }
+        var newBalance = (rw && rw.data && typeof rw.data.new_balance === 'number') ? rw.data.new_balance : (balance + addedCoins);
+        setSharedCoinBalance(newBalance, { userId: userId });
+
+        /* Refresh the transactions list — the RPC inserted the row, so
+         * re-fetch to keep history accurate. */
+        sb.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(50).then(function(tr){
+          if (tr && tr.data) setTransactions(tr.data);
+        }).catch(function(){});
+
+        setDone(true);
         setPaying(false);
-        try{ toastError('Payment processing failed — try again'); }catch(_){}
+        toastSuccess('🎉 Payment successful! +' + addedCoins + ' coins');
+      }).catch(function(e){
+        setPaying(false);
+        try { toastError('Payment failed: ' + ((e && e.message) ? e.message : 'network error')); } catch(_){}
       });
     },1200);
   }
