@@ -64,6 +64,14 @@ jobs:
           export CI=false  # CRA treats warnings as errors when CI=true; let it warn
           npm run build
 
+      - name: Strip build/ of OTA cruft
+        # CRA copies ALL of public/ into build/ — including public/bundles/
+        # (which holds previously-published OTA zips) and the PDF reports.
+        # If we don't remove them here, the new bundle.zip CONTAINS every
+        # past bundle, snowballing past GitHub's 100MB file limit. The
+        # strip-build-for-apk.mjs script removes them in-place; idempotent.
+        run: node tools/strip-build-for-apk.mjs
+
       - name: Compute bundle version
         id: version
         run: |
