@@ -1,16 +1,6 @@
 {
-  "version": "2026.0529.2135",
-  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0529.2135.zip",
-  "published_at": "2026-05-29T21:35:00Z",
-  "git_sha": "manual",
-  "title": "R31 — Anonymous profile: nickname, avatar, gender, preference filter",
-  "notes": [
-    "NEW: Anonymous identity card — pick a nickname (30 chars), choose from 6 avatars (3 girl + 3 boy with distinct gradients), declare your gender.",
-    "NEW: Preference filter — match with Girls, Boys, or Anyone. Mutual compatibility enforced server-side (no one-sided matches).",
-    "NEW: Interests are now space-to-add (type 'music' + space → chipified). Removed the canned suggestion chips per user request.",
-    "NEW: Matched-with screen shows the partner's nickname + their picked avatar emoji + their gender.",
-    "PERSISTENT: Your anonymous profile is saved automatically (debounced 600ms) — next time you open Anonymous Connect, it's all pre-filled.",
-    "REQUIRES: Migration 0021_anon_profile.sql applied in Supabase (adds anon_nickname, anon_avatar, anon_gender, anon_preference columns + updates matchmaker RPC).",
-    "Includes all R23–R30 features."
-  ]
+  "version": "2026.0608.1010",
+  "url": "https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/2026.0608.1010.zip",
+  "published_at": "2026-06-08T10:10:01Z",
+  "git_sha": "88cac36e1bbb5e15e35075df4996ae00ddfe09e2"
 }
