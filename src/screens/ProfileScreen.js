@@ -2787,9 +2787,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
      * gift catalog in AnonymousConnect.js + CallScreen.js so the rates
      * shown to the creator match what the server actually credits. */
     var STUDIO_CATALOG = [
+      { emoji:'🍵', name:'Chai',        tier:'sticker', coins:5 },
+      { emoji:'☕', name:'Coffee',      tier:'sticker', coins:10 },
       { emoji:'👋', name:'Wave',        tier:'sticker', coins:10 },
       { emoji:'❤️', name:'Heart',       tier:'sticker', coins:15 },
+      { emoji:'🥤', name:'Shake',       tier:'sticker', coins:20 },
       { emoji:'🌹', name:'Rose',        tier:'sticker', coins:25 },
+      { emoji:'🍦', name:'Ice Cream',   tier:'sticker', coins:30 },
+      { emoji:'🍭', name:'Lollipop',    tier:'premium', coins:40 },
       { emoji:'🎂', name:'Cake',        tier:'premium', coins:50 },
       { emoji:'💋', name:'Kiss',        tier:'premium', coins:100 },
       { emoji:'👑', name:'Crown',       tier:'premium', coins:200 },

@@ -764,7 +764,10 @@ export default function App() {
     if (isAnonCall || isPaidHostCall) {
       callerName = (otherUser && otherUser._myNickname) || 'Anonymous';
       callerAvatar = (otherUser && otherUser._myAvatar) || null;
-      /* R34: stash partner info so onEnd can save a call log row. */
+      /* R34: stash partner info so onEnd can save a call log row.
+       * R59: also carry is_paid_host_call + invite_id (filled below after
+       * we generate inviteUuid) so the post-call sheet knows to show the
+       * 5-star host rating widget. */
       anonCallContextRef.current = {
         startedAt: Date.now(),
         partner_id: calleeId,
@@ -772,6 +775,8 @@ export default function App() {
         partner_avatar: (otherUser && otherUser._partnerAvatar) || null,
         partner_gender: (otherUser && otherUser._partnerGender) || null,
         wasCaller: true,
+        is_paid_host_call: isPaidHostCall,
+        invite_id: null, /* filled in below once inviteUuid exists */
       };
     } else {
       anonCallContextRef.current = null;
@@ -801,6 +806,12 @@ export default function App() {
         var r = Math.random()*16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
       });
+    }
+
+    /* R59: backfill invite_id into anon-call context so the rating RPC
+     * can attach the rating to the specific call. */
+    if (anonCallContextRef.current) {
+      anonCallContextRef.current.invite_id = inviteUuid;
     }
 
     // Optimistic UI — show "Calling..." instantly with the REAL channel ready.

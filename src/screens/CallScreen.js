@@ -155,17 +155,23 @@ export default function CallScreen(props){
     } catch(e){ /* never break the call */ }
   }
   /* R48: virtual gift catalog (same shape as anon_chat_gifts — 3 tiers).
-   * Inlined here to avoid coupling CallScreen to AnonymousConnect's module. */
+   * Inlined here to avoid coupling CallScreen to AnonymousConnect's module.
+   * R59: keep this list IN SYNC with GIFT_CATALOG in AnonymousConnect.js. */
   var CALL_GIFT_CATALOG = [
-    { key:'wave',    emoji:'👋', name:'Wave',        tier:'sticker', coins:10 },
-    { key:'heart',   emoji:'❤️', name:'Heart',       tier:'sticker', coins:15 },
-    { key:'rose',    emoji:'🌹', name:'Rose',        tier:'sticker', coins:25 },
-    { key:'cake',    emoji:'🎂', name:'Cake',        tier:'premium', coins:50 },
-    { key:'kiss',    emoji:'💋', name:'Kiss',        tier:'premium', coins:100 },
-    { key:'crown',   emoji:'👑', name:'Crown',       tier:'premium', coins:200 },
-    { key:'car',     emoji:'🏎',  name:'Sports Car',  tier:'mega', coins:500 },
-    { key:'castle',  emoji:'🏰', name:'Castle',      tier:'mega', coins:1000 },
-    { key:'diamond', emoji:'💎', name:'Diamond',     tier:'mega', coins:2000 },
+    { key:'chai',     emoji:'🍵', name:'Chai',       tier:'sticker', coins:5 },
+    { key:'coffee',   emoji:'☕', name:'Coffee',     tier:'sticker', coins:10 },
+    { key:'wave',     emoji:'👋', name:'Wave',       tier:'sticker', coins:10 },
+    { key:'heart',    emoji:'❤️', name:'Heart',      tier:'sticker', coins:15 },
+    { key:'shake',    emoji:'🥤', name:'Shake',      tier:'sticker', coins:20 },
+    { key:'rose',     emoji:'🌹', name:'Rose',       tier:'sticker', coins:25 },
+    { key:'icecream', emoji:'🍦', name:'Ice Cream',  tier:'sticker', coins:30 },
+    { key:'lollipop', emoji:'🍭', name:'Lollipop',   tier:'premium', coins:40 },
+    { key:'cake',     emoji:'🎂', name:'Cake',       tier:'premium', coins:50 },
+    { key:'kiss',     emoji:'💋', name:'Kiss',       tier:'premium', coins:100 },
+    { key:'crown',    emoji:'👑', name:'Crown',      tier:'premium', coins:200 },
+    { key:'car',      emoji:'🏎',  name:'Sports Car', tier:'mega', coins:500 },
+    { key:'castle',   emoji:'🏰', name:'Castle',     tier:'mega', coins:1000 },
+    { key:'diamond',  emoji:'💎', name:'Diamond',    tier:'mega', coins:2000 },
   ];
   var giftDrawerS = useState(false); var giftDrawerOpen = giftDrawerS[0]; var setGiftDrawerOpen = giftDrawerS[1];
   var giftSendingS = useState(null); var giftSending = giftSendingS[0]; var setGiftSending = giftSendingS[1];

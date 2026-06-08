@@ -5,23 +5,32 @@ import {toastError, toastInfo} from '../utils/toast';
 import {ANON_AVATARS, getAvatar} from '../utils/anonAvatars'; /* R37: single source of truth */
 
 /* R47: virtual gift catalog (Tango/Bigo-style 3-tier model).
- * - sticker: small cheap reactions (10-25 coins)
- * - premium: signature gifts (50-200 coins)
+ * - sticker: small cheap reactions (5-30 coins)
+ * - premium: signature gifts (40-200 coins)
  * - mega: full-screen celebration gifts (500-2000 coins)
- * Recipient earns 70% of every gift in coins. */
+ * Recipient earns 70% of every gift in coins.
+ *
+ * R59: added India-friendly cultural gifts (chai, coffee, shake, icecream,
+ * lollipop) for the cheap entry-point tier. These are the most-tapped
+ * "thank you" / flirty gestures in tier-2/3 + Saudi user testing. */
 var GIFT_CATALOG = [
-  /* Tier: sticker */
-  { key:'wave',  emoji:'👋', name:'Wave',     tier:'sticker', coins:10 },
-  { key:'heart', emoji:'❤️', name:'Heart',    tier:'sticker', coins:15 },
-  { key:'rose',  emoji:'🌹', name:'Rose',     tier:'sticker', coins:25 },
-  /* Tier: premium */
-  { key:'cake',  emoji:'🎂', name:'Cake',     tier:'premium', coins:50 },
-  { key:'kiss',  emoji:'💋', name:'Kiss',     tier:'premium', coins:100 },
-  { key:'crown', emoji:'👑', name:'Crown',    tier:'premium', coins:200 },
-  /* Tier: mega */
-  { key:'car',     emoji:'🏎',  name:'Sports Car', tier:'mega', coins:500 },
-  { key:'castle',  emoji:'🏰', name:'Castle',    tier:'mega', coins:1000 },
-  { key:'diamond', emoji:'💎', name:'Diamond',   tier:'mega', coins:2000 },
+  /* Tier: sticker — cheap reactions */
+  { key:'chai',     emoji:'🍵', name:'Chai',       tier:'sticker', coins:5 },
+  { key:'coffee',   emoji:'☕', name:'Coffee',     tier:'sticker', coins:10 },
+  { key:'wave',     emoji:'👋', name:'Wave',       tier:'sticker', coins:10 },
+  { key:'heart',    emoji:'❤️', name:'Heart',      tier:'sticker', coins:15 },
+  { key:'shake',    emoji:'🥤', name:'Shake',      tier:'sticker', coins:20 },
+  { key:'rose',     emoji:'🌹', name:'Rose',       tier:'sticker', coins:25 },
+  { key:'icecream', emoji:'🍦', name:'Ice Cream',  tier:'sticker', coins:30 },
+  /* Tier: premium — signature */
+  { key:'lollipop', emoji:'🍭', name:'Lollipop',   tier:'premium', coins:40 },
+  { key:'cake',     emoji:'🎂', name:'Cake',       tier:'premium', coins:50 },
+  { key:'kiss',     emoji:'💋', name:'Kiss',       tier:'premium', coins:100 },
+  { key:'crown',    emoji:'👑', name:'Crown',      tier:'premium', coins:200 },
+  /* Tier: mega — full-screen celebration */
+  { key:'car',      emoji:'🏎',  name:'Sports Car', tier:'mega', coins:500 },
+  { key:'castle',   emoji:'🏰', name:'Castle',     tier:'mega', coins:1000 },
+  { key:'diamond',  emoji:'💎', name:'Diamond',    tier:'mega', coins:2000 },
 ];
 function getGiftByKey(k){ return GIFT_CATALOG.find(function(g){ return g.key === k; }) || null; }
 
@@ -49,6 +58,11 @@ export default function AnonymousConnect(props) {
   /* R37: post-call sheet — bottom drawer that pops up when an anon call
    * ends so the user can Add Connection / Find Next / Block + Report. */
   var postCallS = useState(null); var postCall = postCallS[0]; var setPostCall = postCallS[1];
+  /* R59: post-call host rating state. ratingStars = 0 means no choice yet;
+   * ratingSubmitting blocks double-tap on Submit. */
+  var ratingStarsS = useState(0); var ratingStars = ratingStarsS[0]; var setRatingStars = ratingStarsS[1];
+  var ratingSubmittingS = useState(false); var ratingSubmitting = ratingSubmittingS[0]; var setRatingSubmitting = ratingSubmittingS[1];
+  var ratingDoneS = useState(false); var ratingDone = ratingDoneS[0]; var setRatingDone = ratingDoneS[1];
   /* R29: countdown shown during the 30-sec search window so the user sees
    * "Searching... 24s left" rather than a static spinner. */
   var secsLeftS = useState(30); var secsLeft = secsLeftS[0]; var setSecsLeft = secsLeftS[1];
@@ -600,6 +614,48 @@ export default function AnonymousConnect(props) {
     }
   }
 
+  /* R59: submit a 1-5 star rating for the host the user just finished a
+   * paid call with. Server verifies caller was actually on the invite
+   * (rate_host RPC). Idempotent — re-tapping a different star value
+   * updates the existing row, but we lock the UI after first submit so
+   * the user can't keep changing it. */
+  function submitHostRating(stars) {
+    if (!postCall || !postCall.is_paid_host_call || !postCall.partner_id) return;
+    if (ratingSubmitting || ratingDone) return;
+    if (stars < 1 || stars > 5) return;
+    setRatingSubmitting(true);
+    setRatingStars(stars);
+    sb.rpc('rate_host', {
+      p_host_id: postCall.partner_id,
+      p_call_invite_id: postCall.invite_id || null,
+      p_stars: stars,
+      p_note: null,
+    }).then(function(r){
+      setRatingSubmitting(false);
+      if (r && r.error) {
+        toastError && toastError('Rating failed: ' + (r.error.message || 'error'));
+        setRatingStars(0);
+        return;
+      }
+      setRatingDone(true);
+      toastInfo && toastInfo('Thanks for rating!');
+    }).catch(function(){
+      setRatingSubmitting(false);
+      setRatingStars(0);
+    });
+  }
+
+  /* R59: reset rating widget state whenever the post-call sheet dismisses
+   * or a new call ends (so the next call starts with a fresh widget). */
+  useEffect(function(){
+    if (!postCall) {
+      setRatingStars(0);
+      setRatingDone(false);
+      setRatingSubmitting(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postCall && postCall.partner_id, postCall && postCall.invite_id]);
+
   /* Cleanup on unmount — leave the queue + clear timers so we don't keep
    * polling after the screen is gone. */
   useEffect(function(){
@@ -711,17 +767,41 @@ export default function AnonymousConnect(props) {
       /* R46: count of users actively waiting in the queue (last 40s), not
        * the full set of "available" users. Falls back to the old view if
        * migration 0029 hasn't been applied yet. */
+      /* R60 BUGFIX: previously queried `actively_searching_count` first,
+       * which only counts users with status='waiting' in the matchmaker
+       * queue (last 40 sec). Result: users who had Availability toggled ON
+       * but weren't actively in the queue showed as 0 online — confusing
+       * because the toggle implies "I'm online". Swap the priority: query
+       * `available_anon_count` first (counts everyone with is_available_anon
+       * = true), fall back to the queue view, then to a direct profiles
+       * count if both views are missing or RLS-blocked. */
       try {
-        sb.from('actively_searching_count').select('count').maybeSingle().then(function(r){
+        sb.from('available_anon_count').select('count').maybeSingle().then(function(r){
           if (cancelled) return;
-          if (r && !r.error && r.data) {
-            setOnlineCount(r.data.count || 0);
+          if (r && !r.error && r.data && typeof r.data.count === 'number') {
+            setOnlineCount(r.data.count);
             return;
           }
-          /* Forward-compat fallback to old view if the new one is missing. */
-          sb.from('available_anon_count').select('count').maybeSingle().then(function(r2){
+          /* Fallback to queue view */
+          sb.from('actively_searching_count').select('count').maybeSingle().then(function(r2){
             if (cancelled) return;
-            if (r2 && !r2.error && r2.data) setOnlineCount(r2.data.count || 0);
+            if (r2 && !r2.error && r2.data && typeof r2.data.count === 'number') {
+              setOnlineCount(r2.data.count);
+              return;
+            }
+            /* Last-resort fallback: direct count on profiles. RLS may
+             * restrict this to non-zero only if user can SELECT other
+             * profiles' availability rows, but the head:true count works
+             * with most policies and never throws. */
+            sb.from('profiles').select('id', { count: 'exact', head: true })
+              .eq('is_available_anon', true)
+              .or('available_until.is.null,available_until.gt.' + new Date().toISOString())
+              .then(function(r3){
+                if (cancelled) return;
+                if (r3 && !r3.error && typeof r3.count === 'number') {
+                  setOnlineCount(r3.count);
+                }
+              }).catch(function(){});
           }).catch(function(){});
         }).catch(function(){});
       } catch(_){}
@@ -912,6 +992,10 @@ export default function AnonymousConnect(props) {
           avatar: d.partner_avatar || 'girl1',
           gender: d.partner_gender || null,
           duration_seconds: d.duration_seconds || 0,
+          /* R59: when this is a paid host call, show the 5-star rating
+           * widget in the post-call sheet so fans can rate the host. */
+          is_paid_host_call: !!d.is_paid_host_call,
+          invite_id: d.invite_id || null,
         });
         /* Land them on the Connections tab if they're elsewhere so they
          * see the sheet (post-call sheet only renders in Connections). */
@@ -1394,6 +1478,22 @@ export default function AnonymousConnect(props) {
         React.createElement('div', {style:{width:'72px',height:'72px',borderRadius:'50%',background:pa.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'34px',margin:'0 auto'}}, pa.emoji),
         React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'18px',fontWeight:700,color:'var(--text)',marginTop:'10px'}}, postCall.nickname || 'Anonymous'),
         React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'4px'}}, dur > 0 ? 'Call ended · ' + durStr : 'Call ended'),
+        /* R59: 5-star rating widget — only for paid host calls. */
+        postCall.is_paid_host_call ? React.createElement('div', {style:{marginTop:'14px',padding:'10px',background:'rgba(0,0,0,0.18)',borderRadius:'10px'}},
+          React.createElement('div', {style:{fontSize:'11px',color:ratingDone?'#4ade80':'var(--t2)',fontWeight:600,marginBottom:'6px'}},
+            ratingDone ? '✓ Thanks for rating!' : 'Rate your call'),
+          React.createElement('div', {style:{display:'flex',gap:'6px',justifyContent:'center'}},
+            [1,2,3,4,5].map(function(n){
+              var active = n <= ratingStars;
+              return React.createElement('button', {
+                key:'star'+n,
+                onClick: function(){ submitHostRating(n); },
+                disabled: ratingSubmitting || ratingDone,
+                style:{background:'none',border:'none',fontSize:'26px',cursor:(ratingSubmitting||ratingDone)?'default':'pointer',padding:'2px 4px',opacity:active?1:0.35,transition:'opacity 0.15s, transform 0.15s',transform:active?'scale(1.1)':'scale(1)'}
+              }, '⭐');
+            })
+          )
+        ) : null,
         React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'16px',justifyContent:'center',flexWrap:'wrap'}},
           React.createElement('button', {
             onClick: sendConnectionRequest,
@@ -1467,24 +1567,47 @@ export default function AnonymousConnect(props) {
       /* R57: TWO Host buttons sit ABOVE the free Find Someone — FRND model.
        * Random Host = server picks an online host (paid per-min).
        * Browse Hosts = open the list to pick a specific one (paid per-min).
-       * Both go through the host call confirm sheet before charging starts. */
-      React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',paddingLeft:'2px'}}, '👑 Hosts · pay per minute'),
-      React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'10px'}},
-        React.createElement('button', {
-          onClick: findRandomHost,
-          disabled: randomHostLoading,
-          style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:800,cursor: randomHostLoading ? 'wait' : 'pointer',fontFamily:'inherit',opacity: randomHostLoading ? 0.7 : 1,display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
-        },
-          React.createElement('div', {style:{fontSize:'15px'}}, randomHostLoading ? '...' : '🎲 Random Host'),
-          React.createElement('div', {style:{fontSize:'9px',opacity:0.85,fontWeight:600}}, 'Server picks one')
-        ),
-        React.createElement('button', {
-          onClick: openBrowseHosts,
-          style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'var(--bg2)',border:'1.5px solid var(--ac)',color:'var(--ac)',fontSize:'13px',fontWeight:800,cursor:'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
-        },
-          React.createElement('div', {style:{fontSize:'15px'}}, '👥 Browse Hosts'),
-          React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',fontWeight:600}}, 'Pick yourself')
+       * Both go through the host call confirm sheet before charging starts.
+       *
+       * R60 BUGFIX: gate the host BROWSE/CALL UI to non-female users.
+       * In the FRND model women are the hosts and men are the callers, so
+       * showing "Browse Hosts to call" to a female user is wrong UX. For
+       * female users we instead show a "Become a Host & Earn" CTA pointing
+       * to the Profile tab where the Host Mode toggle lives. */
+      gender !== 'f' ? React.createElement('div', null,
+        React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',paddingLeft:'2px'}}, '👑 Hosts · pay per minute'),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'10px'}},
+          React.createElement('button', {
+            onClick: findRandomHost,
+            disabled: randomHostLoading,
+            style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:800,cursor: randomHostLoading ? 'wait' : 'pointer',fontFamily:'inherit',opacity: randomHostLoading ? 0.7 : 1,display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
+          },
+            React.createElement('div', {style:{fontSize:'15px'}}, randomHostLoading ? '...' : '🎲 Random Host'),
+            React.createElement('div', {style:{fontSize:'9px',opacity:0.85,fontWeight:600}}, 'Server picks one')
+          ),
+          React.createElement('button', {
+            onClick: openBrowseHosts,
+            style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'var(--bg2)',border:'1.5px solid var(--ac)',color:'var(--ac)',fontSize:'13px',fontWeight:800,cursor:'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
+          },
+            React.createElement('div', {style:{fontSize:'15px'}}, '👥 Browse Hosts'),
+            React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',fontWeight:600}}, 'Pick yourself')
+          )
         )
+      ) : React.createElement('div', {
+        /* R60: female-user CTA pointing to the Host Mode toggle in Profile tab. */
+        onClick: function(){ setActiveTab('profile'); },
+        style:{padding:'14px',background:'linear-gradient(135deg,rgba(255,215,0,0.18),rgba(232,77,154,0.12))',border:'1px solid rgba(255,215,0,0.45)',borderRadius:'12px',marginBottom:'12px',cursor:'pointer',display:'flex',alignItems:'center',gap:'12px'}
+      },
+        React.createElement('div', {style:{fontSize:'28px',flexShrink:0}}, isHostMode ? '🟢' : '💎'),
+        React.createElement('div', {style:{flex:1,minWidth:0}},
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'14px',fontWeight:800,color:'var(--text)'}},
+            isHostMode ? 'Host Mode · Live' : 'Become a Host & Earn'),
+          React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}},
+            isHostMode
+              ? ('🪙 ' + (hostRate || 15) + ' per min · ' + (hostTotalCalls || 0) + ' call' + (hostTotalCalls === 1 ? '' : 's'))
+              : 'Get paid neons when callers ring you')
+        ),
+        React.createElement('div', {style:{fontSize:'18px',color:'var(--ac)',flexShrink:0}}, '›')
       ),
       /* Free random anon (existing). Still works — for people who want
        * a no-charge random voice chat instead of a host. */
@@ -2161,6 +2284,12 @@ export default function AnonymousConnect(props) {
                       React.createElement('span', null, h.nickname || 'Host'),
                       h.gender === 'f' ? React.createElement('span', {style:{fontSize:'12px'}}, '👧') : (h.gender === 'm' ? React.createElement('span', {style:{fontSize:'12px'}}, '👦') : null)
                     ),
+                    /* R59: host rating + total calls under the name. Only
+                     * shown if the host has been rated at least once. */
+                    (h.rating_count && h.rating_count > 0)
+                      ? React.createElement('div', {style:{fontSize:'11px',color:'#FFD700',marginTop:'2px',fontWeight:700}},
+                          '⭐ ' + Number(h.rating_avg || 0).toFixed(1) + ' · ' + (h.rating_count) + ' rating' + (h.rating_count === 1 ? '' : 's'))
+                      : null,
                     h.from_loc ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px'}}, '📍 ' + h.from_loc) : null,
                     (h.languages && h.languages.length > 0)
                       ? React.createElement('div', {style:{display:'flex',gap:'4px',marginTop:'4px',flexWrap:'wrap'}},
