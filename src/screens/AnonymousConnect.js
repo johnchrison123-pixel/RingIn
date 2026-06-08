@@ -767,41 +767,32 @@ export default function AnonymousConnect(props) {
       /* R46: count of users actively waiting in the queue (last 40s), not
        * the full set of "available" users. Falls back to the old view if
        * migration 0029 hasn't been applied yet. */
-      /* R60 BUGFIX: previously queried `actively_searching_count` first,
-       * which only counts users with status='waiting' in the matchmaker
-       * queue (last 40 sec). Result: users who had Availability toggled ON
-       * but weren't actively in the queue showed as 0 online — confusing
-       * because the toggle implies "I'm online". Swap the priority: query
-       * `available_anon_count` first (counts everyone with is_available_anon
-       * = true), fall back to the queue view, then to a direct profiles
-       * count if both views are missing or RLS-blocked. */
+      /* R61: bulletproof count via SECURITY DEFINER RPC. The previous
+       * `available_anon_count` view ran with invoker privileges and was
+       * blocked by profiles RLS — count would stay at 0 even when many
+       * users had availability toggled on. The RPC bypasses all RLS and
+       * returns the true global count. Falls back to views only if the
+       * RPC is missing (e.g. migration 0040 not yet applied). */
       try {
-        sb.from('available_anon_count').select('count').maybeSingle().then(function(r){
+        sb.rpc('get_anon_online_count').then(function(r){
           if (cancelled) return;
-          if (r && !r.error && r.data && typeof r.data.count === 'number') {
-            setOnlineCount(r.data.count);
+          if (r && !r.error && typeof r.data === 'number') {
+            setOnlineCount(r.data);
             return;
           }
-          /* Fallback to queue view */
-          sb.from('actively_searching_count').select('count').maybeSingle().then(function(r2){
+          /* Fallbacks for older deployments */
+          sb.from('available_anon_count').select('count').maybeSingle().then(function(r2){
             if (cancelled) return;
             if (r2 && !r2.error && r2.data && typeof r2.data.count === 'number') {
               setOnlineCount(r2.data.count);
               return;
             }
-            /* Last-resort fallback: direct count on profiles. RLS may
-             * restrict this to non-zero only if user can SELECT other
-             * profiles' availability rows, but the head:true count works
-             * with most policies and never throws. */
-            sb.from('profiles').select('id', { count: 'exact', head: true })
-              .eq('is_available_anon', true)
-              .or('available_until.is.null,available_until.gt.' + new Date().toISOString())
-              .then(function(r3){
-                if (cancelled) return;
-                if (r3 && !r3.error && typeof r3.count === 'number') {
-                  setOnlineCount(r3.count);
-                }
-              }).catch(function(){});
+            sb.from('actively_searching_count').select('count').maybeSingle().then(function(r3){
+              if (cancelled) return;
+              if (r3 && !r3.error && r3.data && typeof r3.data.count === 'number') {
+                setOnlineCount(r3.data.count);
+              }
+            }).catch(function(){});
           }).catch(function(){});
         }).catch(function(){});
       } catch(_){}
