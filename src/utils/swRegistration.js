@@ -20,6 +20,48 @@ export function registerAppShellSW(){
   // Skip in dev — react-scripts' webpack-dev-server doesn't play well with SW caching.
   if (process.env.NODE_ENV !== 'production') return;
 
+  /* R61 CRITICAL FIX: skip SW entirely on native Capacitor (APK / iOS app).
+   *
+   * Why: the SW caches index.html + the static/ JS chunks for offline use.
+   * When the Capgo OTA plugin swaps in a new bundle and triggers a reload,
+   * the WebView fetches /index.html — which the SW intercepts and serves
+   * from cache (the OLD index.html, pointing at the OLD JS chunks). The
+   * result: localStorage `ringin_ota_current_version` updates to the new
+   * version (we wrote it pre-reload), but the actual code running is the
+   * stale cached bundle. This has silently no-op'd every native OTA update
+   * since the SW was first added. Web users still need the SW for the
+   * install-to-home-screen + offline-start benefits.
+   *
+   * Also: if a SW was registered in a prior bundle, unregister it now and
+   * nuke all caches so the post-rebuild APK starts clean. */
+  try {
+    var Cap = window.Capacitor;
+    var isNative = Cap && (
+      (typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform()) ||
+      (typeof Cap.getPlatform === 'function' && Cap.getPlatform() !== 'web')
+    );
+    if (isNative) {
+      try {
+        navigator.serviceWorker.getRegistrations().then(function(regs){
+          regs.forEach(function(r){
+            try { r.unregister(); } catch(_){}
+          });
+        });
+      } catch(_){}
+      try {
+        if (typeof caches !== 'undefined' && caches.keys) {
+          caches.keys().then(function(keys){
+            keys.forEach(function(k){
+              try { caches.delete(k); } catch(_){}
+            });
+          });
+        }
+      } catch(_){}
+      try { console.log('[ringin] SW skipped on native — Capgo OTA handles updates'); } catch(_){}
+      return;
+    }
+  } catch(_){}
+
   // Expose an apply-update function the UI banner can call. It tells the
   // waiting SW to take over and reloads when it does. Defined on window so
   // the React component can call it without prop drilling through the SW
