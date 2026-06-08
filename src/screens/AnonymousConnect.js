@@ -692,6 +692,11 @@ export default function AnonymousConnect(props) {
           if (safetySheetFor) { setSafetySheetFor(null); return; }
           if (viewingProfile) { setViewingProfile(null); return; }
           if (editProfileOpen) { setEditProfileOpen(false); return; }
+          /* R62: R57 host sheets — close the modal one first, then the
+           * browse sub-view. Without this, hardware-back on these screens
+           * exits the app instead of closing the sheet. */
+          if (hostCallConfirm) { setHostCallConfirm(null); return; }
+          if (browsingHosts) { setBrowsingHosts(false); return; }
           /* R45: chat view goes back to conversation list before closing. */
           if (activeChat) { setActiveChat(null); setChatMessages([]); loadAnonConvos(); return; }
           if (postCall) { setPostCall(null); return; }
@@ -702,7 +707,7 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     })();
     return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
-  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen]);
+  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen, hostCallConfirm, browsingHosts]);
 
   /* R46: listen for events from CallScreen — tap ⋯ on the in-call action row
    * dispatches `ringin:anonsafety` with the partner context. */

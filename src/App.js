@@ -28,7 +28,7 @@ import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
 import {ANON_AVATAR_LOOKUP} from './utils/anonAvatars'; /* R37: shared with AnonymousConnect — single source of truth */
 // Final polish: native alert() blocks the JS thread + looks system-y on Android.
 // Replaced with non-blocking toasts via the existing toast utility.
-import {toastError, toastWarn} from './utils/toast';
+import {toastError, toastWarn, toastInfo} from './utils/toast';
 import {safeInitials} from './utils/initials'; /* FIX #10: UTF-16 safe initials */
 
 // ROUND-9 FIX #6: getComputedStyle in the swipe-back touchstart walker
@@ -845,8 +845,20 @@ export default function App() {
       if(r.error){
         console.error('[ringin] call_invites insert failed:', r.error);
         setActiveCall(null);
-        // Final polish: was alert() — non-blocking toast.
-        toastError('Could not start call: '+(r.error.message||'permission'));
+        /* R62: reverse-call race. The 0042 partial unique index rejects
+         * a second ringing invite between the same pair with code 23505
+         * (unique_violation). Translate this into a helpful toast and
+         * point the user to the incoming ringer instead of a confusing
+         * generic "permission" error. */
+        var msg = (r.error.message || '').toLowerCase();
+        var isReverseRace = (r.error.code === '23505') ||
+          /unique|duplicate|call_invites_ringing_pair/i.test(msg);
+        if (isReverseRace) {
+          toastInfo('They are calling you — answer the incoming ring');
+        } else {
+          // Final polish: was alert() — non-blocking toast.
+          toastError('Could not start call: '+(r.error.message||'permission'));
+        }
         return;
       }
       console.log('[ringin] call_invite inserted', inviteUuid);
