@@ -1318,8 +1318,7 @@ export default function AnonymousConnect(props) {
     var obAvatarsToShow = obGender === 'm' ? ANON_AVATARS.filter(function(a){ return a.gender === 'm'; })
                        : obGender === 'f' ? ANON_AVATARS.filter(function(a){ return a.gender === 'f'; })
                        : ANON_AVATARS;
-    /* R61: paddingBottom clears the bottom nav (same fix as the main render). */
-    return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',paddingBottom:'90px',boxSizing:'border-box'}},
+    return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
       React.createElement('div', {style:{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
         React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Welcome')
       ),
@@ -1400,11 +1399,7 @@ export default function AnonymousConnect(props) {
   ];
   var pendingCount = (pendingReqs && pendingReqs.length) || 0;
 
-  /* R61: paddingBottom clears the app's bottom navigation bar (Home/Experts/
-   * Workshops/Messages tabs). Without this, the last item in any tab —
-   * call log entry, conversation row, profile field, host mode card —
-   * gets clipped UNDER the nav and the user can't scroll past it. */
-  return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',paddingBottom:'90px',boxSizing:'border-box'}},
+  return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     /* R34: simple header (title only, no longer sticky). */
     React.createElement('div', {style:{padding:'14px 18px 4px'}},
       React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
@@ -1838,7 +1833,12 @@ export default function AnonymousConnect(props) {
           React.createElement('div', {style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No calls yet'),
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Make your first anonymous call from the Connections tab — call history saves automatically.')
         )
-      : React.createElement('div', {style:{padding:'12px 16px 16px'}},
+      : React.createElement('div', {style:{padding:'12px 16px 90px'}},
+          /* R61: extra bottom-padding so the LAST call log entry isn't clipped
+           * under the bottom navigation bar. Only applied to Call Logs because
+           * this is the only tab that produced a long enough list to trigger
+           * the overlap — other tabs (Connections, Messages, Profile) already
+           * fit fine without padding adjustments. */
           React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:'8px'}}, 'Recent Calls (' + callLogs.length + ')'),
           callLogs.map(function(log){
             var la = getAvatar(log.partner_avatar || 'girl1');
