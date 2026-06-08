@@ -1430,8 +1430,15 @@ export default function AnonymousConnect(props) {
 
     /* R34: BIGGER tab bar — sits below the online card now. Card-style
      * pills with icon-above-label, much more tappable than the old thin
-     * underline bar. */
-    React.createElement('div', {style:{display:'flex',gap:'6px',padding:'14px 12px 8px',overflowX:'auto',scrollbarWidth:'none'}},
+     * underline bar.
+     *
+     * R61: position:sticky so the tab row stays at the top when scrolling
+     * a long Call Logs list. Without this, scrolling pushed the tabs
+     * partway out of view, making the labels appear to overlap with the
+     * "Recent Calls (X)" header — looked like a layout bug.
+     * flexShrink:0 prevents the tab row being compressed when other tabs
+     * have a lot of content. */
+    React.createElement('div', {style:{display:'flex',gap:'6px',padding:'14px 12px 8px',overflowX:'auto',scrollbarWidth:'none',position:'sticky',top:0,background:'var(--bg)',zIndex:5,flexShrink:0}},
       TABS.map(function(t){
         var sel = activeTab === t.key;
         var badge = (t.key === 'connections' && pendingCount > 0) ? pendingCount : 0;
