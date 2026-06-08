@@ -82,12 +82,20 @@ export default function AnonymousConnect(props) {
    * in the anon screen. Other fields stay editable. */
   var nickS = useState(''); var nick = nickS[0]; var setNick = nickS[1];
   var avatarIdS = useState('girl1'); var avatarId = avatarIdS[0]; var setAvatarId = avatarIdS[1];
-  var genderS = useState('f'); var gender = genderS[0]; var setGender = genderS[1];
+  /* R61 FIX: default gender to empty string (unknown) instead of 'f'. The CTA
+   * gating in the Connections tab now checks for an EXPLICIT 'f' or 'm' value
+   * — an empty/unknown gender hides both the "Become a Host" CTA (was wrongly
+   * shown to brand-new no-gender users) and the "Random Host / Browse Hosts"
+   * buttons until onboarding sets a real value. */
+  var genderS = useState(''); var gender = genderS[0]; var setGender = genderS[1];
   var preferenceS = useState('both'); var preference = preferenceS[0]; var setPreference = preferenceS[1];
   var profileSavedRef = useRef(false);
   var saveProfileTimerRef = useRef(null);
-  /* R32: onboarding wizard state. Shown once on first Anonymous Connect open. */
-  var onboardedS = useState(true); var onboarded = onboardedS[0]; var setOnboarded = onboardedS[1];
+  /* R32: onboarding wizard state. Shown once on first Anonymous Connect open.
+   * R61 FIX: default to FALSE (assume NOT onboarded) so a silent profile-fetch
+   * error or a missing profile row falls through to the wizard rather than
+   * incorrectly skipping it and showing the main UI with default gender 'f'. */
+  var onboardedS = useState(false); var onboarded = onboardedS[0]; var setOnboarded = onboardedS[1];
   var checkingOnboardS = useState(true); var checkingOnboard = checkingOnboardS[0]; var setCheckingOnboard = checkingOnboardS[1];
   var obGenderS = useState(''); var obGender = obGenderS[0]; var setObGender = obGenderS[1];
   var obNickS = useState(''); var obNick = obNickS[0]; var setObNick = obNickS[1];
@@ -743,8 +751,10 @@ export default function AnonymousConnect(props) {
           if (r.data.anon_caption)  setCaption(r.data.anon_caption);
           if (r.data.anon_languages && Array.isArray(r.data.anon_languages)) setLanguages(r.data.anon_languages);
           if (r.data.anon_from)     setFromLoc(r.data.anon_from);
-          // R32: gender is REAL gender (from profiles.gender) — not editable here
-          var realGender = r.data.gender || r.data.anon_gender || 'f';
+          /* R32: gender is REAL gender (from profiles.gender) — not editable here.
+           * R61 FIX: do NOT default to 'f' when both are missing — leave the
+           * gender empty so the onboarding wizard runs and the CTAs are gated. */
+          var realGender = r.data.gender || r.data.anon_gender || '';
           setGender(realGender);
           if (r.data.anon_preference) setPreference(r.data.anon_preference);
           // R32: onboarded flag — if false, show the setup wizard
@@ -1569,8 +1579,14 @@ export default function AnonymousConnect(props) {
        * In the FRND model women are the hosts and men are the callers, so
        * showing "Browse Hosts to call" to a female user is wrong UX. For
        * female users we instead show a "Become a Host & Earn" CTA pointing
-       * to the Profile tab where the Host Mode toggle lives. */
-      gender !== 'f' ? React.createElement('div', null,
+       * to the Profile tab where the Host Mode toggle lives.
+       *
+       * R61 BUGFIX: require EXPLICIT gender. Previously `gender !== 'f'`
+       * treated an empty/unknown gender as 'm', so a brand-new account
+       * (gender not yet set in onboarding) wrongly saw the female CTA via
+       * fallback. Now we render NOTHING in that section until a real
+       * gender is set — the onboarding wizard handles the rest. */
+      gender === 'm' ? React.createElement('div', null,
         React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',paddingLeft:'2px'}}, '👑 Hosts · pay per minute'),
         React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'10px'}},
           React.createElement('button', {
@@ -1589,7 +1605,7 @@ export default function AnonymousConnect(props) {
             React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',fontWeight:600}}, 'Pick yourself')
           )
         )
-      ) : React.createElement('div', {
+      ) : gender === 'f' ? React.createElement('div', {
         /* R60: female-user CTA pointing to the Host Mode toggle in Profile tab. */
         onClick: function(){ setActiveTab('profile'); },
         style:{padding:'14px',background:'linear-gradient(135deg,rgba(255,215,0,0.18),rgba(232,77,154,0.12))',border:'1px solid rgba(255,215,0,0.45)',borderRadius:'12px',marginBottom:'12px',cursor:'pointer',display:'flex',alignItems:'center',gap:'12px'}
@@ -1604,7 +1620,7 @@ export default function AnonymousConnect(props) {
               : 'Get paid neons when callers ring you')
         ),
         React.createElement('div', {style:{fontSize:'18px',color:'var(--ac)',flexShrink:0}}, '›')
-      ),
+      ) : null,
       /* Free random anon (existing). Still works — for people who want
        * a no-charge random voice chat instead of a host. */
       React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',marginTop:'10px',paddingLeft:'2px'}}, '🎙 Free anonymous chat'),
