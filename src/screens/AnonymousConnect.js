@@ -585,6 +585,15 @@ export default function AnonymousConnect(props) {
         setErr('Could not start search: ' + ((r && r.error && r.error.message) || 'unknown error'));
         return;
       }
+      /* R62 RATE LIMIT: server rejects enqueues faster than 1 per 20 sec.
+       * Show a friendly toast with the actual wait time instead of a
+       * generic error. */
+      if (r.data && r.data.status === 'rate_limited') {
+        stopSearching();
+        var wait = r.data.wait_seconds || 20;
+        setErr('Please wait ' + wait + ' second' + (wait === 1 ? '' : 's') + ' before searching again');
+        return;
+      }
       if (r.data && r.data.status === 'matched') { handleMatched(r.data); return; }
       // Step 2: start polling every 2 sec until match or timeout
       if (pollRef.current) clearInterval(pollRef.current);
@@ -984,6 +993,11 @@ export default function AnonymousConnect(props) {
           p_partner_gender: d.partner_gender || null,
           p_duration_seconds: d.duration_seconds || 0,
           p_was_caller: !!d.wasCaller,
+          /* R62 ANTI-FRAUD: pass invite_id so the server can compute the
+           * REAL duration from call_invites timestamps instead of trusting
+           * the client's number. A malicious host can no longer inflate
+           * their Neon earnings by sending {duration_seconds: 99999}. */
+          p_invite_id: d.invite_id || null,
         }).then(function(r){
           if (r && r.error) console.warn('[anon] save call log error:', r.error);
           loadCallLogs();
