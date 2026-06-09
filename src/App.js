@@ -1086,15 +1086,19 @@ export default function App() {
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
   }
 
+  /* R63: Final nav layout — Home / Friends / Experts / Messages.
+   *  - Friends takes the 2nd slot (was Experts) — primary growth bet
+   *    per the Phase 1 research, where the diaspora "find my community"
+   *    pattern is the strongest documented demand signal.
+   *  - Experts moves to the 3rd slot (was Workshops) — still monetized,
+   *    just less prominent.
+   *  - Workshops removed entirely from the nav. The screen + route still
+   *    exist for potential future re-introduction (e.g. via a deep link
+   *    or a profile menu entry), but no nav button surfaces it. */
   var tabs = [
-    {id:'home', label:'Home', svg:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'},
-    {id:'search', label:'Experts', svg:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'},
-    /* R63: Real Friends tab replaces Workshops. Workshops screen still
-     * exists as a route — we may bring it back later via a deep link or
-     * a separate entry point — but it no longer occupies a bottom-nav
-     * slot. Friends solves a documented user need (find your community
-     * when relocating) and has clearer monetization upside long-term. */
-    {id:'friends', label:'Friends', svg:'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'},
+    {id:'home',     label:'Home',     svg:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'},
+    {id:'friends',  label:'Friends',  svg:'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'},
+    {id:'search',   label:'Experts',  svg:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'},
     {id:'messages', label:'Messages', svg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
   ];
 
