@@ -594,47 +594,61 @@ export default function FriendsScreen(props) {
     );
   }
 
-  /* ══════ SUGGESTION BLOCK CARDS (LinkedIn/Facebook square style) ═══
-   * R64.2: cards are now strict 180x240 fixed-size — guaranteed
-   * horizontal flex even on narrow phones (no wrapping). The cover
-   * has been bumped up to fill 40% of card height, and the bottom
-   * action area is taller to accommodate larger text per user
-   * "make 20% bigger" feedback. */
-  function renderSuggestionBlock(p) {
-    var name = p.full_name || 'Anonymous';
-    return React.createElement('div', {
-      key: p.user_id,
-      style:{minWidth:'180px',width:'180px',height:'250px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',overflow:'hidden',flexShrink:0,display:'flex',flexDirection:'column',boxSizing:'border-box'}
-    },
-      /* Cover band */
+  /* ══════ FRIEND CARD — Home "Online Now" style ═══════════════════
+   * R64.3: matches the existing Home > Online Now card design. Round
+   * gradient ring around avatar, name + occupation + city centered,
+   * 2-button action row at bottom (message + add friend).
+   *
+   * Used for BOTH the horizontal "Suggested" strip AND the 2-column
+   * Discover grid below. Same component, same look. */
+  function renderFriendCard(p, opts) {
+    opts = opts || {};
+    var name = p.full_name || p.anon_nickname || 'Anonymous';
+    var cardStyle = opts.grid
+      ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'}
+      : {minWidth:'190px',width:'190px',height:'250px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'};
+    return React.createElement('div', { key: p.user_id, style: cardStyle },
+      /* Avatar with gradient ring + online dot */
       React.createElement('div', {
         onClick: function(){ setViewProfile(p); },
-        style:{height:'68px',background: p.cover_url ? ('url(' + p.cover_url + ') center/cover') : gradientFromString(name + 'cover'),cursor:'pointer',position:'relative',flexShrink:0}
-      }),
-      /* Avatar overlapping cover */
-      React.createElement('div', {
-        onClick: function(){ setViewProfile(p); },
-        style:{width:'70px',height:'70px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:800,color:'#fff',margin:'-35px auto 0',cursor:'pointer',flexShrink:0}
-      }, p.avatar_url ? null : initialOf(name)),
-      /* Text area — flex:1 so it absorbs remaining space */
-      React.createElement('div', {
-        onClick: function(){ setViewProfile(p); },
-        style:{padding:'8px 10px 4px',textAlign:'center',cursor:'pointer',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}
+        style:{position:'relative',marginBottom:'10px',cursor:'pointer'}
       },
-        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
-        p.occupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, '💼 ' + p.occupation) : null,
-        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
-          (p.current_city ? ('📍 ' + p.current_city) : '') +
-          (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
-        )
+        React.createElement('div', {
+          style:{width:'72px',height:'72px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'2.5px',boxSizing:'border-box'}
+        },
+          React.createElement('div', {
+            style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name),border:'2.5px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:800,color:'#fff',boxSizing:'border-box'}
+          }, p.avatar_url ? null : initialOf(name))
+        ),
+        p.is_online ? React.createElement('div', {
+          style:{position:'absolute',bottom:'2px',right:'2px',width:'14px',height:'14px',borderRadius:'50%',background:'#27C96A',border:'2.5px solid var(--bg2)'}
+        }) : null
       ),
-      React.createElement('button', {
-        onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
-        disabled: connSending,
-        style:{margin:'4px 10px 12px',padding:'9px',borderRadius:'10px',background:'var(--bg)',border:'1.5px solid var(--ac)',color:'var(--ac)',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}
-      }, '➕ Add Friend')
+      /* Name */
+      React.createElement('div', {style:{fontSize:'14px',fontWeight:800,color:'var(--text)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, name),
+      /* Occupation */
+      p.occupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginTop:'3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, p.occupation) : null,
+      /* City + language */
+      React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginTop:'4px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}},
+        (p.current_city ? ('📍 ' + p.current_city) : '') +
+        (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
+      ),
+      /* Action row: message + add friend */
+      React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'auto',paddingTop:'12px',width:'100%',alignItems:'center'}},
+        React.createElement('button', {
+          onClick: function(e){ e.stopPropagation(); setViewProfile(p); },
+          style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'14px',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',padding:0}
+        }, '💬'),
+        React.createElement('button', {
+          onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
+          disabled: connSending,
+          style:{flex:1,padding:'9px 8px',borderRadius:'17px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',opacity: connSending ? 0.7 : 1}
+        }, 'Add')
+      )
     );
   }
+  /* Backwards-compat alias — the JSX below still calls the old name. */
+  var renderSuggestionBlock = function(p){ return renderFriendCard(p, {grid:false}); };
 
   /* ══════ FILTER PILLS BAR ═══════════════════════════════════════ */
   var activeCount = (fLang?1:0) + (fCity?1:0) + (fHome?1:0) + (fOcc?1:0) + (fGender?1:0) + (fInterests.length>0?1:0) + (fOnline?1:0);
@@ -744,8 +758,11 @@ export default function FriendsScreen(props) {
           React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No matches yet'),
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Try expanding your filters or searching by a different city.')
         )
-      : React.createElement('div', {style:{padding:'4px 16px 90px'}},
-          results.map(renderResultRow)
+      /* R64.3: switched from vertical row list to a 2-column GRID of the
+       * same card design used for Suggested. Matches Home > Online Now
+       * card style end-to-end. */
+      : React.createElement('div', {style:{padding:'10px 16px 90px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}},
+          results.map(function(p){ return renderFriendCard(p, {grid:true}); })
         ),
 
     renderSetupModal(),
