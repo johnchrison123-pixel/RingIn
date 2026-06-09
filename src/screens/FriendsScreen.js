@@ -1,27 +1,38 @@
 /* eslint-disable */
 /* ════════════════════════════════════════════════════════════════════
- * FriendsScreen.js — Real Friends v2 (R64).
+ * FriendsScreen.js — Real Friends v3 (R64.1).
  *
- * Major upgrade over v1:
- *   - Search bar at top (name / city / userId)
- *   - Expandable LinkedIn-style filter panel with 7 optional filters:
- *       1. Language
- *       2. Hometown      (typing-only autosuggest, world cities)
- *       3. Current city  (typing-only autosuggest, world cities)
- *       4. Occupation    (free text)
- *       5. Gender
- *       6. Interests     (multi-select chips)
- *       7. Online status
- *   - "Suggested for You" section above results, daily-rotating
- *     algorithm (suggest_friends RPC)
- *   - Profile modal with Follow + Send Friend Request
- *   - Cover image + avatar + bio in profile modal
+ * Replaces the v2 vertical filter panel with a LinkedIn-style horizontal
+ * scrollable pill row. Each pill is a filter chip — tap to open a
+ * bottom sheet picker for that one filter. Suggestion cards are now
+ * Instagram/LinkedIn-style block cards in a horizontal scroll lane.
+ *
+ * UI structure:
+ *   - Header
+ *   - Search bar
+ *   - Horizontal filter pill row (no scrollbar visible)
+ *   - "Suggested for you" — horizontal block cards (no scrollbar visible)
+ *   - Result list (vertical)
+ *   - Bottom sheet picker (appears when a pill is tapped)
+ *   - Setup modal (first time + edit)
+ *   - Profile modal (tap any result)
  * ════════════════════════════════════════════════════════════════════ */
 
 import React, {useState, useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
 import {searchCities} from '../utils/worldCities';
+
+/* Inject scrollbar-hide CSS once — used by every horizontal scroll
+ * lane (filter pills + suggestion blocks). React inline styles can't
+ * target ::-webkit-scrollbar, so a tiny global class is the cleanest
+ * solution. */
+if (typeof document !== 'undefined' && !document.getElementById('ringin-noscrollbar-css')) {
+  var __s = document.createElement('style');
+  __s.id = 'ringin-noscrollbar-css';
+  __s.textContent = '.ringin-hscroll::-webkit-scrollbar{display:none}';
+  document.head.appendChild(__s);
+}
 
 var LANGUAGES = [
   { value: 'malayalam', label: 'Malayalam' },
@@ -38,7 +49,6 @@ var LANGUAGES = [
   { value: 'english',   label: 'English' },
 ];
 
-/* Common interests — chips users can multi-select. */
 var INTEREST_SUGGESTIONS = [
   'films','music','cricket','football','tech','coding','food','travel',
   'photography','books','dance','yoga','gym','hiking','art','design','coffee',
@@ -72,32 +82,62 @@ function initialOf(name) {
   return (name && name.trim().length > 0) ? name.trim().charAt(0).toUpperCase() : '?';
 }
 
-/* Reusable typing-only city input. Renders a small popover with up to 8
- * suggestions; collapses when user clears the input. Calls onChange
- * on every keystroke. */
-function CityInput(props) {
+/* ── FilterPill — chip in the horizontal filter row ─────────────────
+ * Shows label when no value is set; shows the value (with active styling)
+ * when set. Tapping opens the picker sheet for that filter. */
+function FilterPill(props) {
+  var active = !!props.value;
+  return React.createElement('button', {
+    onClick: props.onClick,
+    style:{
+      padding:'8px 14px',
+      borderRadius:'20px',
+      background: active ? 'linear-gradient(135deg,rgba(123,110,255,0.28),rgba(232,77,154,0.20))' : 'var(--bg2)',
+      border: active ? '1px solid var(--ac)' : '1px solid var(--border)',
+      color: active ? 'var(--text)' : 'var(--t2)',
+      fontSize:'12px',
+      fontWeight: active ? 700 : 600,
+      cursor:'pointer',
+      whiteSpace:'nowrap',
+      flexShrink: 0,
+      display:'flex',
+      alignItems:'center',
+      gap:'6px',
+      fontFamily:'inherit',
+      transition:'all 0.18s'
+    }
+  },
+    React.createElement('span', {style:{fontSize:'14px',lineHeight:1}}, props.icon),
+    React.createElement('span', null, active ? props.value : props.label),
+    React.createElement('span', {style:{fontSize:'9px',opacity: active ? 0.9 : 0.5}}, '▾')
+  );
+}
+
+/* ── Reusable typing-only city input (used inside pickers). */
+function CityInputInner(props) {
   var value = props.value || '';
   var setValue = props.onChange;
   var placeholder = props.placeholder || 'Type a city';
   var openS = useState(false); var open = openS[0]; var setOpen = openS[1];
-  var sug = (value && value.length > 0) ? searchCities(value, 8) : [];
+  var sug = (value && value.length > 0) ? searchCities(value, 12) : [];
   return React.createElement('div', {style:{position:'relative'}},
     React.createElement('input', {
       value: value,
       onChange: function(e){ setValue(e.target.value); setOpen(true); },
       onFocus: function(){ setOpen(true); },
       onBlur: function(){ setTimeout(function(){ setOpen(false); }, 150); },
+      autoFocus: true,
       placeholder: placeholder,
-      style:{width:'100%',padding:'10px 12px',borderRadius:'10px',background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontFamily:'inherit',boxSizing:'border-box'}
+      style:{width:'100%',padding:'12px 14px',borderRadius:'12px',background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'14px',fontFamily:'inherit',boxSizing:'border-box'}
     }),
     (open && sug.length > 0) ? React.createElement('div', {
-      style:{position:'absolute',top:'100%',left:0,right:0,marginTop:'4px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'10px',boxShadow:'0 6px 24px rgba(0,0,0,0.5)',maxHeight:'240px',overflowY:'auto',zIndex:10}
+      style:{marginTop:'8px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',maxHeight:'280px',overflowY:'auto'}
     },
       sug.map(function(c){
         return React.createElement('div', {
           key: c,
-          onMouseDown: function(e){ e.preventDefault(); setValue(c); setOpen(false); },
-          style:{padding:'10px 14px',cursor:'pointer',fontSize:'13px',color:'var(--text)',borderBottom:'1px solid var(--border)'}
+          onMouseDown: function(e){ e.preventDefault(); setValue(c); setOpen(false); if (props.onPick) props.onPick(c); },
+          style:{padding:'12px 16px',cursor:'pointer',fontSize:'13px',color:'var(--text)',borderBottom:'1px solid var(--border)'}
         }, '📍 ' + c);
       })
     ) : null
@@ -116,11 +156,10 @@ export default function FriendsScreen(props) {
   var myGenderS = useState(''); var myGender = myGenderS[0]; var setMyGender = myGenderS[1];
   var myInterestsS = useState([]); var myInterests = myInterestsS[0]; var setMyInterests = myInterestsS[1];
 
-  /* Search box (free text) */
+  /* Search box */
   var searchS = useState(''); var search = searchS[0]; var setSearch = searchS[1];
 
-  /* Filter panel open/closed + the 7 filter fields */
-  var filtersOpenS = useState(false); var filtersOpen = filtersOpenS[0]; var setFiltersOpen = filtersOpenS[1];
+  /* 7 filter values */
   var fLangS = useState(''); var fLang = fLangS[0]; var setFLang = fLangS[1];
   var fHomeS = useState(''); var fHome = fHomeS[0]; var setFHome = fHomeS[1];
   var fCityS = useState(''); var fCity = fCityS[0]; var setFCity = fCityS[1];
@@ -129,16 +168,17 @@ export default function FriendsScreen(props) {
   var fInterestsS = useState([]); var fInterests = fInterestsS[0]; var setFInterests = fInterestsS[1];
   var fOnlineS = useState(false); var fOnline = fOnlineS[0]; var setFOnline = fOnlineS[1];
 
+  /* Which picker is open: 'lang' | 'home' | 'city' | 'occ' | 'gender' | 'interests' | null */
+  var pickerS = useState(null); var picker = pickerS[0]; var setPicker = pickerS[1];
+
   /* Results + suggestions */
   var resultsS = useState([]); var results = resultsS[0]; var setResults = resultsS[1];
   var suggestedS = useState([]); var suggested = suggestedS[0]; var setSuggested = suggestedS[1];
   var loadingS = useState(true); var loading = loadingS[0]; var setLoading = loadingS[1];
 
-  /* Setup modal */
+  /* Setup modal + profile modal */
   var setupOpenS = useState(false); var setupOpen = setupOpenS[0]; var setSetupOpen = setupOpenS[1];
   var savingSetupS = useState(false); var savingSetup = savingSetupS[0]; var setSavingSetup = savingSetupS[1];
-
-  /* Profile view modal */
   var viewProfileS = useState(null); var viewProfile = viewProfileS[0]; var setViewProfile = viewProfileS[1];
   var connSendingS = useState(false); var connSending = connSendingS[0]; var setConnSending = connSendingS[1];
   var followSendingS = useState(false); var followSending = followSendingS[0]; var setFollowSending = followSendingS[1];
@@ -170,7 +210,7 @@ export default function FriendsScreen(props) {
     return function(){ cancelled = true; };
   }, [userId]);
 
-  /* ── Load suggestions on mount + when my profile loads ─────────── */
+  /* ── Load suggestions ──────────────────────────────────────────── */
   useEffect(function(){
     if (!userId) return;
     sb.rpc('suggest_friends', { p_limit: 8 }).then(function(r){
@@ -178,7 +218,7 @@ export default function FriendsScreen(props) {
     });
   }, [userId, myLang, myCity]);
 
-  /* ── Load results — debounced search whenever filter/search changes ── */
+  /* ── Load results (debounced) ──────────────────────────────────── */
   useEffect(function(){
     if (!userId) return;
     setLoading(true);
@@ -218,58 +258,39 @@ export default function FriendsScreen(props) {
       occupation: (myOcc || '').trim() || null,
       interests: myInterests.length > 0 ? myInterests : [],
     };
+    if (myGender) payload.gender = myGender;
     sb.from('profiles').update(payload).eq('id', userId).then(function(r){
       setSavingSetup(false);
-      if (r && r.error) {
-        toastError('Could not save: ' + (r.error.message || 'try again'));
-        return;
-      }
+      if (r && r.error) { toastError('Could not save: ' + (r.error.message || 'try again')); return; }
       setSetupOpen(false);
       toastInfo('Profile updated');
     });
   }
 
-  /* ── Send friend request (reuses existing anon connection RPC) ─── */
   function sendConnectionRequest(p) {
     if (!p || !p.user_id || connSending) return;
     setConnSending(true);
     sb.rpc('request_anon_connection', { p_recipient: p.user_id }).then(function(r){
       setConnSending(false);
-      if (r && r.error) {
-        toastError('Could not send: ' + (r.error.message || 'error'));
-        return;
-      }
+      if (r && r.error) { toastError('Could not send: ' + (r.error.message || 'error')); return; }
       var status = r && r.data && r.data.status;
       if (status === 'already_connected') toastInfo('You are already connected');
       else if (status === 'already_pending') toastInfo('Request already sent');
       else toastInfo('Friend request sent ✓');
       setViewProfile(null);
-    }).catch(function(){
-      setConnSending(false);
-      toastError('Network error');
-    });
+    }).catch(function(){ setConnSending(false); toastError('Network error'); });
   }
 
-  /* ── Follow (best-effort — falls back gracefully if RPC missing) ── */
   function followUser(p) {
     if (!p || !p.user_id || followSending) return;
     setFollowSending(true);
-    sb.from('follows').upsert({ follower_id: userId, following_id: p.user_id })
-      .then(function(r){
-        setFollowSending(false);
-        if (r && r.error) {
-          toastError('Follow failed: ' + (r.error.message || 'error'));
-          return;
-        }
-        toastInfo('Following ' + (p.full_name || p.anon_nickname || ''));
-      })
-      .catch(function(){
-        setFollowSending(false);
-        toastError('Network error');
-      });
+    sb.from('follows').upsert({ follower_id: userId, following_id: p.user_id }).then(function(r){
+      setFollowSending(false);
+      if (r && r.error) { toastError('Follow failed: ' + (r.error.message || 'error')); return; }
+      toastInfo('Following ' + (p.full_name || p.anon_nickname || ''));
+    }).catch(function(){ setFollowSending(false); toastError('Network error'); });
   }
 
-  /* ── Toggle an interest chip ───────────────────────────────────── */
   function toggleInterestFilter(it) {
     var idx = fInterests.indexOf(it);
     if (idx >= 0) setFInterests(fInterests.filter(function(x){ return x !== it; }));
@@ -281,14 +302,144 @@ export default function FriendsScreen(props) {
     else setMyInterests(myInterests.concat([it]));
   }
 
-  /* ══════ RENDERS ══════════════════════════════════════════════════ */
+  /* ══════ PICKER SHEET ══════════════════════════════════════════════
+   * Bottom sheet shown when a filter pill is tapped. One sheet, content
+   * switches based on `picker` state. */
+  function renderPickerSheet() {
+    if (!picker) return null;
+    var title = '';
+    var content = null;
 
+    if (picker === 'lang') {
+      title = '🌐 Pick a language';
+      content = React.createElement('div', null,
+        React.createElement('div', {
+          onClick: function(){ setFLang(''); setPicker(null); },
+          style:{padding:'14px',marginBottom:'8px',borderRadius:'10px',background: !fLang ? 'rgba(123,110,255,0.18)' : 'var(--bg2)',border:'1px solid var(--border)',cursor:'pointer',fontSize:'13px',color:'var(--text)',fontWeight:600}
+        }, 'Any language'),
+        React.createElement('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
+          LANGUAGES.map(function(l){
+            var sel = fLang === l.value;
+            return React.createElement('div', {
+              key: l.value,
+              onClick: function(){ setFLang(l.value); setPicker(null); },
+              style:{padding:'12px',borderRadius:'10px',background: sel ? 'linear-gradient(135deg,rgba(123,110,255,0.25),rgba(232,77,154,0.18))' : 'var(--bg2)',border: sel ? '1px solid var(--ac)' : '1px solid var(--border)',cursor:'pointer',fontSize:'13px',color:'var(--text)',fontWeight: sel ? 700 : 600,textAlign:'center'}
+            }, l.label);
+          })
+        )
+      );
+
+    } else if (picker === 'city') {
+      title = '📍 Current city';
+      content = React.createElement('div', null,
+        React.createElement(CityInputInner, {
+          value: fCity, onChange: setFCity, placeholder: 'Type a city',
+          onPick: function(){ setPicker(null); }
+        }),
+        fCity ? React.createElement('button', {
+          onClick: function(){ setFCity(''); setPicker(null); },
+          style:{marginTop:'12px',width:'100%',padding:'12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Clear current city') : null
+      );
+
+    } else if (picker === 'home') {
+      title = '🏠 Hometown';
+      content = React.createElement('div', null,
+        React.createElement(CityInputInner, {
+          value: fHome, onChange: setFHome, placeholder: 'Type a hometown',
+          onPick: function(){ setPicker(null); }
+        }),
+        fHome ? React.createElement('button', {
+          onClick: function(){ setFHome(''); setPicker(null); },
+          style:{marginTop:'12px',width:'100%',padding:'12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Clear hometown') : null
+      );
+
+    } else if (picker === 'occ') {
+      title = '💼 Occupation';
+      content = React.createElement('div', null,
+        React.createElement('input', {
+          value: fOcc,
+          onChange: function(e){ setFOcc(e.target.value); },
+          placeholder: 'e.g. Engineer, Doctor, Designer',
+          autoFocus: true,
+          style:{width:'100%',padding:'12px 14px',borderRadius:'12px',background:'var(--bg2)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'14px',fontFamily:'inherit',boxSizing:'border-box'}
+        }),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'14px'}},
+          React.createElement('button', {
+            onClick: function(){ setFOcc(''); setPicker(null); },
+            style:{flex:1,padding:'12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Clear'),
+          React.createElement('button', {
+            onClick: function(){ setPicker(null); },
+            style:{flex:2,padding:'12px',borderRadius:'10px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Apply')
+        )
+      );
+
+    } else if (picker === 'gender') {
+      title = '👤 Gender';
+      content = React.createElement('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},
+        [{v:'',l:'Any'},{v:'f',l:'👧 Girl'},{v:'m',l:'👦 Boy'},{v:'other',l:'🌈 Other'}].map(function(g){
+          var sel = fGender === g.v;
+          return React.createElement('div', {
+            key: g.v || 'any',
+            onClick: function(){ setFGender(g.v); setPicker(null); },
+            style:{padding:'18px',borderRadius:'12px',background: sel ? 'linear-gradient(135deg,rgba(123,110,255,0.25),rgba(232,77,154,0.18))' : 'var(--bg2)',border: sel ? '1px solid var(--ac)' : '1px solid var(--border)',cursor:'pointer',fontSize:'14px',color:'var(--text)',fontWeight: sel ? 700 : 600,textAlign:'center'}
+          }, g.l);
+        })
+      );
+
+    } else if (picker === 'interests') {
+      title = '🏷 Interests';
+      content = React.createElement('div', null,
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginBottom:'10px'}}, 'Tap chips to add. We will surface people who share any of these.'),
+        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',maxHeight:'320px',overflowY:'auto'}},
+          INTEREST_SUGGESTIONS.map(function(it){
+            var sel = fInterests.indexOf(it) >= 0;
+            return React.createElement('button', {
+              key: it,
+              onClick: function(){ toggleInterestFilter(it); },
+              style:{padding:'8px 12px',borderRadius:'14px',background: sel ? 'linear-gradient(135deg,rgba(123,110,255,0.3),rgba(232,77,154,0.2))' : 'var(--bg2)',border: sel ? '1px solid var(--ac)' : '1px solid var(--border)',color: sel ? 'var(--text)' : 'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+            }, (sel ? '✓ ' : '') + it);
+          })
+        ),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'14px'}},
+          React.createElement('button', {
+            onClick: function(){ setFInterests([]); setPicker(null); },
+            style:{flex:1,padding:'12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Clear all'),
+          React.createElement('button', {
+            onClick: function(){ setPicker(null); },
+            style:{flex:2,padding:'12px',borderRadius:'10px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Done (' + fInterests.length + ')')
+        )
+      );
+    }
+
+    return React.createElement('div', {
+      onClick: function(){ setPicker(null); },
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',zIndex:100,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+    },
+      React.createElement('div', {
+        onClick: function(e){ e.stopPropagation(); },
+        style:{background:'var(--bg)',border:'1px solid var(--border)',borderTopLeftRadius:'18px',borderTopRightRadius:'18px',padding:'18px',maxWidth:'520px',width:'100%',maxHeight:'80vh',overflowY:'auto',boxShadow:'0 -10px 30px rgba(0,0,0,0.4)'}
+      },
+        /* Drag handle */
+        React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 14px'}}),
+        React.createElement('div', {style:{fontSize:'15px',fontWeight:800,color:'var(--text)',marginBottom:'14px'}}, title),
+        content
+      )
+    );
+  }
+
+  /* ══════ SETUP MODAL ══════════════════════════════════════════════ */
   function renderSetupModal() {
     if (!setupOpen) return null;
     return React.createElement('div', {style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',backdropFilter:'blur(6px)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}},
       React.createElement('div', {style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',padding:'20px',maxWidth:'480px',width:'100%',maxHeight:'92vh',overflowY:'auto'}},
         React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',marginBottom:'4px'}}, '🤝 Tell us about you'),
-        React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginBottom:'16px'}}, 'These help us find better friend matches. Skip anything you do not want to fill.'),
+        React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginBottom:'16px'}}, 'These help find better friend matches. Skip anything optional.'),
 
         React.createElement('label', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'6px'}}, 'HOME LANGUAGE'),
         React.createElement('select', {
@@ -301,11 +452,11 @@ export default function FriendsScreen(props) {
         ),
 
         React.createElement('label', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'6px'}}, 'HOMETOWN'),
-        React.createElement(CityInput, { value: myHome, onChange: setMyHome, placeholder: 'Type your hometown (e.g. Kochi)' }),
+        React.createElement(CityInputInner, { value: myHome, onChange: setMyHome, placeholder: 'Type your hometown' }),
         React.createElement('div', {style:{height:'12px'}}),
 
         React.createElement('label', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'6px'}}, 'CURRENT CITY'),
-        React.createElement(CityInput, { value: myCity, onChange: setMyCity, placeholder: 'Type where you live now' }),
+        React.createElement(CityInputInner, { value: myCity, onChange: setMyCity, placeholder: 'Type where you live now' }),
         React.createElement('div', {style:{height:'12px'}}),
 
         React.createElement('label', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'6px'}}, 'OCCUPATION'),
@@ -356,6 +507,7 @@ export default function FriendsScreen(props) {
     );
   }
 
+  /* ══════ PROFILE MODAL ══════════════════════════════════════════ */
   function renderProfileModal() {
     if (!viewProfile) return null;
     var p = viewProfile;
@@ -369,28 +521,22 @@ export default function FriendsScreen(props) {
     },
       React.createElement('div', {
         onClick: function(e){ e.stopPropagation(); },
-        style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',maxWidth:'440px',width:'100%',maxHeight:'92vh',overflowY:'auto',overflow:'hidden'}
+        style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',maxWidth:'440px',width:'100%',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden'}
       },
-        /* Cover */
         React.createElement('div', {style: Object.assign({width:'100%',position:'relative'}, coverStyle)},
-          /* Avatar overlapping bottom of cover */
           React.createElement('div', {style:{position:'absolute',bottom:'-30px',left:'50%',transform:'translateX(-50%)',width:'82px',height:'82px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'32px',fontWeight:800,color:'#fff'}},
             p.avatar_url ? null : initialOf(name)
           )
         ),
         React.createElement('div', {style:{padding:'40px 22px 22px'}},
           React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',textAlign:'center'}}, name),
-          /* Occupation */
           p.occupation ? React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',textAlign:'center',marginTop:'4px'}}, '💼 ' + p.occupation) : null,
-          /* Community line */
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t3)',textAlign:'center',marginTop:'6px'}},
             (p.home_language ? ('🗣 ' + languageLabel(p.home_language)) : '') +
             (p.home_town ? (' · From ' + p.home_town) : '') +
             (p.current_city ? (' · 📍 ' + p.current_city) : '')
           ),
-          /* Bio */
           p.bio ? React.createElement('div', {style:{fontSize:'13px',color:'var(--t2)',marginTop:'14px',padding:'12px',background:'var(--bg2)',borderRadius:'10px',lineHeight:1.5,whiteSpace:'pre-wrap'}}, typeof p.bio === 'string' ? p.bio.replace(/^"|"$/g, '') : '') : null,
-          /* Interests */
           (Array.isArray(p.interests) && p.interests.length > 0)
             ? React.createElement('div', {style:{marginTop:'14px'}},
                 React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',marginBottom:'6px',letterSpacing:'0.5px'}}, 'INTERESTS'),
@@ -401,7 +547,6 @@ export default function FriendsScreen(props) {
                 )
               )
             : null,
-          /* Actions */
           React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'18px'}},
             React.createElement('button', {
               onClick: function(){ followUser(p); },
@@ -423,6 +568,7 @@ export default function FriendsScreen(props) {
     );
   }
 
+  /* ══════ RESULT ROWS ════════════════════════════════════════════ */
   function renderResultRow(p) {
     var name = p.full_name || p.anon_nickname || 'Anonymous';
     return React.createElement('div', {
@@ -447,43 +593,57 @@ export default function FriendsScreen(props) {
     );
   }
 
-  /* Suggested card — smaller, horizontal scroll */
-  function renderSuggestionCard(p) {
+  /* ══════ SUGGESTION BLOCK CARDS (LinkedIn/Facebook style) ═════════
+   * Larger card with cover band + overlapping avatar + name + city +
+   * occupation + inline "Add Friend" CTA. Tap opens profile modal. */
+  function renderSuggestionBlock(p) {
     var name = p.full_name || 'Anonymous';
     return React.createElement('div', {
       key: p.user_id,
-      onClick: function(){ setViewProfile(p); },
-      style:{minWidth:'140px',padding:'14px 10px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',marginRight:'8px',cursor:'pointer',textAlign:'center',flexShrink:0}
+      style:{minWidth:'170px',width:'170px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',flexShrink:0,display:'flex',flexDirection:'column'}
     },
-      React.createElement('div', {style:{width:'56px',height:'56px',margin:'0 auto 8px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:800,color:'#fff'}},
-        p.avatar_url ? null : initialOf(name)
+      /* Cover */
+      React.createElement('div', {
+        onClick: function(){ setViewProfile(p); },
+        style:{height:'56px',background: p.cover_url ? ('url(' + p.cover_url + ') center/cover') : gradientFromString(name + 'cover'),cursor:'pointer',position:'relative'}
+      }),
+      /* Avatar overlapping cover */
+      React.createElement('div', {
+        onClick: function(){ setViewProfile(p); },
+        style:{width:'62px',height:'62px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:800,color:'#fff',margin:'-32px auto 0',cursor:'pointer'}
+      }, p.avatar_url ? null : initialOf(name)),
+      /* Text + button area */
+      React.createElement('div', {
+        onClick: function(){ setViewProfile(p); },
+        style:{padding:'8px 10px 4px',textAlign:'center',cursor:'pointer'}
+      },
+        React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
+        p.occupation ? React.createElement('div', {style:{fontSize:'10px',color:'var(--t2)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, '💼 ' + p.occupation) : null,
+        React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+          (p.current_city ? ('📍 ' + p.current_city) : '') +
+          (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
+        )
       ),
-      React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
-      React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
-        (p.current_city || '') + (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
-      )
+      React.createElement('button', {
+        onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
+        disabled: connSending,
+        style:{margin:'8px 10px 12px',padding:'8px',borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--ac)',color:'var(--ac)',fontSize:'11px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+      }, '➕ Add Friend')
     );
   }
 
-  /* Active filter count badge */
-  var activeFilters = 0;
-  if (fLang) activeFilters++;
-  if (fHome) activeFilters++;
-  if (fCity) activeFilters++;
-  if (fOcc)  activeFilters++;
-  if (fGender) activeFilters++;
-  if (fInterests.length > 0) activeFilters++;
-  if (fOnline) activeFilters++;
+  /* ══════ FILTER PILLS BAR ═══════════════════════════════════════ */
+  var activeCount = (fLang?1:0) + (fCity?1:0) + (fHome?1:0) + (fOcc?1:0) + (fGender?1:0) + (fInterests.length>0?1:0) + (fOnline?1:0);
 
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     /* Header */
     React.createElement('div', {style:{padding:'14px 18px 4px'}},
       React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🤝 Real Friends')
     ),
-    React.createElement('div', {style:{padding:'2px 18px 12px',fontSize:'11px',color:'var(--t2)'}}, 'Search · Filter · Suggest'),
+    React.createElement('div', {style:{padding:'2px 18px 12px',fontSize:'11px',color:'var(--t2)'}}, 'Search · Filter · Discover'),
 
     /* Search box */
-    React.createElement('div', {style:{padding:'0 16px 8px'}},
+    React.createElement('div', {style:{padding:'0 16px 10px'}},
       React.createElement('div', {style:{position:'relative'}},
         React.createElement('input', {
           value: search,
@@ -495,119 +655,89 @@ export default function FriendsScreen(props) {
       )
     ),
 
-    /* Filter toggle + active count */
-    React.createElement('div', {style:{padding:'0 16px 10px',display:'flex',gap:'8px',alignItems:'center'}},
-      React.createElement('button', {
-        onClick: function(){ setFiltersOpen(!filtersOpen); },
-        style:{flex:1,padding:'10px 14px',borderRadius:'10px',background: filtersOpen ? 'linear-gradient(135deg,rgba(123,110,255,0.2),rgba(232,77,154,0.15))' : 'var(--bg2)',border: filtersOpen ? '1px solid var(--ac)' : '1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'space-between'}
-      },
-        React.createElement('span', null, '🎛 Filters' + (activeFilters > 0 ? ' · ' + activeFilters + ' active' : '')),
-        React.createElement('span', {style:{fontSize:'13px',transition:'transform 0.2s',transform: filtersOpen ? 'rotate(180deg)' : 'rotate(0deg)',display:'inline-block'}}, '▾')
-      ),
-      activeFilters > 0 ? React.createElement('button', {
+    /* HORIZONTAL FILTER PILLS (no scrollbar visible) */
+    React.createElement('div', {
+      className: 'ringin-hscroll',
+      style:{display:'flex',gap:'8px',padding:'0 16px 12px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch'}
+    },
+      React.createElement(FilterPill, {
+        icon:'🌐', label:'Language',
+        value: fLang ? languageLabel(fLang) : null,
+        onClick: function(){ setPicker('lang'); }
+      }),
+      React.createElement(FilterPill, {
+        icon:'📍', label:'City',
+        value: fCity || null,
+        onClick: function(){ setPicker('city'); }
+      }),
+      React.createElement(FilterPill, {
+        icon:'🏠', label:'From',
+        value: fHome || null,
+        onClick: function(){ setPicker('home'); }
+      }),
+      React.createElement(FilterPill, {
+        icon:'💼', label:'Job',
+        value: fOcc || null,
+        onClick: function(){ setPicker('occ'); }
+      }),
+      React.createElement(FilterPill, {
+        icon:'👤', label:'Gender',
+        value: fGender ? (fGender === 'f' ? 'Girl' : fGender === 'm' ? 'Boy' : 'Other') : null,
+        onClick: function(){ setPicker('gender'); }
+      }),
+      React.createElement(FilterPill, {
+        icon:'🏷', label:'Interests',
+        value: fInterests.length > 0 ? (fInterests.length + ' picked') : null,
+        onClick: function(){ setPicker('interests'); }
+      }),
+      React.createElement(FilterPill, {
+        icon:'🟢', label:'Online',
+        value: fOnline ? 'Yes' : null,
+        onClick: function(){ setFOnline(!fOnline); }
+      }),
+      /* Clear button — only visible when at least one filter is active */
+      activeCount > 0 ? React.createElement('button', {
         onClick: function(){ setFLang(''); setFHome(''); setFCity(''); setFOcc(''); setFGender(''); setFInterests([]); setFOnline(false); },
-        style:{padding:'10px 12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
-      }, 'Clear') : null
+        style:{padding:'8px 14px',borderRadius:'20px',background:'transparent',border:'1px solid var(--border)',color:'var(--t3)',fontSize:'12px',fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,fontFamily:'inherit'}
+      }, '✕ Clear all') : null
     ),
 
-    /* Expandable filter panel */
-    filtersOpen ? React.createElement('div', {style:{margin:'0 16px 12px',padding:'14px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px'}},
-      /* Language */
-      React.createElement('label', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'5px',letterSpacing:'0.5px'}}, 'LANGUAGE'),
-      React.createElement('select', {
-        value: fLang,
-        onChange: function(e){ setFLang(e.target.value); },
-        style:{width:'100%',padding:'9px 10px',borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontFamily:'inherit',marginBottom:'10px'}
-      },
-        React.createElement('option', {value:''}, 'Any language'),
-        LANGUAGES.map(function(l){ return React.createElement('option', {key:l.value, value:l.value}, l.label); })
-      ),
-      /* Hometown */
-      React.createElement('label', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'5px',letterSpacing:'0.5px'}}, 'HOMETOWN'),
-      React.createElement(CityInput, { value: fHome, onChange: setFHome, placeholder: 'Type a hometown' }),
-      React.createElement('div', {style:{height:'10px'}}),
-      /* Current city */
-      React.createElement('label', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'5px',letterSpacing:'0.5px'}}, 'CURRENT CITY'),
-      React.createElement(CityInput, { value: fCity, onChange: setFCity, placeholder: 'Type a city' }),
-      React.createElement('div', {style:{height:'10px'}}),
-      /* Occupation */
-      React.createElement('label', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'5px',letterSpacing:'0.5px'}}, 'OCCUPATION'),
-      React.createElement('input', {
-        value: fOcc,
-        onChange: function(e){ setFOcc(e.target.value); },
-        placeholder: 'e.g. Engineer, Doctor, Student',
-        style:{width:'100%',padding:'9px 10px',borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontFamily:'inherit',marginBottom:'10px',boxSizing:'border-box'}
-      }),
-      /* Gender */
-      React.createElement('label', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'5px',letterSpacing:'0.5px'}}, 'GENDER'),
-      React.createElement('div', {style:{display:'flex',gap:'6px',marginBottom:'10px'}},
-        ['', 'f', 'm', 'other'].map(function(g){
-          var label = g === '' ? 'Any' : (g === 'f' ? '👧 Girl' : (g === 'm' ? '👦 Boy' : '🌈 Other'));
-          var sel = fGender === g;
-          return React.createElement('button', {
-            key: g,
-            onClick: function(){ setFGender(g); },
-            style:{flex:1,padding:'8px 4px',borderRadius:'8px',background: sel ? 'linear-gradient(135deg,#7B6EFF,#E84D9A)' : 'var(--bg)',border: sel ? 'none' : '1px solid var(--border)',color: sel ? '#fff' : 'var(--t2)',fontSize:'11px',fontWeight: sel ? 700 : 600,cursor:'pointer',fontFamily:'inherit'}
-          }, label);
-        })
-      ),
-      /* Interests */
-      React.createElement('label', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'5px',letterSpacing:'0.5px'}}, 'INTERESTS · TAP TO ADD'),
-      React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'5px',marginBottom:'10px',maxHeight:'110px',overflowY:'auto'}},
-        INTEREST_SUGGESTIONS.map(function(it){
-          var sel = fInterests.indexOf(it) >= 0;
-          return React.createElement('button', {
-            key: it,
-            onClick: function(){ toggleInterestFilter(it); },
-            style:{padding:'5px 9px',borderRadius:'12px',background: sel ? 'linear-gradient(135deg,rgba(123,110,255,0.3),rgba(232,77,154,0.2))' : 'var(--bg)',border: sel ? '1px solid var(--ac)' : '1px solid var(--border)',color: sel ? 'var(--text)' : 'var(--t2)',fontSize:'10px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
-          }, (sel ? '✓ ' : '') + it);
-        })
-      ),
-      /* Online toggle */
-      React.createElement('div', {
-        onClick: function(){ setFOnline(!fOnline); },
-        style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px',cursor:'pointer'}
-      },
-        React.createElement('div', {style:{width:'34px',height:'20px',borderRadius:'10px',background: fOnline ? '#27C96A' : 'var(--border)',position:'relative',transition:'background 0.2s'}},
-          React.createElement('div', {style:{position:'absolute',top:'2px',left: fOnline ? '16px' : '2px',width:'16px',height:'16px',borderRadius:'50%',background:'#fff',transition:'left 0.2s'}})
-        ),
-        React.createElement('span', {style:{fontSize:'12px',color:'var(--text)',fontWeight:600}}, 'Online now only')
-      )
-    ) : null,
-
-    /* Suggested for You */
-    (search.length === 0 && activeFilters === 0 && suggested.length > 0)
+    /* SUGGESTED FOR YOU — horizontal block cards (LinkedIn/IG style) */
+    (search.length === 0 && activeCount === 0 && suggested.length > 0)
       ? React.createElement('div', null,
-          React.createElement('div', {style:{padding:'2px 18px 8px',fontSize:'12px',fontWeight:700,color:'var(--text)'}}, '✨ Suggested for you'),
-          React.createElement('div', {style:{display:'flex',padding:'0 16px 12px',overflowX:'auto',scrollbarWidth:'none'}},
-            suggested.map(renderSuggestionCard)
+          React.createElement('div', {style:{padding:'4px 18px 8px',fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:'6px'}},
+            React.createElement('span', null, '✨ Suggested for you')
+          ),
+          React.createElement('div', {
+            className: 'ringin-hscroll',
+            style:{display:'flex',gap:'10px',padding:'0 16px 16px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch'}
+          },
+            suggested.map(renderSuggestionBlock)
           )
         )
       : null,
 
-    /* Results header */
-    React.createElement('div', {style:{padding:'4px 18px 6px',fontSize:'12px',fontWeight:700,color:'var(--t2)',display:'flex',justifyContent:'space-between'}},
+    /* RESULTS LIST */
+    React.createElement('div', {style:{padding:'2px 18px 6px',fontSize:'12px',fontWeight:700,color:'var(--t2)',display:'flex',justifyContent:'space-between'}},
       React.createElement('span', null,
-        search.length > 0 ? 'Search results' : (activeFilters > 0 ? 'Filter results' : 'Discover')
+        search.length > 0 ? 'Search results' : (activeCount > 0 ? 'Filter results' : 'Discover')
       ),
       React.createElement('span', {style:{color:'var(--t3)',fontWeight:600}}, results.length + (results.length === 1 ? ' person' : ' people'))
     ),
 
-    /* Results */
     loading ? React.createElement('div', {style:{padding:'40px 16px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}}, 'Loading…')
     : results.length === 0
       ? React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
           React.createElement('div', {style:{fontSize:'48px',marginBottom:'10px',opacity:0.4}}, '🌱'),
           React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No matches yet'),
-          React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}},
-            'Try expanding your filters or searching by a different city.'
-          )
+          React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Try expanding your filters or searching by a different city.')
         )
       : React.createElement('div', {style:{padding:'4px 16px 90px'}},
           results.map(renderResultRow)
         ),
 
     renderSetupModal(),
-    renderProfileModal()
+    renderProfileModal(),
+    renderPickerSheet()
   );
 }
