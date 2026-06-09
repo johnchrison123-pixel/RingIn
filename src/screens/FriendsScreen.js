@@ -777,11 +777,15 @@ export default function FriendsScreen(props) {
           React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No matches yet'),
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Try expanding your filters or searching by a different city.')
         )
-      /* R64.3: switched from vertical row list to a 2-column GRID of the
-       * same card design used for Suggested. Matches Home > Online Now
-       * card style end-to-end. */
-      : React.createElement('div', {style:{padding:'10px 16px 90px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}},
-          results.map(function(p){ return renderFriendCard(p, {grid:true}); })
+      /* R64.5: switched Discover from 2-column vertical grid to a
+       * horizontal scrolling row of cards per user request. Same card
+       * size as Suggested above (190px wide), swipe sideways through
+       * all results. */
+      : React.createElement('div', {
+          className: 'ringin-hscroll',
+          style:{display:'flex',gap:'12px',padding:'10px 16px 90px 16px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap'}
+        },
+          results.map(function(p){ return renderFriendCard(p, {grid:false}); })
         ),
 
     renderSetupModal(),
