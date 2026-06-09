@@ -284,12 +284,21 @@ export default function FriendsScreen(props) {
     return function(){ cancelled = true; };
   }, [userId]);
 
-  /* ── Load suggestions — R64.7: bumped limit 8 → 28 (the hard cap
-   * the user wants). We show 9 by default, 28 after "See all". */
+  /* ── Load suggestions ──────────────────────────────────────────────
+   * R64.7: bumped limit 8 → 28. R64.9: filter out incomplete profiles
+   * (no occupation OR no current_city OR no home_language) — those
+   * look ugly in card form (button row shifts up because there are
+   * fewer text rows). Per user request: incomplete profiles must NOT
+   * appear in Suggestions OR Discover. */
   useEffect(function(){
     if (!userId) return;
     sb.rpc('suggest_friends', { p_limit: 28 }).then(function(r){
-      if (r && !r.error && Array.isArray(r.data)) setSuggested(r.data);
+      if (r && !r.error && Array.isArray(r.data)) {
+        var clean = r.data.filter(function(p){
+          return p.occupation && p.current_city && p.home_language;
+        });
+        setSuggested(clean);
+      }
     });
   }, [userId, myLang, myCity]);
 
@@ -311,6 +320,16 @@ export default function FriendsScreen(props) {
         setLoading(false);
         if (r && !r.error && Array.isArray(r.data)) {
           var rows = r.data;
+          /* R64.9: when the user is NOT actively searching by name/id,
+           * hide profiles missing occupation/city/language — keeps cards
+           * visually consistent in Discover. When they ARE searching,
+           * show all matches so they can still find john-by-name even
+           * with incomplete data. */
+          if (!search) {
+            rows = rows.filter(function(p){
+              return p.occupation && p.current_city && p.home_language;
+            });
+          }
           if (fOnline) rows = rows.filter(function(x){ return x.is_online; });
           setResults(rows);
         } else if (r && r.error) {
@@ -690,11 +709,13 @@ export default function FriendsScreen(props) {
     var displayOccupation = p.occupation || bioData.tag || '';
     /* R64.6: tightened card size + removed the flex:1 spacer.
      * R64.8: added overflow:hidden so the rounded corners clip any
-     * content overflow (fixes the message-bubble peeking past the
-     * border on Discover cards). */
+     * content overflow.
+     * R64.9: fixed minHeight (200px) so even when a search returns a
+     * profile with missing fields, the action row stays at the same
+     * vertical position as every other card. */
     var cardStyle = opts.grid
-      ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'}
-      : {flex:'0 0 170px',minWidth:'170px',width:'170px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'};
+      ? {width:'100%',minHeight:'200px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'}
+      : {flex:'0 0 170px',minWidth:'170px',width:'170px',minHeight:'200px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'};
     return React.createElement('div', { key: p.user_id, style: cardStyle },
       /* Avatar with gradient ring + online dot. R64.6: 72→64px. */
       React.createElement('div', {
@@ -722,10 +743,13 @@ export default function FriendsScreen(props) {
         (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
       ),
       /* Action row: message + add friend.
-       * R64.6: removed marginTop:'auto' (the flex spacer that caused
-       * blank space). Now the button row sits right under the text
-       * with a tight 10px gap. */
-      React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'10px',width:'100%',alignItems:'center'}},
+       * R64.9: marginTop:'auto' is back — the flex spacer pushes the
+       * buttons to the bottom of the card. Combined with the card's
+       * fixed 200px minHeight, this guarantees every card's buttons
+       * sit at the same Y position regardless of how much text is
+       * above (so John's card with no occupation still has buttons
+       * in the same spot as Maya's full card). */
+      React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'auto',paddingTop:'10px',width:'100%',alignItems:'center'}},
         React.createElement('button', {
           onClick: function(e){ e.stopPropagation(); setViewProfile(p); },
           style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'14px',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',padding:0}
