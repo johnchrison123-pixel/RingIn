@@ -26,12 +26,26 @@ import {searchCities} from '../utils/worldCities';
 /* Inject scrollbar-hide CSS once — used by every horizontal scroll
  * lane (filter pills + suggestion blocks). React inline styles can't
  * target ::-webkit-scrollbar, so a tiny global class is the cleanest
- * solution. */
-if (typeof document !== 'undefined' && !document.getElementById('ringin-noscrollbar-css')) {
-  var __s = document.createElement('style');
-  __s.id = 'ringin-noscrollbar-css';
-  __s.textContent = '.ringin-hscroll::-webkit-scrollbar{display:none}';
-  document.head.appendChild(__s);
+ * solution.
+ *
+ * R64.4: bumped ID + made the rule bulletproof with !important and
+ * explicit 0 width/height. The previous version (v1) only said
+ * 'display:none' which some Android WebView builds ignored. */
+if (typeof document !== 'undefined') {
+  /* Remove any earlier version of the style block. */
+  var __oldStyle = document.getElementById('ringin-noscrollbar-css');
+  if (__oldStyle) { try { __oldStyle.remove(); } catch(_){} }
+  if (!document.getElementById('ringin-noscrollbar-css-v2')) {
+    var __s = document.createElement('style');
+    __s.id = 'ringin-noscrollbar-css-v2';
+    __s.textContent = (
+      '.ringin-hscroll{-ms-overflow-style:none !important;scrollbar-width:none !important}' +
+      '.ringin-hscroll::-webkit-scrollbar{display:none !important;width:0 !important;height:0 !important;background:transparent !important}' +
+      '.ringin-hscroll::-webkit-scrollbar-track{display:none !important}' +
+      '.ringin-hscroll::-webkit-scrollbar-thumb{display:none !important}'
+    );
+    document.head.appendChild(__s);
+  }
 }
 
 var LANGUAGES = [
@@ -604,9 +618,14 @@ export default function FriendsScreen(props) {
   function renderFriendCard(p, opts) {
     opts = opts || {};
     var name = p.full_name || p.anon_nickname || 'Anonymous';
+    /* R64.4: explicit `flex: '0 0 190px'` instead of just flexShrink so
+     * the card has a hard fixed width on every browser. Without this,
+     * some webkit builds were treating it as flex:1 0 190px and
+     * stretching the cards to fill the row (effectively turning the
+     * horizontal scroll into a stacked column). */
     var cardStyle = opts.grid
       ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'}
-      : {minWidth:'190px',width:'190px',height:'250px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'};
+      : {flex:'0 0 190px',minWidth:'190px',width:'190px',height:'250px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'};
     return React.createElement('div', { key: p.user_id, style: cardStyle },
       /* Avatar with gradient ring + online dot */
       React.createElement('div', {
