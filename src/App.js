@@ -1272,8 +1272,14 @@ export default function App() {
         );
         /* R27: Anonymous Connect orb restored. The Connect Voice button is
          * now wired (uses window.__ringInStartCall — same Agora pipeline as
-         * expert calls). Anonymous calls are rate=0 (free) so no coin cost. */
-        if (tab.id === 'search') {
+         * expert calls). Anonymous calls are rate=0 (free) so no coin cost.
+         *
+         * R63: orb now renders after the 'friends' tab (the new 2nd slot)
+         * so it sits in the visual CENTER of the 5-element nav:
+         *   [Home][Friends][ORB][Experts][Messages]
+         * Previously it rendered after 'search' (Experts), which moved
+         * out of center when the tab order changed. */
+        if (tab.id === 'friends') {
           var orb = React.createElement('button', {
             key:'connect-orb',
             onClick:function(){
