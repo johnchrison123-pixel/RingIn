@@ -83,33 +83,34 @@ function initialOf(name) {
 }
 
 /* ── FilterPill — chip in the horizontal filter row ─────────────────
- * Shows label when no value is set; shows the value (with active styling)
- * when set. Tapping opens the picker sheet for that filter. */
+ * R64.2: bumped 20% bigger (12→14px text, 8/14→11/18px padding) per
+ * user feedback the previous pills were too small to read. */
 function FilterPill(props) {
   var active = !!props.value;
   return React.createElement('button', {
     onClick: props.onClick,
     style:{
-      padding:'8px 14px',
-      borderRadius:'20px',
+      padding:'11px 18px',
+      borderRadius:'22px',
       background: active ? 'linear-gradient(135deg,rgba(123,110,255,0.28),rgba(232,77,154,0.20))' : 'var(--bg2)',
-      border: active ? '1px solid var(--ac)' : '1px solid var(--border)',
+      border: active ? '1.5px solid var(--ac)' : '1px solid var(--border)',
       color: active ? 'var(--text)' : 'var(--t2)',
-      fontSize:'12px',
+      fontSize:'14px',
       fontWeight: active ? 700 : 600,
       cursor:'pointer',
       whiteSpace:'nowrap',
       flexShrink: 0,
       display:'flex',
       alignItems:'center',
-      gap:'6px',
+      gap:'7px',
       fontFamily:'inherit',
-      transition:'all 0.18s'
+      transition:'all 0.18s',
+      lineHeight:1
     }
   },
-    React.createElement('span', {style:{fontSize:'14px',lineHeight:1}}, props.icon),
+    React.createElement('span', {style:{fontSize:'17px',lineHeight:1}}, props.icon),
     React.createElement('span', null, active ? props.value : props.label),
-    React.createElement('span', {style:{fontSize:'9px',opacity: active ? 0.9 : 0.5}}, '▾')
+    React.createElement('span', {style:{fontSize:'11px',opacity: active ? 0.9 : 0.5}}, '▾')
   );
 }
 
@@ -593,33 +594,36 @@ export default function FriendsScreen(props) {
     );
   }
 
-  /* ══════ SUGGESTION BLOCK CARDS (LinkedIn/Facebook style) ═════════
-   * Larger card with cover band + overlapping avatar + name + city +
-   * occupation + inline "Add Friend" CTA. Tap opens profile modal. */
+  /* ══════ SUGGESTION BLOCK CARDS (LinkedIn/Facebook square style) ═══
+   * R64.2: cards are now strict 180x240 fixed-size — guaranteed
+   * horizontal flex even on narrow phones (no wrapping). The cover
+   * has been bumped up to fill 40% of card height, and the bottom
+   * action area is taller to accommodate larger text per user
+   * "make 20% bigger" feedback. */
   function renderSuggestionBlock(p) {
     var name = p.full_name || 'Anonymous';
     return React.createElement('div', {
       key: p.user_id,
-      style:{minWidth:'170px',width:'170px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',flexShrink:0,display:'flex',flexDirection:'column'}
+      style:{minWidth:'180px',width:'180px',height:'250px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',overflow:'hidden',flexShrink:0,display:'flex',flexDirection:'column',boxSizing:'border-box'}
     },
-      /* Cover */
+      /* Cover band */
       React.createElement('div', {
         onClick: function(){ setViewProfile(p); },
-        style:{height:'56px',background: p.cover_url ? ('url(' + p.cover_url + ') center/cover') : gradientFromString(name + 'cover'),cursor:'pointer',position:'relative'}
+        style:{height:'68px',background: p.cover_url ? ('url(' + p.cover_url + ') center/cover') : gradientFromString(name + 'cover'),cursor:'pointer',position:'relative',flexShrink:0}
       }),
       /* Avatar overlapping cover */
       React.createElement('div', {
         onClick: function(){ setViewProfile(p); },
-        style:{width:'62px',height:'62px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:800,color:'#fff',margin:'-32px auto 0',cursor:'pointer'}
+        style:{width:'70px',height:'70px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:800,color:'#fff',margin:'-35px auto 0',cursor:'pointer',flexShrink:0}
       }, p.avatar_url ? null : initialOf(name)),
-      /* Text + button area */
+      /* Text area — flex:1 so it absorbs remaining space */
       React.createElement('div', {
         onClick: function(){ setViewProfile(p); },
-        style:{padding:'8px 10px 4px',textAlign:'center',cursor:'pointer'}
+        style:{padding:'8px 10px 4px',textAlign:'center',cursor:'pointer',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}
       },
-        React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
-        p.occupation ? React.createElement('div', {style:{fontSize:'10px',color:'var(--t2)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, '💼 ' + p.occupation) : null,
-        React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
+        p.occupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, '💼 ' + p.occupation) : null,
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
           (p.current_city ? ('📍 ' + p.current_city) : '') +
           (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
         )
@@ -627,7 +631,7 @@ export default function FriendsScreen(props) {
       React.createElement('button', {
         onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
         disabled: connSending,
-        style:{margin:'8px 10px 12px',padding:'8px',borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--ac)',color:'var(--ac)',fontSize:'11px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        style:{margin:'4px 10px 12px',padding:'9px',borderRadius:'10px',background:'var(--bg)',border:'1.5px solid var(--ac)',color:'var(--ac)',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}
       }, '➕ Add Friend')
     );
   }
@@ -655,10 +659,14 @@ export default function FriendsScreen(props) {
       )
     ),
 
-    /* HORIZONTAL FILTER PILLS (no scrollbar visible) */
+    /* HORIZONTAL FILTER PILLS (no scrollbar visible).
+     * R64.2: explicit flexWrap:'nowrap' + minWidth:'max-content' on inner
+     * container forces strict horizontal layout — earlier version was
+     * wrapping vertically because the parent flex column was constraining
+     * width. */
     React.createElement('div', {
       className: 'ringin-hscroll',
-      style:{display:'flex',gap:'8px',padding:'0 16px 12px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch'}
+      style:{display:'flex',gap:'10px',padding:'0 16px 16px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap',flexShrink:0}
     },
       React.createElement(FilterPill, {
         icon:'🌐', label:'Language',
@@ -702,27 +710,31 @@ export default function FriendsScreen(props) {
       }, '✕ Clear all') : null
     ),
 
-    /* SUGGESTED FOR YOU — horizontal block cards (LinkedIn/IG style) */
+    /* SUGGESTED FOR YOU — horizontal SQUARE block cards (LinkedIn/IG style).
+     * R64.2: added flexWrap:'nowrap' + flexShrink:0 to the outer wrapper
+     * + larger marginTop on the Discover header below to prevent overlap. */
     (search.length === 0 && activeCount === 0 && suggested.length > 0)
-      ? React.createElement('div', null,
-          React.createElement('div', {style:{padding:'4px 18px 8px',fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:'6px'}},
+      ? React.createElement('div', {style:{flexShrink:0}},
+          React.createElement('div', {style:{padding:'6px 18px 10px',fontSize:'15px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:'8px'}},
             React.createElement('span', null, '✨ Suggested for you')
           ),
           React.createElement('div', {
             className: 'ringin-hscroll',
-            style:{display:'flex',gap:'10px',padding:'0 16px 16px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch'}
+            style:{display:'flex',gap:'12px',padding:'0 16px 20px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap',flexShrink:0}
           },
             suggested.map(renderSuggestionBlock)
           )
         )
       : null,
 
-    /* RESULTS LIST */
-    React.createElement('div', {style:{padding:'2px 18px 6px',fontSize:'12px',fontWeight:700,color:'var(--t2)',display:'flex',justifyContent:'space-between'}},
+    /* RESULTS LIST — R64.2: bumped padding-top to clear overlap with
+     * the suggestions strip above, and the header text is bigger now
+     * to match the larger filter pills (15px vs 12px). */
+    React.createElement('div', {style:{padding:'12px 18px 8px',fontSize:'15px',fontWeight:800,color:'var(--text)',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,borderTop:'1px solid var(--border)',marginTop:'4px'}},
       React.createElement('span', null,
-        search.length > 0 ? 'Search results' : (activeCount > 0 ? 'Filter results' : 'Discover')
+        search.length > 0 ? '🔎 Search results' : (activeCount > 0 ? '🎯 Filter results' : '🌍 Discover')
       ),
-      React.createElement('span', {style:{color:'var(--t3)',fontWeight:600}}, results.length + (results.length === 1 ? ' person' : ' people'))
+      React.createElement('span', {style:{color:'var(--t3)',fontWeight:600,fontSize:'12px'}}, results.length + (results.length === 1 ? ' person' : ' people'))
     ),
 
     loading ? React.createElement('div', {style:{padding:'40px 16px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}}, 'Loading…')
