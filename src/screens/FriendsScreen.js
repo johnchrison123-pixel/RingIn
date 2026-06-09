@@ -191,6 +191,13 @@ export default function FriendsScreen(props) {
   var suggestedS = useState([]); var suggested = suggestedS[0]; var setSuggested = suggestedS[1];
   var loadingS = useState(true); var loading = loadingS[0]; var setLoading = loadingS[1];
 
+  /* R64.7: "See all" toggle for the Suggested strip.
+   *   - false (default): show only 9 cards in 1 row
+   *   - true: show up to 28 cards in 2 rows (CSS grid horizontal flow) */
+  var showAllSuggestedS = useState(false);
+  var showAllSuggested = showAllSuggestedS[0];
+  var setShowAllSuggested = showAllSuggestedS[1];
+
   /* Setup modal + profile modal */
   var setupOpenS = useState(false); var setupOpen = setupOpenS[0]; var setSetupOpen = setupOpenS[1];
   var savingSetupS = useState(false); var savingSetup = savingSetupS[0]; var setSavingSetup = savingSetupS[1];
@@ -225,10 +232,11 @@ export default function FriendsScreen(props) {
     return function(){ cancelled = true; };
   }, [userId]);
 
-  /* ── Load suggestions ──────────────────────────────────────────── */
+  /* ── Load suggestions — R64.7: bumped limit 8 → 28 (the hard cap
+   * the user wants). We show 9 by default, 28 after "See all". */
   useEffect(function(){
     if (!userId) return;
-    sb.rpc('suggest_friends', { p_limit: 8 }).then(function(r){
+    sb.rpc('suggest_friends', { p_limit: 28 }).then(function(r){
       if (r && !r.error && Array.isArray(r.data)) setSuggested(r.data);
     });
   }, [userId, myLang, myCity]);
@@ -745,20 +753,37 @@ export default function FriendsScreen(props) {
       }, '✕ Clear all') : null
     ),
 
-    /* SUGGESTED FOR YOU — horizontal SQUARE block cards (LinkedIn/IG style).
-     * R64.2: added flexWrap:'nowrap' + flexShrink:0 to the outer wrapper
-     * + larger marginTop on the Discover header below to prevent overlap. */
+    /* SUGGESTED FOR YOU — R64.7
+     *   Default: 9 cards, 1 row, horizontal scroll
+     *   Expanded (See All): up to 28 cards, 2 rows, horizontal scroll
+     *
+     * Both modes use the same card. The 2-row mode uses CSS grid with
+     * grid-auto-flow:column so items fill the first column top-to-bottom
+     * then move to the next column. */
     (search.length === 0 && activeCount === 0 && suggested.length > 0)
       ? React.createElement('div', {style:{flexShrink:0}},
-          React.createElement('div', {style:{padding:'6px 18px 10px',fontSize:'15px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:'8px'}},
-            React.createElement('span', null, '✨ Suggested for you')
+          /* Header row with See All / Show Less toggle */
+          React.createElement('div', {style:{padding:'6px 18px 10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}},
+            React.createElement('span', {style:{fontSize:'15px',fontWeight:800,color:'var(--text)'}}, '✨ Suggested for you'),
+            suggested.length > 9 ? React.createElement('button', {
+              onClick: function(){ setShowAllSuggested(!showAllSuggested); },
+              style:{background:'transparent',border:'none',color:'var(--ac)',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',padding:'4px 6px'}
+            }, showAllSuggested ? '← Show less' : ('See all (' + Math.min(suggested.length, 28) + ') →')) : null
           ),
-          React.createElement('div', {
-            className: 'ringin-hscroll',
-            style:{display:'flex',gap:'12px',padding:'0 16px 20px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap',flexShrink:0}
-          },
-            suggested.map(renderSuggestionBlock)
-          )
+          /* Scroll lane — single row or 2-row grid based on toggle */
+          showAllSuggested
+            ? React.createElement('div', {
+                className: 'ringin-hscroll',
+                style:{display:'grid',gridTemplateRows:'auto auto',gridAutoFlow:'column',gridAutoColumns:'170px',gap:'10px',padding:'0 16px 20px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch'}
+              },
+                suggested.slice(0, 28).map(function(p){ return renderFriendCard(p, {grid:true}); })
+              )
+            : React.createElement('div', {
+                className: 'ringin-hscroll',
+                style:{display:'flex',gap:'12px',padding:'0 16px 20px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap',flexShrink:0}
+              },
+                suggested.slice(0, 9).map(renderSuggestionBlock)
+              )
         )
       : null,
 
