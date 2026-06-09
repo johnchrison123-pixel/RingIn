@@ -618,42 +618,44 @@ export default function FriendsScreen(props) {
   function renderFriendCard(p, opts) {
     opts = opts || {};
     var name = p.full_name || p.anon_nickname || 'Anonymous';
-    /* R64.4: explicit `flex: '0 0 190px'` instead of just flexShrink so
-     * the card has a hard fixed width on every browser. Without this,
-     * some webkit builds were treating it as flex:1 0 190px and
-     * stretching the cards to fill the row (effectively turning the
-     * horizontal scroll into a stacked column). */
+    /* R64.6: tightened card size + removed the flex:1 spacer.
+     * Was 190x250 with a `flex:1` text container that pushed the
+     * button down — caused visible blank space inside the card.
+     * Now 170px wide with auto height (content + padding only). */
     var cardStyle = opts.grid
-      ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'}
-      : {flex:'0 0 190px',minWidth:'190px',width:'190px',height:'250px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'16px',padding:'14px 10px 12px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'};
+      ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'}
+      : {flex:'0 0 170px',minWidth:'170px',width:'170px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'};
     return React.createElement('div', { key: p.user_id, style: cardStyle },
-      /* Avatar with gradient ring + online dot */
+      /* Avatar with gradient ring + online dot. R64.6: 72→64px. */
       React.createElement('div', {
         onClick: function(){ setViewProfile(p); },
-        style:{position:'relative',marginBottom:'10px',cursor:'pointer'}
+        style:{position:'relative',marginBottom:'8px',cursor:'pointer'}
       },
         React.createElement('div', {
-          style:{width:'72px',height:'72px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'2.5px',boxSizing:'border-box'}
+          style:{width:'64px',height:'64px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'2.5px',boxSizing:'border-box'}
         },
           React.createElement('div', {
-            style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name),border:'2.5px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:800,color:'#fff',boxSizing:'border-box'}
+            style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name),border:'2.5px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:800,color:'#fff',boxSizing:'border-box'}
           }, p.avatar_url ? null : initialOf(name))
         ),
         p.is_online ? React.createElement('div', {
-          style:{position:'absolute',bottom:'2px',right:'2px',width:'14px',height:'14px',borderRadius:'50%',background:'#27C96A',border:'2.5px solid var(--bg2)'}
+          style:{position:'absolute',bottom:'2px',right:'2px',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg2)'}
         }) : null
       ),
       /* Name */
-      React.createElement('div', {style:{fontSize:'14px',fontWeight:800,color:'var(--text)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, name),
+      React.createElement('div', {style:{fontSize:'13px',fontWeight:800,color:'var(--text)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, name),
       /* Occupation */
-      p.occupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginTop:'3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, p.occupation) : null,
+      p.occupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, p.occupation) : null,
       /* City + language */
-      React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginTop:'4px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}},
+      React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}},
         (p.current_city ? ('📍 ' + p.current_city) : '') +
         (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
       ),
-      /* Action row: message + add friend */
-      React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'auto',paddingTop:'12px',width:'100%',alignItems:'center'}},
+      /* Action row: message + add friend.
+       * R64.6: removed marginTop:'auto' (the flex spacer that caused
+       * blank space). Now the button row sits right under the text
+       * with a tight 10px gap. */
+      React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'10px',width:'100%',alignItems:'center'}},
         React.createElement('button', {
           onClick: function(e){ e.stopPropagation(); setViewProfile(p); },
           style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'14px',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',padding:0}
