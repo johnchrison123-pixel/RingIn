@@ -12,6 +12,7 @@ import SearchScreen from './screens/SearchScreen';
 import WalletScreen from './screens/WalletScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import WorkshopsScreen from './screens/WorkshopsScreen';
+import FriendsScreen from './screens/FriendsScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import SavedPostsScreen from './screens/SavedPostsScreen';
 import AnonymousConnect from './screens/AnonymousConnect';
@@ -1065,6 +1066,10 @@ export default function App() {
     if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onOpenProfile:function(){setPrevTab('home');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onGoToSearch:function(){setPrevTab('home');setActiveTab('search');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('search');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('workshops');setActiveTab('profile');}});
+    /* R63: new Real Friends tab — replaces Workshops in the bottom nav.
+     * Workshops screen kept as a dead route in case we want to bring it
+     * back later, but no nav button surfaces it anymore. */
+    if (activeTab === 'friends') return React.createElement(FriendsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('friends');setActiveTab('profile');}});
     /* R20 FIX #7: removed key='messages-'+msgResetKey to avoid remount race.
      * When user taps Messages tab while already on Messages, React-18's stable-
      * parent reconciliation could mount the NEW MessagesScreen BEFORE the old
@@ -1084,11 +1089,12 @@ export default function App() {
   var tabs = [
     {id:'home', label:'Home', svg:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'},
     {id:'search', label:'Experts', svg:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'},
-    /* R27: Workshops tab restored per user request. Feature is still mock-data
-     * driven (LIVE/UPCOMING hardcoded in WorkshopsScreen.js) — tap will show
-     * the existing placeholder UI. Real workshop scheduling + voice infra to
-     * come in a future round. */
-    {id:'workshops', label:'Workshops', svg:'M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'},
+    /* R63: Real Friends tab replaces Workshops. Workshops screen still
+     * exists as a route — we may bring it back later via a deep link or
+     * a separate entry point — but it no longer occupies a bottom-nav
+     * slot. Friends solves a documented user need (find your community
+     * when relocating) and has clearer monetization upside long-term. */
+    {id:'friends', label:'Friends', svg:'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'},
     {id:'messages', label:'Messages', svg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
   ];
 
