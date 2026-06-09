@@ -96,6 +96,58 @@ function initialOf(name) {
   return (name && name.trim().length > 0) ? name.trim().charAt(0).toUpperCase() : '?';
 }
 
+/* R64.8: parseBio — many existing users have their bio stored as a JSON
+ * blob ({"about":"...","tag":"...","website_name":"...","typing":{...
+ * sound prefs...},...}). Showing the raw blob in a profile modal looks
+ * terrible. This extracts:
+ *   - about: the actual human-readable bio
+ *   - tag:   short occupation/role tag (e.g. "Digital marketing manager")
+ *   - website: optional website name
+ *
+ * Handles three storage formats:
+ *   1. JSON object string (most live RingIn users): {"about":"...",...}
+ *   2. Plain string wrapped in quotes (our dummy seed): "Coffee + code..."
+ *   3. Plain string (legacy users): just text. */
+function parseBio(bio) {
+  var empty = { about: '', tag: '', website: '' };
+  if (!bio || typeof bio !== 'string') return empty;
+  var s = bio.trim();
+  if (!s) return empty;
+
+  /* Format 2: outer quotes — peel them off. JSON.parse handles escaped
+   * sequences like \n correctly. */
+  if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
+    try {
+      var unwrapped = JSON.parse(s);
+      if (typeof unwrapped === 'string') s = unwrapped;
+    } catch (_) {
+      s = s.slice(1, -1);
+    }
+  }
+
+  /* Format 1: JSON object — extract about / tag / website. */
+  if (s.length > 0 && s.charAt(0) === '{') {
+    try {
+      var obj = JSON.parse(s);
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return {
+          about: typeof obj.about === 'string' ? obj.about
+                 : (typeof obj.bio === 'string' ? obj.bio
+                    : (typeof obj.description === 'string' ? obj.description : '')),
+          tag: typeof obj.tag === 'string' ? obj.tag
+               : (typeof obj.title === 'string' ? obj.title : ''),
+          website: typeof obj.website_name === 'string' ? obj.website_name : '',
+        };
+      }
+    } catch (_) {
+      /* Not valid JSON — fall through and treat as plain text. */
+    }
+  }
+
+  /* Format 3 (or fallback): plain text. */
+  return { about: s, tag: '', website: '' };
+}
+
 /* ── FilterPill — chip in the horizontal filter row ─────────────────
  * R64.2: bumped 20% bigger (12→14px text, 8/14→11/18px padding) per
  * user feedback the previous pills were too small to read. */
@@ -535,6 +587,9 @@ export default function FriendsScreen(props) {
     if (!viewProfile) return null;
     var p = viewProfile;
     var name = p.full_name || p.anon_nickname || 'Anonymous';
+    /* R64.8: parse bio JSON blob into clean fields. */
+    var bioData = parseBio(p.bio);
+    var displayOccupation = p.occupation || bioData.tag || '';
     var coverStyle = p.cover_url
       ? { background: 'url(' + p.cover_url + ') center/cover', height: '110px' }
       : { background: gradientFromString(name + 'cover'), height: '110px' };
@@ -553,13 +608,16 @@ export default function FriendsScreen(props) {
         ),
         React.createElement('div', {style:{padding:'40px 22px 22px'}},
           React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',textAlign:'center'}}, name),
-          p.occupation ? React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',textAlign:'center',marginTop:'4px'}}, '💼 ' + p.occupation) : null,
+          displayOccupation ? React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',textAlign:'center',marginTop:'4px'}}, '💼 ' + displayOccupation) : null,
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t3)',textAlign:'center',marginTop:'6px'}},
             (p.home_language ? ('🗣 ' + languageLabel(p.home_language)) : '') +
             (p.home_town ? (' · From ' + p.home_town) : '') +
             (p.current_city ? (' · 📍 ' + p.current_city) : '')
           ),
-          p.bio ? React.createElement('div', {style:{fontSize:'13px',color:'var(--t2)',marginTop:'14px',padding:'12px',background:'var(--bg2)',borderRadius:'10px',lineHeight:1.5,whiteSpace:'pre-wrap'}}, typeof p.bio === 'string' ? p.bio.replace(/^"|"$/g, '') : '') : null,
+          /* R64.8: render parsed about (clean text), then website on a
+           * separate line if present. No more raw JSON blob. */
+          bioData.about ? React.createElement('div', {style:{fontSize:'13px',color:'var(--t2)',marginTop:'14px',padding:'12px',background:'var(--bg2)',borderRadius:'10px',lineHeight:1.5,whiteSpace:'pre-wrap'}}, bioData.about) : null,
+          bioData.website ? React.createElement('div', {style:{fontSize:'12px',color:'var(--ac)',marginTop:'8px',textAlign:'center',fontWeight:600}}, '🔗 ' + bioData.website) : null,
           (Array.isArray(p.interests) && p.interests.length > 0)
             ? React.createElement('div', {style:{marginTop:'14px'}},
                 React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',marginBottom:'6px',letterSpacing:'0.5px'}}, 'INTERESTS'),
@@ -626,13 +684,17 @@ export default function FriendsScreen(props) {
   function renderFriendCard(p, opts) {
     opts = opts || {};
     var name = p.full_name || p.anon_nickname || 'Anonymous';
+    /* R64.8: parse bio so a JSON-blob bio's "tag" can act as occupation
+     * fallback for users who didn't set occupation. */
+    var bioData = parseBio(p.bio);
+    var displayOccupation = p.occupation || bioData.tag || '';
     /* R64.6: tightened card size + removed the flex:1 spacer.
-     * Was 190x250 with a `flex:1` text container that pushed the
-     * button down — caused visible blank space inside the card.
-     * Now 170px wide with auto height (content + padding only). */
+     * R64.8: added overflow:hidden so the rounded corners clip any
+     * content overflow (fixes the message-bubble peeking past the
+     * border on Discover cards). */
     var cardStyle = opts.grid
-      ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'}
-      : {flex:'0 0 170px',minWidth:'170px',width:'170px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box'};
+      ? {width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'}
+      : {flex:'0 0 170px',minWidth:'170px',width:'170px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'};
     return React.createElement('div', { key: p.user_id, style: cardStyle },
       /* Avatar with gradient ring + online dot. R64.6: 72→64px. */
       React.createElement('div', {
@@ -652,8 +714,8 @@ export default function FriendsScreen(props) {
       ),
       /* Name */
       React.createElement('div', {style:{fontSize:'13px',fontWeight:800,color:'var(--text)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, name),
-      /* Occupation */
-      p.occupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, p.occupation) : null,
+      /* Occupation — uses parsed bio tag as fallback (R64.8). */
+      displayOccupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, displayOccupation) : null,
       /* City + language */
       React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}},
         (p.current_city ? ('📍 ' + p.current_city) : '') +
