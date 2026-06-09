@@ -1068,8 +1068,10 @@ export default function App() {
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('workshops');setActiveTab('profile');}});
     /* R63: new Real Friends tab — replaces Workshops in the bottom nav.
      * Workshops screen kept as a dead route in case we want to bring it
-     * back later, but no nav button surfaces it anymore. */
-    if (activeTab === 'friends') return React.createElement(FriendsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('friends');setActiveTab('profile');}});
+     * back later, but no nav button surfaces it anymore.
+     * R64.10: onViewUser wired so tapping the avatar/name inside the
+     * Friends profile-summary modal pushes a full UserProfileView. */
+    if (activeTab === 'friends') return React.createElement(FriendsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('friends');setActiveTab('profile');}, onViewUser:pushViewUser});
     /* R20 FIX #7: removed key='messages-'+msgResetKey to avoid remount race.
      * When user taps Messages tab while already on Messages, React-18's stable-
      * parent reconciliation could mount the NEW MessagesScreen BEFORE the old

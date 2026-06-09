@@ -214,6 +214,25 @@ function CityInputInner(props) {
 export default function FriendsScreen(props) {
   var session = props.session;
   var userId = session && session.user ? session.user.id : null;
+  /* R64.10: onViewUser navigates to a full UserProfileView. Wired from
+   * App.js so tapping a profile's avatar/name in our summary modal
+   * routes through the same flow as MessagesScreen + HomeScreen. */
+  var onViewUser = props.onViewUser;
+
+  /* Navigate to a user's full profile page. Closes the summary modal
+   * first so the back stack is clean. Falls back to no-op if the host
+   * didn't wire onViewUser. */
+  function openFullProfile(p) {
+    if (!p || !onViewUser) return;
+    var u = {
+      id: p.user_id || p.id,
+      full_name: p.full_name || p.anon_nickname || 'Anonymous',
+      avatar_url: p.avatar_url || null,
+      is_online: !!p.is_online,
+    };
+    setViewProfile(null);
+    try { onViewUser(u); } catch (_) {}
+  }
 
   /* My own community fields */
   var myLangS = useState(''); var myLang = myLangS[0]; var setMyLang = myLangS[1];
@@ -621,12 +640,20 @@ export default function FriendsScreen(props) {
         style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',maxWidth:'440px',width:'100%',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden'}
       },
         React.createElement('div', {style: Object.assign({width:'100%',position:'relative'}, coverStyle)},
-          React.createElement('div', {style:{position:'absolute',bottom:'-30px',left:'50%',transform:'translateX(-50%)',width:'82px',height:'82px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'32px',fontWeight:800,color:'#fff'}},
+          /* R64.10: clicking the avatar OR the name navigates to the
+           * user's full profile page (UserProfileView). */
+          React.createElement('div', {
+            onClick: function(){ openFullProfile(p); },
+            style:{position:'absolute',bottom:'-30px',left:'50%',transform:'translateX(-50%)',width:'82px',height:'82px',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name), border:'3px solid var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'32px',fontWeight:800,color:'#fff',cursor:'pointer'}
+          },
             p.avatar_url ? null : initialOf(name)
           )
         ),
         React.createElement('div', {style:{padding:'40px 22px 22px'}},
-          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',textAlign:'center'}}, name),
+          React.createElement('div', {
+            onClick: function(){ openFullProfile(p); },
+            style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',textAlign:'center',cursor:'pointer'}
+          }, name),
           displayOccupation ? React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',textAlign:'center',marginTop:'4px'}}, '💼 ' + displayOccupation) : null,
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t3)',textAlign:'center',marginTop:'6px'}},
             (p.home_language ? ('🗣 ' + languageLabel(p.home_language)) : '') +
@@ -703,52 +730,49 @@ export default function FriendsScreen(props) {
   function renderFriendCard(p, opts) {
     opts = opts || {};
     var name = p.full_name || p.anon_nickname || 'Anonymous';
-    /* R64.8: parse bio so a JSON-blob bio's "tag" can act as occupation
-     * fallback for users who didn't set occupation. */
-    var bioData = parseBio(p.bio);
-    var displayOccupation = p.occupation || bioData.tag || '';
-    /* R64.6: tightened card size + removed the flex:1 spacer.
-     * R64.8: added overflow:hidden so the rounded corners clip any
-     * content overflow.
-     * R64.9: fixed minHeight (200px) so even when a search returns a
-     * profile with missing fields, the action row stays at the same
-     * vertical position as every other card. */
+    /* R64.10: per user request — discover cards now show ONLY location
+     * + main language. Occupation removed from the card. Avatar bumped
+     * 64→84px (room freed up by dropping the occupation row).
+     *
+     * R64.10: card has FIXED height (210px) and the entire card outer
+     * div is clickable → opens the profile-summary modal. Action row
+     * uses marginTop:'auto' which, combined with fixed height,
+     * guarantees the buttons sit at exactly the same Y position on
+     * every card regardless of name/city length. */
     var cardStyle = opts.grid
-      ? {width:'100%',minHeight:'200px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'}
-      : {flex:'0 0 170px',minWidth:'170px',width:'170px',minHeight:'200px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden'};
-    return React.createElement('div', { key: p.user_id, style: cardStyle },
-      /* Avatar with gradient ring + online dot. R64.6: 72→64px. */
+      ? {width:'100%',height:'210px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden',cursor:'pointer'}
+      : {flex:'0 0 170px',minWidth:'170px',width:'170px',height:'210px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'12px 8px 10px',display:'flex',flexDirection:'column',alignItems:'center',boxSizing:'border-box',overflow:'hidden',cursor:'pointer'};
+    return React.createElement('div', {
+      key: p.user_id,
+      /* R64.10: whole card is clickable, opens profile summary modal. */
+      onClick: function(){ setViewProfile(p); },
+      style: cardStyle
+    },
+      /* Avatar with gradient ring + online dot. R64.10: 64 → 84px (bigger).
+       * The inner click handler is removed — the parent card handles it. */
       React.createElement('div', {
-        onClick: function(){ setViewProfile(p); },
-        style:{position:'relative',marginBottom:'8px',cursor:'pointer'}
+        style:{position:'relative',marginBottom:'10px'}
       },
         React.createElement('div', {
-          style:{width:'64px',height:'64px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'2.5px',boxSizing:'border-box'}
+          style:{width:'84px',height:'84px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'3px',boxSizing:'border-box'}
         },
           React.createElement('div', {
-            style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name),border:'2.5px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:800,color:'#fff',boxSizing:'border-box'}
+            style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name),border:'3px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:800,color:'#fff',boxSizing:'border-box'}
           }, p.avatar_url ? null : initialOf(name))
         ),
         p.is_online ? React.createElement('div', {
-          style:{position:'absolute',bottom:'2px',right:'2px',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg2)'}
+          style:{position:'absolute',bottom:'3px',right:'3px',width:'14px',height:'14px',borderRadius:'50%',background:'#27C96A',border:'2.5px solid var(--bg2)'}
         }) : null
       ),
       /* Name */
-      React.createElement('div', {style:{fontSize:'13px',fontWeight:800,color:'var(--text)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, name),
-      /* Occupation — uses parsed bio tag as fallback (R64.8). */
-      displayOccupation ? React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, displayOccupation) : null,
-      /* City + language */
-      React.createElement('div', {style:{fontSize:'10px',color:'var(--t3)',textAlign:'center',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}},
+      React.createElement('div', {style:{fontSize:'14px',fontWeight:800,color:'var(--text)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}}, name),
+      /* City + main language only (R64.10: occupation removed) */
+      React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',textAlign:'center',marginTop:'3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',width:'100%',padding:'0 4px',boxSizing:'border-box'}},
         (p.current_city ? ('📍 ' + p.current_city) : '') +
         (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
       ),
-      /* Action row: message + add friend.
-       * R64.9: marginTop:'auto' is back — the flex spacer pushes the
-       * buttons to the bottom of the card. Combined with the card's
-       * fixed 200px minHeight, this guarantees every card's buttons
-       * sit at the same Y position regardless of how much text is
-       * above (so John's card with no occupation still has buttons
-       * in the same spot as Maya's full card). */
+      /* Action row anchored to bottom by marginTop:'auto' (works because
+       * the card has fixed height). All cards' buttons line up exactly. */
       React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'auto',paddingTop:'10px',width:'100%',alignItems:'center'}},
         React.createElement('button', {
           onClick: function(e){ e.stopPropagation(); setViewProfile(p); },
@@ -764,6 +788,39 @@ export default function FriendsScreen(props) {
   }
   /* Backwards-compat alias — the JSX below still calls the old name. */
   var renderSuggestionBlock = function(p){ return renderFriendCard(p, {grid:false}); };
+
+  /* ── Search-result row — vertical full-width layout for search ──
+   * Used when the user types in the search box. Easier to scan than
+   * cards because you see name + location at a glance with no scroll. */
+  function renderSearchResultRow(p) {
+    var name = p.full_name || p.anon_nickname || 'Anonymous';
+    return React.createElement('div', {
+      key: p.user_id,
+      onClick: function(){ setViewProfile(p); },
+      style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',cursor:'pointer'}
+    },
+      /* Avatar with ring */
+      React.createElement('div', {style:{position:'relative',flexShrink:0}},
+        React.createElement('div', {style:{width:'52px',height:'52px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'2px',boxSizing:'border-box'}},
+          React.createElement('div', {style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(name),border:'2px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:800,color:'#fff',boxSizing:'border-box'}}, p.avatar_url ? null : initialOf(name))
+        ),
+        p.is_online ? React.createElement('div', {style:{position:'absolute',bottom:'0',right:'0',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg2)'}}) : null
+      ),
+      React.createElement('div', {style:{flex:1,minWidth:0}},
+        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+          (p.current_city ? ('📍 ' + p.current_city) : '') +
+          (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
+        )
+      ),
+      /* Add Friend button on the right */
+      React.createElement('button', {
+        onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
+        disabled: connSending,
+        style:{padding:'8px 16px',borderRadius:'18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0,opacity: connSending ? 0.7 : 1}
+      }, 'Add')
+    );
+  }
 
   /* ══════ FILTER PILLS BAR ═══════════════════════════════════════ */
   var activeCount = (fLang?1:0) + (fCity?1:0) + (fHome?1:0) + (fOcc?1:0) + (fGender?1:0) + (fInterests.length>0?1:0) + (fOnline?1:0);
@@ -890,16 +947,20 @@ export default function FriendsScreen(props) {
           React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No matches yet'),
           React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Try expanding your filters or searching by a different city.')
         )
-      /* R64.5: switched Discover from 2-column vertical grid to a
-       * horizontal scrolling row of cards per user request. Same card
-       * size as Suggested above (190px wide), swipe sideways through
-       * all results. */
-      : React.createElement('div', {
-          className: 'ringin-hscroll',
-          style:{display:'flex',gap:'12px',padding:'10px 16px 90px 16px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap'}
-        },
-          results.map(function(p){ return renderFriendCard(p, {grid:false}); })
-        ),
+      /* R64.10: when SEARCHING, results go in a vertical list (rows)
+       * under Discover label — easier to scan when looking for a
+       * specific person. When NOT searching, Discover is a horizontal
+       * scroll of cards (Online-Now style). */
+      : search.length > 0
+        ? React.createElement('div', {style:{padding:'10px 16px 90px 16px',display:'flex',flexDirection:'column',gap:'10px'}},
+            results.map(renderSearchResultRow)
+          )
+        : React.createElement('div', {
+            className: 'ringin-hscroll',
+            style:{display:'flex',gap:'12px',padding:'10px 16px 90px 16px',overflowX:'auto',overflowY:'hidden',scrollbarWidth:'none',msOverflowStyle:'none',WebkitOverflowScrolling:'touch',flexWrap:'nowrap'}
+          },
+            results.map(function(p){ return renderFriendCard(p, {grid:false}); })
+          ),
 
     renderSetupModal(),
     renderProfileModal(),
