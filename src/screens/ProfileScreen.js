@@ -241,6 +241,14 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   var acctPhoneCodeS=useState(localStorage.getItem('acct_phone_code')||'+1'); var acctPhoneCode=acctPhoneCodeS[0]; var setAcctPhoneCode=acctPhoneCodeS[1];
   var acctPhoneS=useState(localStorage.getItem('acct_phone')||''); var acctPhone=acctPhoneS[0]; var setAcctPhone=acctPhoneS[1];
   var acctTzS=useState(localStorage.getItem('user_timezone')||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'); var acctTz=acctTzS[0]; var setAcctTz=acctTzS[1];
+  /* R65: Real Friends community fields — driven by profiles.home_language /
+   * home_town / current_city. Editing them here updates the same fields
+   * used by the Friends tab discovery + cards. */
+  var acctHomeLangS=useState(''); var acctHomeLang=acctHomeLangS[0]; var setAcctHomeLang=acctHomeLangS[1];
+  var acctHomeTownS=useState(''); var acctHomeTown=acctHomeTownS[0]; var setAcctHomeTown=acctHomeTownS[1];
+  var acctCurrentCityS=useState(''); var acctCurrentCity=acctCurrentCityS[0]; var setAcctCurrentCity=acctCurrentCityS[1];
+  var acctCommunitySavingS=useState(false); var acctCommunitySaving=acctCommunitySavingS[0]; var setAcctCommunitySaving=acctCommunitySavingS[1];
+  var acctCommunitySavedS=useState(false); var acctCommunitySaved=acctCommunitySavedS[0]; var setAcctCommunitySaved=acctCommunitySavedS[1];
   /* R39/R40: gender on the real profile + 30-day rate-limit metadata.
    * '' = "Rather not say" (NULL in DB). The server-side set_my_gender RPC
    * enforces the 30-day cooldown atomically — client just gates the UI. */
@@ -886,13 +894,20 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     if(!showAcct||!userId) return;
     /* R39/R40: also fetch `gender`, `gender_changed_at`, `is_verified`.
      * Forward-compatible — falls back to narrow select if any column is missing. */
-    sbProfile.from('profiles').select('full_name,bio,gender,gender_changed_at,is_verified').eq('id',userId).single().then(function(res){
+    /* R65: also fetch Real Friends fields (home_language, home_town,
+     * current_city). Forward-compatible — falls back if columns
+     * don't exist yet (pre-0044 deploys). */
+    sbProfile.from('profiles').select('full_name,bio,gender,gender_changed_at,is_verified,home_language,home_town,current_city').eq('id',userId).single().then(function(res){
       if (res && res.error && /column .* does not exist/i.test(res.error.message||'')) {
         return sbProfile.from('profiles').select('full_name,bio,gender').eq('id',userId).single();
       }
       return res;
     }).then(function(res){
       if(!res||!res.data) return;
+      /* R65: prefill community fields from server. */
+      if (typeof res.data.home_language === 'string') setAcctHomeLang(res.data.home_language || '');
+      if (typeof res.data.home_town === 'string') setAcctHomeTown(res.data.home_town || '');
+      if (typeof res.data.current_city === 'string') setAcctCurrentCity(res.data.current_city || '');
       var fullName = res.data.full_name || '';
       var dbGender = res.data.gender || '';
       /* R40 metadata */
@@ -1735,6 +1750,93 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('span',{style:{color:'var(--t3)',fontSize:'12px'}},'▼')
         ),
         React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',fontStyle:'italic'}},'This setting controls how times appear across the app')
+      ),
+      /* R65: Real Friends Community section ─ home language, hometown,
+       * current city. These are the fields the Friends tab + discovery
+       * cards use. Writing goes through update_friends_profile RPC
+       * (the same RPC the Friends setup modal uses) so we never hit
+       * R58's column-level REVOKE wall. */
+      React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px',display:'flex',alignItems:'center',gap:'6px'}},
+        React.createElement('span',null,'Community · Real Friends'),
+        acctCommunitySaving ? React.createElement('span',{style:{fontSize:'9px',color:'var(--t3)',textTransform:'none',letterSpacing:0}},'Saving…') : null,
+        acctCommunitySaved ? React.createElement('span',{style:{fontSize:'9px',color:'#27C96A',textTransform:'none',letterSpacing:0,fontWeight:700}},'Saved ✓') : null
+      ),
+      React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)',marginBottom:'12px',lineHeight:1.5}}, 'Used on the Friends tab to find people from your community in your city.'),
+        /* Home Language dropdown */
+        React.createElement('div',{style:{marginBottom:'14px'}},
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Home Language'),
+          React.createElement('select',{
+            value: acctHomeLang,
+            onChange: function(e){ setAcctHomeLang(e.target.value); },
+            style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box',appearance:'none',WebkitAppearance:'none',backgroundImage:'linear-gradient(45deg, transparent 50%, var(--t2) 50%), linear-gradient(135deg, var(--t2) 50%, transparent 50%)',backgroundPosition:'calc(100% - 18px) 50%, calc(100% - 13px) 50%',backgroundSize:'5px 5px, 5px 5px',backgroundRepeat:'no-repeat'}
+          },
+            React.createElement('option',{value:''},'Select…'),
+            React.createElement('option',{value:'malayalam'},'Malayalam'),
+            React.createElement('option',{value:'tamil'},'Tamil'),
+            React.createElement('option',{value:'telugu'},'Telugu'),
+            React.createElement('option',{value:'kannada'},'Kannada'),
+            React.createElement('option',{value:'hindi'},'Hindi'),
+            React.createElement('option',{value:'punjabi'},'Punjabi'),
+            React.createElement('option',{value:'bengali'},'Bengali'),
+            React.createElement('option',{value:'marathi'},'Marathi'),
+            React.createElement('option',{value:'gujarati'},'Gujarati'),
+            React.createElement('option',{value:'arabic'},'Arabic'),
+            React.createElement('option',{value:'urdu'},'Urdu'),
+            React.createElement('option',{value:'english'},'English')
+          )
+        ),
+        /* Hometown text input */
+        React.createElement('div',{style:{marginBottom:'14px'}},
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Hometown'),
+          React.createElement('input',{
+            type:'text',
+            value: acctHomeTown,
+            onChange: function(e){ setAcctHomeTown(e.target.value); },
+            placeholder: 'e.g. Kochi, Chennai, Lahore',
+            style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}
+          })
+        ),
+        /* Current City text input */
+        React.createElement('div',{style:{marginBottom:'16px'}},
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'6px'}},'Current City'),
+          React.createElement('input',{
+            type:'text',
+            value: acctCurrentCity,
+            onChange: function(e){ setAcctCurrentCity(e.target.value); },
+            placeholder: 'e.g. Dubai, Bangalore, London',
+            style:{width:'100%',padding:'12px 14px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text)',fontSize:'14px',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}
+          })
+        ),
+        /* Save button */
+        React.createElement('button',{
+          onClick: function(){
+            if (acctCommunitySaving) return;
+            setAcctCommunitySaving(true);
+            setAcctCommunitySaved(false);
+            sbProfile.rpc('update_friends_profile', {
+              p_home_language: (acctHomeLang || '').trim() || null,
+              p_home_town:     (acctHomeTown || '').trim() || null,
+              p_current_city:  (acctCurrentCity || '').trim() || null,
+              p_occupation:    null,
+              p_interests:     null,
+              p_gender:        null
+            }).then(function(r){
+              setAcctCommunitySaving(false);
+              if (r && r.error) {
+                console.error('RingIn Error [saveCommunity]:', r.error);
+                return;
+              }
+              setAcctCommunitySaved(true);
+              setTimeout(function(){ setAcctCommunitySaved(false); }, 2000);
+            }).catch(function(e){
+              setAcctCommunitySaving(false);
+              console.error('RingIn Error [saveCommunity]:', e);
+            });
+          },
+          disabled: acctCommunitySaving,
+          style:{width:'100%',padding:'11px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'13px',fontWeight:700,cursor: acctCommunitySaving ? 'wait' : 'pointer',opacity: acctCommunitySaving ? 0.6 : 1}
+        }, acctCommunitySaved ? 'Saved ✓' : (acctCommunitySaving ? 'Saving…' : 'Save Community Info'))
       ),
       // Save All button
       React.createElement('button',{
