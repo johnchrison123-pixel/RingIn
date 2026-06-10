@@ -360,23 +360,33 @@ export default function FriendsScreen(props) {
     return function(){ clearTimeout(t); };
   }, [userId, search, fLang, fHome, fCity, fOcc, fGender, fInterests, fOnline]);
 
-  /* ── Save setup ────────────────────────────────────────────────── */
+  /* ── Save setup ────────────────────────────────────────────────────
+   * R64.11: was doing `sb.from('profiles').update(...)` directly, which
+   * failed with "permission denied for table profiles" because the
+   * R58 security lockdown revoked direct UPDATE on gender (and other
+   * sensitive columns). Now uses the update_friends_profile SECURITY
+   * DEFINER RPC which runs as postgres and bypasses column grants. */
   function saveSetup() {
     if (savingSetup) return;
     setSavingSetup(true);
-    var payload = {
-      home_language: (myLang || '').trim() || null,
-      home_town: (myHome || '').trim() || null,
-      current_city: (myCity || '').trim() || null,
-      occupation: (myOcc || '').trim() || null,
-      interests: myInterests.length > 0 ? myInterests : [],
-    };
-    if (myGender) payload.gender = myGender;
-    sb.from('profiles').update(payload).eq('id', userId).then(function(r){
+    sb.rpc('update_friends_profile', {
+      p_home_language: (myLang  || '').trim() || null,
+      p_home_town:     (myHome  || '').trim() || null,
+      p_current_city:  (myCity  || '').trim() || null,
+      p_occupation:    (myOcc   || '').trim() || null,
+      p_interests:     myInterests.length > 0 ? myInterests : [],
+      p_gender:        myGender || null,
+    }).then(function(r){
       setSavingSetup(false);
-      if (r && r.error) { toastError('Could not save: ' + (r.error.message || 'try again')); return; }
+      if (r && r.error) {
+        toastError('Could not save: ' + (r.error.message || 'try again'));
+        return;
+      }
       setSetupOpen(false);
       toastInfo('Profile updated');
+    }).catch(function(){
+      setSavingSetup(false);
+      toastError('Network error');
     });
   }
 
