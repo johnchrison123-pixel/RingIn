@@ -93,7 +93,11 @@ function migrateLegacy(myId) {
 
 export function loadBlocks(myId) {
   // Seed from cache immediately so callers don't wait on the network for
-  // first render.
+  // first render. ROUND-9 FIX #7: notify() right after the seed so any
+  // component that subscribed via onBlocksChanged BEFORE loadBlocks ran
+  // (or in the same tick) gets the cached value — without this, a
+  // subscriber that mounted in the same render commit would otherwise
+  // sit on its initial-state Set until the server round-trip lands.
   _cache = readCache();
   notify();
   if (!myId) return Promise.resolve(_cache);
@@ -102,7 +106,10 @@ export function loadBlocks(myId) {
     return sb.from('blocks').select('blocked_id').eq('blocker_id', myId).then(function(r){
       if (r.error) {
         // Probably migration not applied. Keep cache as-is (might still
-        // hold legacy IDs we already migrated locally).
+        // hold legacy IDs we already migrated locally). Notify so any
+        // subscriber that came online during the inflight gets at least
+        // the cached snapshot back.
+        notify();
         return _cache;
       }
       var fresh = new Set((r.data || []).map(function(row){ return row.blocked_id; }));
@@ -110,7 +117,7 @@ export function loadBlocks(myId) {
       writeCache(fresh);
       notify();
       return fresh;
-    }).catch(function(){ return _cache; });
+    }).catch(function(){ notify(); return _cache; });
   });
 }
 

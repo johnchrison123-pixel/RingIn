@@ -14,6 +14,10 @@
 // Must live at the ROOT of the domain (public/firebase-messaging-sw.js)
 // because FCM auto-registers it at /firebase-messaging-sw.js scope.
 // ─────────────────────────────────────────────────────────────────────────
+// TODO(polish): bump these to firebasejs v10 — v9 is past EOL but compat
+// libs are still served. v10 has the same public API; just swap the version
+// in both URLs and the FirebaseFoundation polyfill once we have time to
+// re-test push delivery on real Android + iOS devices end-to-end.
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 

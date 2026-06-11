@@ -1,6 +1,9 @@
 /* eslint-disable */
 import {useState, useEffect} from 'react';
 import {sb as _sb} from '../utils/supabase';
+// R11 FIX #12: replace alert() with toast + give user feedback when
+// follow/unfollow rolls back (previously silent + console.error only).
+import {toastError, toastWarn} from '../utils/toast';
 
 var FOLLOWS_EVENT = 'ringin-follows-changed';
 
@@ -59,7 +62,8 @@ export function useFollow(supabase, currentUserId){
   }
 
   function toggleFollow(targetId, targetName, targetAvatar, targetRole){
-    if(!currentUserId){alert('Please log in to follow');return;}
+    // R11 FIX #12: replace blocking alert() with non-blocking toast.
+    if(!currentUserId){ try{ toastWarn('Please log in to follow'); }catch(_){} return; }
     var tid = String(targetId);
     if(following[tid]){
       // Unfollow instantly
@@ -76,6 +80,8 @@ export function useFollow(supabase, currentUserId){
           setFollowing(snapUnfollow);
           try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapUnfollow));}catch(e){}
           broadcast(tid, true); // re-broadcast revert
+          // R11 FIX #12: previously silent on failure — let the user know.
+          try{ toastError('Couldn\'t update follow — try again'); }catch(_){}
         }
       });
     } else {
@@ -98,6 +104,8 @@ export function useFollow(supabase, currentUserId){
           setFollowing(snapFollow);
           try{localStorage.setItem('follows_'+currentUserId, JSON.stringify(snapFollow));}catch(e){}
           broadcast(tid, false); // re-broadcast revert
+          // R11 FIX #12: previously silent on failure — let the user know.
+          try{ toastError('Couldn\'t update follow — try again'); }catch(_){}
         }
       });
     }

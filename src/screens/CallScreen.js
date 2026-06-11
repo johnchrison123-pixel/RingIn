@@ -5,6 +5,7 @@ import * as NativeAudio from '../utils/nativeAudio';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
+import {setSharedCoinBalance} from '../utils/coinBalance';
 
 // ── Module-level SVG nodes ─────────────────────────────────────────────────
 // React.createElement creates a fresh object on every render. Hoisting the
@@ -29,7 +30,7 @@ var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'
 // at the bottom of the connected-call screen and logged on call start so we
 // can verify whether the user is actually running the latest code (or stuck
 // on a cached old build via service worker).
-var RINGIN_BUILD = 'v2.1-audiofix';
+var RINGIN_BUILD = '';
 
 // ── Module-level style constants ───────────────────────────────────────────
 // Every secs/coin tick re-renders the connected-call view. Hoisting the style
@@ -105,6 +106,18 @@ export default function CallScreen(props){
   var secsS = useState(0); var secs = secsS[0]; var setSecs = secsS[1];
   var ringSecsS = useState(0); var ringSecs = ringSecsS[0]; var setRingSecs = ringSecsS[1];
   var localCoinsS = useState(coins); var localCoins = localCoinsS[0]; var setLocalCoins = localCoinsS[1];
+  // Ref mirror of localCoins — needed because hangup() is a plain
+  // function (not memoized) and the per-minute interval captures it via
+  // stale closure. Reading `localCoins` directly inside hangup would
+  // return the at-render value, so the final DB write would undo every
+  // deduction. The ref is updated in a useEffect below.
+  var localCoinsRef = useRef(coins);
+  useEffect(function(){ localCoinsRef.current = localCoins; }, [localCoins]);
+  // ROUND 8 FIX #6: phaseRef mirror — the 'ringin:back-call' listener is
+  // registered once with empty deps so it can't read the latest `phase`
+  // directly. The mirror lets the listener bail if the call already ended.
+  var phaseRef = useRef(phase);
+  useEffect(function(){ phaseRef.current = phase; }, [phase]);
   var mutedS = useState(false); var muted = mutedS[0]; var setMuted = mutedS[1];
   // Speaker off = normal call volume (100). Speaker on = loudspeaker boost (250).
   // Browser can't actually route to earpiece — this is volume-based "loudspeaker" mode.
@@ -297,9 +310,18 @@ export default function CallScreen(props){
       })
       .subscribe();
     // 3-second poll backup in case realtime drops the UPDATE
+    // FIX #11 — once the row reaches a terminal state (accepted / ended /
+    // rejected / cancelled), tear down the interval. Previously the poll
+    // kept hammering Supabase every 3s for the entire call duration.
     var pollIv = setInterval(function(){
       sb.from('call_invites').select('status').eq('id', inviteId).single().then(function(r){
-        if(r && r.data) applyStatus(r.data.status);
+        if(r && r.data){
+          var st = r.data.status;
+          applyStatus(st);
+          if(st === 'accepted' || st === 'ended' || st === 'rejected' || st === 'cancelled'){
+            clearInterval(pollIv);
+          }
+        }
       });
     }, 3000);
     return function(){ try{ sb.removeChannel(ch); }catch(e){} clearInterval(pollIv); };
@@ -351,10 +373,36 @@ export default function CallScreen(props){
         var next = s+1;
         // Deduct rate/60 coins every second (rate per minute)
         if(next % 60 === 0){
+          // FIX #8: don't deduct if localCoins hasn't been populated yet
+          // (hook fetch hasn't landed). Skipping the deduction this
+          // minute is better than auto-hanging up "no_coins" on a user
+          // who actually has a positive balance — the next minute tick
+          // will get a real number once the prop arrives.
+          if (!localCoinsRef.current || localCoinsRef.current <= 0) {
+            return next;
+          }
           setLocalCoins(function(c){
             var nc = c - rate;
             if(onCoinsChange) onCoinsChange(nc);
-            if(nc <= 0){ hangup('no_coins'); return 0; }
+            // FIX #7: schedule the broadcast OUTSIDE the updater. React
+            // updaters must be pure — in StrictMode they run twice. The
+            // old code called setSharedCoinBalance inside the updater,
+            // broadcasting twice (and producing visible chip jitter). By
+            // deferring with Promise.resolve().then() we run the
+            // broadcast in the next microtask, after React commits, so
+            // it only fires once per real deduction.
+            Promise.resolve().then(function(){
+              try { setSharedCoinBalance(Math.max(0, nc), {userId: myUserId}); } catch(_) {}
+            });
+            if(nc <= 0){
+              // FIX #8: don't fire no_coins hangup at the very first
+              // minute tick (next === 60) if the call has barely run —
+              // gives the hook fetch one more chance to arrive with a
+              // real balance before we tear down the call.
+              if (next === 60) return 0;
+              hangup('no_coins');
+              return 0;
+            }
             return nc;
           });
         }
@@ -364,6 +412,18 @@ export default function CallScreen(props){
     return function(){ clearInterval(iv); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[phase]);
+
+  // FIX #8: when the `coins` prop changes from 0 to a real number (the
+  // useCoinBalance hook finished fetching after CallScreen already
+  // mounted), update localCoins so the call has a real balance to deduct
+  // against. Only fires when localCoins is still 0 — won't constantly
+  // overwrite the deducted value with the prop.
+  useEffect(function(){
+    if (typeof coins === 'number' && coins > 0 && localCoins === 0) {
+      setLocalCoins(coins);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coins]);
 
   function fmt(s){var m=Math.floor(s/60);var ss=s%60;return m+':'+(ss<10?'0':'')+ss;}
 
@@ -427,6 +487,36 @@ export default function CallScreen(props){
       } catch(e){ console.error('[ringin] call log error:', e); }
     }
 
+    // Persist the final coin total to Supabase (caller only — callees
+    // don't get charged). The realtime UPDATE listener in useCoinBalance
+    // will then push the new value to every other open device.
+    // CRITICAL: read from localCoinsRef.current (NOT the captured
+    // `localCoins` const) so we get the latest deducted value rather
+    // than the at-render value from when this hangup closure was built.
+    if (!isIncoming && session && session.user) {
+      try {
+        var finalCoins = Math.max(0, Number(localCoinsRef.current) || 0);
+        sb.from('profiles').update({ coins: finalCoins }).eq('id', session.user.id).then(function(r){
+          if (r && r.error) console.warn('[ringin] coin persist failed:', r.error.message || r.error);
+        });
+        // Log the deduction so the user can see it in Wallet transactions.
+        var deducted = (Number(coins) || 0) - finalCoins;
+        if (deducted > 0) {
+          sb.from('transactions').insert([{
+            user_id: session.user.id,
+            type: 'call',
+            label: 'Call with ' + (expert && expert.name ? expert.name : 'expert'),
+            coins: -deducted,
+            amount: 0,
+          }]).then(function(){});
+        }
+        // Broadcast one last time in case the per-minute tick missed a
+        // partial-minute deduction at the very end.
+        // FIX #1: pass userId so the per-user cache key gets updated.
+        setSharedCoinBalance(finalCoins, {userId: myUserId});
+      } catch(_) {}
+    }
+
     setPhase('ended');
     endTimerRef.current = setTimeout(function(){
       endTimerRef.current = null;
@@ -453,6 +543,22 @@ export default function CallScreen(props){
         }
       }catch(e){}
     };
+  }, []);
+
+  // ROUND 8 FIX #6: Hardware-back during an active call used to just
+  // setActiveCall(null) at the App.js level — that ripped CallScreen out
+  // of the tree without running hangup(), leaking the Agora client +
+  // leaving the call_invites row stuck in 'ringing' + skipping the coin
+  // persist + transactions write. App.js now dispatches this event before
+  // unmounting so we can hangup cleanly first.
+  useEffect(function(){
+    function onBackCall(){
+      try {
+        if (phaseRef.current !== 'ended' && !endedRef.current) hangup('caller_hangup');
+      } catch(_){}
+    }
+    window.addEventListener('ringin:back-call', onBackCall);
+    return function(){ window.removeEventListener('ringin:back-call', onBackCall); };
   }, []);
 
   // Mute/Speaker handlers — wrapped in useCallback with empty deps so the
@@ -491,12 +597,8 @@ export default function CallScreen(props){
       // ignoring AudioManager (which would need a different fix).
       try{
         NativeAudio.setSpeakerphone(next).then(function(res){
-          // commDeviceType is AudioDeviceInfo.TYPE_* — 1=BUILTIN_EARPIECE, 2=BUILTIN_SPEAKER
-          // (yes, the order is "wrong" — that's Android.) If commDeviceType
-          // matches what we asked for, the modern API took effect.
-          var typeName = ({1:'EARPIECE',2:'SPEAKER',3:'WIRED_HS',4:'WIRED_HP',7:'BT_SCO',8:'BT_A2DP'})[res && res.commDeviceType] || ('t'+(res&&res.commDeviceType));
           var summary = res
-            ? ('plugin: mode=' + res.mode + ' spkrOn=' + res.isSpeakerphoneOn + ' commDev=' + typeName + ' vol=' + res.voiceCallVol + '/' + res.voiceCallMax + ' (req=' + next + ' sdk=' + res.sdk + ')')
+            ? ('plugin: mode=' + res.mode + ' speakerOn=' + res.isSpeakerphoneOn + ' (requested=' + next + ')')
             : ('plugin: NOT REGISTERED (running as web?)');
           setAudioDbg(summary);
         }).catch(function(e){ setAudioDbg('plugin error: ' + (e && e.message)); });
@@ -613,8 +715,15 @@ export default function CallScreen(props){
         ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
     phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
-    // Tiny build stamp at bottom-left for verifying deploys.
-    React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD),
+    // Final polish: build stamp only renders when ringin_debug flag is set.
+    // Used to leak the internal "v2.0-native-debug" string to every prod user.
+    (function(){ try { return localStorage.getItem('ringin_debug') === '1' ? React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD) : null; } catch(_){ return null; } })(),
+    // Audio diagnostic line — visible while debugging audio routing on
+    // native APK. Shows whether the Capacitor RingInAudio plugin is
+    // registered and what AudioManager state is after each toggle.
+    // Final polish: also gated on ringin_debug so prod users don't see
+    // "plugin: NOT REGISTERED" green text plastered across the call UI.
+    (function(){ try { var dbg = localStorage.getItem('ringin_debug') === '1'; return (dbg && audioDbg) ? React.createElement('div',{style:{position:'fixed',bottom:'20px',left:'8px',right:'8px',fontSize:'10px',color:'rgba(0,255,128,0.9)',fontFamily:'monospace',background:'rgba(0,0,0,0.7)',padding:'4px 8px',borderRadius:'4px',pointerEvents:'none',textAlign:'center',wordBreak:'break-all'}}, audioDbg) : null; } catch(_){ return null; } })(),
     error ? React.createElement('div',{style:{fontSize:'12px',color:'#ef4444',marginBottom:'16px',maxWidth:'320px',textAlign:'center'}},error) : null,
     (phase==='connected' || phase==='connecting') ? React.createElement('div',{style:{display:'flex',gap:'22px',alignItems:'center'}},
       // ── MIC / MUTE ─────────────────────────────────────────

@@ -2,6 +2,37 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
 import {createPortal} from 'react-dom';
+import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #2: filter blocked users from moments strip */
+import {AlertToast} from './AlertToast';
+
+// R12 FIX #3: Mirror of HomeScreen.copyToClipboardWithToast — Moments lives
+// in components/ and we don't want to import from screens/. Same legacy
+// fallback so toast only fires on actual copy success.
+function _copyWithToast(text, onSuccess, onFail){
+  function legacy(t){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch(_) { return false; }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){ if (onSuccess) onSuccess(); }).catch(function(){
+        if (legacy(text)) { if (onSuccess) onSuccess(); } else if (onFail) onFail();
+      });
+      return;
+    }
+    if (legacy(text)) { if (onSuccess) onSuccess(); } else if (onFail) onFail();
+  } catch(_) {
+    if (legacy(text)) { if (onSuccess) onSuccess(); } else if (onFail) onFail();
+  }
+}
 
 // ── Mock moment slides used when no real data is wired up ─────────────────
 // Each "expert" gets a deterministic set of 3–4 gradient cards with captions
@@ -74,6 +105,11 @@ function MomentViewer(props){
   var holdPaused = holdPausedS[0]; var setHoldPaused = holdPausedS[1];
   var sentToastS = useState('');
   var sentToast = sentToastS[0]; var setSentToast = sentToastS[1];
+  // FIX #8: track failed header avatar load so we can fall back to the initial bubble
+  var headerImgFailedS = useState(false);
+  var headerImgFailed = headerImgFailedS[0]; var setHeaderImgFailed = headerImgFailedS[1];
+  // Reset on user/avatar change so re-opening a different moment retries
+  useEffect(function(){ setHeaderImgFailed(false); }, [user && user.avatar]);
   // Owner-only 3-dot menu (Delete moment, Save to phone, Copy link).
   var ownMenuS = useState(false);
   var ownMenu = ownMenuS[0]; var setOwnMenu = ownMenuS[1];
@@ -192,19 +228,71 @@ function MomentViewer(props){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, slides.length]);
 
+  // FIX #10 — auto-advance with reduced dep churn. The original effect
+  // re-ran every time `paused` / `holdPaused` / `interacted` flipped,
+  // which during a long-press is multiple times per second — tearing
+  // down + re-arming the setTimeout each time. Now those gesture flags
+  // live in refs that we read from inside the timer body, so the effect
+  // only restarts when the slide actually changes.
+  var pausedRef = useRef(paused);
+  var holdPausedRef = useRef(holdPaused);
+  var interactedRef = useRef(interacted);
+  useEffect(function(){ pausedRef.current = paused; }, [paused]);
+  useEffect(function(){ holdPausedRef.current = holdPaused; }, [holdPaused]);
+  useEffect(function(){ interactedRef.current = interacted; }, [interacted]);
+
   // Auto-advance — pauses while the user is composing a reply, while they
   // are press-and-holding the slide (Insta-style), and STOPS entirely once
   // they've liked or replied to this slide.
   useEffect(function(){
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    if (paused || holdPaused || interacted) return;
+    // Read gesture state via refs — see FIX #10 above.
+    if (pausedRef.current || holdPausedRef.current || interactedRef.current) return;
     timerRef.current = setTimeout(function(){
+      // Re-check refs at fire time in case the gesture started after
+      // the timer was armed.
+      if (pausedRef.current || holdPausedRef.current || interactedRef.current) return;
       if (idx < slides.length - 1) setIdx(idx + 1);
       else if (onClose) onClose();
     }, SLIDE_MS);
     return function(){ if (timerRef.current) clearTimeout(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, slides.length, paused, holdPaused, interacted]);
+  }, [idx, slides.length]);
+
+  // FIX #7 — unmount cleanup for the cube wrapper's GPU hint. The drag
+  // handlers reset willChange after each gesture, but if the viewer is
+  // closed mid-drag (e.g. the parent unmounts while a fling is in
+  // flight), no pointerup ever fires. Strip the hint explicitly so the
+  // composited layer can be released.
+  useEffect(function(){
+    return function(){
+      if (cubeRef.current) {
+        try { cubeRef.current.style.willChange = 'auto'; } catch(_){}
+      }
+    };
+  }, []);
+
+  // Android back / edge-swipe — close innermost overlay first, then
+  // dismiss the moment viewer itself. Consumes the cancelable
+  // 'ringin:back' event so App.js's tab nav doesn't fire while the
+  // viewer is open.
+  useEffect(function(){
+    function onBack(ev){
+      function consume(close){
+        if (ev && ev.preventDefault) ev.preventDefault();
+        close();
+      }
+      if (ownMenu) return consume(function(){ setOwnMenu(false); });
+      if (otherMenu) return consume(function(){ setOtherMenu(false); });
+      if (shareSheet) return consume(function(){ setShareSheet(false); });
+      if (showViewers) return consume(function(){ setShowViewers(false); });
+      // No sub-overlay open → close the moments viewer itself.
+      if (ev && ev.preventDefault) ev.preventDefault();
+      if (onClose) onClose();
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [ownMenu, otherMenu, shareSheet, showViewers, onClose]);
 
   // Hydrate viewer profile names + avatars when the owner opens the
   // "Seen by N" sheet. JOINs moment_views.viewer_id → profiles.id. Without
@@ -289,30 +377,28 @@ function MomentViewer(props){
   }
 
   // Send the moment to a specific person as a chat message.
+  // FIX #9 — switched from a Supabase `.or('and(...),and(...)')` query (which
+  // requires a recent PostgREST that supports nested boolean expressions and
+  // historically broke on RingIn's project) to the deterministic
+  // `[a,b].sort().join('_')` convId pattern that the rest of MessagesScreen
+  // already uses. No dedupe lookup needed — same two users always produce
+  // the same convId, so a straight insert into `messages` is unique by
+  // construction.
   function sendMomentToUser(u){
     if (!u || !u.id || !myUserId) return;
     var link = buildShareLink();
     var payload = '[mshare]' + link + '|' + (captionText || 'Shared a moment');
     try {
-      // First check for existing conversation between the two users.
-      sb.from('conversations').select('id').or('and(user1_id.eq.' + myUserId + ',user2_id.eq.' + u.id + '),and(user1_id.eq.' + u.id + ',user2_id.eq.' + myUserId + ')').limit(1).then(function(rConv){
-        function send(convId){
-          if (!convId) return;
-          sb.from('messages').insert([{
-            conversation_id: convId,
-            sender_id: myUserId,
-            content: payload,
-          }]).then(function(){}).catch(function(){});
-        }
-        if (rConv && rConv.data && rConv.data[0]) {
-          send(rConv.data[0].id);
-        } else {
-          // Create a new conversation
-          sb.from('conversations').insert([{ user1_id: myUserId, user2_id: u.id }]).select('id').single().then(function(r){
-            if (r && r.data) send(r.data.id);
-          });
-        }
-      });
+      var convId = [myUserId, u.id].sort().join('_');
+      // ROUND 8 FIX #8: removed `content: payload` — the `messages` table
+      // only has `text`, writing to a non-existent column made the INSERT
+      // fail silently so the recipient never got the shared moment.
+      sb.from('messages').insert([{
+        conversation_id: convId,
+        sender_id: myUserId,
+        receiver_id: u.id,
+        text: payload,
+      }]).then(function(){}).catch(function(){});
     } catch(_){}
     // Mark as sent in the UI immediately (optimistic)
     shareSentRef.current[u.id] = true;
@@ -368,11 +454,22 @@ function MomentViewer(props){
     var ok = true;
     try { ok = window.confirm('Delete this moment? It will disappear for everyone.'); } catch(_){}
     if (!ok) return;
+    // FIX R10-4: delete used to fire-and-forget — RLS denial or network
+    // failure still showed "Deleted" toast and closed the viewer, but the
+    // moment came back on next mount. Check r.error + add .catch.
     try {
-      sb.from('moments').delete().eq('id', cur.id).then(function(){
+      sb.from('moments').delete().eq('id', cur.id).then(function(r){
+        if (r && r.error) {
+          console.error('[ringin] delete moment failed:', r.error);
+          try { showToast('Failed to delete'); } catch(_){}
+          return;
+        }
         showToast('Deleted');
         // Close the viewer — parent will re-fetch the list on next mount.
         setTimeout(function(){ if (onClose) onClose(); }, 600);
+      }).catch(function(e){
+        console.warn('[ringin] delete moment reject:', e);
+        try { showToast('Failed to delete'); } catch(_){}
       });
     } catch(_){}
   }
@@ -661,6 +758,12 @@ function MomentViewer(props){
       if (!g) return;
       var d = dragNowRef.current || { dx: 0, dy: 0, kind: null };
       dragNowRef.current = null;
+      // FIX #7 — release the GPU promotion hint once the drag is settling
+      // so subsequent renders don't keep the compositor layer pinned. We
+      // re-arm willChange='transform' on the next drag (line ~646).
+      var releaseWillChange = function(){
+        if (cubeRef.current) cubeRef.current.style.willChange = 'auto';
+      };
       // If the user moved (drag), handle below. If they DIDN'T move:
       //   - short touch (<300ms): treat as a tap → resume + advance
       //   - long touch (held >300ms): pure pause-and-release → just resume
@@ -671,10 +774,12 @@ function MomentViewer(props){
           // Was a tap → resume and run handleTap (advance based on zone).
           setHoldPaused(false);
           handleTap(e);
+          releaseWillChange();
           return;
         }
         // Was a hold-release — just resume, no advance.
         setHoldPaused(false);
+        releaseWillChange();
         return;
       }
       // Horizontal drag — commit or snap back.
@@ -690,12 +795,14 @@ function MomentViewer(props){
           setHoldPaused(false);
           setTimeout(function(){
             try { props.onNextUser(direction); } catch(_){}
+            releaseWillChange();
           }, 260);
           return;
         }
         // Snap back — animate to neutral.
         animateTo(0, 0, 'h', 240);
         setHoldPaused(false);
+        setTimeout(releaseWillChange, 240);
         return;
       }
       if (g.kind === 'v') {
@@ -703,11 +810,12 @@ function MomentViewer(props){
         if (d.dy > commitDownThreshold) {
           animateTo(0, VH, 'v', 240);
           setHoldPaused(false);
-          setTimeout(function(){ try { if (onClose) onClose(); } catch(_){} }, 230);
+          setTimeout(function(){ try { if (onClose) onClose(); } catch(_){} releaseWillChange(); }, 230);
           return;
         }
         animateTo(0, 0, 'v', 220);
         setHoldPaused(false);
+        setTimeout(releaseWillChange, 220);
         return;
       }
     },
@@ -717,6 +825,8 @@ function MomentViewer(props){
       dragNowRef.current = null;
       setHoldPaused(false);
       animateTo(0, 0, 'h', 200);
+      // FIX #7 — release GPU hint after the snap-back animation.
+      setTimeout(function(){ if (cubeRef.current) cubeRef.current.style.willChange = 'auto'; }, 200);
     },
     onPointerLeave: function(){
       // Drag finger off the screen → release pause.
@@ -818,8 +928,10 @@ function MomentViewer(props){
         onClick: function(e){ if(e && e.stopPropagation) e.stopPropagation(); if(props.onViewProfile) props.onViewProfile(props.moment); },
         style:{display:'flex', alignItems:'center', gap:'10px', flex:1, cursor:'pointer', minWidth:0},
       },
-        user.avatar ? React.createElement('img', {
+        /* FIX #8: fall back to initials bubble when avatar URL fails to load */
+        (user.avatar && !headerImgFailed) ? React.createElement('img', {
           src: user.avatar, alt:'',
+          onError: function(){ setHeaderImgFailed(true); },
           style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover',border:'1.5px solid rgba(255,255,255,0.5)',flexShrink:0}
         }) : React.createElement('div', {
           style:{width:'32px',height:'32px',borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}
@@ -964,7 +1076,7 @@ function MomentViewer(props){
         onFocus: function(){ setPaused(true); },
         onBlur: function(){ setPaused(false); },
         onChange: function(e){ setReplyText(e.target.value); },
-        onKeyDown: function(e){ if(e.key === 'Enter'){ sendReply(e); } },
+        onKeyDown: function(e){ if(e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229){ sendReply(e); } }, /* FIX #2: IME composition guard */
         style:{
           flex:1,
           background:'rgba(0,0,0,0.32)',
@@ -1210,16 +1322,16 @@ function MomentViewer(props){
               e.stopPropagation();
               var link = buildShareLink();
               var shareData = { title: 'Moment on RingIn', text: captionText || 'Check this moment on RingIn', url: link };
+              // R12 FIX #3: replace raw clipboard sites with _copyWithToast
+              // so the toast only fires on real copy success.
               try {
                 if (navigator.share) {
                   navigator.share(shareData).then(function(){ showToast('Shared'); }).catch(function(){});
                 } else {
-                  try { navigator.clipboard.writeText(link); } catch(_){}
-                  showToast('Link copied');
+                  _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
                 }
               } catch(_){
-                try { navigator.clipboard.writeText(link); } catch(_){}
-                showToast('Link copied');
+                _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
               }
               setShareSheet(false); setHoldPaused(false);
             },
@@ -1249,8 +1361,8 @@ function MomentViewer(props){
             onClick: function(e){
               e.stopPropagation();
               var link = buildShareLink();
-              try { navigator.clipboard.writeText(link); } catch(_){}
-              showToast('Link copied');
+              // R12 FIX #3: use _copyWithToast so toast only fires on real success
+              _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
               setShareSheet(false); setHoldPaused(false);
             },
             style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', flex: 1, minWidth: 0 }
@@ -1347,8 +1459,8 @@ function MomentViewer(props){
             var cur3 = slides[idx];
             if (cur3) {
               var link = 'https://ring-in.vercel.app/?moment=' + encodeURIComponent(cur3.id);
-              try { navigator.clipboard.writeText(link); } catch(_){}
-              showToast('Link copied');
+              // R12 FIX #3: use _copyWithToast so toast only fires on real success
+              _copyWithToast(link, function(){ showToast('Link copied'); }, function(){ showToast('Couldn\'t copy'); });
             }
           },
           style:{background:'none', border:'none', color:'#fff', fontSize:'15px', fontWeight:500, padding:'14px 18px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}
@@ -1395,7 +1507,12 @@ function MomentViewer(props){
                     : React.createElement('div',{style:{width:'38px',height:'38px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,flexShrink:0}}, initial),
                   React.createElement('div',{style:{flex:1,minWidth:0}},
                     React.createElement('div',{style:{fontSize:'13.5px',color:'#fff',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, displayName),
-                    React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginTop:'1px'}}, v.viewed_at ? relativeTime(v.viewed_at) + ' ago' : 'recently')
+                    React.createElement('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginTop:'1px'}}, v.viewed_at ? (function(){
+                      // R11 FIX #11: relativeTime returns 'just now' for <1 min — appending
+                      // ' ago' produced 'just now ago'. Only append for the time-unit cases.
+                      var rel = relativeTime(v.viewed_at);
+                      return /^(just now|now)$/i.test(rel) ? rel : (rel + ' ago');
+                    })() : 'recently')
                   )
                 );
               })
@@ -1823,7 +1940,24 @@ function HeartTile(props){
 //   onView        fn       called with a moment object when its tile is tapped
 //   compact       bool     smaller size for profile pages (default false)
 export default function Moments(props){
-  var moments = props.moments || [];
+  // FIX #8 — honour the per-device mute list that muteThisContact() writes.
+  // Read it once per render and filter the incoming moments[] so muted
+  // users' tiles disappear from the strip. Comparison covers both string
+  // user ids and numeric expert ids (we cast to String to be safe).
+  var _mutedMomentUsers = (function(){
+    try { var s = localStorage.getItem('ringin_muted_moment_users'); return s ? JSON.parse(s) : []; }
+    catch(_){ return []; }
+  })();
+  var rawMoments = props.moments || [];
+  var moments = rawMoments.filter(function(m){
+    if (!m) return false;
+    if (_mutedMomentUsers.indexOf(m.userId) >= 0) return false;
+    if (m.expertId != null && _mutedMomentUsers.indexOf(String(m.expertId)) >= 0) return false;
+    // R15 FIX #2: also drop moments authored by users the viewer has blocked.
+    if (isBlockedSync(m.userId)) return false;
+    if (m.expertId != null && isBlockedSync(String(m.expertId))) return false;
+    return true;
+  });
   var showAdd = props.showAdd !== false;
   var compact = !!props.compact;
   var size = compact ? 60 : 68;
@@ -1854,6 +1988,9 @@ export default function Moments(props){
   var clickGuardS = useState(false);
   var clickGuard = clickGuardS[0]; var setClickGuard = clickGuardS[1];
 
+  // Toast for fallback info messages (e.g. when onAdd is not wired up)
+  var toastS = useState(null); var toast = toastS[0]; var setToast = toastS[1];
+
   function openViewerFor(m, enterDir){
     // Real moments come with their own slides (image + caption); mock
     // expert moments fall back to deterministic gradient sample sets.
@@ -1873,9 +2010,14 @@ export default function Moments(props){
   }
   function closeViewer(){
     setViewer(null);
-    // Arm the click-blocker for the first ~400ms after close.
+    // R13 FIX #5: dismiss window reduced 400 → 80ms. The original 400ms
+    // window was way longer than needed to absorb the synthetic click
+    // (~50ms max on iOS/Android) and was creating a perceived "frozen"
+    // feel where the underlying feed felt unresponsive for ~third of a
+    // second after closing a moment. 80ms still covers the synthetic
+    // tap race without the lag.
     setClickGuard(true);
-    setTimeout(function(){ setClickGuard(false); }, 400);
+    setTimeout(function(){ setClickGuard(false); }, 80);
   }
 
   // Android back-button handler — split into TWO effects to avoid the
@@ -1928,8 +2070,9 @@ export default function Moments(props){
         } catch(_){}
         viewerOpenRef.current = false;
         setViewer(null);
+        // R13 FIX #5: see closeViewer — 400 → 80ms.
         setClickGuard(true);
-        setTimeout(function(){ setClickGuard(false); }, 400);
+        setTimeout(function(){ setClickGuard(false); }, 80);
       }
     }
     window.addEventListener('popstate', onPopState);
@@ -2042,7 +2185,7 @@ export default function Moments(props){
             return;
           }
           if (props.onAdd) props.onAdd();
-          else { try{ alert('Moments coming soon — capture & post photos/videos that vanish after 24h.'); }catch(e){} }
+          else { setToast('Moments coming soon'); }
         },
         // When user already has slides, the "+" corner badge becomes a
         // separate clickable affordance for adding ANOTHER slide. Without
@@ -2122,6 +2265,12 @@ export default function Moments(props){
         background: 'transparent',
         cursor: 'default',
       }
+    }) : null,
+
+    toast ? React.createElement(AlertToast, {
+      message: toast,
+      onDone: function(){ setToast(null); },
+      tone: 'info'
     }) : null
   );
 }

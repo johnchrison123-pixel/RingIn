@@ -1,7 +1,8 @@
 /* eslint-disable */
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {sb} from '../utils/supabase';
-import {toastSuccess} from '../utils/toast';
+// FIX #10: toastError for actual failures (was misusing toastSuccess)
+import {toastSuccess, toastError} from '../utils/toast';
 
 export default function SavedPostsScreen(props) {
   var onBack = props.onBack;
@@ -11,27 +12,31 @@ export default function SavedPostsScreen(props) {
 
   var postsS = useState([]); var posts = postsS[0]; var setPosts = postsS[1];
   var loadingS = useState(true); var loading = loadingS[0]; var setLoading = loadingS[1];
+  // FIX #17: ref for the 8s safety timeout so we can clear it from the
+  // success path AND from unmount cleanup, instead of letting it fire late.
+  var safetyTimerRef = useRef(null);
 
   useEffect(function(){
     if (!userId) { setLoading(false); return; }
 
     var done = false;
-    var safetyTimeout = setTimeout(function(){ if(!done) setLoading(false); }, 8000);
+    safetyTimerRef.current = setTimeout(function(){ if(!done) setLoading(false); }, 8000);
+    function clearSafety(){ if(safetyTimerRef.current){ clearTimeout(safetyTimerRef.current); safetyTimerRef.current = null; } }
 
     sb.from('saved_posts').select('post_id, created_at').eq('user_id', userId).order('created_at', {ascending:false}).then(function(r){
       if (r.error || !r.data || r.data.length === 0) {
-        done = true; setPosts([]); setLoading(false); return;
+        done = true; clearSafety(); setPosts([]); setLoading(false); return;
       }
       var ids = r.data.map(function(s){return s.post_id;});
 
       sb.from('posts').select('*').in('id', ids).then(function(pr){
-        if (pr.error || !pr.data) { done = true; setPosts([]); setLoading(false); return; }
+        if (pr.error || !pr.data) { done = true; clearSafety(); setPosts([]); setLoading(false); return; }
 
         var userIds = [];
         pr.data.forEach(function(p){ if(p.user_id && userIds.indexOf(p.user_id)<0) userIds.push(p.user_id); });
 
         if (userIds.length === 0) {
-          done = true;
+          done = true; clearSafety();
           var quickMapped = pr.data.map(function(p){ return Object.assign({}, p, {author_name: 'User'}); });
           setPosts(quickMapped); setLoading(false); return;
         }
@@ -51,14 +56,14 @@ export default function SavedPostsScreen(props) {
             });
           }).filter(Boolean);
 
-          done = true;
+          done = true; clearSafety();
           setPosts(mapped);
           setLoading(false);
-        }).catch(function(){ done = true; setLoading(false); });
-      }).catch(function(){ done = true; setLoading(false); });
-    }).catch(function(){ done = true; setLoading(false); });
+        }).catch(function(){ done = true; clearSafety(); setLoading(false); });
+      }).catch(function(){ done = true; clearSafety(); setLoading(false); });
+    }).catch(function(){ done = true; clearSafety(); setLoading(false); });
 
-    return function(){ clearTimeout(safetyTimeout); };
+    return function(){ clearSafety(); };
   }, [userId]);
 
   function unsave(postId) {
@@ -72,13 +77,15 @@ export default function SavedPostsScreen(props) {
     sb.from('saved_posts').delete().eq('user_id', userId).eq('post_id', postId).then(function(r){
       if (r.error) {
         setPosts(snapshot); // revert
-        toastSuccess('Failed to unsave');
+        // FIX #10: was toastSuccess (green) — should be red error
+        toastError('Failed to unsave');
       } else {
         toastSuccess('Removed from saved');
       }
     }).catch(function(){
       setPosts(snapshot);
-      toastSuccess('Failed to unsave');
+      // FIX #10: was toastSuccess (green) — should be red error
+      toastError('Failed to unsave');
     });
   }
 
@@ -108,9 +115,21 @@ export default function SavedPostsScreen(props) {
     React.createElement('div', {style:{padding:'14px 16px'}},
       posts.map(function(p){
         var images = Array.isArray(p.images) ? p.images : (p.image_url ? [p.image_url] : []);
-        return React.createElement('div', {key:p.id, style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'12px'}},
+        // FIX #9: clicking the post body dispatches an open-detail event.
+        // HomeScreen (or any listener) can pick it up and open the detail
+        // view. The dispatch alone is harmless even with no listener.
+        function openDetail(e){
+          // Skip if the click came from an interactive child (avatar, unsave button)
+          var t = e && e.target;
+          while (t && t !== e.currentTarget) {
+            if (t.tagName === 'BUTTON' || (t.getAttribute && t.getAttribute('data-stop')==='1')) return;
+            t = t.parentNode;
+          }
+          try { window.dispatchEvent(new CustomEvent('ringin:open-post-detail', { detail: { postId: p.id } })); } catch(_){}
+        }
+        return React.createElement('div', {key:p.id, onClick:openDetail, style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'12px',cursor:'pointer'}},
           React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}},
-            React.createElement('div', {onClick:function(){onViewUser && onViewUser({id:p.user_id, name:p.author_name, img:p.author_avatar});}, style:{cursor:'pointer'}},
+            React.createElement('div', {onClick:function(e){ e.stopPropagation(); onViewUser && onViewUser({id:p.user_id, name:p.author_name, img:p.author_avatar});}, style:{cursor:'pointer'}, 'data-stop':'1'},
               p.author_avatar
                 ? React.createElement('img', {src:p.author_avatar, alt:'', style:{width:'36px',height:'36px',borderRadius:'50%',objectFit:'cover'}})
                 : React.createElement('div', {style:{width:'36px',height:'36px',borderRadius:'50%',background:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'13px'}}, (p.author_name||'?').charAt(0).toUpperCase())

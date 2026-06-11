@@ -377,6 +377,16 @@ export function playRingtone(){
     });
   }
   ringOnce();
+  // R15 FIX #8: backgrounded tab/PWA shouldn't keep ringing audibly when the
+  // user has navigated away. Stops on visibilitychange→hidden (matches what
+  // native dialers do — incoming-call sound mutes when screen locks).
+  // Declared BEFORE the interval so the interval's cleanup branch can read it.
+  var visHandler = function(){
+    if (typeof document !== 'undefined' && document.hidden) {
+      try { stopRingtone(); } catch(_){}
+    }
+  };
+  try { if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visHandler); } catch(_){}
   // Cap at 6 cycles (~15s of ringing). Beyond that the AudioContext starts to
   // accumulate scheduled oscillators on low-end Android browsers (esp. Samsung
   // Internet) which contributes to "page unresponsive" warnings when the call
@@ -385,10 +395,18 @@ export function playRingtone(){
   var count = 1;
   var iv = setInterval(function(){
     count++;
-    if (count > 6) { try{ clearInterval(iv); }catch(e){} return; }
+    if (count > 6) {
+      try{ clearInterval(iv); }catch(e){}
+      try{ if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visHandler); }catch(e){}
+      return;
+    }
     ringOnce();
   }, 2400);
-  _ringtoneCtxRef.stop = function(){ try{ clearInterval(iv); }catch(e){} _ringtoneCtxRef.stop=null; };
+  _ringtoneCtxRef.stop = function(){
+    try{ clearInterval(iv); }catch(e){}
+    try{ if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visHandler); }catch(e){}
+    _ringtoneCtxRef.stop=null;
+  };
 }
 export function stopRingtone(){
   if(_ringtoneCtxRef.stop){ _ringtoneCtxRef.stop(); }

@@ -67,6 +67,32 @@ export default function TopBarAvatar(props) {
   var momentUserIds = useMomentUserIds();
   var hasMoment = userId ? momentUserIds.has(userId) : false;
 
+  // FIX #5: image-load failure fallback — if the avatar URL 404s / fails to
+  // decode, drop to the initial letter instead of rendering a broken-image icon.
+  var imgFailedS = useState(false); var imgFailed = imgFailedS[0]; var setImgFailed = imgFailedS[1];
+  // Reset failure flag whenever the avatar URL changes (new upload / cross-tab sync)
+  useEffect(function(){ setImgFailed(false); }, [avatar]);
+
+  // R15 FIX #7: also listen for 'ringin-name-changed' so the topbar can
+  // re-render when the current user updates their display name in
+  // ProfileScreen.saveEditProfile. Mirrors the existing avatar-changed
+  // pattern. We bump a no-op tick (toggling a state primitive) to force
+  // a re-render without changing any rendered text — TopBarAvatar today
+  // only renders the avatar + email initial, but the listener completes
+  // the contract so any future cached-name display added here stays
+  // in sync without code changes. Placed AFTER imgFailedS so setImgFailed
+  // is in scope.
+  var nameTickS = useState(0); var setNameTick = nameTickS[1];
+  useEffect(function(){
+    function handleName(ev){
+      var d = ev && ev.detail;
+      if (!d || !d.userId || d.userId !== userId) return;
+      try { setNameTick(function(n){ return (n + 1) | 0; }); } catch(_){}
+    }
+    window.addEventListener('ringin-name-changed', handleName);
+    return function(){ window.removeEventListener('ringin-name-changed', handleName); };
+  }, [userId]);
+
   return React.createElement(AvatarRing, { show: hasMoment, thickness: 1.5 },
     React.createElement('button', {
       onClick: onClick,
@@ -79,8 +105,8 @@ export default function TopBarAvatar(props) {
         color: '#fff', fontWeight: 700, fontSize: '12px', flexShrink: 0,
       },
     },
-      avatar
-        ? React.createElement('img', {src: avatar, alt: 'profile', style: {width:'100%', height:'100%', objectFit:'cover'}})
+      (avatar && !imgFailed)
+        ? React.createElement('img', {src: avatar, alt: 'profile', onError: function(){ setImgFailed(true); }, style: {width:'100%', height:'100%', objectFit:'cover'}})
         : initial
     )
   );

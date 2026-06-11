@@ -69,8 +69,11 @@ export function refreshMomentUserIds(){
       // On error (e.g. table not yet created, RLS denial, network),
       // keep the existing cache. The avatar ring is a cosmetic feature
       // — failing silently here is far better than throwing into the
-      // render path.
-      if (r.error) return _ids;
+      // render path. ROUND-9 FIX #11b: still notify() on the error
+      // path so any component that mounted while this fetch was in
+      // flight gets at least the cached value back (without this they
+      // sit on initial state until the next mount-triggered refresh).
+      if (r.error) { notify(); return _ids; }
       var next = new Set();
       (r.data || []).forEach(function(row){
         if (row && row.user_id) next.add(row.user_id);
@@ -82,6 +85,10 @@ export function refreshMomentUserIds(){
     })
     .catch(function(){
       _inflight = null;
+      // ROUND-9 FIX #11b: same as above — notify subscribers on the
+      // network-failure path so a freshly-mounted component sees the
+      // cached value rather than its initial state.
+      notify();
       return _ids;
     });
   return _inflight;

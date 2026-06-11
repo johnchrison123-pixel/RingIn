@@ -21,8 +21,37 @@ import InstallPrompt from './components/InstallPrompt';
 import UpdatePrompt from './components/UpdatePrompt';
 import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
+import {clearFcmToken} from './utils/firebase'; /* R16 FIX #3 */
 import {playSound} from './utils/soundEngine';
 import {prefetchAgora} from './utils/agora';
+import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
+// Final polish: native alert() blocks the JS thread + looks system-y on Android.
+// Replaced with non-blocking toasts via the existing toast utility.
+import {toastError, toastWarn} from './utils/toast';
+import {safeInitials} from './utils/initials'; /* FIX #10: UTF-16 safe initials */
+import {hapticTap} from './utils/haptics';
+
+// ROUND-9 FIX #6: getComputedStyle in the swipe-back touchstart walker
+// was running for every node on every touch — measurable jank on big
+// trees (think nested carousel feeds). WeakMap-cache the answer per
+// node so repeated touches in the same DOM tree pay only the first
+// computation. WeakMap auto-cleans entries when the node is GC'd.
+var _hscrollCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+function isHorizontalScrollAncestor(node){
+  if (!node) return false;
+  if (_hscrollCache && _hscrollCache.has(node)) return _hscrollCache.get(node);
+  var hasHScroll = false;
+  try {
+    var cs = (typeof window !== 'undefined' && window.getComputedStyle) ? window.getComputedStyle(node) : null;
+    if (cs && /auto|scroll/.test(cs.overflowX) && node.scrollWidth > node.clientWidth) {
+      hasHScroll = true;
+    }
+  } catch (_) {}
+  if (_hscrollCache) {
+    try { _hscrollCache.set(node, hasHScroll); } catch (_) {}
+  }
+  return hasHScroll;
+}
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
@@ -49,6 +78,97 @@ export default function App() {
   var appFollowHook = useFollow(supabase, appUserId);
   var appFollowing = appFollowHook.following;
   var appToggleFollow = appFollowHook.toggleFollow;
+  // App-level coin balance — passed to CallScreen as the starting `coins`
+  // prop so the call timer charges against the user's real balance, not a
+  // hardcoded 1240. The hook itself keeps every screen's chip in sync.
+  var appCoinBal = useCoinBalance(appUserId, supabase);
+
+  // ── Centralized back-navigation (Android hardware back + edge-swipe) ──
+  // Priority chain (most specific → least):
+  //   1. Sub-screens can intercept via the cancelable 'ringin:back' window
+  //      event (e.g. MessagesScreen closes the open chat). If a listener
+  //      calls preventDefault, we stop here.
+  //   2. Incoming-call modal → dismiss
+  //   3. Active in-call screen → end the call gracefully (let CallScreen do it)
+  //   4. UserProfileView stack → pop one
+  //   5. Search tab with selected expert → clear the expert (back to list)
+  //   6. Modal-ish tabs (wallet/saved/connect) → return to prevTab
+  //   7. Any non-home top-level tab → go home
+  //   8. Already on home → let the OS exit the app
+  // We stash this in a ref so the Capacitor backButton listener (which is
+  // registered once with empty deps) always reads the latest state.
+  var goBackRef = useRef(null);
+  function goBack(){
+    // 1. Try to let an active sub-screen consume it (cancelable event).
+    try {
+      var ev = new CustomEvent('ringin:back', { cancelable: true });
+      var notConsumed = window.dispatchEvent(ev);
+      if (!notConsumed || ev.defaultPrevented) return true;
+    } catch(_) {}
+    // 2-7. App-level nav
+    if (incomingCall) { setIncomingCall(null); return true; }
+    if (activeCall) {
+      // ROUND 8 FIX #6: nulling activeCall directly leaked the Agora client
+      // + left the DB invite row in 'ringing' state + skipped the coin
+      // transactions row write. Dispatch event first so CallScreen runs
+      // its hangup('caller_hangup') sequence (leave + DB update + tx
+      // write + coin persist + broadcast) BEFORE we unmount it.
+      try { window.dispatchEvent(new CustomEvent('ringin:back-call')); } catch(_){}
+      setActiveCall(null);
+      return true;
+    }
+    if (viewUserStack && viewUserStack.length > 0) { popViewUser(); return true; }
+    if (activeTab === 'search' && selectedExpert) { setSelectedExpert(null); return true; }
+    if (activeTab === 'wallet') { setActiveTab(prevTab); return true; }
+    if (activeTab === 'saved') { setActiveTab(prevTab); return true; }
+    if (activeTab === 'connect') { setActiveTab(prevTab); return true; }
+    if (activeTab !== 'home') { setActiveTab('home'); return true; }
+    // 8. Nothing to pop — caller decides whether to exit.
+    return false;
+  }
+  // Keep the ref current so the back-button listener (registered once)
+  // always invokes the latest goBack — avoids stale state closures.
+  goBackRef.current = goBack;
+
+  // Register the Android hardware back button listener.
+  // Capacitor v6: import('@capacitor/app').App.addListener('backButton', ...)
+  // Without this, the default behavior is to exit the app on every back press.
+  useEffect(function(){
+    // Use a cancelled flag + ref so the cleanup can also tear down a
+    // handle that gets assigned AFTER the cleanup fires (otherwise an
+    // unmount during the dynamic-import resolve window leaks a listener).
+    var cancelled = false;
+    var handleRef = { current: null };
+    var Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return; // web/PWA path uses popstate naturally
+    try {
+      // Dynamic import so web builds don't blow up if the module isn't bundled.
+      import('@capacitor/app').then(function(mod){
+        if (cancelled) return; // unmounted before import resolved
+        var CapApp = mod && (mod.App || mod.default || mod);
+        if (!CapApp || !CapApp.addListener) return;
+        CapApp.addListener('backButton', function(){
+          var consumed = goBackRef.current ? goBackRef.current() : false;
+          if (!consumed) {
+            // Truly at root — exit the app.
+            try { CapApp.exitApp(); } catch(_) {}
+          }
+        }).then(function(h){
+          if (cancelled) {
+            // Unmounted between addListener and its promise resolving —
+            // remove immediately so the listener doesn't leak.
+            try { if (h && h.remove) h.remove(); } catch(_){}
+            return;
+          }
+          handleRef.current = h;
+        }).catch(function(){});
+      }).catch(function(){});
+    } catch(_) {}
+    return function(){
+      cancelled = true;
+      try { if (handleRef.current && handleRef.current.remove) handleRef.current.remove(); } catch(_){}
+    };
+  }, []);
 
   // PWA shortcut deep-link — manifest.json advertises `/?tab=messages` and
   // `/?tab=search` as home-screen long-press shortcuts. Read the query once on
@@ -63,6 +183,24 @@ export default function App() {
         setActiveTab(requestedTab);
       }
     }catch(e){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // FIX R10-2: SavedPostsScreen dispatches 'ringin:open-post-detail' with a
+  // postId when the user taps a saved post. Previously had ZERO consumers
+  // — clicks were silently dropped. Three-hop chain:
+  //   SavedPosts  → dispatches 'ringin:open-post-detail' {postId}
+  //   App.js      → switches to home tab + dispatches 'ringin:home-open-post'
+  //   HomeScreen  → listens for 'ringin:home-open-post' → opens postDetail
+  useEffect(function(){
+    function onOpenPostDetail(ev){
+      var postId = ev && ev.detail && ev.detail.postId;
+      if (!postId) return;
+      setActiveTab('home');
+      try { window.dispatchEvent(new CustomEvent('ringin:home-open-post', {detail:{postId:postId}})); } catch(_){}
+    }
+    window.addEventListener('ringin:open-post-detail', onOpenPostDetail);
+    return function(){ window.removeEventListener('ringin:open-post-detail', onOpenPostDetail); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -166,6 +304,18 @@ export default function App() {
         try { startCloseFriends(res.data.session.user.id); } catch(_){}
       }
     });
+    // FIX #6: track the previous user id so we can wipe their per-user caches
+    // on SIGNED_OUT (where `session` is null and we'd otherwise have no id).
+    // supabase-js v2 has no sync supabase.auth.user(), so seed via the
+    // getSession promise and update on every auth event.
+    var _prevAuthUserId = null;
+    try {
+      supabase.auth.getSession().then(function(r){
+        if (r && r.data && r.data.session && r.data.session.user) {
+          _prevAuthUserId = r.data.session.user.id;
+        }
+      });
+    } catch(_){}
     var sub = supabase.auth.onAuthStateChange(function(_event, session) {
       setSession(session);
       // Restart heartbeat on auth change (sign-in / sign-out).
@@ -173,6 +323,28 @@ export default function App() {
         if (session && session.user) startLastSeen(session.user.id);
         else stopLastSeen();
       } catch(_) {}
+      // FIX #6: SIGNED_OUT — clear per-user + shared caches so the next user
+      // signing in doesn't see leftover data from the previous account.
+      if (_event === 'SIGNED_OUT') {
+        try {
+          var prevId = _prevAuthUserId || ((session && session.user) ? session.user.id : null);
+          // R16 FIX #3: clear fcm_token on the signed-out user's row BEFORE
+          // wiping the local cache. Otherwise the device keeps receiving
+          // call pushes intended for the previous account.
+          if (prevId) { try { clearFcmToken(supabase, prevId); } catch(_){} }
+          if (prevId) {
+            var keysToWipe = ['convos_'+prevId, 'profile_info_'+prevId, 'avatar_'+prevId, 'ringin_coin_balance_'+prevId, 'saved_posts_'+prevId, 'user_posts_'+prevId];
+            keysToWipe.forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+          }
+          // Always-shared keys to clear
+          ['ringin_clikes', 'ringin_muted_posts', 'ringin_muted_convos', 'ringin_blocked', 'ringin_muted_words', 'ringin_muted_moment_users', 'ringin_carousel_idx', 'feed_posts_cache'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+        } catch(_){}
+        // also stop lastSeen + close any open chats
+        try { stopLastSeen(); } catch(_){}
+        _prevAuthUserId = null;
+      } else if (session && session.user) {
+        _prevAuthUserId = session.user.id;
+      }
       if(session && session.user){
         var email = session.user.email || '';
         var emailPrefix = email.indexOf('@') > 0 ? email.split('@')[0] : 'user';
@@ -228,6 +400,27 @@ export default function App() {
     };
   }, []);
 
+  // R15 FIX #5: app-level restricted-users set so the global badge listener
+  // can suppress badge bumps + notification sound from restricted senders.
+  // Mirrored into a ref because the badge channel useEffect deps are
+  // [appUserId] only and would otherwise read a stale snapshot.
+  var appRestrictedSetRef = useRef(new Set());
+  useEffect(function(){
+    if(!appUserId) return;
+    function load(){
+      try {
+        supabase.from('restricted_users').select('restricted_id').eq('restrictor_id', appUserId).then(function(r){
+          if (r && !r.error && r.data) {
+            appRestrictedSetRef.current = new Set(r.data.map(function(x){ return x.restricted_id; }));
+          }
+        });
+      } catch(_) {}
+    }
+    load();
+    window.addEventListener('ringin:restricted-changed', load);
+    return function(){ window.removeEventListener('ringin:restricted-changed', load); };
+  },[appUserId]);
+
   // ── Global message badge listener — always active regardless of tab ──
   useEffect(function(){
     if(!appUserId) return;
@@ -238,6 +431,8 @@ export default function App() {
     // Realtime: increment badge when new message arrives
     var ch = supabase.channel('app-inbox-badge-'+appUserId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+appUserId},function(p){
+        // R15 FIX #5: silent for restricted senders — no badge bump, no sound.
+        if (p && p.new && appRestrictedSetRef.current.has(p.new.sender_id)) return;
         // Don't increment if user is currently on messages tab (MessagesScreen handles it there)
         setActiveTab(function(currentTab){
           if(currentTab !== 'messages'){
@@ -280,10 +475,15 @@ export default function App() {
 
     function handleInvite(inv){
       if(!inv || inv.status !== 'ringing') return;
-      // Stale invites (>60s old) — caller has given up
+      // Stale invites (>5min old) — caller has given up.
+      // R11 FIX #1: tolerate clock skew. If user clock is BEHIND server
+      // (rawAge negative — server timestamp is "future"), treat as fresh
+      // instead of dropping. If user clock is AHEAD by minutes, the old
+      // 60s window would drop legit calls — widen to 5 min for safety.
       try{
-        var ageMs = Date.now() - new Date(inv.created_at).getTime();
-        if(ageMs > 60000) return;
+        var rawAge = Date.now() - new Date(inv.created_at).getTime();
+        var ageMs = rawAge < 0 ? 0 : rawAge;
+        if(ageMs > 5 * 60 * 1000) return;
       }catch(e){}
       // Never re-show a previously dismissed/accepted/rejected invite
       if(dismissedInvitesRef.current.has(inv.id)) return;
@@ -330,6 +530,11 @@ export default function App() {
       });
 
     function pollOnce(){
+      // FIX #12 — skip work when the tab is hidden. Polling kept running
+      // every 4s indefinitely while the user was on another tab or had
+      // the phone screen off; the visibilitychange handler below catches
+      // any missed invites the moment the tab becomes visible again.
+      if(typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       // Skip while on an active call or showing an incoming ring
       if(activeCallRef.current || incomingCallRef.current) return;
       // STRICT FILTER — only rows where I'm the callee. Combined with strict realtime,
@@ -410,7 +615,7 @@ export default function App() {
         id: inv.caller_id,
         name: inv.caller_name || 'User',
         img: inv.caller_avatar,
-        initials: (inv.caller_name||'?').substring(0,2).toUpperCase(),
+        initials: safeInitials(inv.caller_name), /* FIX #10 */
         color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)',
         role: 'Member',
         rate: inv.rate_per_min || 30,
@@ -429,16 +634,21 @@ export default function App() {
     var calleeId = null;
     for(var i=0;i<candidates.length;i++){ if(candidates[i] && UUID_RE.test(String(candidates[i]))) { calleeId = candidates[i]; break; } }
     if(!calleeId){
-      alert('Cannot start call: the other user\'s ID is not a valid UUID.\n\nThis usually happens for mock/demo experts. Calls only work with real signed-in users.');
+      // Final polish: was alert() — non-blocking toast instead.
+      toastWarn('Calls only work with real signed-in users (not demo experts).');
       return;
     }
-    if(calleeId===appUserId){ alert('Cannot start call: you cannot call yourself.'); return; }
+    if(calleeId===appUserId){ toastWarn('You cannot call yourself.'); return; }
     var callerName = (session && session.user && session.user.email) ? (session.user.email.split('@')[0]||'You') : 'You';
     var callerAvatar = null;
     try{ callerAvatar = localStorage.getItem('avatar_'+appUserId)||null; }catch(e){}
     // Double-tap guard — don't fire two inserts for one button press
     if(activeCallRef.current){ console.log('[ringin] startOutgoingCall ignored — already on a call'); return; }
     if(outgoingPendingRef.current){ console.log('[ringin] startOutgoingCall ignored — already pending'); return; }
+    // R12 FIX #4: also guard against stacking an outgoing call on top of a
+    // ringing incoming one — otherwise the user who taps "Call" while their
+    // phone is ringing ends up with two `calls` rows and both UIs fight.
+    if(incomingCallRef.current){ console.log('[ringin] startOutgoingCall ignored — incoming ring active'); return; }
     outgoingPendingRef.current = true;
 
     // CRITICAL: pre-generate the invite UUID client-side and use it as BOTH the row id
@@ -481,7 +691,8 @@ export default function App() {
       if(r.error){
         console.error('[ringin] call_invites insert failed:', r.error);
         setActiveCall(null);
-        alert('Could not start call: '+(r.error.message||'permission'));
+        // Final polish: was alert() — non-blocking toast.
+        toastError('Could not start call: '+(r.error.message||'permission'));
         return;
       }
       console.log('[ringin] call_invite inserted', inviteUuid);
@@ -539,13 +750,31 @@ export default function App() {
     e.preventDefault();
     setLoading(true);
     setMessage('');
+    // R16 FIX #1: handleAuth previously had no try/catch around the await
+    // calls. If supabase.auth threw (network drop, DNS fail, etc.), the
+    // function rejected before setLoading(false) ran, leaving the
+    // "Please wait..." button stuck forever. Wrap each branch.
     if (isLogin) {
-      var res = await supabase.auth.signInWithPassword({ email: email, password: password });
-      if (res.error) setMessage(res.error.message);
+      try {
+        var res = await supabase.auth.signInWithPassword({ email: email, password: password });
+        if (res.error) { setMessage(res.error.message); setLoading(false); return; }
+      } catch (e) {
+        console.warn('[ringin] handleAuth signIn reject:', e);
+        setMessage('Network error — try again');
+        setLoading(false);
+        return;
+      }
     } else {
-      var res2 = await supabase.auth.signUp({ email: email, password: password });
-      if (res2.error) setMessage(res2.error.message);
-      else setMessage('Account created! You can now log in.');
+      try {
+        var res2 = await supabase.auth.signUp({ email: email, password: password });
+        if (res2.error) { setMessage(res2.error.message); setLoading(false); return; }
+        setMessage('Account created! You can now log in.');
+      } catch (e) {
+        console.warn('[ringin] handleAuth signUp reject:', e);
+        setMessage('Network error — try again');
+        setLoading(false);
+        return;
+      }
     }
     setLoading(false);
   };
@@ -583,7 +812,7 @@ export default function App() {
       onViewUser:pushViewUser,
       onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');setViewUserStack([]);}
     });
-    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onOpenProfile:function(){setPrevTab('home');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
+    if (activeTab === 'home') return React.createElement(HomeScreen, {session:session, supabase:supabase, onViewExpert:function(exp){setSelectedExpert(exp);setActiveTab('search');}, onOpenWallet:openWallet, onGoToProfile:function(){setActiveTab('profile');}, onOpenProfile:function(){setPrevTab('home');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}, onGoToSearch:function(){setPrevTab('home');setActiveTab('search');}, onOpenSaved:function(){setPrevTab('home');setActiveTab('saved');}, onOpenConnect:function(){setPrevTab('home');setActiveTab('connect');}});
     if (activeTab === 'search') return React.createElement(SearchScreen, {key:selectedExpert?selectedExpert.id:'search', initExpert:selectedExpert, session:session, onClearExpert:function(){setSelectedExpert(null);}, onBack:function(){setSelectedExpert(null);setActiveTab(prevTab);}, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('search');setActiveTab('profile');}, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     if (activeTab === 'workshops') return React.createElement(WorkshopsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('workshops');setActiveTab('profile');}});
     if (activeTab === 'messages') return React.createElement(MessagesScreen, {key:'messages-'+msgResetKey, session:session, initConvo:initConvo, onConvoConsumed:function(){setInitConvo(null);}, onViewExpert:function(exp){setSelectedExpert(exp);setPrevTab('messages');setActiveTab('search');}, onViewUser:pushViewUser, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('messages');setActiveTab('profile');}, onUnreadCount:setUnreadMsg});
@@ -593,6 +822,11 @@ export default function App() {
     if (activeTab === 'connect') return React.createElement(AnonymousConnect, {session:session, onBack:function(){setActiveTab(prevTab);}});
     return React.createElement(HomeScreen, {session:session, onOpenWallet:openWallet});
   }
+
+  var canBlur = (typeof navigator !== 'undefined' && (navigator.hardwareConcurrency || 8) > 4);
+  var navBgStyle = canBlur
+    ? { backdropFilter: 'blur(16px) saturate(160%)', WebkitBackdropFilter: 'blur(16px) saturate(160%)', background: 'rgba(10, 10, 15, 0.72)' }
+    : { background: 'rgba(10, 10, 15, 0.92)' };
 
   var tabs = [
     {id:'home', label:'Home', svg:'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'},
@@ -623,9 +857,9 @@ export default function App() {
       try{
         var node = e.target;
         while(node && node !== document.body){
-          var cs = window.getComputedStyle(node);
-          if(cs && (cs.overflowX === 'auto' || cs.overflowX === 'scroll')
-              && node.scrollWidth > node.clientWidth){
+          // ROUND-9 FIX #6: use the WeakMap-cached helper instead of
+          // running getComputedStyle on every touchstart.
+          if(isHorizontalScrollAncestor(node)){
             window._swX = -1;
             return;
           }
@@ -652,19 +886,9 @@ export default function App() {
       if(dx < MIN_DX) return;          // didn't swipe far enough right
       if(dy > 80) return;              // too vertical — was probably a scroll
 
-      // Back navigation order (most specific → least):
-      //   1. If we're viewing a user profile (viewUserStack has items) → pop it
-      //   2. If we're on Search and have an expert selected → clear expert
-      //   3. Modal-ish tabs (wallet/saved/connect) → return to prevTab
-      //   4. Top-level tabs (search/workshops/messages/profile) → home
-      if (viewUserStack && viewUserStack.length > 0){
-        popViewUser();
-      } else if (activeTab === 'search' && selectedExpert){
-        setSelectedExpert(null);
-      } else if (activeTab === 'wallet'){ setActiveTab(prevTab); }
-      else if (activeTab === 'saved'){ setActiveTab(prevTab); }
-      else if (activeTab === 'connect'){ setActiveTab(prevTab); }
-      else if (activeTab !== 'home'){ setActiveTab('home'); }
+      // Delegate to the single source of truth — same priority chain the
+      // Android hardware back button uses.
+      goBack();
     }
   },
     // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar
@@ -686,7 +910,15 @@ export default function App() {
           inviteId: activeCall.inviteId,
           channel: activeCall.channel,
           isIncoming: !!activeCall.isIncoming,
-          coins: 1240, // TODO: pull live coin balance via wallet hook
+          // FIX #8: pass per-user cached balance fallback. With the
+          // per-user cache in coinBalance.js, getCachedCoinBalance(appUserId)
+          // returns the right user's last known coins even if the hook
+          // hasn't fetched yet — preventing the 0-initial coin disaster
+          // where CallScreen mounts with localCoins=0 and the per-second
+          // tick immediately fires hangup('no_coins'). CallScreen now has
+          // its own guard too, but this belt-and-braces approach gives it
+          // a real number to start with.
+          coins: appCoinBal || getCachedCoinBalance(appUserId) || 0,
           onCoinsChange: function(){},
           onEnd: function(){ setActiveCall(null); },
         })
@@ -714,12 +946,13 @@ export default function App() {
     //    a live call so we never reload mid-conversation.
     !activeCall && !incomingCall ? React.createElement(UpdatePrompt, null) : null,
 
-    React.createElement('nav', {className:'bottom-nav'},
+    React.createElement('nav', {className:'bottom-nav', style:Object.assign({}, navBgStyle, {borderTop:'1px solid rgba(255,255,255,0.08)',contain:'strict'})},
       tabs.map(function(tab, idx) {
         var btn = React.createElement('button', {
           key:tab.id,
           className:'nav-tab '+(activeTab===tab.id?'active':''),
           onClick:function(){
+            hapticTap();
             if(tab.id==='messages' && activeTab==='messages'){
               setMsgResetKey(function(k){return k+1;});
             }
@@ -747,7 +980,7 @@ export default function App() {
         if (tab.id === 'search') {
           var orb = React.createElement('button', {
             key:'connect-orb',
-            onClick:function(){setPrevTab(activeTab);setActiveTab('connect');},
+            onClick:function(){hapticTap();setPrevTab(activeTab);setActiveTab('connect');},
             style:{
               width:'40px',height:'40px',borderRadius:'50%',
               background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',

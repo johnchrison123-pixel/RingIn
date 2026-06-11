@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#5B4FD4">
+<title>RingIn — All Updates & Fixes</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{background:#0a0a1a;color:#e8e8ee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.55;font-size:16px;-webkit-font-smoothing:antialiased}
+  body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  .wrap{max-width:760px;margin:0 auto;padding:24px 18px 80px}
+  header{text-align:center;padding:28px 0 22px;border-bottom:1px solid #1f1f30;margin-bottom:24px}
+  header h1{font-size:28px;font-weight:800;background:linear-gradient(135deg,#5B4FD4,#C4347A);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
+  header p{color:#8a8aa3;font-size:13px;margin-top:8px}
+  .pill{display:inline-block;padding:4px 12px;background:rgba(91,79,212,0.18);color:#a89eff;border-radius:99px;font-size:12px;margin-top:10px;font-weight:600}
+  h2{font-size:20px;margin:32px 0 8px;color:#fff;font-weight:700;letter-spacing:-0.3px}
+  h2 .tag{font-size:11px;font-weight:600;color:#5B4FD4;background:rgba(91,79,212,0.15);padding:3px 9px;border-radius:99px;margin-left:8px;vertical-align:middle}
+  h3{font-size:16px;margin:18px 0 8px;color:#cfcfe0;font-weight:600}
+  p,li{color:#b4b4c8;font-size:15px}
+  .lead{color:#8a8aa3;font-size:14px;margin-bottom:18px;padding:12px 14px;background:rgba(255,255,255,0.03);border-radius:10px;border-left:3px solid #5B4FD4}
+  .item{background:#11112a;border:1px solid #1f1f3a;border-radius:14px;padding:14px 16px;margin:10px 0;position:relative}
+  .item.deferred{background:#1a1a2a;border-color:#3a2a1a}
+  .item h4{font-size:15px;font-weight:700;color:#fff;display:flex;align-items:flex-start;gap:8px;margin-bottom:6px}
+  .item .check{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-top:1px}
+  .check.done{background:linear-gradient(135deg,#1D9E75,#5DCAA5);color:#fff}
+  .check.def{background:#3a2a1a;color:#FFB347}
+  .item p{font-size:14px;color:#9c9cb2;margin-left:28px;line-height:1.5}
+  .item .what{font-size:13px;color:#7a7a92;margin-left:28px;margin-top:4px;font-style:italic}
+  .bug-section{background:linear-gradient(135deg,rgba(196,52,122,0.08),rgba(91,79,212,0.06));border:1px solid rgba(196,52,122,0.3);padding:16px;border-radius:14px;margin-top:18px}
+  .bug-section h2{margin-top:0;font-size:18px}
+  .bug{display:flex;gap:10px;padding:10px 0;border-bottom:1px dashed rgba(255,255,255,0.05)}
+  .bug:last-child{border-bottom:none}
+  .bug .num{flex-shrink:0;width:24px;height:24px;border-radius:6px;background:#C4347A;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+  .bug-body strong{color:#fff;font-size:14px;display:block;margin-bottom:3px}
+  .bug-body p{font-size:13px;color:#a8a8be;margin-left:0}
+  .footer{text-align:center;padding:30px 0 0;color:#5a5a72;font-size:12px;margin-top:30px;border-top:1px solid #1f1f30}
+  .footer strong{color:#a89eff}
+  details{margin:14px 0;background:rgba(255,255,255,0.02);border-radius:10px;padding:0;border:1px solid #1f1f30}
+  summary{padding:14px 16px;cursor:pointer;font-weight:600;color:#cfcfe0;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:'▾';color:#5B4FD4;transition:transform 0.2s}
+  details[open] summary::after{transform:rotate(180deg)}
+  details > div{padding:0 16px 14px}
+  .legend{display:flex;gap:10px;justify-content:center;font-size:12px;color:#7a7a92;margin:12px 0 24px;flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend .dot{width:10px;height:10px;border-radius:50%}
+  .summary-card{background:linear-gradient(135deg,rgba(91,79,212,0.12),rgba(196,52,122,0.08));border:1px solid rgba(91,79,212,0.25);padding:16px;border-radius:14px;margin-bottom:20px;text-align:center}
+  .summary-card .num{font-size:32px;font-weight:800;background:linear-gradient(135deg,#5B4FD4,#C4347A);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1}
+  .summary-card .lbl{font-size:12px;color:#8a8aa3;text-transform:uppercase;letter-spacing:0.5px;margin-top:6px}
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:14px 0}
+  .stats .s{background:rgba(255,255,255,0.03);padding:12px 8px;border-radius:10px;text-align:center}
+  .stats .s b{display:block;font-size:24px;color:#fff;font-weight:800}
+  .stats .s span{font-size:11px;color:#7a7a92;text-transform:uppercase;letter-spacing:0.4px}
+  /* Print-friendly: light theme so the PDF is readable */
+  @media print{
+    @page{size:A4;margin:12mm 11mm}
+    html,body{background:#fff!important;color:#1a1a1f!important;font-size:10.5pt}
+    .wrap{padding:0;max-width:none}
+    header{padding:0 0 14px;border-bottom:1px solid #ddd;margin-bottom:14px}
+    header h1{font-size:22pt;-webkit-text-fill-color:initial!important;background:none!important;color:#5B4FD4!important}
+    header p{color:#666}
+    .pill{background:#eee9ff!important;color:#5B4FD4!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    h2{font-size:14pt;color:#1a1a1f!important;page-break-after:avoid}
+    h2 .tag{background:#eee9ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    h3,p,li{color:#333!important}
+    .lead{background:#f6f4ff!important;color:#555!important;border-left-color:#5B4FD4!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .item{background:#fafafa!important;border:1px solid #e2e2ea!important;padding:10px 12px;margin:6px 0;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .item.deferred{background:#fff7ec!important;border-color:#ffd9a3!important}
+    .item h4{color:#1a1a1f!important;font-size:11pt}
+    .item p,.item .what{color:#555!important;font-size:10pt}
+    .check.done{background:#1D9E75!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .check.def{background:#FFB347!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .bug-section{background:#fff5f9!important;border-color:#ffc2da!important;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .bug{border-bottom-color:#f0d6e2!important}
+    .bug .num{background:#C4347A!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .bug-body strong,.bug-body p{color:#222!important}
+    .summary-card{background:#f6f4ff!important;border-color:#d8d0ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .summary-card .num{-webkit-text-fill-color:initial!important;color:#5B4FD4!important}
+    .summary-card .lbl{color:#666!important}
+    .summary-card .stats .s{background:#fff!important}
+    .summary-card .stats .s b{color:#1a1a1f!important}
+    .legend{color:#666!important}
+    details,details>div{display:block!important;padding:0 12px 10px}
+    summary{color:#1a1a1f!important}
+    summary::after{display:none}
+    .footer{color:#666!important;border-top-color:#ddd!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>RingIn — What I Fixed</h1>
+  <p>Plain-English breakdown of every Tier 1 + Tier 2 change</p>
+  <span class="pill">31 items shipped</span>
+</header>
+
+<div class="summary-card">
+  <div class="stats">
+    <div class="s"><b>28</b><span>Done</span></div>
+    <div class="s"><b>3</b><span>Deferred</span></div>
+    <div class="s"><b>5</b><span>Bug Fixes</span></div>
+  </div>
+  <p style="font-size:13px;color:#9c9cb2;margin-top:6px">Tier 1: 17 of 18 done · Tier 2: 11 of 13 done · plus 5 emergency bug fixes</p>
+</div>
+
+<div class="legend">
+  <span><span class="dot" style="background:#1D9E75"></span>Shipped & live</span>
+  <span><span class="dot" style="background:#FFB347"></span>Backend ready, UI deferred</span>
+</div>
+
+<!-- ======== TIER 1 ======== -->
+<h2>Tier 1 <span class="tag">Foundations</span></h2>
+<p class="lead">The basics every app needs — reporting, SEO, performance, safety nets.</p>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Real Report flow</h4>
+  <p>Tap "Report" on a post, comment, or user → it now actually saves to Supabase. Before, it just showed a fake "Thank you" alert.</p>
+  <div class="what">If the database is down, reports queue locally and flush automatically when you come back online.</div>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Error boundaries</h4>
+  <p>If a tab crashes, you see a friendly "this tab hit a snag — Try again" card instead of a white screen. The error is logged so I can fix it.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>"Latest First" feed label</h4>
+  <p>Small label at the top of the feed so people understand new posts appear at the top.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Block AI crawlers</h4>
+  <p>Added a <code>robots.txt</code> that tells GPTBot, ClaudeBot, etc. not to scrape your users' posts to train AI models.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Schema.org tags</h4>
+  <p>Hidden tags on each page that tell Google "this is a social network app called RingIn." Helps Google rank your site higher.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Auto-updating sitemap</h4>
+  <p>A live list of every public post URL that Google reads. Rebuilds on every deploy so new posts get indexed automatically.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Pretty link previews</h4>
+  <p>When someone shares a RingIn link on WhatsApp/Twitter/iMessage, it now shows a nice preview card with title + image instead of a plain URL.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Image compression on upload</h4>
+  <p>Big photos shrink to ~1.5 MB before upload. Faster posts, cheaper Supabase storage, less data for users on mobile.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Read receipts (✓✓ ticks)</h4>
+  <p>WhatsApp-style ticks on your sent messages. One tick = sent. Two grey = delivered. Two blue = read. Each chat can toggle them off in the ⋮ menu.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Typing indicators</h4>
+  <p>When the other person is typing, you see the three bouncing dots in real time. Disappears after 3 seconds of inactivity.</p>
+</div>
+
+<div class="item deferred">
+  <h4><span class="check def">⏸</span>Persistent in-call banner</h4>
+  <p>A "you're on a call — tap to return" banner that follows you while you browse other tabs. <strong style="color:#FFB347">Deferred</strong> because it needs touching the call screen and that's risky.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Hide-likes toggle</h4>
+  <p>Settings → Privacy → "Hide like counts." When on, posts show "Liked" or "0 Likes" instead of "247 Likes." Instagram-style.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Cursor pagination</h4>
+  <p>Scrolling down the feed loads older posts in chunks of 30 — way faster than loading all posts at once.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Tap a hashtag to filter</h4>
+  <p>Tap <strong>#fitness</strong> in any post → feed shrinks to only fitness posts. Tap "× Clear filter" banner at the top to go back to the full feed.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Diversity cap in feed</h4>
+  <p>No more than 3 posts in a row from the same person. Stops one chatty user from drowning your whole feed.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Notification batching</h4>
+  <p>If 5 people like your post in 1 minute, you get ONE grouped notification ("5 people liked your post") instead of 5 separate pings.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Android notification channels</h4>
+  <p>Android settings let users pick different sounds/vibration for Messages vs Likes vs Calls. Cleaner control over what wakes you up.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Migration safety doc</h4>
+  <p>Added rules to CLAUDE.md so future database changes don't break the live app. Two-step deploys for every schema change.</p>
+</div>
+
+<!-- ======== TIER 2 ======== -->
+<h2>Tier 2 <span class="tag">New Features</span></h2>
+<p class="lead">Bigger features — Close Friends, reactions, privacy, search, account deletion.</p>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.1 — Restrict mode in chat</h4>
+  <p>Long-press chat header → "⋮" → Restrict User. Their messages still arrive but only they see them. They never know they're restricted. (Instagram's Restrict feature.)</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.2 — Emoji reactions on messages</h4>
+  <p>Long-press any chat message → picker pops up with 6 emojis (❤️ 😂 😮 😢 👍 🔥). Tap one → badge appears under the message.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.3 — Audience selector on posts</h4>
+  <p>When you compose a post, the chip at the top lets you pick <strong>Public</strong> / <strong>Followers</strong> / <strong>Private</strong>. Your choice gets remembered for next time.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.4 — Last seen + privacy</h4>
+  <p>Your app pings "I'm online" every 30 seconds. Privacy settings let you hide it from everyone, friends only, or show to all.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.5 — Moment view counts</h4>
+  <p>"👁 23" badge appears on your own moments showing how many people viewed it. Tap → see the full list of viewers (your moment, only you see this).</p>
+</div>
+
+<div class="item deferred">
+  <h4><span class="check def">⏸</span>T2.6 — Polls in moments</h4>
+  <p>Backend is ready. UI deferred — lowest priority. <strong style="color:#FFB347">Tell me when you want it.</strong></p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.7 — Close Friends + green ring</h4>
+  <p>Settings → Privacy → "Manage Close Friends" → search and add people. When you compose a moment, toggle ★ Close Friends ON → only they see it, and your avatar gets a <strong style="color:#1D9E75">green ring</strong>. Instagram-style.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.8 — Global search</h4>
+  <p>Search bar at the top of Search tab. Type anything → finds matching people AND posts. Uses Postgres full-text search so it's fast even with millions of rows.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.9 — Real delete account</h4>
+  <p>Settings → bottom → "Delete Account." Now actually marks your account for deletion with a 30-day cooling-off period (log in again within 30 days to cancel). Hard-deletes after that.</p>
+</div>
+
+<div class="item deferred">
+  <h4><span class="check def">⏸</span>T2.10 — Age gate on signup</h4>
+  <p>Backend is ready. UI deferred — Supabase Auth needs a small customization to enforce age 13+ at signup.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.11 — Server-side blocks</h4>
+  <p>Blocked users now stored in the database (not just your phone). So if you block Bob on phone A, he's also blocked on phone B. Your old localStorage block list auto-migrates the first time you open the new build.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.12 — Trending hashtags</h4>
+  <p>Open Search tab with an empty box → strip of trending hashtags ("#fitness", "#startup", etc.) — what's hot in the last 24h. Tap → search filtered to that tag.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>T2.13 — Notification prefs</h4>
+  <p>Settings → Notifications. Per-type toggles (Likes / Comments / Messages / Calls / Follows). Now writes to database too, so settings sync across devices.</p>
+</div>
+
+<!-- ======== BUG FIXES ======== -->
+<div class="bug-section">
+<h2>Emergency Bug Fixes <span class="tag" style="background:rgba(196,52,122,0.15);color:#ff7aac">High severity</span></h2>
+<p class="lead" style="border-color:#C4347A">Real bugs caught during testing/audits that were blocking core flows.</p>
+
+<div class="bug">
+  <div class="num">1</div>
+  <div class="bug-body">
+    <strong>Search → Message button crashed</strong>
+    <p>When you searched for an expert and tapped Message, it crashed with "props is not defined." Fixed — Message now opens the chat correctly.</p>
+  </div>
+</div>
+
+<div class="bug">
+  <div class="num">2</div>
+  <div class="bug-body">
+    <strong>Search → Call didn't ring the person</strong>
+    <p>Calling someone from search wasn't actually inviting them — your end started a call but theirs never rang. Fixed — call_invites is now properly written so the callee gets the ring.</p>
+  </div>
+</div>
+
+<div class="bug">
+  <div class="num">3</div>
+  <div class="bug-body">
+    <strong>Unblock button unblocked everyone</strong>
+    <p>In Profile → Blocked Users, tapping Unblock on one person was removing ALL blocked users at once due to a type mismatch. Fixed — now only removes the one you tap.</p>
+  </div>
+</div>
+
+<div class="bug">
+  <div class="num">4</div>
+  <div class="bug-body">
+    <strong>Home tab — "selected tag is not defined"</strong>
+    <p>Tapping a hashtag chip caused "home tab hit a snag" because the hashtag filter state was declared in the wrong place. Fixed.</p>
+  </div>
+</div>
+
+<div class="bug">
+  <div class="num">5</div>
+  <div class="bug-body">
+    <strong>Home tab — "hide likes is not defined"</strong>
+    <p>Same scope class as bug #4 — the Hide Likes preference hook was declared inside the user profile component instead of the main feed. Fixed in <strong>ringin-v3.1.apk</strong>.</p>
+  </div>
+</div>
+</div>
+
+<!-- ======== BONUS ======== -->
+<h2>Bonus Goodies <span class="tag">Free upgrades</span></h2>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Self-hosted OTA updates</h4>
+  <p>Every time I push code to <code>main</code>, a GitHub Action builds a new bundle and pushes it to <code>/bundles/&lt;version&gt;.zip</code>. Your APK auto-checks on launch, downloads, and swaps in the new code.</p>
+  <div class="what">No more reinstalling APK for every fix — only when there's a true native code change.</div>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>Capgo SDK version pin</h4>
+  <p>Pinned the OTA library to v6.0.20 so it works with your existing Android setup. Without this, the APK wouldn't build.</p>
+</div>
+
+<div class="item">
+  <h4><span class="check done">✓</span>14 database migrations</h4>
+  <p>Migrations 0002 through 0015 — all the backend tables for blocks, audiences, reactions, view counts, Close Friends, FTS search, trending tags, deletion requests, notification prefs, etc.</p>
+</div>
+
+<!-- ======== WHATS NEXT ======== -->
+<details>
+<summary>What you can decide later</summary>
+<div>
+<ul style="margin-left:18px;color:#9c9cb2;font-size:14px;line-height:1.7">
+<li><strong style="color:#cfcfe0">Sentry crash tracking</strong> — sign up free → grab DSN → I wire it in</li>
+<li><strong style="color:#cfcfe0">Cloudflare Turnstile</strong> — free signup → site key → bot protection on signup</li>
+<li><strong style="color:#cfcfe0">"Active 5m ago" display</strong> — heartbeat is pinging, just needs the label in chat headers</li>
+<li><strong style="color:#cfcfe0">iOS APK / TestFlight</strong> — needs MacBook + Apple Developer ($99/yr)</li>
+<li><strong style="color:#cfcfe0">Restrict mode comment hiding</strong> — DB writes wired, just needs render-side filter</li>
+<li><strong style="color:#cfcfe0">T2.6 Polls + T2.10 Age gate</strong> — backends exist, UIs deferred</li>
+</ul>
+</div>
+</details>
+
+<div class="footer">
+<p><strong>Latest APK:</strong> ringin-v3.1.apk on your Desktop</p>
+<p><strong>Live PWA:</strong> ring-in.vercel.app</p>
+<p>Generated 2026-05-15</p>
+</div>
+
+</div>
+</body>
+</html>

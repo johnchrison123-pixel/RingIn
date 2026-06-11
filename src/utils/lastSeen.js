@@ -25,6 +25,13 @@ var TICK_MS = 60 * 1000;
 var _tickerId = null;
 var _userId = null;
 var _attached = false;
+// FIX #13 — track the focus/blur/pagehide handlers we attach so we can
+// remove them in stopLastSeen(). Previously these listeners leaked: every
+// sign-in re-attached new closures while the old ones remained, and
+// stopLastSeen() only touched the visibilitychange listener.
+var _focusHandler = null;
+var _blurHandler = null;
+var _pagehideHandler = null;
 
 function ping() {
   if (!_userId) return;
@@ -34,9 +41,10 @@ function ping() {
 }
 
 function startTicker() {
-  if (_tickerId) return;
-  ping(); // immediate
-  _tickerId = setInterval(ping, TICK_MS);
+  if (_tickerId) return; // already ticking — caller should ping separately if a fresh ping is desired
+  // ping now
+  if (_userId) ping();
+  _tickerId = setInterval(function(){ if (_userId) ping(); }, TICK_MS);
 }
 
 function stopTicker() {
@@ -45,8 +53,16 @@ function stopTicker() {
 
 function onVis() {
   if (typeof document === 'undefined') return;
-  if (document.visibilityState === 'visible') startTicker();
-  else stopTicker();
+  if (document.visibilityState === 'visible') {
+    // FIX #5: ping immediately on visibility regain regardless of ticker state.
+    // Previously startTicker() early-returned if _tickerId existed, so the
+    // re-ping on focus never fired when the ticker was already running
+    // (which happens often via the focus/blur listeners attached separately).
+    if (_userId) ping();
+    startTicker();
+  } else {
+    stopTicker();
+  }
 }
 
 // Call once when the app boots (or when the user signs in).
@@ -56,13 +72,15 @@ export function startLastSeen(userId) {
   if (!_attached) {
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
     if (typeof window !== 'undefined') {
-      window.addEventListener('focus', startTicker);
-      window.addEventListener('blur', stopTicker);
-      // Best-effort "I'm leaving" — fire a final ping on pagehide.
-      window.addEventListener('pagehide', function(){
-        try { navigator.sendBeacon && navigator.sendBeacon(''); } catch(_) {}
-        ping();
-      });
+      _focusHandler = startTicker;
+      _blurHandler = stopTicker;
+      // FIX #14 — sendBeacon('') is a no-op (empty URL does nothing). The
+      // pagehide handler now just runs the regular ping(); the
+      // visibilitychange handler already covers the common backgrounded case.
+      _pagehideHandler = function(){ ping(); };
+      window.addEventListener('focus', _focusHandler);
+      window.addEventListener('blur', _blurHandler);
+      window.addEventListener('pagehide', _pagehideHandler);
     }
     _attached = true;
   }
@@ -72,6 +90,12 @@ export function startLastSeen(userId) {
 export function stopLastSeen() {
   stopTicker();
   if (typeof document !== 'undefined' && _attached) document.removeEventListener('visibilitychange', onVis);
+  // FIX #13 — also remove the window-level listeners we attached.
+  if (typeof window !== 'undefined' && _attached) {
+    if (_focusHandler) { window.removeEventListener('focus', _focusHandler); _focusHandler = null; }
+    if (_blurHandler) { window.removeEventListener('blur', _blurHandler); _blurHandler = null; }
+    if (_pagehideHandler) { window.removeEventListener('pagehide', _pagehideHandler); _pagehideHandler = null; }
+  }
   _attached = false;
   _userId = null;
 }

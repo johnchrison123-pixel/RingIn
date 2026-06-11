@@ -98,17 +98,31 @@ export function hashUidToInt(s) {
 }
 
 async function fetchToken(channel, uid) {
-  var res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channel: channel, uid: uid }),
-  });
-  if (!res.ok) {
-    var text = '';
-    try { text = await res.text(); } catch (e) {}
-    throw new Error('Token endpoint ' + res.status + ': ' + text);
+  // R16 FIX #2: previously had no timeout — if /api/agora-token never
+  // responded (rare backend stall), the call promise hung forever and
+  // the caller's onError never fired. 15-second AbortController bound
+  // to the fetch so we surface a "Failed to fetch Agora token" up the
+  // chain, which the call screen can show / retry.
+  var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timeoutId = setTimeout(function(){ try { if (controller) controller.abort(); } catch(_){} }, 15000);
+  try {
+    var res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: channel, uid: uid }),
+      signal: controller ? controller.signal : undefined,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      var text = '';
+      try { text = await res.text(); } catch (e) {}
+      throw new Error('Token endpoint ' + res.status + ': ' + text);
+    }
+    return await res.json();
+  } catch (e) {
+    clearTimeout(timeoutId);
+    throw new Error('Failed to fetch Agora token: ' + (e && e.message ? e.message : 'timeout'));
   }
-  return await res.json();
 }
 
 // One-shot call session. Returns a controller object with leave/setMuted hooks.

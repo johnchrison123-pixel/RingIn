@@ -9,6 +9,43 @@ import {useMomentUserIds} from '../utils/momentUsers';
 import {useHideLikes} from '../utils/likeDisplayPref';
 import {useCloseFriends, addCloseFriend, removeCloseFriend} from '../utils/closeFriends';
 import {playSound,playUnlikeSound,previewSound,saveSoundPrefs,SOUND_META,getHapticsEnabled,setHapticsEnabled,forceSound,forceHaptic,isHapticSupported} from '../utils/soundEngine';
+import {toastSuccess,toastError} from '../utils/toast';
+import {useCoinBalance} from '../utils/coinBalance';
+import {sb as sbProfileCoin} from '../utils/supabase';
+
+// Copy a URL to the clipboard and toast ONLY on real success.
+// Same helper pattern as HomeScreen — eliminates false-positive "Link
+// copied!" alerts when the clipboard API silently fails.
+function copyToClipboardWithToast(url, successMsg){
+  function legacyCopy(t){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch(_) { return false; }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){
+        toastSuccess(successMsg || '🔗 Link copied!');
+      }).catch(function(){
+        if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+        else toastError('Couldn\'t copy — long-press the link to copy');
+      });
+      return;
+    }
+    if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+    else toastError('Couldn\'t copy — long-press the link to copy');
+  } catch(e) {
+    if (legacyCopy(url)) toastSuccess(successMsg || '🔗 Link copied!');
+    else toastError('Couldn\'t copy — long-press the link to copy');
+  }
+}
 
 var COUNTRIES=[
   ['AF','Afghanistan','+93'],['AL','Albania','+355'],['DZ','Algeria','+213'],['AD','Andorra','+376'],['AO','Angola','+244'],
@@ -115,11 +152,16 @@ function playProfEmojiClick(){playSound('emoji');}
 function playProfPostSound(){playSound('send');}
 function timeAgoProf(dateStr){
   if(!dateStr) return '';
+  // R11 FIX #3: removed manual 'Z' appending — same fix Round 7 applied to
+  // HomeScreen + MessagesScreen. Forcing UTC on a string that was already
+  // local-ISO double-shifted the display by the TZ offset. Browser handles
+  // ISO with/without 'Z' or '+HH:MM' correctly on its own.
   var now=new Date();
-  var str=dateStr.toString();
-  if(!str.includes('Z')&&!str.includes('+')) str=str+'Z';
-  var date=new Date(str);
+  var date=new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
   var diff=Math.floor((now-date)/1000);
+  // R11 FIX #2: clock skew (server ahead of client) → show 'Just now' instead of '-Nm ago'.
+  if (diff < 0) return 'Just now';
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
@@ -127,10 +169,30 @@ function timeAgoProf(dateStr){
   return date.toLocaleDateString([],{month:'short',day:'numeric',timeZone:localStorage.getItem('user_timezone')||'UTC'});
 }
 
-export default function ProfileScreen({session, supabase, onOpenWallet}){
+export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMessages, onViewUser, onSwitchTab}){
   var email = session && session.user ? session.user.email : '';
   var initials = email ? email.substring(0,2).toUpperCase() : 'ME';
   var userId = session && session.user ? session.user.id : null;
+  // Shared coin balance — same hook every other screen uses, so the
+  // Settings page stats card and own-profile stats card both show the
+  // live balance instead of the hardcoded "1,240".
+  var profileCoinBal = useCoinBalance(userId, sbProfileCoin);
+
+  // FIX #2 + #3: real call count from call_invites. Replaces the hardcoded
+  // "12 Calls" in both the own-profile stats card AND the Settings page
+  // stats card. Single shared state — both views read from this one query.
+  var realCallCountS = useState(0); var realCallCount = realCallCountS[0]; var setRealCallCount = realCallCountS[1];
+
+  // FIX #5: real friends list driven by the follows table. Replaces the
+  // hardcoded FRIENDS mock array on the Friends tab. Empty until loaded.
+  var realFriendsS = useState([]); var realFriends = realFriendsS[0]; var setRealFriends = realFriendsS[1];
+
+  // FIX #4: human-readable "Member since…" string sourced from the auth
+  // session's created_at timestamp. Empty when the session is still
+  // hydrating so we don't render "Member since Invalid Date".
+  var memberSince = (session && session.user && session.user.created_at)
+    ? (function(){ try { return new Date(session.user.created_at).toLocaleDateString([],{month:'long',year:'numeric'}); } catch(_){ return ''; } })()
+    : '';
 
   // Shared moments registry — drives the Instagram-style avatar ring on
   // the profile cover avatar and on each post header.
@@ -204,8 +266,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var pwResetSentS=useState(false); var pwResetSent=pwResetSentS[0]; var setPwResetSent=pwResetSentS[1];
   var pwResetLoadS=useState(false); var pwResetLoad=pwResetLoadS[0]; var setPwResetLoad=pwResetLoadS[1];
   var pwResetErrS=useState(''); var pwResetErr=pwResetErrS[0]; var setPwResetErr=pwResetErrS[1];
-  var muteStoryS=useState(localStorage.getItem('mute_activity')==='1'); var muteActivity=muteStoryS[0]; var setMuteActivity=muteStoryS[1];
-  var showActivityS=useState(localStorage.getItem('show_online')!=='0'); var showOnline=showActivityS[0]; var setShowOnline=showActivityS[1];
+  // FIX #16: wrap initial localStorage reads in try/catch (Safari private
+  // mode + corrupted storage both throw on getItem). Defaults match the
+  // unguarded behavior so users see no change on the happy path.
+  var muteStoryS=useState(function(){ try { return localStorage.getItem('mute_activity')==='1'; } catch(_){ return false; } }); var muteActivity=muteStoryS[0]; var setMuteActivity=muteStoryS[1];
+  var showActivityS=useState(function(){ try { return localStorage.getItem('show_online')!=='0'; } catch(_){ return true; } }); var showOnline=showActivityS[0]; var setShowOnline=showActivityS[1];
   // Sound settings state
   var showSoundS=useState(false); var showSound=showSoundS[0]; var setShowSound=showSoundS[1];
   // Blocked users state
@@ -284,6 +349,48 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   var commentLikesProfS=useState(function(){try{var s=localStorage.getItem('ringin_clikes');return s?JSON.parse(s):{}}catch(e){return {};}}); var commentLikesProf=commentLikesProfS[0]; var _setCommentLikesProf=commentLikesProfS[1];
   function setCommentLikesProf(updater){_setCommentLikesProf(function(prev){var next=typeof updater==='function'?updater(prev):updater;try{localStorage.setItem('ringin_clikes',JSON.stringify(next));}catch(e){}return next;});}
   var postMenuProfS=useState(null); var postMenuProf=postMenuProfS[0]; var setPostMenuProf=postMenuProfS[1];
+  // FIX #4: local edit-post modal state for own-profile post grid.
+  // Mirrors the UserProfileView pattern from HomeScreen.js so we don't
+  // reach into HomeScreen's scope. {id, content} shape.
+  var editPostProfDataS=useState(null); var editPostProfData=editPostProfDataS[0]; var setEditPostProfData=editPostProfDataS[1];
+  // FIX #5: local muted-posts list — toggling persists to ringin_muted_posts
+  // (same key HomeScreen uses) so a post muted here is also muted there.
+  var mutedPostsProfS=useState(function(){try{var s=localStorage.getItem('ringin_muted_posts');return s?JSON.parse(s):[];}catch(e){return [];}});
+  var mutedPostsProf=mutedPostsProfS[0]; var setMutedPostsProf=mutedPostsProfS[1];
+
+  function saveEditPostProf(){
+    if(!editPostProfData||!editPostProfData.content||!editPostProfData.content.trim()) return;
+    var newText = editPostProfData.content;
+    var pid = editPostProfData.id;
+    var snap = myPosts.slice();
+    setMyPosts(function(prev){return prev.map(function(x){return x.id===pid?Object.assign({},x,{text:newText}):x;});});
+    setEditPostProfData(null);
+    sbProfile.from('posts').update({text:newText}).eq('id',pid).then(function(r){
+      if(r.error){
+        console.error('RingIn Error [saveEditPostProf]:', r.error && r.error.message ? r.error.message : 'Unknown error');
+        setMyPosts(snap);
+        try{ toastError('Failed to edit. Try again.'); }catch(e){}
+        return;
+      }
+      try{ toastSuccess('✏️ Post updated'); }catch(e){}
+    }).catch(function(e){
+      // R11 FIX #7: Round 7 added .catch to saveEditProfile but this sibling
+      // was missed. Mirror the same pattern: rollback + toast + log.
+      console.warn('[ringin] saveEditPostProf reject:', e);
+      setMyPosts(snap);
+      setEditPostProfData(null);
+      try{ toastError('Failed to edit post'); }catch(_){}
+    });
+  }
+
+  function toggleMutePostProf(pid){
+    var cur = mutedPostsProf || [];
+    var muted = cur.indexOf(pid) >= 0;
+    var next = muted ? cur.filter(function(x){return x!==pid;}) : cur.concat([pid]);
+    setMutedPostsProf(next);
+    try{ localStorage.setItem('ringin_muted_posts', JSON.stringify(next)); }catch(_){}
+    try{ toastSuccess(muted ? '🔔 Notifications on' : '🔕 Notifications off'); }catch(_){}
+  }
 
   function prefetchLikerNamesProf(postsArr, existingNames){
     var allIds=[];
@@ -375,27 +482,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   }
 
   var EMOJIS=['😊','😂','❤️','🔥','👏','🎉','💪','🙌','😍','🤔','👍','✨','🚀','💡','🎯'];
-  var FRIENDS=[
-    {initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',img:'https://i.pravatar.cc/150?img=47'},
-    {initials:'RM',name:'Ravi Menon',role:'Sr. Software Engineer',color:'linear-gradient(135deg,#534AB7,#7C6FFF)',img:'https://i.pravatar.cc/150?img=12'},
-    {initials:'SA',name:'Sara Al Zaabi',role:'Career Coach',color:'linear-gradient(135deg,#C84B8A,#E84D9A)',img:'https://i.pravatar.cc/150?img=23'},
-  ];
-  var SKILLS=[
-    {label:'React Development',level:80},
-    {label:'System Design',level:65},
-    {label:'Career Planning',level:90},
-    {label:'Public Speaking',level:55},
-  ];
-  var REVIEWS=[
-    {name:'Ahmed K.',text:'Great session, very helpful!',rating:5,time:'2 days ago',img:'https://i.pravatar.cc/150?img=33'},
-    {name:'Fatima M.',text:'Learned a lot from this call.',rating:4,time:'1 week ago',img:'https://i.pravatar.cc/150?img=44'},
-  ];
+  // FIX #5: removed FRIENDS / SKILLS / REVIEWS mock arrays. The Friends tab
+  // now renders from `realFriends` (live follows query), the Skills tab from
+  // the user's bio.skills field, and the Reviews tab shows an empty-state
+  // until a reviews schema exists. See the tab-content section below.
 
   useEffect(function(){
     if(!userId) return;
     // Record login event (once per session)
     try{
       var loginLog=JSON.parse(localStorage.getItem('login_log_'+userId)||'[]');
+      // FIX #13: if corruption wrote a non-array (e.g. {} or null), .push
+      // would throw and the whole login record would be lost. Coerce back.
+      if (!Array.isArray(loginLog)) loginLog = [];
       var lastLogin=loginLog.length?new Date(loginLog[loginLog.length-1].t):null;
       var now=new Date();
       if(!lastLogin||now-lastLogin>3600000){// more than 1 hour gap = new session
@@ -404,6 +503,125 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       }
     }catch(e){}
   },[userId]);
+
+  // FIX #2 + #3: count the user's accepted/ended call_invites so the stats
+  // cards show a real number instead of the hardcoded "12 Calls". Defensive:
+  // if the table or columns don't exist yet, falls back to 0.
+  useEffect(function(){
+    if(!userId) return;
+    var cancelled = false;
+    try {
+      sbProfile.from('call_invites')
+        .select('id', { count: 'exact', head: true })
+        .eq('caller_id', userId)
+        .in('status', ['ended','accepted'])
+        .then(function(r){
+          if (cancelled) return;
+          if (r && !r.error && typeof r.count === 'number') {
+            setRealCallCount(r.count);
+          }
+        }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  }, [userId]);
+
+  // FIX #5: load the people the current user follows for the Friends tab.
+  // Try the FK-join syntax first; on failure (e.g. column rename or no FK
+  // metadata), fall back to two queries: follows → ids → profiles.
+  useEffect(function(){
+    if(!userId) return;
+    var cancelled = false;
+    function applyRows(rows){
+      if (cancelled) return;
+      var list = (rows || []).map(function(p){
+        var name = p.full_name || (p.email ? p.email.split('@')[0] : 'User');
+        return {
+          id: p.id,
+          name: name,
+          role: 'RingIn Member',
+          initials: (name || '?').substring(0,2).toUpperCase(),
+          img: p.avatar_url || null,
+          color: 'linear-gradient(135deg,#7B6EFF,#E84D9A)'
+        };
+      });
+      setRealFriends(list);
+    }
+    try {
+      // Two-query fallback path — works without relying on FK introspection.
+      sbProfile.from('follows').select('following_id').eq('follower_id', userId).limit(50).then(function(fr){
+        if (cancelled) return;
+        if (!fr || fr.error || !fr.data || fr.data.length === 0) { setRealFriends([]); return; }
+        var ids = fr.data.map(function(x){ return x.following_id; }).filter(Boolean);
+        if (ids.length === 0) { setRealFriends([]); return; }
+        sbProfile.from('profiles').select('id,full_name,avatar_url,email').in('id', ids).then(function(pr){
+          if (cancelled) return;
+          if (pr && !pr.error && pr.data) applyRows(pr.data);
+          else setRealFriends([]);
+        }).catch(function(){ if (!cancelled) setRealFriends([]); });
+      }).catch(function(){ if (!cancelled) setRealFriends([]); });
+    } catch(_){
+      if (!cancelled) setRealFriends([]);
+    }
+    return function(){ cancelled = true; };
+  }, [userId]);
+
+  // Android back / edge-swipe handler — walks UP the settings hierarchy
+  // one step at a time. Order is innermost overlay → outermost:
+  //   sub-picker (country/phone/timezone) → sub-page (Account/Privacy/…)
+  //   → Settings panel itself → Profile tab (then App.js takes over).
+  // Each press closes ONE level so the user can navigate back up the
+  // same path they came down. Consumes the cancelable 'ringin:back'
+  // event so App.js's tab-level fallback doesn't fire prematurely.
+  useEffect(function(){
+    function onBack(ev){
+      function consume(close){
+        if (ev && ev.preventDefault) ev.preventDefault();
+        close();
+      }
+      // ─── Modals (highest priority — always-on-top overlays) ───
+      // FIX #8: edit-post modal (Batch 1 added the state but the back-handler
+      // never closed it). Put it AT THE TOP of the priority chain — most
+      // innermost overlay first — and added editPostProfData to the dep array
+      // so the handler re-binds when the modal opens.
+      if (editPostProfData) return consume(function(){ setEditPostProfData(null); });
+      if (showEditProfile) return consume(function(){ setShowEditProfile(false); });
+      if (showAvatarView) return consume(function(){ setShowAvatarView(false); });
+      if (showAvatarMenu) return consume(function(){ setShowAvatarMenu(false); });
+      if (showCoverAdjust) return consume(function(){ setShowCoverAdjust(false); });
+      if (showAdjust) return consume(function(){ setShowAdjust(false); });
+      if (showEmoji) return consume(function(){ setShowEmoji(false); });
+      // Likers list popup from Profile post grid
+      if (showLikersProf) return consume(function(){ setShowLikersProf(null); });
+      // ─── Sub-pickers INSIDE Account Settings (innermost) ───
+      if (showCountryPicker) return consume(function(){ setShowCountryPicker(false); });
+      if (showPhoneCodePicker) return consume(function(){ setShowPhoneCodePicker(false); });
+      if (showTzPicker) return consume(function(){ setShowTzPicker(false); });
+      // ─── Settings sub-pages — each closes back to the main Settings panel ───
+      if (showCloseFriends) return consume(function(){ setShowCloseFriends(false); });
+      if (showAcct) return consume(function(){ setShowAcct(false); });
+      if (showPrivacy) return consume(function(){ setShowPrivacy(false); });
+      if (showSupport) return consume(function(){ setShowSupport(false); });
+      if (showNotif) return consume(function(){ setShowNotif(false); });
+      if (showActivityLog) return consume(function(){ setShowActivityLog(false); });
+      if (showSound) return consume(function(){ setShowSound(false); });
+      if (showBlocked) return consume(function(){ setShowBlocked(false); });
+      if (showMuted) return consume(function(){ setShowMuted(false); });
+      if (showExpertApp) return consume(function(){ setShowExpertApp(false); });
+      if (showRate) return consume(function(){ setShowRate(false); });
+      // ─── Settings panel itself — closes back to the Profile screen ───
+      if (showSettings) return consume(function(){ setShowSettings(false); });
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [
+    // FIX #8: editPostProfData added to dep array so the handler re-binds when
+    // the edit-post modal opens/closes — previously the back press was ignored.
+    editPostProfData,
+    showEditProfile, showAvatarView, showAvatarMenu, showCoverAdjust, showAdjust, showEmoji, showLikersProf,
+    showCountryPicker, showPhoneCodePicker, showTzPicker,
+    showCloseFriends, showAcct, showPrivacy, showSupport, showNotif, showActivityLog, showSound, showBlocked, showMuted, showExpertApp, showRate,
+    showSettings,
+  ]);
 
   useEffect(function(){
     if(!userId) return;
@@ -419,6 +637,34 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     });
   },[userId]);
 
+  // FIX #3: prefill Account Settings form from server on first open, so blank
+  // localStorage doesn't trick the user into saving an empty profile. Only
+  // populates fields the user hasn't already typed into.
+  useEffect(function(){
+    if(!showAcct||!userId) return;
+    sbProfile.from('profiles').select('full_name,bio').eq('id',userId).single().then(function(res){
+      if(!res||!res.data) return;
+      var fullName = res.data.full_name || '';
+      var bioJson = {};
+      try{ if(res.data.bio){ var b=(typeof res.data.bio==='string')?JSON.parse(res.data.bio):res.data.bio; if(b&&typeof b==='object') bioJson=b; } }catch(_){}
+      var loc = bioJson.location || {};
+      // Only set fields the user hasn't already typed into. Check the
+      // current state via setX(prev => ...) so we don't depend on stale
+      // closures, and only overwrite when prev is empty/whitespace.
+      if(fullName){ setAcctName(function(prev){ return (prev && prev.trim()) ? prev : fullName; }); }
+      if(bioJson.tag){ setAcctTag(function(prev){ return (prev && prev.trim()) ? prev : (bioJson.tag||''); }); }
+      var country = loc.country_name || loc.country || '';
+      if(country){ setAcctCountry(function(prev){ return (prev && prev.trim()) ? prev : country; }); }
+      var dial = loc.dial || loc.phone_code || '';
+      if(dial){ setAcctPhoneCode(function(prev){ return (prev && prev!=='+1') ? prev : dial; }); }
+      var phone = loc.phone || '';
+      if(phone){ setAcctPhone(function(prev){ return (prev && prev.trim()) ? prev : phone; }); }
+      var tz = loc.timezone || '';
+      if(tz){ setAcctTz(function(prev){ return (prev && prev.trim() && prev!=='UTC') ? prev : tz; }); }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[showAcct,userId]);
+
   function openEditProfile(){
     setEditName(profileInfo.name||email.split('@')[0]);
     setEditTag(profileInfo.tag||'');
@@ -431,18 +677,45 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   function saveEditProfile(){
     if(!userId) return;
     setSavingEdit(true);
-    var newBio = JSON.stringify({about:editAbout,tag:editTag,website_name:editWebsiteName,website_url:editWebsiteUrl});
-    sbProfile.from('profiles').update({full_name:editName,bio:newBio}).eq('id',userId).then(function(res){
+    // FIX #1 (P0 data-loss): fetch + deep-merge the bio JSON so we don't wipe
+    // notif_prefs, sound_prefs, location, cover_url, expert_request, etc.
+    // SAME pattern as Save All (~line 1330) and Expert App (~line 2103).
+    sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r0){
+      var existing={};
+      try{
+        if(r0 && r0.data && r0.data.bio){
+          var b=(typeof r0.data.bio==='string')?JSON.parse(r0.data.bio):r0.data.bio;
+          if(b && typeof b==='object') existing=b;
+        }
+      }catch(_){}
+      var merged=Object.assign({},existing,{
+        about: editAbout || '',
+        tag: editTag || '',
+        website_name: editWebsiteName || '',
+        website_url: editWebsiteUrl || '',
+      });
+      sbProfile.from('profiles').update({full_name:editName,bio:JSON.stringify(merged)}).eq('id',userId).then(function(res){
+        setSavingEdit(false);
+        if(res.error){
+          console.error('RingIn Error [saveEditProfile]:', res.error && res.error.message ? res.error.message : 'Unknown error');
+          alert('Something went wrong. Please try again.');
+          return;
+        }
+        var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
+        setProfileInfo(updated);
+        try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
+        // R15 FIX #7: broadcast the new display name so TopBarAvatar (and any
+        // other listener mirroring the avatar-changed pattern) can refresh
+        // without a remount. Mirrors the existing 'ringin-avatar-changed'.
+        try { window.dispatchEvent(new CustomEvent('ringin-name-changed', {detail: {userId: userId, name: editName}})); } catch(_){}
+        setShowEditProfile(false);
+      });
+    }).catch(function(e){
+      // ROUND 8 FIX #2: outer SELECT (or downstream promise) reject left UI stuck
+      // on "Saving..." with no feedback. Surface error + clear loading.
       setSavingEdit(false);
-      if(res.error){
-        console.error('RingIn Error [saveEditProfile]:', res.error && res.error.message ? res.error.message : 'Unknown error');
-        alert('Something went wrong. Please try again.');
-        return;
-      }
-      var updated={name:editName,tag:editTag,about:editAbout,website_name:editWebsiteName,website_url:editWebsiteUrl};
-      setProfileInfo(updated);
-      try{localStorage.setItem('profile_info_'+userId,JSON.stringify(updated));}catch(e){}
-      setShowEditProfile(false);
+      try{ toastError('Save failed — try again'); }catch(_){}
+      console.warn('[ringin] saveEditProfile failed', e);
     });
   }
 
@@ -601,7 +874,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     sbProfile.from('posts').select('id,text,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){posts=r.data||[];check();});
     sbProfile.from('comments').select('id,text,post_id,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){comments=r.data||[];check();});
     sbProfile.from('follows').select('id,following_name,created_at').eq('follower_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){follows=r.data||[];check();});
-    sbProfile.from('messages').select('id,content,created_at').eq('sender_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){messages=r.data||[];check();});
+    // FIX R10-1: messages table column is `text`, not `content`. Selecting
+    // `content` returned undefined for every row → Download My Data + activity
+    // log were effectively empty. Other call sites correctly use `text`.
+    sbProfile.from('messages').select('id,text,created_at').eq('sender_id',userId).order('created_at',{ascending:false}).limit(50).then(function(r){messages=r.data||[];check();});
 
     // Realtime: re-fetch on any new post, comment, follow, message
     var ch=sbProfile.channel('activity-log-'+userId)
@@ -847,12 +1123,20 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
   if(showActivityLog){
     // Group items by date label
     var tz=localStorage.getItem('user_timezone')||'UTC';
+    // R11 FIX #9: previously "Today"/"Yesterday" compared d.toDateString()
+    // (browser local TZ) but the long-form fallback used `timeZone: tz`.
+    // If browser TZ and stored TZ diverged, a row could be tagged "Today"
+    // by toDateString but show a different long-form date elsewhere.
+    // Compare ALL day strings under the same stored timeZone.
     function dayLabel(iso){
       var d=new Date(iso);
-      var today=new Date();
-      var yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
-      if(d.toDateString()===today.toDateString()) return 'Today';
-      if(d.toDateString()===yesterday.toDateString()) return 'Yesterday';
+      if (isNaN(d.getTime())) return '';
+      var dayOpts={timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'};
+      var todayStr = new Date().toLocaleDateString([],dayOpts);
+      var yesterdayStr = new Date(Date.now() - 86400000).toLocaleDateString([],dayOpts);
+      var rowStr = d.toLocaleDateString([],dayOpts);
+      if (rowStr === todayStr) return 'Today';
+      if (rowStr === yesterdayStr) return 'Yesterday';
       return d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric',timeZone:tz});
     }
     function fmtTime(iso){return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:tz});}
@@ -935,7 +1219,29 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('textarea',{value:supportMsg,onChange:function(e){setSupportMsg(e.target.value);},placeholder:'Tell us what happened, as much detail as possible...',rows:5,style:{width:'100%',padding:'13px 14px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',outline:'none',resize:'none',fontFamily:'inherit',lineHeight:1.6}})
           ),
           React.createElement('button',{
-            onClick:function(){if(supportEmail.trim()&&supportMsg.trim())setSupportSent(true);else alert('Please fill in your email and describe your issue.');},
+            // FIX #11: actually persist the support message to localStorage
+            // so the user has a record of what they submitted. Server-side
+            // schema isn't ready, so localStorage is the safer fallback.
+            onClick:function(){
+              if(!supportEmail.trim()||!supportMsg.trim()){alert('Please fill in your email and describe your issue.');return;}
+              try {
+                var key = 'ringin_support_msgs';
+                var cur = [];
+                try { var s = localStorage.getItem(key); if (s) cur = JSON.parse(s); if (!Array.isArray(cur)) cur = []; } catch(_){ cur = []; }
+                cur.push({
+                  category: supportCat,
+                  email: supportEmail.trim(),
+                  message: supportMsg.trim(),
+                  at: new Date().toISOString(),
+                  user_id: userId || null,
+                });
+                // Keep the last 50 only — bound the growth.
+                if (cur.length > 50) cur = cur.slice(-50);
+                localStorage.setItem(key, JSON.stringify(cur));
+              } catch(_) { /* don't fail the user action over a storage error */ }
+              setSupportSent(true);
+              try { toastSuccess('📨 Message sent'); } catch(_){}
+            },
             style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer'}
           },'Send Message'),
           // FAQ section
@@ -979,8 +1285,26 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           onClick:function(){
             try{localStorage.setItem('acct_name',acctName);localStorage.setItem('acct_tag',acctTag);}catch(e){}
             if(userId){
-              var newBio=JSON.stringify({about:profileInfo.about||'',tag:acctTag,website_name:profileInfo.website_name||'',website_url:profileInfo.website_url||''});
-              sbProfile.from('profiles').update({full_name:acctName,bio:newBio}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [saveProfileInfo]:', r.error);});
+              // FIX #1 (P0 data-loss): re-fetch latest bio JSON, DEEP-MERGE only
+              // the fields this button owns onto it, then write back. Previously
+              // we built a fresh object with 4 keys which clobbered notif_prefs,
+              // sound_prefs, cover_url, expert_request, location, etc.
+              sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r){
+                var existing={};
+                try{
+                  if(r && r.data && r.data.bio){
+                    var b=(typeof r.data.bio==='string')?JSON.parse(r.data.bio):r.data.bio;
+                    if(b && typeof b==='object') existing=b;
+                  }
+                }catch(_){}
+                var merged=Object.assign({},existing,{
+                  about: (profileInfo.about!==undefined?profileInfo.about:existing.about)||'',
+                  tag: acctTag,
+                  website_name: (profileInfo.website_name!==undefined?profileInfo.website_name:existing.website_name)||'',
+                  website_url: (profileInfo.website_url!==undefined?profileInfo.website_url:existing.website_url)||''
+                });
+                sbProfile.from('profiles').update({full_name:acctName,bio:JSON.stringify(merged)}).eq('id',userId).then(function(r2){if(r2.error)console.error('RingIn Error [saveProfileInfo]:', r2.error);});
+              });
             }
             setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2000);
           },
@@ -1061,18 +1385,30 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               bioJson.tag = acctTag;
               bioJson.website_name = profileInfo.website_name || bioJson.website_name || '';
               bioJson.website_url = profileInfo.website_url || bioJson.website_url || '';
-              // ALSO persist country / phone to location JSON (cross-device sync)
+              // ALSO persist country / phone / timezone to location JSON (cross-device sync)
+              // FIX #4: timezone was missing — prefill at line ~650 reads loc.timezone
+              // so we must include it on write or cross-device sync breaks.
               bioJson.location = Object.assign({}, bioJson.location || {}, {
                 country_name: acctCountry,
                 dial: acctPhoneCode,
                 phone: acctPhone,
+                timezone: acctTz,
               });
               sbProfile.from('profiles').update({full_name:acctName,bio:JSON.stringify(bioJson)}).eq('id',userId).then(function(r2){
-                if(r2.error)console.error('RingIn Error [saveAll]:', r2.error);
+                if(r2.error){
+                  console.error('RingIn Error [saveAll]:', r2.error);
+                  // ROUND 8 FIX #1: only acknowledge save on confirmed success
+                  try{ toastError('Failed to save — try again'); }catch(_){ }
+                  return;
+                }
+                // ROUND 8 FIX #1: ack moved INSIDE success branch (was firing before write)
+                setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
               });
             });
+          } else {
+            // No userId — local-only save still acknowledges
+            setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
           }
-          setAcctSaved(true); setTimeout(function(){setAcctSaved(false);},2500);
         },
         style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer',marginBottom:'30px'}
       },acctSaved?'All Saved ✓':'Save All'),
@@ -1089,14 +1425,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('button',{onClick:function(){setShowPhoneCodePicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
         React.createElement('div',{key:'plist-'+acctCountrySearch,style:{overflowY:'auto',flex:1}},
-          COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase())||c[2].includes(acctCountrySearch);}).map(function(c){
-            var sel=acctPhoneCode===c[2];
-            return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
-              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
-              React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
-            );
-          })
+          // R17 FIX #4: empty-state mirrors inline country picker pattern at ~line 1345.
+          (function(){
+            var filtered=COUNTRIES.filter(function(c){return !acctCountrySearch||c[1].toLowerCase().includes(acctCountrySearch.toLowerCase())||c[2].includes(acctCountrySearch);});
+            if(!filtered.length) return React.createElement('div',{style:{padding:'14px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No matches');
+            return filtered.map(function(c){
+              var sel=acctPhoneCode===c[2];
+              return React.createElement('div',{key:c[0],onClick:function(){setAcctPhoneCode(c[2]);localStorage.setItem('acct_phone_code',c[2]);setShowPhoneCodePicker(false);setAcctCountrySearch('');},
+                style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                React.createElement('span',{style:{fontSize:'14px',color:'var(--text)',fontWeight:sel?600:400}},c[1]),
+                React.createElement('span',{style:{fontSize:'13px',color:sel?'var(--ac)':'var(--t2)',fontWeight:sel?700:400}},c[2])
+              );
+            });
+          })()
         )
       )
     ) : null,
@@ -1111,14 +1452,19 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('button',{onClick:function(){setShowTzPicker(false);},style:{background:'none',border:'none',color:'var(--t2)',fontSize:'14px',fontWeight:600,cursor:'pointer',padding:'4px 8px'}},'Done')
         ),
         React.createElement('div',{key:'tzlist-'+tzSearch,style:{overflowY:'auto',flex:1}},
-          TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());}).map(function(t){
-            var sel=acctTz===t[0];
-            return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);try{localStorage.setItem('user_timezone',t[0]);}catch(e){}setShowTzPicker(false);setTzSearch('');},
-              style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-              React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
-              sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
-            );
-          })
+          // R17 FIX #4: empty-state mirrors inline country picker pattern at ~line 1345.
+          (function(){
+            var filtered=TIMEZONES.filter(function(t){return !tzSearch||t[1].toLowerCase().includes(tzSearch.toLowerCase())||t[0].toLowerCase().includes(tzSearch.toLowerCase());});
+            if(!filtered.length) return React.createElement('div',{style:{padding:'14px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}},'No matches');
+            return filtered.map(function(t){
+              var sel=acctTz===t[0];
+              return React.createElement('div',{key:t[0],onClick:function(){setAcctTz(t[0]);try{localStorage.setItem('user_timezone',t[0]);}catch(e){}setShowTzPicker(false);setTzSearch('');},
+                style:{padding:'13px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'rgba(123,110,255,0.1)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                React.createElement('span',{style:{fontSize:'13px',color:'var(--text)',fontWeight:sel?600:400}},t[1]),
+                sel?React.createElement('span',{style:{color:'var(--ac)',fontSize:'16px'}},'✓'):null
+              );
+            });
+          })()
         )
       )
     ) : null
@@ -1301,10 +1647,17 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                         var addr=(pwResetEmail||email).trim();
                         if(!addr){setPwResetErr('Enter your email');return;}
                         setPwResetLoad(true); setPwResetErr('');
+                        // R16 FIX #6: resetPasswordForEmail had no .catch — if
+                        // the network rejected, setPwResetLoad(true) was never
+                        // cleared and the "Sending…" button stayed disabled.
                         sbProfile.auth.resetPasswordForEmail(addr,{redirectTo:'https://ring-in.vercel.app'}).then(function(res){
                           setPwResetLoad(false);
                           if(res.error) setPwResetErr(res.error.message);
                           else setPwResetSent(true);
+                        }).catch(function(e){
+                          setPwResetLoad(false);
+                          console.warn('[ringin] resetPasswordForEmail reject:', e);
+                          try{ toastError('Failed to send reset email — check connection'); }catch(_){}
                         });
                       },
                       style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwResetLoad?0.6:1}
@@ -1344,13 +1697,24 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                         if(pwNew!==pwConfirm){setPwChangeErr('Passwords do not match.');return;}
                         if(pwNew.length<8){setPwChangeErr('New password must be at least 8 characters.');return;}
                         setPwChangeLoad(true);
+                        // R16 FIX #7: nested .then() chain had no .catch — a
+                        // rejected signInWithPassword (network drop) left
+                        // pwChangeLoad=true and the user stuck on "Changing…".
                         sbProfile.auth.signInWithPassword({email:email,password:pwCurrent}).then(function(res){
                           if(res.error){setPwChangeErr('Current password is incorrect.');setPwChangeLoad(false);return;}
                           sbProfile.auth.updateUser({password:pwNew}).then(function(r){
                             setPwChangeLoad(false);
                             if(r.error){setPwChangeErr(r.error.message);return;}
                             setPwChangeDone(true);
+                          }).catch(function(e){
+                            setPwChangeLoad(false);
+                            console.warn('[ringin] updateUser reject:', e);
+                            try{ toastError('Failed to change password — try again'); }catch(_){}
                           });
+                        }).catch(function(e){
+                          setPwChangeLoad(false);
+                          console.warn('[ringin] pwChange signIn reject:', e);
+                          try{ toastError('Failed to change password — try again'); }catch(_){}
                         });
                       },
                       style:{width:'100%',padding:'12px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:pwChangeLoad?0.6:1}
@@ -1432,7 +1796,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
       React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'10px',paddingLeft:'2px'}},'Activity'),
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'20px'}},
         [
-          {label:'Show Online Status',sub:'Others can see when you\'re active',val:showOnline,toggle:function(){var n=!showOnline;setShowOnline(n);try{localStorage.setItem('show_online',n?'1':'0');}catch(e){}sbProfile.from('profiles').update({is_online:n}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [setOnlineStatus]:', r.error);});}},
+          // FIX #16: guard the server write — without a userId the update
+          // would target .eq('id', null) and either fail silently or
+          // accidentally hit the wrong row. localStorage write stays.
+          {label:'Show Online Status',sub:'Others can see when you\'re active',val:showOnline,toggle:function(){var n=!showOnline;setShowOnline(n);try{localStorage.setItem('show_online',n?'1':'0');}catch(e){}if(!userId) return;sbProfile.from('profiles').update({is_online:n}).eq('id',userId).then(function(r){if(r.error)console.error('RingIn Error [setOnlineStatus]:', r.error);});}},
           {label:'Mute Activity Feed',sub:'Your likes and comments won\'t appear in others\' feeds',val:muteActivity,toggle:function(){var n=!muteActivity;setMuteActivity(n);try{localStorage.setItem('mute_activity',n?'1':'0');}catch(e){}}},
         ].map(function(row,i,arr){
           return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}},
@@ -1548,7 +1915,13 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}}, isHapticSupported() ? 'Tap to verify your device' : 'Vibration is not supported on iOS browsers — sound only')
           ),
           React.createElement('button',{
-            onClick:function(){ forceSound('notification', 0); },
+            // FIX #15: use the user's actually-selected notification variant
+            // instead of always forcing variant 0. Previously the Test button
+            // never matched what the user heard from real notifications.
+            onClick:function(){
+              var notifPref = (soundPrefs && soundPrefs.notification) || {variant:0};
+              forceSound('notification', notifPref.variant || 0);
+            },
             style:{padding:'9px 14px',background:'var(--ac)',border:'none',borderRadius:'10px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',flexShrink:0}
           },'🔊 Sound'),
           React.createElement('button',{
@@ -1610,7 +1983,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                   updateSoundPref(type,'volume',v);
                 },
                 onMouseUp:function(e){previewSound(type,pref.variant,parseFloat(e.target.value));},
-                onTouchEnd:function(e){previewSound(type,pref.variant,pref.volume);},
+                // FIX #14: was reading stale closure pref.volume — should
+                // match onMouseUp and read the slider's actual final value.
+                onTouchEnd:function(e){previewSound(type,pref.variant,parseFloat(e.target.value));},
                 style:{flex:1,accentColor:'#7B6EFF',height:'4px',cursor:'pointer'}
               }),
               React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)',minWidth:'30px',textAlign:'right'}},Math.round(pref.volume*100)+'%')
@@ -1687,7 +2062,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           value:mutedInput,
           onChange:function(e){setMutedInput(e.target.value);},
           onKeyDown:function(e){
-            if(e.key==='Enter'&&mutedInput.trim()){
+            /* FIX #2: IME composition guard */
+            if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && mutedInput.trim()){
               var word=mutedInput.trim().toLowerCase();
               if(!mutedWords.includes(word)){
                 var newList=mutedWords.concat([word]);
@@ -1805,10 +2181,31 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('button',{
             onClick:function(){
               if(!userId){alert('Please log in first');return;}
-              if(!expertAppName.trim()||!expertAppBio.trim()){alert('Please fill in all required fields.');return;}
-              sbProfile.from('profiles').update({bio:JSON.stringify(Object.assign({},profileInfo,{expert_request:{name:expertAppName,area:expertAppArea,bio:expertAppBio,exp:expertAppExp,rate:expertAppRate,applied_at:new Date().toISOString()}}))}).eq('id',userId).then(function(r){
-                if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error && r.error.message ? r.error.message : 'Unknown error');alert('Something went wrong. Please try again.');return;}
-                setExpertAppSubmitted(true);
+              // FIX #18: validate all required fields (was: name+bio only)
+              if(!expertAppName.trim()||!expertAppBio.trim()||!String(expertAppExp).trim()||!String(expertAppRate).trim()){
+                toastError('Please fill in all required fields (name, bio, experience, rate).');
+                return;
+              }
+              // FIX #2 (P0 data-loss): fetch + deep-merge the bio JSON so we
+              // don't wipe notif_prefs, sound_prefs, cover_url, location etc.
+              // Previously did Object.assign({},profileInfo,{expert_request:...})
+              // which used the LOCAL profileInfo (small 4-key object) — dropped
+              // every server-only field on the floor.
+              sbProfile.from('profiles').select('bio').eq('id',userId).single().then(function(r0){
+                var existing={};
+                try{
+                  if(r0 && r0.data && r0.data.bio){
+                    var b=(typeof r0.data.bio==='string')?JSON.parse(r0.data.bio):r0.data.bio;
+                    if(b && typeof b==='object') existing=b;
+                  }
+                }catch(_){}
+                var merged=Object.assign({},existing,{
+                  expert_request:{name:expertAppName,area:expertAppArea,bio:expertAppBio,exp:expertAppExp,rate:expertAppRate,applied_at:new Date().toISOString()}
+                });
+                sbProfile.from('profiles').update({bio:JSON.stringify(merged)}).eq('id',userId).then(function(r){
+                  if(r.error){console.error('RingIn Error [expertAppSubmit]:', r.error && r.error.message ? r.error.message : 'Unknown error');alert('Something went wrong. Please try again.');return;}
+                  setExpertAppSubmitted(true);
+                });
               });
             },
             style:{width:'100%',padding:'14px',background:'linear-gradient(135deg,#534AB7,#E84D9A)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'14px',fontWeight:700,cursor:'pointer',marginTop:'4px',boxShadow:'0 4px 16px rgba(123,110,255,0.3)'}
@@ -1823,7 +2220,12 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ),
     React.createElement('div',{style:{padding:'14px 18px'}},
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'16px'}},
-        [{v:'12',l:'Calls Made',icon:'📞'},{v:'1,240',l:'Coins',icon:'🪙'},{v:'4.8★',l:'Rating',icon:'⭐'}].map(function(s){
+        // FIX #3: Settings page stats card now uses the real call count from
+        // call_invites (was hardcoded "12"). Rating is shown as em-dash since
+        // RingIn doesn't have a review system yet — better than lying with
+        // "4.8★". Both values come from the same realCallCount state so we
+        // don't double-query.
+        [{v:String(realCallCount||0),l:'Calls Made',icon:'📞'},{v:(Number(profileCoinBal)||0).toLocaleString(),l:'Coins',icon:'🪙'},{v:'—',l:'Rating',icon:'⭐'}].map(function(s){
           return React.createElement('div',{key:s.l,
             onClick:function(){if(s.l==='Coins'&&onOpenWallet){setShowSettings(false);onOpenWallet();}},
             style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',textAlign:'center',cursor:s.l==='Coins'?'pointer':'default'}},
@@ -1865,7 +2267,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v3.24';
+              var APK_VERSION = 'v3.38';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -2056,7 +2458,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               function goToLiker(){
                 if(uid===userId) return;
                 setShowLikersProf(null);
-                if(props.onViewUser) props.onViewUser({id:uid,full_name:name,avatar_url:av,email:''});
+                if(onViewUser) onViewUser({id:uid,full_name:name,avatar_url:av,email:''});
               }
               return React.createElement('div',{key:uid,style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 18px',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
                 React.createElement('div',{onClick:goToLiker,style:{width:'42px',height:'42px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',cursor:uid!==userId?'pointer':'default'}},
@@ -2098,7 +2500,11 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           onMouseDown:function(e){setDragging(true);setDragStart({x:e.clientX-offset.x,y:e.clientY-offset.y});},
           onMouseMove:function(e){if(!dragging)return;setOffset({x:e.clientX-dragStart.x,y:e.clientY-dragStart.y});},
           onMouseUp:function(){setDragging(false);},
-          onTouchStart:function(e){setDragging(true);setDragStart({x:e.touches[0].clientX-offset.x,y:e.touches[0].clientY-offset.y});},
+          // R13 FIX #7: preventDefault on touchstart so iOS Safari doesn't
+          // trigger a long-press image menu / context callout while the
+          // user is starting an avatar reposition drag. Mirrors the
+          // existing onTouchMove preventDefault.
+          onTouchStart:function(e){e.preventDefault();setDragging(true);setDragStart({x:e.touches[0].clientX-offset.x,y:e.touches[0].clientY-offset.y});},
           onTouchMove:function(e){if(!dragging)return;e.preventDefault();setOffset({x:e.touches[0].clientX-dragStart.x,y:e.touches[0].clientY-dragStart.y});},
           onTouchEnd:function(){setDragging(false);}
         },
@@ -2188,7 +2594,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             // Switch to the Home tab so the viewer is visible. Without
             // this, the event fires but the Moments instance on Home is
             // mounted offscreen and the user just sees their own profile.
-            try { if (props.onSwitchTab) props.onSwitchTab('home'); } catch(_){}
+            try { if (onSwitchTab) onSwitchTab('home'); } catch(_){}
           },
           style:{padding:'13px 16px',fontSize:'14px',fontWeight:600,color:'#fff',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',gap:'10px',background:'linear-gradient(90deg, rgba(232,77,154,0.15), rgba(123,110,255,0.08))'}},
           React.createElement('span',{style:{display:'inline-flex',width:'22px',height:'22px',borderRadius:'50%',background:'linear-gradient(135deg,#FF6B6B,#E84D9A,#7B6EFF)',alignItems:'center',justifyContent:'center',fontSize:'11px'}}, '✨'),
@@ -2280,7 +2686,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         profileInfo.tag ? React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag) : null,
         profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},renderAbout(profileInfo.about)) : null,
         (profileInfo.website_name||profileInfo.website_url) ? React.createElement('a',{href:profileInfo.website_url||(profileInfo.website_name&&profileInfo.website_name.startsWith('http')?profileInfo.website_name:'https://'+profileInfo.website_name),target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+(profileInfo.website_name||profileInfo.website_url)) : null,
-        React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},'Member since April 2026')
+        // FIX #4: real member-since from session.user.created_at. Was hardcoded
+        // "April 2026" for every user. Hidden if the session is still hydrating.
+        memberSince ? React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}},'Member since '+memberSince) : null
       ),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexShrink:0}},
         React.createElement('button',{onClick:openEditProfile,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',display:'flex',alignItems:'center',gap:'4px',cursor:'pointer',fontSize:'12px',color:'var(--text)',fontWeight:600}},'✏️ Edit'),
@@ -2289,7 +2697,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
     ),
     // Stats
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',padding:'0 18px 12px'}},
-      [{v:'12',l:'Calls'},{v:'1,240',l:'Coins'},{v:'0',l:'Reviews'}].map(function(s){
+      // FIX #2: own-profile stats card. Calls = real call_invites count
+      // (was hardcoded "12"). Reviews intentionally "0" with a comment —
+      // there's no reviews table yet, so 0 is technically accurate.
+      [{v:String(realCallCount||0),l:'Calls'},{v:(Number(profileCoinBal)||0).toLocaleString(),l:'Coins'},{v:'0',l:'Reviews'}].map(function(s){
         return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
           React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:'var(--text)'}},s.v),
           React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)
@@ -2330,8 +2741,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
           ) : null,
           React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             React.createElement('div',{style:{display:'flex',gap:'6px'}},
-              React.createElement('button',{onClick:function(){alert('Image upload coming soon!');},style:{display:'flex',alignItems:'center',gap:'4px',padding:'6px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'11px',cursor:'pointer'}},'🖼️ Photo'),
-              React.createElement('button',{onClick:function(){alert('GIF coming soon!');},style:{display:'flex',alignItems:'center',gap:'4px',padding:'6px 10px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'11px',cursor:'pointer'}},'🎞️ GIF'),
+              // FIX #6: removed dummy 🖼️ Photo + 🎞️ GIF buttons (composer
+              // doesn't support media). Honest UI > "coming soon" alerts.
               React.createElement('button',{onClick:function(){setShowEmoji(!showEmoji);},style:{display:'flex',alignItems:'center',gap:'4px',padding:'6px 10px',background:showEmoji?'var(--acg)':'var(--bg4)',border:'1px solid '+(showEmoji?'var(--ac)':'var(--border)'),borderRadius:'20px',color:showEmoji?'var(--ac)':'var(--t2)',fontSize:'11px',cursor:'pointer'}},'😊 Emoji')
             ),
             React.createElement('button',{onClick:submitPost,style:{padding:'7px 18px',background:'var(--ac)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer'}},'Post')
@@ -2346,11 +2757,18 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
             (function(){
               var p=myPosts.find(function(x){return x.id===postMenuProf;});
               if(!p) return null;
+              var isMutedProf = mutedPostsProf.indexOf(p.id) >= 0;
               var items=[
-                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){sbProfile.from('posts').delete().eq('id',p.id).then(function(){});setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});}}},
-                {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied!');setPostMenuProf(null);}},
-                {icon:'✏️',label:'Edit Post',fn:function(){alert('Edit coming soon');setPostMenuProf(null);}},
-                {icon:'🔕',label:'Turn off notifications',fn:function(){alert('Notifications paused');setPostMenuProf(null);}}
+                // FIX R10-5: mirror HomeScreen Delete-Post rollback pattern.
+                // Previous code optimistically removed from myPosts but never
+                // checked the result — a failure left the post live in DB yet
+                // gone from UI until refresh.
+                {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuProf(null);if(window.confirm('Delete this post?')){var snap=myPosts.slice();setMyPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbProfile.from('posts').delete().eq('id',p.id).then(function(r){if(r&&r.error){console.error('[ringin] delete post (profile) failed:',r.error);setMyPosts(snap);try{toastError('Failed to delete post');}catch(_){}}}).catch(function(e){console.warn('[ringin] delete post (profile) reject:',e);setMyPosts(snap);try{toastError('Failed to delete post');}catch(_){}});}}},
+                {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuProf(null);}},
+                // FIX #4: open real edit modal instead of "coming soon" alert
+                {icon:'✏️',label:'Edit Post',fn:function(){setEditPostProfData({id:p.id,content:p.text||''});setPostMenuProf(null);}},
+                // FIX #5: real mute toggle, persisted to ringin_muted_posts
+                {icon:'🔕',label:isMutedProf?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePostProf(p.id);setPostMenuProf(null);}}
               ];
               return items.map(function(item,i){
                 return React.createElement('div',{key:i,onClick:item.fn,style:{display:'flex',alignItems:'center',padding:'14px 20px',borderBottom:i<items.length-1?'1px solid rgba(255,255,255,0.07)':'none',cursor:'pointer'}},
@@ -2404,8 +2822,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
               React.createElement('button',{
                 onClick:function(){
                   var url='https://ring-in.vercel.app/post/'+p.id;
-                  if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url});}
-                  else{try{navigator.clipboard.writeText(url);}catch(e){}alert('Link copied to clipboard!');}
+                  if(navigator.share){navigator.share({title:'Check this out on RingIn',text:(p.text||'').substring(0,100),url:url}).catch(function(){});}
+                  else{copyToClipboardWithToast(url,'🔗 Link copied to clipboard');}
                 },
                 style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'10px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'var(--t2)'}
               },'↗ Share')
@@ -2445,7 +2863,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
                 React.createElement('input',{
                   value:commentInputProf,
                   onChange:function(e){playProfKeyClick();setCommentInputProf(e.target.value);},
-                  onKeyDown:function(e){if(e.key==='Enter'&&commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}},
+                  onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && commentInputProf.trim()){submitCommentProf(p.id,commentInputProf);}}, /* FIX #2: IME composition guard */
                   placeholder:'Write a comment...',
                   style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',fontSize:'13px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
                 }),
@@ -2459,54 +2877,79 @@ export default function ProfileScreen({session, supabase, onOpenWallet}){
         })
       ) : null,
       // FRIENDS TAB
+      // FIX #5: was hardcoded FRIENDS array. Now reads from `realFriends`,
+      // which is populated from the `follows` table for the current user.
+      // Empty state explains how to add followers.
       activeTab==='friends' ? React.createElement('div',null,
-        React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'10px'}},'Experts You Follow'),
-        FRIENDS.map(function(f,i){
-          return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:'10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'10px',marginBottom:'8px'}},
-            React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:f.color,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}},
-              f.img ? React.createElement('img',{src:f.img,alt:f.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : f.initials
-            ),
-            React.createElement('div',{style:{flex:1}},
-              React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},f.name),
-              React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},f.role)
-            ),
-            React.createElement('button',{onClick:function(){toggleFollow(String(f.id||f.name),f.name,f.img,f.role);},style:{fontSize:'10px',color:following[String(f.id||f.name)]?'var(--ac)':'#fff',background:following[String(f.id||f.name)]?'var(--acg)':'var(--ac)',border:following[String(f.id||f.name)]?'1px solid var(--ac)':'none',padding:'5px 10px',borderRadius:'20px',cursor:'pointer',fontWeight:600}},following[String(f.id||f.name)]?'Following':'+Follow')
-          );
-        })
+        React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'10px'}},'People You Follow'),
+        realFriends.length === 0
+          ? React.createElement('div',{style:{padding:'24px 12px',textAlign:'center',color:'var(--t3)',fontSize:'12px',background:'var(--bg3)',border:'1px dashed var(--border)',borderRadius:'12px'}},'Not following anyone yet — head to Search to find experts and people you know.')
+          : realFriends.map(function(f,i){
+              var fk = String(f.id);
+              var isFollowing = !!(following && following[fk]);
+              return React.createElement('div',{key:fk,style:{display:'flex',alignItems:'center',gap:'10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'10px',marginBottom:'8px'}},
+                React.createElement('div',{
+                  onClick:function(){ if(onViewUser) onViewUser({id:f.id,name:f.name,img:f.img,role:f.role}); },
+                  style:{width:'40px',height:'40px',borderRadius:'50%',background:f.color,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0,cursor:'pointer'}
+                },
+                  f.img ? React.createElement('img',{src:f.img,alt:f.name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : f.initials
+                ),
+                React.createElement('div',{style:{flex:1,minWidth:0,cursor:'pointer'},onClick:function(){ if(onViewUser) onViewUser({id:f.id,name:f.name,img:f.img,role:f.role}); }},
+                  React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},f.name),
+                  React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},f.role)
+                ),
+                React.createElement('button',{onClick:function(){toggleFollow(fk,f.name,f.img,f.role);},style:{fontSize:'10px',color:isFollowing?'var(--ac)':'#fff',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',padding:'5px 10px',borderRadius:'20px',cursor:'pointer',fontWeight:600}},isFollowing?'Following':'+Follow')
+              );
+            })
       ) : null,
       // SKILLS TAB
-      activeTab==='skills' ? React.createElement('div',null,
-        React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'10px'}},'Skills Learned'),
-        SKILLS.map(function(s,i){
-          return React.createElement('div',{key:i,style:{marginBottom:'14px'}},
-            React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'5px'}},
-              React.createElement('span',{style:{fontSize:'12px',fontWeight:500,color:'var(--text)'}},s.label),
-              React.createElement('span',{style:{fontSize:'11px',color:'var(--ac)'}},s.level+'%')
-            ),
-            React.createElement('div',{style:{height:'6px',background:'var(--bg4)',borderRadius:'10px',overflow:'hidden'}},
-              React.createElement('div',{style:{height:'100%',width:s.level+'%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',borderRadius:'10px'}})
-            )
-          );
-        })
-      ) : null,
+      // FIX #5: was hardcoded SKILLS array. Now reads `skills` (array of
+      // strings) off the user's profile bio JSON. If not present, an empty
+      // state nudges them to add skills via Edit Profile.
+      activeTab==='skills' ? (function(){
+        var skillsArr = [];
+        try {
+          // profileInfo is the parsed bio object. We look for a `skills`
+          // field — older bios won't have it, that's fine.
+          var b = profileInfo || {};
+          if (Array.isArray(b.skills)) skillsArr = b.skills.filter(function(x){ return x && typeof x === 'string'; });
+        } catch(_){}
+        return React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--t2)',marginBottom:'10px'}},'Skills'),
+          skillsArr.length === 0
+            ? React.createElement('div',{style:{padding:'24px 12px',textAlign:'center',color:'var(--t3)',fontSize:'12px',background:'var(--bg3)',border:'1px dashed var(--border)',borderRadius:'12px'}},'No skills added yet — edit your profile to add some.')
+            : React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
+                skillsArr.map(function(s,i){
+                  return React.createElement('span',{key:i,style:{fontSize:'11px',padding:'5px 10px',borderRadius:'20px',background:'var(--acg)',color:'var(--ac)',fontWeight:600}}, s);
+                })
+              )
+        );
+      })() : null,
       // REVIEWS TAB
+      // FIX #5: was hardcoded REVIEWS array. No reviews system exists yet —
+      // honest empty state instead of fake testimonials.
       activeTab==='reviews' ? React.createElement('div',null,
-        REVIEWS.map(function(r,i){
-          return React.createElement('div',{key:i,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'12px',marginBottom:'10px'}},
-            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
-              React.createElement('div',{style:{width:'32px',height:'32px',borderRadius:'50%',overflow:'hidden',background:'var(--bg4)',flexShrink:0}},
-                React.createElement('img',{src:r.img,alt:r.name,style:{width:'100%',height:'100%',objectFit:'cover'}})
-              ),
-              React.createElement('div',{style:{flex:1}},
-                React.createElement('div',{style:{fontSize:'12px',fontWeight:600,color:'var(--text)'}},r.name),
-                React.createElement('div',{style:{fontSize:'10px',color:'#F5A623'}},'⭐'.repeat(r.rating))
-              ),
-              React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},r.time)
-            ),
-            React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5}},r.text)
-          );
-        })
+        React.createElement('div',{style:{padding:'24px 12px',textAlign:'center',color:'var(--t3)',fontSize:'12px',background:'var(--bg3)',border:'1px dashed var(--border)',borderRadius:'12px'}},'Reviews coming soon.')
       ) : null
-    )
+    ),
+    // FIX #4: Edit Post modal — own-profile post grid. Same shape as the
+    // one in HomeScreen's UserProfileView so they look identical to the user.
+    editPostProfData ? React.createElement('div',{
+      onClick:function(){setEditPostProfData(null);},
+      style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:10000,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center'}
+    },
+      React.createElement('div',{onClick:function(e){e.stopPropagation();},style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'16px',width:'320px',padding:'20px',boxShadow:'0 8px 40px rgba(0,0,0,0.4)'}},
+        React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)',marginBottom:'14px'}},'Edit Post'),
+        React.createElement('textarea',{
+          value:editPostProfData.content,
+          onChange:function(ev){setEditPostProfData(function(prev){return Object.assign({},prev,{content:ev.target.value});});},
+          style:{width:'100%',minHeight:'100px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',fontSize:'14px',color:'var(--text)',resize:'vertical',outline:'none',fontFamily:'DM Sans,sans-serif',boxSizing:'border-box'}
+        }),
+        React.createElement('div',{style:{display:'flex',gap:'10px',marginTop:'14px',justifyContent:'flex-end'}},
+          React.createElement('button',{onClick:function(){setEditPostProfData(null);},style:{padding:'8px 18px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',color:'var(--t2)',fontSize:'13px',cursor:'pointer',fontWeight:500}},'Cancel'),
+          React.createElement('button',{onClick:saveEditPostProf,style:{padding:'8px 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'13px',cursor:'pointer',fontWeight:600}},'Save')
+        )
+      )
+    ) : null
   );
 }

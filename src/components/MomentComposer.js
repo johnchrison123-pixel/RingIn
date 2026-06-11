@@ -120,7 +120,15 @@ export default function MomentComposer(props){
     var url;
     try{ url = URL.createObjectURL(file); }catch(_){}
     if(url) setPreviewUrl(url);
-    return function(){ try{ if(url) URL.revokeObjectURL(url); }catch(_){} };
+    return function(){
+      // ROUND-9 FIX #9: defer the revoke past the next render commit so
+      // the new previewUrl (or null) has already painted by the time the
+      // old object URL is revoked. Without this, switching files briefly
+      // flashes a broken-image icon because we revoke the URL on the
+      // OLD <img> before React swaps in the new src.
+      var oldUrl = url;
+      setTimeout(function(){ try{ if(oldUrl) URL.revokeObjectURL(oldUrl); }catch(_){} }, 0);
+    };
   }, [file]);
 
   function handleShare(){

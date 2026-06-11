@@ -1,7 +1,7 @@
 /* eslint-disable */
 import React, {useState} from 'react';
 import {matchAnonymous} from '../utils/mlService';
-import {toastError, toastInfo} from '../utils/toast';
+import {toastError} from '../utils/toast';
 
 var SUGGESTED = ['tech','startups','fitness','music','travel','finance','mental health','career','parenting','design','food','movies','gaming','meditation','philosophy'];
 
@@ -35,15 +35,21 @@ export default function AnonymousConnect(props) {
     setInterests(interests.filter(function(x){ return x !== i; }));
   }
 
-  function find() {
+  function find(excludeOverride) {
     if (!userId) { toastError('Please log in'); return; }
     setSearching(true); setErr(null); setMatch(null);
+    // ROUND-9 FIX #11a: accept an explicit excludeOverride so skip() can
+    // pass the new list directly instead of relying on the closed-over
+    // `exclude` state (which would be stale on the same tick that we
+    // just called setExclude). Defaults to current state.
+    var useExclude = Array.isArray(excludeOverride) ? excludeOverride : exclude;
 
+    // FIX #4: add .catch so a rejection (network/ML failure) doesn't leave the spinner stuck forever
     matchAnonymous({
       userId: userId,
       interests: interests,
       sameGeography: sameGeo,
-      excludeUserIds: exclude,
+      excludeUserIds: useExclude,
     }).then(function(r){
       setSearching(false);
       if (!r || !r.match) {
@@ -51,13 +57,19 @@ export default function AnonymousConnect(props) {
         return;
       }
       setMatch(r.match);
-    });
+    }).catch(function(e){ setSearching(false); console.warn('[ringin] matchAnonymous reject:', e); });
   }
 
   function skip() {
-    if (match) setExclude(exclude.concat([match.user_id]));
+    // ROUND-9 FIX #11a: build the new exclude list locally and pass it
+    // directly to find() so we don't race the setState that wouldn't
+    // have committed by the time find() reads `exclude` from closure.
+    if (!match) return;
+    var skippedId = match.user_id || match.id;
+    var newExclude = (exclude || []).concat(skippedId ? [skippedId] : []);
+    setExclude(newExclude);
     setMatch(null);
-    find();
+    find(newExclude);
   }
 
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
@@ -84,9 +96,10 @@ export default function AnonymousConnect(props) {
           return React.createElement('span', {key:i, style:{padding:'4px 10px',borderRadius:'12px',background:'var(--acg)',color:'var(--ac)',fontSize:'11px',fontWeight:600}}, r);
         })
       ),
+      // FIX #8: removed "Connect Voice" — voice infra isn't wired up yet;
+      // shipping a button that pops a "coming soon" toast is dead UI.
       React.createElement('div', {style:{display:'flex',gap:'10px',marginTop:'20px',justifyContent:'center'}},
-        React.createElement('button', {onClick:skip, style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, 'Skip'),
-        React.createElement('button', {onClick:function(){toastInfo('Voice call coming soon!');}, style:{padding:'10px 20px',borderRadius:'10px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, '📞 Connect Voice')
+        React.createElement('button', {onClick:skip, style:{padding:'10px 18px',borderRadius:'10px',background:'var(--bg4)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}, 'Skip')
       )
     ),
 
@@ -107,7 +120,7 @@ export default function AnonymousConnect(props) {
         React.createElement('input', {
           value:input,
           onChange:function(e){setInput(e.target.value);},
-          onKeyDown:function(e){if(e.key==='Enter' && input.trim()){addInterest(input);}},
+          onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()){addInterest(input);}}, /* FIX #2: IME composition guard */
           placeholder:'Type and press Enter',
           style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box'},
         }),

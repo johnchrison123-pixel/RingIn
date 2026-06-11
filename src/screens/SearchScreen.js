@@ -1,10 +1,15 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef} from 'react';
+import { motion } from 'motion/react';
 import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {useFollow} from './useFollow';
 import {playSound} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
+import {useCoinBalance} from '../utils/coinBalance';
+import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
+import AlertToast from '../components/AlertToast';
+import {hapticTap, hapticMedium} from '../utils/haptics';
 
 const EXPERTS = [
   {id:1,initials:'PN',name:'Dr. Priya Nair',role:'General Physician',rate:120,rating:4.9,calls:842,followers:'2.1k',online:true,color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',cover:'linear-gradient(135deg,#0a2e1f,#1D9E75)',loc:'Dubai, UAE',bio:'MBBS, MD. 15 years experience in general medicine. Specializes in preventive care and chronic disease management.',tags:['General Medicine','Preventive Care','Chronic Disease'],img:'https://i.pravatar.cc/150?img=47'},
@@ -16,7 +21,13 @@ const EXPERTS = [
 ];
 
 function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followLoaded, onGoToMessages}){
-  var isFollowing = following ? !!following[String(expert.id)] : false;
+  // FIX #6: namespace mock-expert follow IDs with 'mock_' to prevent
+  // collisions with real UUID follows from the `follows` table. Numeric
+  // mock IDs (1..6) would otherwise overlap with future real UUIDs that
+  // happen to start with the same digit, or with localStorage entries
+  // that other code writes using real IDs.
+  var mockKey = 'mock_' + expert.id;
+  var isFollowing = following ? !!following[mockKey] : false;
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
     React.createElement('button',{onClick:onBack,title:'Back',style:{position:'absolute',top:'12px',left:'12px',zIndex:10,background:'rgba(0,0,0,.55)',border:'none',borderRadius:'50%',width:'34px',height:'34px',color:'#fff',padding:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},
       React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
@@ -33,12 +44,16 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
     React.createElement('div',{style:{padding:'0 16px'}},
       React.createElement('div',{style:{display:'flex',alignItems:'flex-end',justifyContent:'flex-end',marginBottom:'10px'}},
         React.createElement('div',{style:{display:'flex',gap:'6px',paddingBottom:'4px'}},
-          React.createElement('button',{
-            onClick:function(){toggleFollow(String(expert.id),expert.name,expert.img,expert.role);},
+          React.createElement(motion.button,{
+            // FIX #6: use the mockKey so the follow state lives under a
+            // dedicated namespace (matches the read above).
+            onClick:function(){hapticMedium();toggleFollow(mockKey,expert.name,expert.img,expert.role);},
+            whileTap:{scale:0.95},
+            transition:{type:'spring',stiffness:300,damping:18},
             style:{padding:'6px 16px',background:isFollowing?'var(--acg)':'var(--ac)',border:isFollowing?'1px solid var(--ac)':'none',borderRadius:'8px',color:isFollowing?'var(--ac)':'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer',minWidth:'80px'}
           }, isFollowing ? 'Following' : '+ Follow'),
-          React.createElement('button',{onClick:function(){if(onGoToMessages)onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
-          React.createElement('button',{onClick:function(){if(onCall)onCall(expert);},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
+          React.createElement(motion.button,{onClick:function(){if(onGoToMessages)onGoToMessages({id:'expert_'+expert.id,name:expert.name,avatar:expert.img,role:expert.role,online:expert.online});},whileTap:{scale:0.95},transition:{type:'spring',stiffness:300,damping:18},style:{padding:'6px 12px',background:'var(--bg4)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Message'),
+          React.createElement(motion.button,{onClick:function(){if(onCall)onCall(expert);},whileTap:{scale:0.95},transition:{type:'spring',stiffness:300,damping:18},style:{padding:'6px 12px',background:'var(--ac)',border:'none',borderRadius:'8px',color:'#fff',fontSize:'11px',fontWeight:600,cursor:'pointer'}},'Call')
         )
       ),
       React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},expert.name),
@@ -71,7 +86,12 @@ export default function SearchScreen(props){
   // ALL useState FIRST
   var selS = useState(props.initExpert || null); var selected = selS[0]; var setSelected = selS[1];
   var callS = useState(null); var activeCall = callS[0]; var setActiveCall = callS[1];
-  var coinsS = useState(50); var coins = coinsS[0]; var setCoins = coinsS[1];
+  // Task A: AlertToast state (replaces any window.alert calls)
+  var toastS = useState(null); var toast = toastS[0]; var setToast = toastS[1];
+  // FIX #10: removed `coinsS = useState(50)` stub. Hardcoded 50-coin
+  // state was bypassing the real wallet balance — useCoinBalance hook
+  // (coinBal, below) gives the real number, and the CallScreen render
+  // now uses it.
   var acS = useState('all'); var activecat = acS[0]; var setAc = acS[1];
   var searchQS = useState(''); var searchQ = searchQS[0]; var setSearchQ = searchQS[1];
   var typingTimerRef = useRef(null);
@@ -82,6 +102,12 @@ export default function SearchScreen(props){
   var ftsPostsS = useState([]); var ftsPosts = ftsPostsS[0]; var setFtsPosts = ftsPostsS[1];
   var ftsLoadingS = useState(false); var ftsLoading = ftsLoadingS[0]; var setFtsLoading = ftsLoadingS[1];
   var ftsDebounceRef = useRef(null);
+  // R17 FIX #1b: monotonically-increasing sequence guard for the FTS query
+  // so a slower earlier resolve can't clobber a newer one's results.
+  var ftsSearchSeqRef = useRef(0);
+  // R17 FIX #6: live mirror of searchQ so an in-flight RPC's .then() can
+  // see the CURRENT input state (the effect closure's `searchQ` is stale).
+  var searchQLiveRef = useRef('');
 
   // ── T2.12: Trending hashtags from the materialized view (0014_trending.sql).
   // Shown when there's no active search query. Tap a tag → seeds search with #tag.
@@ -100,9 +126,24 @@ export default function SearchScreen(props){
   var following = followHook.following;
   var toggleFollow = followHook.toggleFollow;
   var followLoaded = followHook.loaded;
+  // Shared coin balance — synced with HomeScreen / Messages / Wallet.
+  var coinBal = useCoinBalance(currentUserId, sb);
   // useEffect LAST
   useEffect(function(){ if(props.initExpert) setSelected(props.initExpert); }, [props.initExpert]);
 
+  // R16 FIX #9: typingTimerRef debounces the search-typing sound (line ~192).
+  // If SearchScreen unmounts mid-debounce, clear the timer so the closure
+  // doesn't leak.
+  useEffect(function(){
+    return function(){
+      if (typingTimerRef.current) { try { clearTimeout(typingTimerRef.current); } catch(_){} typingTimerRef.current = null; }
+    };
+  }, []);
+
+  // R17 FIX #6: mirror searchQ into a ref every render so an in-flight
+  // RPC's resolve callback can compare against the LIVE input value, not
+  // the captured-at-effect-start one.
+  searchQLiveRef.current = searchQ;
   // T2.8 — debounced FTS query against the new search_posts / search_profiles
   // RPCs. Fires 250ms after the user stops typing, only when query >= 2 chars.
   useEffect(function(){
@@ -110,11 +151,20 @@ export default function SearchScreen(props){
     var q = (searchQ || '').trim();
     if (q.length < 2) { setFtsPeople([]); setFtsPosts([]); setFtsLoading(false); return; }
     setFtsLoading(true);
+    // R17 FIX #1b: capture sequence for this invocation so a slower
+    // earlier resolve can't overwrite newer results.
+    var mySeq = ++ftsSearchSeqRef.current;
     ftsDebounceRef.current = setTimeout(function(){
       Promise.all([
         sb.rpc('search_profiles', { q: q, lim: 8 }).then(function(r){ return (r && !r.error && r.data) ? r.data : []; }).catch(function(){ return []; }),
         sb.rpc('search_posts',    { q: q, lim: 8 }).then(function(r){ return (r && !r.error && r.data) ? r.data : []; }).catch(function(){ return []; }),
       ]).then(function(results){
+        // R17 FIX #6: bail if user cleared input or typed something
+        // different while the RPC was in flight.
+        var liveQ = (searchQLiveRef.current || '').trim();
+        if (liveQ.length < 2 || liveQ !== q) return;
+        // R17 FIX #1b: newer query in flight, don't overwrite its result.
+        if (mySeq !== ftsSearchSeqRef.current) return;
         setFtsPeople(results[0]);
         setFtsPosts(results[1]);
         setFtsLoading(false);
@@ -123,7 +173,10 @@ export default function SearchScreen(props){
     return function(){ if (ftsDebounceRef.current) clearTimeout(ftsDebounceRef.current); };
   }, [searchQ]);
   // CONDITIONAL RETURNS AFTER ALL HOOKS
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  // FIX #10: pass the real `coinBal` from the hook; onCoinsChange is a
+  // no-op because CallScreen now broadcasts via setSharedCoinBalance
+  // (which the hook auto-listens for).
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,session:session,coins:coinBal,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(selected) return React.createElement(ExpertProfile,{
     expert:selected,
     following:following,
@@ -149,13 +202,15 @@ export default function SearchScreen(props){
     onGoToMessages: props.onGoToMessages,
   });
 
-  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+  return React.createElement(motion.div,{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'},initial:{opacity:0,y:4},animate:{opacity:1,y:0},transition:{duration:0.18,ease:[0.4,0,0.2,1]}},
+    // Task A: AlertToast for login/action warnings (replaces window.alert)
+    toast ? React.createElement(AlertToast,{message:toast,onDone:function(){setToast(null);},tone:'warning'}) : null,
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
       React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Experts'),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
         React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
-          React.createElement('span',null,'1,240')
+          React.createElement('span',null,(Number(coinBal)||0).toLocaleString())
         ),
         React.createElement(TopBarAvatar, {
           session: props.session,
@@ -188,9 +243,11 @@ export default function SearchScreen(props){
       React.createElement('div',{style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'6px'}}, '🔥 Trending Tags'),
       React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
         trending.map(function(t){
-          return React.createElement('button',{
+          return React.createElement(motion.button,{
             key:t.tag,
-            onClick:function(){ setSearchQ('#' + t.tag); },
+            onClick:function(){ hapticTap(); setSearchQ('#' + t.tag); },
+            whileTap:{scale:0.95},
+            transition:{type:'spring',stiffness:300,damping:18},
             style:{display:'inline-flex',alignItems:'center',gap:'4px',padding:'4px 10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',color:'var(--text)',fontSize:'11px',cursor:'pointer',fontFamily:'inherit'}
           },
             React.createElement('span',{style:{color:'#7B6EFF',fontWeight:600}}, '#' + t.tag),
@@ -234,14 +291,39 @@ export default function SearchScreen(props){
             )
           ),
           React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}},
-            React.createElement('button',{
-              onClick:function(ev){ev.stopPropagation();setActiveCall(e);},
+            React.createElement(motion.button,{
+              // ROUND-9 FIX #1: list-view Call button was using legacy
+              // setActiveCall(e) path — bypassed call_invites pipeline so
+              // callee never got a ring. Same fix already applied to
+              // ExpertProfile.onCall (above); apply here too. For mock
+              // experts (numeric ids), App.js's startOutgoingCall UUID
+              // guard alerts gracefully. For real experts the global
+              // path creates a real call_invites row + fires FCM push.
+              onClick:function(ev){
+                ev.stopPropagation();
+                var target = Object.assign({}, e, {id: 'mock_' + e.id, rate: e.rate || 30});
+                if (typeof window !== 'undefined' && window.__ringInStartCall) {
+                  window.__ringInStartCall(target, {rate: e.rate || 30});
+                } else {
+                  setActiveCall(e);
+                }
+              },
+              whileTap:{scale:0.95},
+              transition:{type:'spring',stiffness:300,damping:18},
               style:{padding:'5px 12px',background:'var(--ac)',border:'none',borderRadius:'7px',color:'#fff',fontSize:'10px',fontWeight:600,cursor:'pointer'}
             },'Call'),
-            React.createElement('button',{
-              onClick:function(ev){ev.stopPropagation();toggleFollow(String(e.id),e.name,e.img,e.role);},
-              style:{padding:'5px 12px',background:following[String(e.id)]?'var(--acg)':'var(--bg4)',border:following[String(e.id)]?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:following[String(e.id)]?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
-            }, following[String(e.id)]?'Following':'Follow')
+            // FIX #6: namespace the mock expert follow IDs with 'mock_' to
+            // avoid colliding with real UUIDs from the `follows` table.
+            (function(){
+              var ek = 'mock_' + e.id;
+              var isF = !!following[ek];
+              return React.createElement(motion.button,{
+                onClick:function(ev){ev.stopPropagation();hapticMedium();toggleFollow(ek,e.name,e.img,e.role);},
+                whileTap:{scale:0.95},
+                transition:{type:'spring',stiffness:300,damping:18},
+                style:{padding:'5px 12px',background:isF?'var(--acg)':'var(--bg4)',border:isF?'1px solid var(--ac)':'1px solid var(--border)',borderRadius:'7px',color:isF?'var(--ac)':'var(--text)',fontSize:'10px',fontWeight:600,cursor:'pointer'}
+              }, isF?'Following':'Follow');
+            })()
           )
         );
       })
@@ -267,13 +349,13 @@ export default function SearchScreen(props){
                 if (props.onGoToMessages) {
                   // Open a 1:1 chat with this person via existing messages flow.
                   var convId = [currentUserId, p.id].sort().join('_');
-                  props.onGoToMessages({id:convId,convId:convId,otherId:p.id,receiverId:p.id,user_id:p.id,name:name,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:name.substring(0,2).toUpperCase()});
+                  props.onGoToMessages({id:convId,convId:convId,otherId:p.id,receiverId:p.id,user_id:p.id,name:name,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:safeInitials(name)}); /* FIX #10 */
                 }
               },
               style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'6px',cursor:'pointer'}
             },
               React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'14px',flexShrink:0}},
-                p.avatar_url ? React.createElement('img',{src:p.avatar_url,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : name.substring(0,2).toUpperCase()
+                p.avatar_url ? React.createElement('img',{src:p.avatar_url,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : safeInitials(name) /* FIX #10 */
               ),
               React.createElement('div',{style:{flex:1,minWidth:0}},
                 React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, name),

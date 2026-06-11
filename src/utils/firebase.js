@@ -58,6 +58,23 @@ export async function requestNotificationPermission(userId, sb){
   }
 }
 
+// R16 FIX #3: clear the fcm_token row when the user signs out, so the
+// device doesn't keep receiving call pushes intended for the previous
+// account. Called from App.js's SIGNED_OUT branch BEFORE the cache wipe.
+export function clearFcmToken(sb, userId){
+  if(!sb || !userId) return;
+  try{
+    sb.from('profiles').update({fcm_token: null}).eq('id', userId).then(function(r){
+      if(r && r.error) console.warn('[ringin] clearFcmToken error:', r.error.message);
+    }).catch(function(e){ console.warn('[ringin] clearFcmToken reject:', e && e.message); });
+  }catch(e){ console.warn('[ringin] clearFcmToken throw:', e && e.message); }
+}
+
+// R16 FIX #4: each onAuthStateChange call (including hourly TOKEN_REFRESHED)
+// was registering a fresh onMessage listener — leaked listeners stacked up
+// per hour and fired callback N times per push. Track the unsubscribe in
+// module scope; cleanly unsub any prior listener before registering.
+var _onMessageUnsub = null;
 export function onMessageListener(callback){
   var messaging = initFirebase();
   if(!messaging){
@@ -67,10 +84,18 @@ export function onMessageListener(callback){
   try{
     var {onMessage} = require('firebase/messaging');
     if(callback){
-      // Persistent listener — returns unsubscribe function
-      return onMessage(messaging, function(payload){
-        callback(payload);
-      });
+      // Unsubscribe prior listener (if any) to prevent stacking on reauth.
+      if (_onMessageUnsub) { try { _onMessageUnsub(); } catch(_){} _onMessageUnsub = null; }
+      try {
+        _onMessageUnsub = onMessage(messaging, function(payload){
+          callback(payload);
+        });
+      } catch (e) {
+        _onMessageUnsub = null;
+      }
+      return function unsub(){
+        if (_onMessageUnsub) { try { _onMessageUnsub(); } catch(_){} _onMessageUnsub = null; }
+      };
     }
     // Legacy one-shot promise (kept for backwards compat)
     return new Promise(function(resolve){

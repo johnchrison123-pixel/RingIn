@@ -1,13 +1,21 @@
 /* eslint-disable */
 import React,{useState,useEffect,useRef} from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import CallScreen from './CallScreen';
 import {sb} from '../utils/supabase';
 import {playSound,getSCtx,getSoundPrefs,hapticPulse} from '../utils/soundEngine';
+import {hapticMedium} from '../utils/haptics';
 import TopBarAvatar from '../components/TopBarAvatar';
 import AvatarRing from '../components/AvatarRing';
+import ImgWithFallback from '../components/ImgWithFallback';
 import {useMomentUserIds} from '../utils/momentUsers';
 import compressImage from '../utils/compressImage';
 import {isCallLog, parseCallLog, describeCallLog, previewCallLog} from '../utils/callLog';
+import {useCoinBalance} from '../utils/coinBalance';
+// R18 FIX D: shared TZ-aware date/time formatters.
+import {formatDateTime, formatDate, formatTime} from '../utils/dateFmt';
+// FIX #7: server-side block list unification — see src/utils/blocks.js.
+import {blockUser as serverBlockUser, isBlockedSync, loadBlocks} from '../utils/blocks';
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -17,11 +25,17 @@ var EXPERT_CONVOS_BASE=[
 
 function timeAgo(dateStr){
   if(!dateStr) return '';
+  // Final polish: no manual 'Z' appending. The old code forced UTC
+  // interpretation by appending 'Z', which shifted display by the local TZ
+  // offset whenever the source string was already local (e.g. a Date
+  // .toString() value with no TZ marker). The Date constructor handles
+  // ISO strings with or without 'Z' correctly on its own.
   var now = new Date();
-  var str = dateStr.toString();
-  if(!str.includes('Z')&&!str.includes('+')) str = str+'Z';
-  var date = new Date(str);
-  var diff = Math.floor((now-date)/1000);
+  var date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  var diff = Math.floor((now - date)/1000);
+  // R11 FIX #2: clock skew (server ahead of client) → show 'Just now' instead of '-Nm ago'.
+  if (diff < 0) return 'Just now';
   if(diff<60) return 'Just now';
   if(diff<3600) return Math.floor(diff/60)+'m ago';
   if(diff<86400) return Math.floor(diff/3600)+'h ago';
@@ -111,6 +125,13 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var msgMenuS=useState(null); var msgMenu=msgMenuS[0]; var setMsgMenu=msgMenuS[1];
   var toastS=useState(''); var toast=toastS[0]; var setToast=toastS[1];
   var chatMenuOpenS=useState(false); var chatMenuOpen=chatMenuOpenS[0]; var setChatMenuOpen=chatMenuOpenS[1];
+  // R18 FIX A: in-app confirm modal for "Clear All Chat" — replaces native
+  // window.confirm (banned per CLAUDE.md). Lives in ChatBox scope because
+  // clearAllChat (and its supabase delete + msgs setter) all live here too.
+  var clearChatConfirmS=useState(false); var clearChatConfirm=clearChatConfirmS[0]; var setClearChatConfirm=clearChatConfirmS[1];
+  // Bug 2 fix: in-app confirm modal for "Block user" — replaces window.confirm.
+  // Same house style as the clearChatConfirm modal above.
+  var blockConfirmS=useState(false); var blockConfirm=blockConfirmS[0]; var setBlockConfirm=blockConfirmS[1];
 
   // Per-conversation read-receipts toggle (reciprocal — like WhatsApp).
   // Stored in localStorage `ringin_rr_off` as a Set of conversation IDs.
@@ -144,6 +165,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   // restricted_users table (migration 0003_restrict.sql).
   var restrictedSetS = useState(new Set());
   var restrictedSet = restrictedSetS[0]; var setRestrictedSet = restrictedSetS[1];
+  // R15 FIX #4: mirror restrictedSet into a ref so the chat realtime INSERT
+  // handler (deps [convId]) reads the freshest set instead of a stale snapshot.
+  var restrictedSetRef = useRef(new Set());
+  useEffect(function(){ restrictedSetRef.current = restrictedSet; }, [restrictedSet]);
   useEffect(function(){
     if (!myId) return;
     try {
@@ -164,6 +189,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         if (r && r.error) {
           var rb = new Set(restrictedSet); rb.add(otherIdForRestrict); setRestrictedSet(rb);
           alert('Failed to unrestrict: ' + r.error.message);
+        } else {
+          // FIX #5: notify MessagesScreen so its inboxRestrictedSet refetches.
+          try { window.dispatchEvent(new CustomEvent('ringin:restricted-changed')); } catch(_) {}
         }
       });
     } else {
@@ -173,6 +201,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           var rb2 = new Set(restrictedSet); rb2.delete(otherIdForRestrict); setRestrictedSet(rb2);
           alert('Failed to restrict: ' + r.error.message);
         } else {
+          // FIX #5: notify MessagesScreen so its inboxRestrictedSet refetches.
+          try { window.dispatchEvent(new CustomEvent('ringin:restricted-changed')); } catch(_) {}
           setToast('Restricted. They won\'t know.');
           setTimeout(function(){ setToast(''); }, 2200);
         }
@@ -224,11 +254,23 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     });
     setReactionPicker(null);
     // Persist — try/catch in case the migration isn't applied.
+    // FIX R10-8: snapshot for rollback symmetric to the INSERT branch below.
+    var rxnSnap = reactionsByMsg;
     try {
       if (alreadyReacted) {
         sb.from('message_reactions').delete()
           .eq('message_id', msgId).eq('user_id', myId).eq('emoji', emoji)
-          .then(function(){});
+          .then(function(r){
+            if (r && r.error) {
+              // Rollback optimistic remove on failure — restore previous state.
+              setReactionsByMsg(rxnSnap);
+              try { console.warn('[ringin] reaction delete failed:', r.error.message); } catch(_){}
+            }
+          })
+          .catch(function(e){
+            setReactionsByMsg(rxnSnap);
+            try { console.warn('[ringin] reaction delete reject:', e); } catch(_){}
+          });
       } else {
         sb.from('message_reactions').insert([{ message_id: msgId, user_id: myId, emoji: emoji }])
           .then(function(r){
@@ -244,13 +286,26 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               });
               try { console.warn('[ringin] reaction insert failed:', r.error.message); } catch(_){}
             }
+          })
+          .catch(function(e){
+            // R11 FIX #8: Round 10 added .catch to the DELETE branch — the
+            // INSERT counterpart was missed. Symmetric rollback so a rejected
+            // promise (offline / network drop) doesn't leave a stuck emoji.
+            setReactionsByMsg(rxnSnap);
+            try { console.warn('[ringin] reaction insert reject:', e); } catch(_){}
           });
       }
     } catch (_) {}
   }
 
+  // Clear reactions immediately on chat switch — otherwise the new chat
+  // briefly shows the previous chat's reactions until the fetch lands.
+  useEffect(function(){
+    setReactionsByMsg({});
+  }, [convId]);
+
   // Load reactions for all currently-loaded messages whenever the message
-  // list changes. Cheap query, single round-trip.
+  // list changes or the active chat changes. Cheap query, single round-trip.
   useEffect(function(){
     if (!msgs || msgs.length === 0) return;
     var ids = msgs.map(function(m){ return m.id; }).filter(function(x){ return x != null && (typeof x === 'number' || (typeof x === 'string' && x.indexOf('tmp_') !== 0)); });
@@ -268,7 +323,7 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       });
     } catch (_) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msgs.length]);
+  }, [msgs.length, convId]);
   var fileInputRef=useRef(null);
   var chatTypingTimerRef=useRef(null);
 
@@ -327,9 +382,38 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     };
   }, []);
 
+  // R18 FIX B: ESC closes the 3-dot chat-header dropdown. Outside-click is
+  // already wired (full-viewport overlay div at zIndex:300 onClick→close);
+  // this only adds the keyboard escape path so power-users + a11y testers
+  // get the expected behaviour. Listener is mounted only while the menu is
+  // open to avoid an always-on global keydown handler.
+  // Also closes the R18 FIX A clear-chat confirm modal and block confirm
+  // modal — same UX contract.
+  useEffect(function(){
+    if (!chatMenuOpen && !clearChatConfirm && !blockConfirm) return;
+    function onKey(e){
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        if (blockConfirm) setBlockConfirm(false);
+        else if (clearChatConfirm) setClearChatConfirm(false);
+        else if (chatMenuOpen) setChatMenuOpen(false);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return function(){ window.removeEventListener('keydown', onKey); };
+  }, [chatMenuOpen, clearChatConfirm, blockConfirm]);
+
   var bottomRef=useRef(null);
   var headerRef=useRef(null);
   var chatBoxRef=useRef(null);
+  // FIX #1: msgsRef mirrors msgs so the reactions realtime handler can
+  // read the current message id list without resubscribing on every msg change.
+  var msgsRef=useRef(msgs);
+  useEffect(function(){ msgsRef.current = msgs; },[msgs]);
+  // FIX #12: track whether the user has scrolled up to read history. We use
+  // this to suppress the auto-scroll-to-bottom behaviour when new messages
+  // arrive (no more yanking the user down). Set true when not at bottom.
+  var userScrolledUpS=useState(false); var userScrolledUp=userScrolledUpS[0]; var setUserScrolledUp=userScrolledUpS[1];
+  var msgsScrollRef=useRef(null);
 
   // Keep the ChatBox header pinned to the visual viewport top, even when the mobile
   // keyboard opens. position:fixed alone isn't enough on iOS Safari — its visual
@@ -363,24 +447,60 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   var _initialOtherName = (convo && convo.name) || 'User';
   var otherAvatarS = useState(_initialOtherAvatar); var otherAvatar = otherAvatarS[0]; var setOtherAvatar = otherAvatarS[1];
   var otherNameS = useState(_initialOtherName); var otherName = otherNameS[0]; var setOtherName = otherNameS[1];
+  // "Last seen" + live online state — surfaced in the chat header subtitle
+  // when convo.isOnline is false (matches WhatsApp / Instagram pattern).
+  var otherLastSeenS = useState(null); var otherLastSeen = otherLastSeenS[0]; var setOtherLastSeen = otherLastSeenS[1];
+  var otherOnlineS = useState(!!(convo && convo.isOnline)); var otherOnline = otherOnlineS[0]; var setOtherOnline = otherOnlineS[1];
 
   // Fetch fresh profile for the other user — covers cases where convo was passed in
   // stale (e.g., entering chat from a notification or a UserProfileView message button).
   useEffect(function(){
     var otherId = convo && (convo.receiverId || convo.other_user_id || convo.id);
     if (!otherId || (typeof otherId === 'string' && otherId.indexOf('_') >= 0)) return; // not a UUID
-    sb.from('profiles').select('id,full_name,email,avatar_url,is_online').eq('id', otherId).single().then(function(r){
-      if (!r || !r.data) return;
-      if (r.data.avatar_url) {
-        setOtherAvatar(r.data.avatar_url);
-        try { localStorage.setItem('avatar_'+otherId, r.data.avatar_url); } catch(e){}
+    // FIX #11: clear stale last_seen / online state from the PREVIOUS chat
+    // before we fetch the new one. Otherwise the header subtitle briefly
+    // shows "last seen 2h ago" from the wrong person.
+    setOtherLastSeen(null);
+    setOtherOnline(false);
+    // Try with last_seen first; fall back if the column doesn't exist yet.
+    sb.from('profiles').select('id,full_name,email,avatar_url,is_online,last_seen').eq('id', otherId).single().then(function(r){
+      var row = r && r.data ? r.data : null;
+      if (!row && r && r.error && /last_seen/i.test(r.error.message||'')) {
+        // Column missing — retry without it.
+        sb.from('profiles').select('id,full_name,email,avatar_url,is_online').eq('id', otherId).single().then(function(r2){
+          if (r2 && r2.data) applyProfile(r2.data, false);
+        });
+        return;
       }
-      var fresh = (r.data.full_name && r.data.full_name.trim()) ||
-                  (r.data.email && r.data.email.indexOf('@')>=0 ? r.data.email.split('@')[0] : r.data.email) ||
-                  null;
-      if (fresh) setOtherName(fresh);
+      if (row) applyProfile(row, true);
+      function applyProfile(d, withLastSeen){
+        if (d.avatar_url) {
+          setOtherAvatar(d.avatar_url);
+          try { localStorage.setItem('avatar_'+otherId, d.avatar_url); } catch(e){}
+        }
+        var fresh = (d.full_name && d.full_name.trim()) ||
+                    (d.email && d.email.indexOf('@')>=0 ? d.email.split('@')[0] : d.email) ||
+                    null;
+        if (fresh) setOtherName(fresh);
+        setOtherOnline(!!d.is_online);
+        if (withLastSeen && d.last_seen) setOtherLastSeen(d.last_seen);
+      }
     });
   }, [convo && convo.receiverId, convo && convo.id]);
+
+  // Format "last seen" timestamp for the header subtitle.
+  function formatLastSeen(iso){
+    if (!iso) return null;
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return null;
+    var diff = Date.now() - t;
+    if (diff < 60*1000) return 'last seen just now';
+    if (diff < 60*60*1000) return 'last seen '+Math.floor(diff/60000)+'m ago';
+    if (diff < 24*60*60*1000) return 'last seen '+Math.floor(diff/3600000)+'h ago';
+    if (diff < 7*24*60*60*1000) return 'last seen '+Math.floor(diff/86400000)+'d ago';
+    // R18 FIX D: TZ-aware date via shared formatter (honors user_timezone).
+    return 'last seen ' + formatDate(iso);
+  }
 
   useEffect(function(){
     // Load messages
@@ -390,8 +510,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       // Skip the read-marking write if the user has disabled read receipts
       // for this conversation — keeps the deal reciprocal (we don't tell
       // them we read them, so we don't see their ✓✓ blue tick either).
+      // FIX #2: filter by .eq('read', false) so we don't rewrite every old
+      // message on every chat open. Reduces DB write amplification.
       if (!readReceiptsOffHere) {
-        sb.from('messages').update({read:true}).eq('conversation_id',convId).neq('sender_id',myId).then(function(){});
+        sb.from('messages').update({read:true}).eq('conversation_id',convId).neq('sender_id',myId).eq('read',false).then(function(){});
       }
     });
     // Realtime subscription — chat messages + typing broadcasts on the
@@ -402,19 +524,67 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           if(prev.find(function(m){return m.id===p.new.id;})) return prev;
           return prev.concat([p.new]);
         });
-        // Mark received messages as read + play notification sound
+        // Mark received messages as read + play notification sound.
+        // RESTRICT enforcement: when the sender is in restrictedSet,
+        // suppress notification sound (Instagram-style silent delivery).
         if(p.new.sender_id!==myId){
           if (!readReceiptsOffHere) {
             sb.from('messages').update({read:true}).eq('id',p.new.id).then(function(){});
           }
           var mc=[]; try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-          if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
+          // R15 FIX #4: read from ref (fresh) instead of closure (stale, captured at convId change).
+          var _rs = restrictedSetRef.current;
+          var senderRestricted = _rs && _rs.has && _rs.has(p.new.sender_id);
+          if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
         }
+      })
+      // FIX #1: UPDATE event — handles remote read-receipts (✓→✓✓) and edits.
+      // Replace the message in msgs array by id without re-sorting.
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'conversation_id=eq.'+convId},function(p){
+        if (!p || !p.new || p.new.id == null) return;
+        setMsgs(function(prev){
+          return prev.map(function(m){ return m.id === p.new.id ? Object.assign({}, m, p.new) : m; });
+        });
+      })
+      // FIX #1: DELETE event — handles remote unsends. Filter the message
+      // out by id (note: p.old contains the deleted row's primary key only
+      // by default on Supabase, which is sufficient here).
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'messages',filter:'conversation_id=eq.'+convId},function(p){
+        var deletedId = p && p.old && p.old.id;
+        if (deletedId == null) return;
+        setMsgs(function(prev){ return prev.filter(function(m){ return m.id !== deletedId; }); });
+      })
+      // FIX #1: reactions changes — any INSERT/UPDATE/DELETE on
+      // message_reactions triggers a refetch of reactions for the
+      // currently-loaded messages. Cheap query, single round-trip.
+      .on('postgres_changes',{event:'*',schema:'public',table:'message_reactions'},function(p){
+        try {
+          var currMsgIds = (msgsRef.current || []).map(function(m){ return m.id; })
+            .filter(function(x){ return x != null && (typeof x === 'number' || (typeof x === 'string' && x.indexOf('tmp_') !== 0)); });
+          if (currMsgIds.length === 0) return;
+          // Only refetch when the affected message is actually loaded here.
+          var affectedId = (p && (p.new && p.new.message_id)) || (p && (p.old && p.old.message_id));
+          if (affectedId != null && currMsgIds.indexOf(affectedId) < 0) return;
+          sb.from('message_reactions').select('message_id,user_id,emoji').in('message_id', currMsgIds).then(function(r){
+            if (r.error || !r.data) return;
+            var grouped = {};
+            r.data.forEach(function(row){
+              if (!grouped[row.message_id]) grouped[row.message_id] = {};
+              if (!grouped[row.message_id][row.emoji]) grouped[row.message_id][row.emoji] = [];
+              grouped[row.message_id][row.emoji].push(row.user_id);
+            });
+            setReactionsByMsg(grouped);
+          });
+        } catch(_) {}
       })
       .on('broadcast', { event: 'typing' }, function(msg){
         // Ignore my own echoes (Supabase broadcasts include the sender by default).
         var pl = msg && msg.payload;
         if (!pl || !pl.user_id || pl.user_id === myId) return;
+        // RESTRICT enforcement: hide typing indicator from restricted users.
+        // R15 FIX #4: read via ref (channel useEffect deps are [convId]).
+        var _rs2 = restrictedSetRef.current;
+        if (_rs2 && _rs2.has && _rs2.has(pl.user_id)) return;
         if (pl.typing) {
           setOtherTyping(true);
           if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
@@ -439,7 +609,19 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     };
   },[convId]);
 
-  useEffect(function(){bottomRef.current&&bottomRef.current.scrollIntoView({behavior:'smooth'});},[msgs]);
+  // FIX #12: only auto-scroll-to-bottom when the user is already AT the
+  // bottom of the chat, or when the newest message is from them (sending
+  // your own message always scrolls down). Otherwise reading older history
+  // gets yanked away.
+  useEffect(function(){
+    if(!bottomRef.current) return;
+    var lastMsg = msgs && msgs.length ? msgs[msgs.length-1] : null;
+    var myOwn = lastMsg && lastMsg.sender_id === myId;
+    if (!userScrolledUp || myOwn) {
+      try { bottomRef.current.scrollIntoView({behavior:'smooth'}); } catch(_){}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[msgs]);
 
   function getCY(e){
     if(e.touches&&e.touches.length)return e.touches[0].clientY;
@@ -547,19 +729,43 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     }
   }
 
+  // Bug 2 fix: split into two functions — blockUser() opens the in-app
+  // confirm modal; doBlock() performs the actual Supabase write.
   function blockUser(){
     setChatMenuOpen(false);
+    setBlockConfirm(true);
+  }
+  function doBlock(){
+    setBlockConfirm(false);
     var otherId = convo.receiverId || convo.other_user_id || convo.id;
-    var otherName = convo.name || 'this person';
-    if(!window.confirm('Block '+otherName+'? They will not be able to message you.')) return;
-    var blocked = [];
-    try{ var bs=localStorage.getItem('ringin_blocked'); if(bs) blocked=JSON.parse(bs); }catch(e){}
-    if(!blocked.includes(otherId)){
-      blocked.push(otherId);
-      try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
-    }
-    sb.from('blocked_users').upsert({blocker_id: myId, blocked_id: otherId}).then(function(){});
-    if(onBack) onBack();
+    // FIX R10-6: previous code wrote to localStorage + fired onBack BEFORE
+    // checking the DB write — so a failed server write left a UI that
+    // claimed "blocked" while the other user could still message us. Now
+    // wait for the server write to succeed before persisting locally and
+    // closing the chat. Preserves Round 2 fix (also calls serverBlockUser
+    // from blocks.js — both legacy + new paths run on success).
+    sb.from('blocked_users').upsert({blocker_id: myId, blocked_id: otherId}).then(function(r){
+      if(r && r.error){
+        console.error('[ringin] blockUser failed:', r.error);
+        setToast('Failed to block — try again');
+        setTimeout(function(){setToast('');}, 2500);
+        return;
+      }
+      // Persist to legacy localStorage path
+      var blocked = [];
+      try{ var bs=localStorage.getItem('ringin_blocked'); if(bs) blocked=JSON.parse(bs); }catch(e){}
+      if(!blocked.includes(otherId)){
+        blocked.push(otherId);
+        try{ localStorage.setItem('ringin_blocked', JSON.stringify(blocked)); }catch(e){}
+      }
+      // FIX #7 (preserved): server-backed blocks table via blocks.js.
+      try { serverBlockUser(myId, otherId).catch(function(){}); } catch(_) {}
+      if(onBack) onBack();
+    }).catch(function(e){
+      console.warn('[ringin] blockUser reject:', e);
+      setToast('Failed to block — network error');
+      setTimeout(function(){setToast('');}, 2500);
+    });
   }
 
   function toggleMuteConvo(){
@@ -568,16 +774,27 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     setMutedConvos(function(prev){
       var next = prev.includes(convId2) ? prev.filter(function(x){return x!==convId2;}) : prev.concat([convId2]);
       try{ localStorage.setItem('ringin_muted_convos', JSON.stringify(next)); }catch(e){}
+      // FIX #6: same-tab 'storage' event doesn't fire — dispatch a custom
+      // event so MessagesScreen's inbox-mute listener can re-read.
+      try{ window.dispatchEvent(new CustomEvent('ringin:muted-convos-changed')); }catch(_){}
       return next;
     });
   }
 
+  // R18 FIX A: split into two functions —
+  //   clearAllChat() — kebab-menu entry point: closes the menu, opens the
+  //     in-app confirm modal (no more native window.confirm).
+  //   doClearChat() — actual delete + supabase write, called by the modal's
+  //     "Clear" button.
   function clearAllChat(){
     setChatMenuOpen(false);
-    if(!window.confirm('Clear all messages in this conversation? This cannot be undone.')) return;
+    setClearChatConfirm(true);
+  }
+  function doClearChat(){
     var convId2 = convo.convId || convo.id;
     var snap = msgs.slice();
     setMsgs([]);
+    setClearChatConfirm(false);
     sb.from('messages').delete().eq('conversation_id', convId2).then(function(r){
       if(r.error){
         console.error('RingIn Error [clearAllChat]:', r.error&&r.error.message?r.error.message:'Unknown error');
@@ -593,16 +810,34 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
 
   function send(){
     if(!txt.trim()) return;
-    // Check if other user is blocked
+    // Check if other user is blocked.
+    // BUG (pre-fix): used convo.id as a fallback for otherId. But convo.id
+    // here is the conversation_id (`uuid1_uuid2`), NOT a single UUID — it
+    // would never match anything in the blocked list, so the guard was a
+    // no-op for older convo objects loaded from the cache.
+    // FIX: derive otherId from convo.other_user_id OR convo.otherId OR
+    // convo.receiverId OR by splitting convId and removing myId.
     var blockedList=[];
     try{var bs=localStorage.getItem('ringin_blocked');if(bs)blockedList=JSON.parse(bs);}catch(e){}
-    var otherId=convo.other_user_id||convo.id;
-    if(blockedList.includes(String(otherId))){
+    var otherId = convo.other_user_id || convo.otherId || convo.receiverId || null;
+    if (!otherId && convId && typeof convId === 'string' && myId) {
+      var parts = convId.split('_').filter(function(s){ return s && s !== myId; });
+      if (parts.length) otherId = parts[0];
+    }
+    if(otherId && blockedList.includes(String(otherId))){
+      setToast('You have blocked this user');
+      setTimeout(function(){setToast('');},2500);
+      return;
+    }
+    // FIX #7: also consult the server-side blocks cache (blocks.js). Either
+    // path saying "blocked" is enough — keeps legacy + new in lockstep.
+    if(otherId && isBlockedSync(otherId)){
       setToast('You have blocked this user');
       setTimeout(function(){setToast('');},2500);
       return;
     }
     playMsSendSound();
+    hapticMedium();
     var receiverId = convo.receiverId || (convId.replace(myId,'').replace('_',''));
     var sentText = txt.trim();
     var tempId = 'tmp_'+Date.now();
@@ -623,6 +858,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         console.error('RingIn Error [send message]:', r.error&&r.error.message?r.error.message:'Unknown error');
         // Remove optimistic message on failure
         setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+        // FIX R10-7 (part 1): surface error to the user instead of silently
+        // disappearing their message — same UX as the .catch reject branch.
+        setToast('Message failed — try again');
+        setTimeout(function(){setToast('');}, 2500);
         return;
       }
       // Replace temp with real message from server
@@ -635,6 +874,14 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         });
       }
       if(onMessageSent) onMessageSent(convo, sentText);
+    }).catch(function(e){
+      // FIX R10-7 (part 2): raw promise rejects (network/abort/CORS) used to
+      // bubble up uncaught — leaving the optimistic message stuck forever
+      // with no error toast. Rollback + toast, symmetric to r.error branch.
+      console.warn('[ringin] send msg reject:', e);
+      setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+      setToast('Message failed — try again');
+      setTimeout(function(){setToast('');}, 2500);
     });
   }
 
@@ -699,13 +946,21 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           }
           return [
             React.createElement('div',{key:'av',onClick:openProfile,style:{width:'38px',height:'38px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',overflow:'hidden',flexShrink:0,cursor:otherUid?'pointer':'default'}},
-              otherAvatar?React.createElement('img',{src:otherAvatar,alt:otherName,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+              // R18 FIX C: ImgWithFallback shows initials if src 404s / fails decode.
+              React.createElement(ImgWithFallback,{
+                src:otherAvatar, alt:otherName, fallback:(convo.initials||(otherName||'?').substring(0,2).toUpperCase()),
+                style:{width:'100%',height:'100%',objectFit:'cover'}
+              })
             ),
             React.createElement('div',{key:'nm',onClick:openProfile,style:{flex:1,minWidth:0,cursor:otherUid?'pointer':'default'}},
               React.createElement('div',{style:{fontSize:'14px',fontWeight:600,color:'var(--text)'}},otherName),
-              convo.isOnline?React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
-                React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
-              ):React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
+              // Subtitle priority: typing → Online dot → "last seen Xm ago" → role.
+              otherTyping ? React.createElement('div',{style:{fontSize:'10px',color:'var(--ac)',fontStyle:'italic'}},'typing…')
+                : (otherOnline||convo.isOnline) ? React.createElement('div',{style:{fontSize:'10px',color:'var(--green)',display:'flex',alignItems:'center',gap:'3px'}},
+                    React.createElement('span',{style:{width:'5px',height:'5px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}),'Online'
+                  )
+                : formatLastSeen(otherLastSeen) ? React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},formatLastSeen(otherLastSeen))
+                : React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},convo.role||'Member')
             )
           ];
         })(),
@@ -818,9 +1073,87 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       )
     ) : null,
 
+    // ── R18 FIX A: in-app confirm modal for "Clear All Chat" ──
+    // Replaces native window.confirm (banned by CLAUDE.md). Backdrop click
+    // and Cancel both close the modal without deleting; Clear runs
+    // doClearChat() which performs the supabase delete + msgs reset.
+    clearChatConfirm ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:500,backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)'},
+        onClick:function(){ setClearChatConfirm(false); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{
+          position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+          zIndex:501, background:'var(--bg2,#161028)', border:'1px solid var(--border)',
+          borderRadius:'16px', padding:'18px 18px 14px', minWidth:'260px', maxWidth:'320px',
+          boxShadow:'0 16px 48px rgba(0,0,0,0.6)', color:'var(--text)', fontFamily:'inherit'
+        }
+      },
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}, 'Clear all messages?'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.4,marginBottom:'14px'}},
+          'This will permanently delete every message in this conversation. This cannot be undone.'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}},
+          React.createElement('button',{
+            onClick:function(){ setClearChatConfirm(false); },
+            style:{padding:'8px 14px',borderRadius:'8px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Cancel'),
+          React.createElement('button',{
+            onClick:doClearChat,
+            style:{padding:'8px 14px',borderRadius:'8px',background:'#FF4757',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Clear')
+        )
+      )
+    ) : null,
+
+    // ── Bug 2 fix: in-app confirm modal for "Block user" ──
+    // Same house style as the clearChatConfirm modal above.
+    blockConfirm ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:500,backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)'},
+        onClick:function(){ setBlockConfirm(false); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{
+          position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+          zIndex:501, background:'var(--bg2,#161028)', border:'1px solid var(--border)',
+          borderRadius:'16px', padding:'18px 18px 14px', minWidth:'260px', maxWidth:'320px',
+          boxShadow:'0 16px 48px rgba(0,0,0,0.6)', color:'var(--text)', fontFamily:'inherit'
+        }
+      },
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}, 'Block this user?'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.4,marginBottom:'14px'}},
+          'They won\'t be able to call or message you anymore. You can unblock later in settings.'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}},
+          React.createElement('button',{
+            onClick:function(){ setBlockConfirm(false); },
+            style:{padding:'8px 14px',borderRadius:'8px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Cancel'),
+          React.createElement('button',{
+            onClick:doBlock,
+            style:{padding:'8px 14px',borderRadius:'8px',background:'#FF4757',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Block')
+        )
+      )
+    ) : null,
+
     // ── Chat messages area with reaction overlay ──
     React.createElement('div',{style:{flex:1,position:'relative',overflow:'hidden'}},
-      React.createElement('div',{style:{height:'100%',overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}},
+      React.createElement('div',{
+        ref:msgsScrollRef,
+        // FIX #12: track whether the user has scrolled away from the bottom
+        // so the auto-scroll effect can stop yanking them down when new
+        // messages arrive (e.g. reading older history).
+        onScroll:function(e){
+          var el = e.currentTarget;
+          if (!el) return;
+          var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80;
+          setUserScrolledUp(!atBottom);
+        },
+        style:{height:'100%',overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',scrollbarWidth:'none',msOverflowStyle:'none'}
+      },
         msgs.length===0&&React.createElement('div',{style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',marginTop:'40px'}},'No messages yet. Say hi! 👋'),
         msgs.map(function(m){
           var isMe=m.sender_id===myId;
@@ -839,13 +1172,18 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
               }},
                 React.createElement('span',{style:{fontSize:'13px'}}, d.icon),
                 React.createElement('span',null, d.label),
-                m.created_at ? React.createElement('span',{style:{color:'var(--t3)',fontWeight:400,marginLeft:'4px'}}, ' · '+new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})) : null
+                // R18 FIX D: TZ-aware time via shared formatTime (honors user_timezone).
+                m.created_at ? React.createElement('span',{style:{color:'var(--t3)',fontWeight:400,marginLeft:'4px'}}, ' · '+formatTime(m.created_at)) : null
               )
             );
           }
           return React.createElement('div',{key:m.id,style:{display:'flex',justifyContent:isMe?'flex-end':'flex-start',alignItems:'flex-end',gap:'6px'}},
             !isMe?React.createElement('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-              otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+              // R18 FIX C: ImgWithFallback for message-row avatar.
+              React.createElement(ImgWithFallback,{
+                src:otherAvatar, alt:otherName, fallback:(convo.initials||(otherName||'?').substring(0,2).toUpperCase()),
+                style:{width:'100%',height:'100%',objectFit:'cover'}
+              })
             ):null,
             React.createElement('div',null,
               React.createElement('div',{
@@ -857,7 +1195,23 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                 onTouchEnd:function(){clearTimeout(pressTimerRef.current);}
               },
                 m.text&&m.text.startsWith('[img]')
-                  ?React.createElement('img',{src:m.text.slice(5),alt:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
+                  // R18 FIX C: ImgWithFallback for chat-image bubble — shows
+                  // "Image unavailable" placeholder if the CDN URL 404s.
+                  ?React.createElement(ImgWithFallback,{src:m.text.slice(5),alt:'Photo',fallback:'image',style:{maxWidth:'180px',maxHeight:'200px',borderRadius:'8px',display:'block'}})
+                  // FIX #2: [mshare] body was showing as raw text. Render as a clickable card.
+                  // Format: [mshare]<link>|<caption>
+                  :(m.text&&m.text.startsWith('[mshare]'))
+                    ?(function(){
+                        var body=m.text.slice(8);
+                        var sep=body.indexOf('|');
+                        var link=sep>=0?body.slice(0,sep):body;
+                        var cap=sep>=0?body.slice(sep+1):'';
+                        return React.createElement('div',{style:{padding:'8px',border:'1px solid var(--border)',borderRadius:'10px',background:'var(--bg3)',maxWidth:'240px'}},
+                          React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',marginBottom:'4px'}}, '✨ Shared a moment'),
+                          cap?React.createElement('div',{style:{fontSize:'12px',color:'var(--text)',marginBottom:'6px',wordBreak:'break-word'}}, cap):null,
+                          React.createElement('a',{href:link,target:'_blank',rel:'noopener noreferrer',style:{fontSize:'11px',color:'var(--ac)',textDecoration:'none'}}, 'View moment →')
+                        );
+                      })()
                   :(m.text&&(m.text.startsWith('[mreply]')||m.text.startsWith('[mlike]')))
                     ?(function(){
                         var isLike=m.text.startsWith('[mlike]');
@@ -901,7 +1255,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                     :React.createElement('span',null,m.text)
               ),
               React.createElement('div',{style:{fontSize:'9px',color:'var(--t3)',textAlign:isMe?'right':'left',marginTop:'3px',display:'flex',alignItems:'center',justifyContent:isMe?'flex-end':'flex-start',gap:'4px'}},
-                m.created_at?React.createElement('span',null,new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localStorage.getItem('user_timezone')||undefined})):null,
+                // R18 FIX D: simplified to shared formatTime (already TZ-aware
+                // via user_timezone localStorage key — same behavior, no inline math).
+                m.created_at?React.createElement('span',null,formatTime(m.created_at)):null,
                 // Tick state: ✓ = sent (not yet read), ✓✓ blue = read.
                 // If the user has read receipts disabled for this convo,
                 // we never show ✓✓ blue — the deal is reciprocal: we don't
@@ -943,7 +1299,11 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
           style:{display:'flex',alignItems:'center',gap:'6px',padding:'4px 8px 0',animation:'ringin-typing-fade 0.15s ease-out'}
         },
           React.createElement('div',{style:{width:'24px',height:'24px',borderRadius:'50%',background:convo.color||'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'#fff',flexShrink:0,overflow:'hidden'}},
-            otherAvatar?React.createElement('img',{src:otherAvatar,style:{width:'100%',height:'100%',objectFit:'cover'}}):(convo.initials||(otherName||'?').substring(0,2).toUpperCase())
+            // R18 FIX C: ImgWithFallback for typing-indicator avatar.
+            React.createElement(ImgWithFallback,{
+              src:otherAvatar, alt:otherName, fallback:(convo.initials||(otherName||'?').substring(0,2).toUpperCase()),
+              style:{width:'100%',height:'100%',objectFit:'cover'}
+            })
           ),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'4px',padding:'9px 13px',borderRadius:'18px 18px 18px 4px',background:'var(--bg3)',border:'1px solid var(--border)'}},
             React.createElement('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background:'var(--t2)',animation:'ringin-typing-dot 1.2s ease-in-out infinite',animationDelay:'0s'}}),
@@ -1047,7 +1407,10 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
         onClick:function(){setMsgMenu(null);}
       },
         React.createElement('div',{
-          style:{position:'fixed',left:Math.min(msgMenu.x,window.innerWidth-160)+'px',top:(msgMenu.y-48)+'px',
+          // Final polish: add Math.max(8, ...) left clamp so the menu
+          // doesn't get pushed offscreen-left when msgMenu.x is small
+          // (long-press near the left edge of the screen).
+          style:{position:'fixed',left:Math.max(8, Math.min(msgMenu.x, window.innerWidth-160))+'px',top:(msgMenu.y-48)+'px',
             background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',
             padding:'4px',boxShadow:'0 4px 20px rgba(0,0,0,0.4)',zIndex:201,minWidth:'140px'},
           onClick:function(e){e.stopPropagation();}
@@ -1062,16 +1425,26 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       ):null
     ),
 
-    showEmoji?React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}},
-      ['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','😢','😮','🥳','😎','🙏','💯','😅','🤣'].map(function(em){
-        return React.createElement('span',{key:em,onClick:function(){playMsEmojiClick();setTxt(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
-      })
-    ):null,
+    React.createElement(AnimatePresence, null,
+      showEmoji ? React.createElement(motion.div, {
+        key: 'emoji-sheet',
+        initial: { y: '100%' },
+        animate: { y: 0 },
+        exit: { y: '100%' },
+        transition: { type: 'spring', stiffness: 250, damping: 28 },
+        style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',flexWrap:'wrap',gap:'6px',background:'var(--bg)'}
+      },
+        ['😊','😂','❤️','🔥','👍','🙌','😍','🤔','👏','🎉','💪','✨','😢','😮','🥳','😎','🙏','💯','😅','🤣'].map(function(em){
+          return React.createElement('span',{key:em,onClick:function(){playMsEmojiClick();setTxt(function(t){return t+em;});},style:{fontSize:'22px',cursor:'pointer',padding:'3px'}},em);
+        })
+      ) : null
+    ),
 
     // ── Input bar ──
     React.createElement('div',{style:{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center',background:'var(--bg)'}},
-      React.createElement('button',{
+      React.createElement(motion.button,{
         onClick:function(){fileInputRef.current&&fileInputRef.current.click();},
+        whileTap:{scale:0.95},
         style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg3)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px'}
       },'📷'),
       React.createElement('input',{
@@ -1118,18 +1491,47 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                       uploadFile.type === 'image/gif'  ? 'gif' :
                       uploadFile.type === 'image/webp' ? 'webp' : 'jpg';
             var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+          // Helper — revokes the blob URL we created for the optimistic
+          // preview, so the browser can free the underlying File memory.
+          // Without this, every chat photo leaks ~size-of-photo until the
+          // tab is closed. Especially bad on Android with large camera shots.
+          function revokeLocal(){ try{ URL.revokeObjectURL(localUrl); }catch(e){} }
           sb.storage.from('chat-images').upload(fileName,uploadFile,{contentType:uploadFile.type}).then(function(r){
             if(r.error){
               console.error('RingIn Error [chatPhotoUpload]:', r.error&&r.error.message?r.error.message:'Unknown error');
               setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
-              alert('Photo upload failed: '+r.error.message);
+              revokeLocal();
+              // ROUND 8 FIX #7: replace blocking alert with non-modal toast (matches
+              // the other failure paths in this same function, line 1319/1331)
+              try { setToast('Photo upload failed: '+(r.error.message||'')); setTimeout(function(){setToast('');},2500); } catch(_){ }
               return;
             }
-            var url=sb.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
+            // FIX #9: getPublicUrl().data.publicUrl can be undefined — guard
+            // it and treat as upload failure (remove temp, revoke blob, toast).
+            var pub = sb.storage.from('chat-images').getPublicUrl(fileName);
+            var url = pub && pub.data && pub.data.publicUrl;
+            if(!url){
+              console.error('RingIn Error [chatPhotoUpload]: missing publicUrl');
+              setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+              revokeLocal();
+              setToast('Photo upload failed');
+              setTimeout(function(){setToast('');},2500);
+              return;
+            }
             sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
               if(mr.error){
+                // FIX #9: on insert error, KEEP the blob URL valid (do NOT
+                // revoke yet) so the optimistic temp message keeps rendering
+                // its preview. Previously revokeLocal() ran on error too,
+                // which left a broken image icon when the temp was kept
+                // around. Pair this with a toast so the user sees it failed.
                 console.error('RingIn Error [chatPhotoInsert]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
                 setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                setToast('Photo send failed');
+                setTimeout(function(){setToast('');},2500);
+                // Defer the revoke to a later tick so the blob is briefly
+                // alive in case any in-flight render still references it.
+                setTimeout(revokeLocal, 0);
                 return;
               }
               if(mr.data&&mr.data[0]){
@@ -1139,28 +1541,86 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
                   return prev.map(function(msg){return msg.id===tempId?mr.data[0]:msg;});
                 });
               }
+              // Real CDN URL now in the message — the blob preview is no
+              // longer rendered, safe to release the local object.
+              // FIX #9: revoke only on success path.
+              revokeLocal();
               if(onMessageSent) onMessageSent(convo,'📷 Photo');
             });
           });
           }).catch(function(err){
-            // Compression itself failed (rare) — fall back to uploading raw.
+            // FIX #10: compression itself failed (rare) — fall back to
+            // uploading raw AND insert the messages row, otherwise the
+            // optimistic blob bubble lives forever.
             console.warn('[ringin] image compress failed, uploading raw', err);
             var ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'webp';
             var fileName = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
-            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(){});
+            function revokeLocal2(){ try{ URL.revokeObjectURL(localUrl); }catch(e){} }
+            sb.storage.from('chat-images').upload(fileName,file,{contentType:file.type}).then(function(r){
+              if(r && r.error){
+                console.error('RingIn Error [chatPhotoUpload-raw]:', r.error&&r.error.message?r.error.message:'Unknown error');
+                setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                revokeLocal2();
+                setToast('Photo upload failed');
+                setTimeout(function(){setToast('');},2500);
+                return;
+              }
+              var pub = sb.storage.from('chat-images').getPublicUrl(fileName);
+              var url = pub && pub.data && pub.data.publicUrl;
+              if(!url){
+                console.error('RingIn Error [chatPhotoUpload-raw]: missing publicUrl');
+                setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                revokeLocal2();
+                setToast('Photo upload failed');
+                setTimeout(function(){setToast('');},2500);
+                return;
+              }
+              sb.from('messages').insert([{conversation_id:convId,sender_id:myId,sender_name:myName,receiver_id:receiverId,text:'[img]'+url,read:false}]).select().then(function(mr){
+                if(mr && mr.error){
+                  // FIX #9 (raw fallback): on insert error, defer revoke so
+                  // the blob is briefly alive — previously the temp was
+                  // filtered and the blob was revoked in the SAME microtask
+                  // as the setMsgs filter, occasionally causing a broken
+                  // image flash before the temp was removed.
+                  console.error('RingIn Error [chatPhotoInsert-raw]:', mr.error&&mr.error.message?mr.error.message:'Unknown error');
+                  setMsgs(function(prev){return prev.filter(function(msg){return msg.id!==tempId;});});
+                  setToast('Photo upload failed');
+                  setTimeout(function(){setToast('');},2500);
+                  setTimeout(revokeLocal2, 0);
+                  return;
+                }
+                if(mr.data&&mr.data[0]){
+                  setMsgs(function(prev){
+                    var hasReal=prev.find(function(msg){return msg.id===mr.data[0].id;});
+                    if(hasReal) return prev.filter(function(msg){return msg.id!==tempId;});
+                    return prev.map(function(msg){return msg.id===tempId?mr.data[0]:msg;});
+                  });
+                }
+                // FIX #9: revoke only on success path.
+                revokeLocal2();
+                if(onMessageSent) onMessageSent(convo,'📷 Photo');
+              });
+            });
           });
           ev.target.value='';
         }
       }),
-      React.createElement('button',{
+      React.createElement(motion.button,{
         onClick:function(){setShowEmoji(function(v){return !v;});},
+        whileTap:{scale:0.95},
         style:{width:'34px',height:'34px',borderRadius:'50%',background:showEmoji?'var(--acg)':'var(--bg3)',border:showEmoji?'1px solid var(--ac)':'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:'16px',color:showEmoji?'var(--ac)':'var(--text)'}
       },'😊'),
+      // R13 FIX #6: iOS keyboard polish for chat composer — show the
+      // blue "Send" return key, enable sentence-cap + autocorrect to
+      // match native messaging apps.
       React.createElement('input',{
         value:txt,
         onChange:function(e){setTxt(e.target.value);clearTimeout(chatTypingTimerRef.current);chatTypingTimerRef.current=setTimeout(function(){playMsKeyClick();},80);onTypingKeystroke();},
-        onKeyDown:function(e){if(e.key==='Enter')send();},
+        onKeyDown:function(e){if(e.key==='Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229)send();}, /* FIX #2: skip Enter while IME composing (CJK) */
         placeholder:'Type a message...',
+        enterKeyHint:'send',
+        autoCapitalize:'sentences',
+        autoCorrect:'on',
         style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'22px',padding:'10px 14px',fontSize:'14px',color:'var(--text)',outline:'none',fontFamily:'DM Sans,sans-serif'}
       }),
 
@@ -1248,8 +1708,9 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
       })(),
 
       // send button
-      React.createElement('button',{
+      React.createElement(motion.button,{
         onClick:send,disabled:!txt.trim(),
+        whileTap:txt.trim()?{scale:0.95}:{},
         style:{width:'40px',height:'40px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:txt.trim()?'pointer':'default',flexShrink:0,opacity:txt.trim()?1:0.32,display:'flex',alignItems:'center',justifyContent:'center',transition:'opacity 0.2s'}
       },'✓')
     )
@@ -1265,9 +1726,57 @@ export default function MessagesScreen(props){
   var expertConvosS=useState(EXPERT_CONVOS_BASE); var expertConvos=expertConvosS[0]; var setExpertConvos=expertConvosS[1];
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
-  var coinsS=useState(50); var coins=coinsS[0]; var setCoins=coinsS[1];
+  // FIX #9: removed `coinsS = useState(50)` stub. That hardcoded 50-coin
+  // local state was bypassing the real wallet balance — a user with 1000
+  // coins would still see CallScreen mounted with coins=50. The
+  // useCoinBalance hook below already provides the real balance.
+  // Shared coin balance — synced across all screens. Replaces the
+  // per-screen local cache that didn't update after a wallet purchase.
+  var coinBal = useCoinBalance(myId, sb);
+  // Muted conversations list — read at MessagesScreen scope so the inbox
+  // can render the 🔕 icon next to muted convos. (ChatBox has its own copy
+  // for the chat-header mute menu.)
+  var inboxMutedConvosS=useState(function(){try{var s=localStorage.getItem('ringin_muted_convos');return s?JSON.parse(s):[];}catch(e){return [];}}); var inboxMutedConvos=inboxMutedConvosS[0]; var setInboxMutedConvos=inboxMutedConvosS[1];
+  // Keep inboxMutedConvos in sync with localStorage whenever the
+  // active chat's mute state changes (ChatBox writes the key on toggle).
+  // FIX #6: 'storage' event only fires for OTHER tabs — add a same-tab
+  // custom-event listener that ChatBox dispatches after toggling mute.
+  useEffect(function(){
+    function reload(){
+      try{var s=localStorage.getItem('ringin_muted_convos');setInboxMutedConvos(s?JSON.parse(s):[]);}catch(e){}
+    }
+    window.addEventListener('storage', reload);
+    window.addEventListener('ringin:muted-convos-changed', reload);
+    return function(){
+      window.removeEventListener('storage', reload);
+      window.removeEventListener('ringin:muted-convos-changed', reload);
+    };
+  },[]);
+  // Inbox-scope restricted-users set — the inbox realtime handler reads
+  // it to suppress notification badge bumps + sounds for restricted
+  // senders. (ChatBox has its own copy for the chat-header restrict
+  // toggle + chat-message realtime handler.)
+  var inboxRestrictedSetS=useState(new Set()); var inboxRestrictedSet=inboxRestrictedSetS[0]; var setInboxRestrictedSet=inboxRestrictedSetS[1];
+  // FIX #5: re-fetch when ChatBox dispatches 'ringin:restricted-changed'
+  // after its toggleRestrict completes (storage event doesn't fire same-tab).
+  useEffect(function(){
+    if(!myId) return;
+    function load(){
+      try {
+        sb.from('restricted_users').select('restricted_id').eq('restrictor_id', myId).then(function(r){
+          if (r && !r.error && r.data) setInboxRestrictedSet(new Set(r.data.map(function(row){ return row.restricted_id; })));
+        });
+      } catch(_) {}
+    }
+    load();
+    window.addEventListener('ringin:restricted-changed', load);
+    return function(){ window.removeEventListener('ringin:restricted-changed', load); };
+  },[myId]);
   var searchS=useState(''); var search=searchS[0]; var setSearch=searchS[1];
   var searchResS=useState([]); var searchRes=searchResS[0]; var setSearchRes=searchResS[1];
+  // R17 FIX #2: track in-flight people-search so the empty-state line only
+  // shows when results are truly empty (not just while waiting).
+  var searchingMsgS=useState(false); var searchingMsg=searchingMsgS[0]; var setSearchingMsg=searchingMsgS[1];
   var showNewS=useState(false); var showNew=showNewS[0]; var setShowNew=showNewS[1];
   var refreshingS=useState(false); var refreshing=refreshingS[0]; var setRefreshing=refreshingS[1];
   var pullStartS=useState(0); var pullStart=pullStartS[0]; var setPullStart=pullStartS[1];
@@ -1341,6 +1850,31 @@ export default function MessagesScreen(props){
   //   'business' → business profile chats (users with role='business')
   var tabS = useState('friends'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
   var typingTimerRef=useRef(null);
+  // R17 FIX #1c: monotonically-increasing sequence guard for the people
+  // search query — a slower earlier resolve can't overwrite a newer one.
+  var peopleSearchSeqRef=useRef(0);
+  // R17 FIX #2: debounce timer for people search so we don't fire a query
+  // on every keystroke (was undebounced and could DoS profiles with rapid
+  // typing).
+  var peopleSearchDebounceRef=useRef(null);
+  // FIX #4: mirror `active` to a ref so the inbox INSERT realtime handler
+  // can read it synchronously without wrapping the side-effect-laden state
+  // updates inside setActive(currentActive => ...). That pattern violates
+  // updater purity and double-fires in React StrictMode.
+  var activeRef=useRef(null);
+  useEffect(function(){ activeRef.current = active; },[active]);
+  // R15 FIX #3: mirror inboxRestrictedSet into a ref so the inbox channel
+  // useEffect (deps [myId]) sees the freshest set after a restrict toggle.
+  // Without this the inbox INSERT handler reads a stale snapshot captured
+  // when the channel was first subscribed.
+  var inboxRestrictedSetRef=useRef(new Set());
+  useEffect(function(){ inboxRestrictedSetRef.current = inboxRestrictedSet; },[inboxRestrictedSet]);
+  // FIX #7: warm up the server-side blocks cache (blocks.js) so the send()
+  // guard in ChatBox has fresh data the first time it runs.
+  useEffect(function(){
+    if (!myId) return;
+    try { loadBlocks(myId); } catch(_) {}
+  },[myId]);
   var totalUnreadS=useState(function(){
     try{ var cc=localStorage.getItem('convos_'+myId); if(cc){var c=JSON.parse(cc);return c.reduce(function(s,x){return s+(x.unreadCount||0);},0);} }catch(e){}
     return 0;
@@ -1352,6 +1886,20 @@ export default function MessagesScreen(props){
       if(props.onConvoConsumed) props.onConvoConsumed();
     }
   },[props.initConvo]);
+
+  // Android back / edge-swipe handler — if a chat is open, close it back
+  // to the inbox before App.js's goBack moves us off the Messages tab.
+  // Consumes the cancelable 'ringin:back' event so the tab nav doesn't fire.
+  useEffect(function(){
+    function onBack(ev){
+      if (active) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        setActive(null);
+      }
+    }
+    window.addEventListener('ringin:back', onBack);
+    return function(){ window.removeEventListener('ringin:back', onBack); };
+  }, [active]);
 
   // Refresh conversations when user comes back to tab (don't remove channels — ChatBox manages its own)
   useEffect(function(){
@@ -1370,8 +1918,13 @@ export default function MessagesScreen(props){
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
       setLoadingConvos(false);
       if(!res.data||res.data.length===0) return;
-      // Filter out expert fake convos
-      res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
+      // FIX #8: only drop mock expert convo IDs (e1, e2, e3…). The old
+      // startsWith('e') filter killed every UUID starting with 'e'.
+      res.data = res.data.filter(function(m){
+        if(!m.conversation_id) return false;
+        if(typeof m.conversation_id === 'string' && /^e\d+$/.test(m.conversation_id)) return false;
+        return true;
+      });
       if(!res.data) return;
       // Group by conversation_id
       var convMap = {};
@@ -1438,48 +1991,84 @@ export default function MessagesScreen(props){
     });
 
     // Realtime - new message notification
+    // FIX #4: read currentActive synchronously from activeRef instead of
+    // wrapping the side effects inside setActive(updater). The updater
+    // pattern was double-firing in React StrictMode, double-bumping unread.
     var ch = sb.channel('inbox-'+myId)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+myId},function(p){
-        // Use functional setActive to read current active convo without stale closure
-        setActive(function(currentActive){
-          var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
-          if(!isViewingThisConvo){
-            // Not viewing this chat — increment badge and unread count
+        var currentActive = activeRef.current;
+        var isViewingThisConvo = currentActive && (currentActive.convId===p.new.conversation_id || currentActive.id===p.new.conversation_id);
+        // RESTRICT enforcement at inbox layer — silent badge bump only,
+        // no badge/sound for messages from restricted users.
+        // R15 FIX #3: read via ref (channel useEffect deps are [myId]).
+        var _irs = inboxRestrictedSetRef.current;
+        var senderRestricted = _irs && _irs.has && _irs.has(p.new.sender_id);
+        if(!isViewingThisConvo){
+          // Not viewing this chat — increment badge and unread count (skip if restricted)
+          if(!senderRestricted){
             setTotalUnread(function(t){return t+1;});
             if(props.onUnreadCount) props.onUnreadCount(function(prev){return prev+1;});
-            setUserConvos(function(prev){
-              var exists=prev.find(function(c){return c.convId===p.new.conversation_id;});
-              if(exists){
-                return prev.map(function(c){
-                  if(c.convId!==p.new.conversation_id) return c;
-                  return Object.assign({},c,{lastMsg:p.new.text,unreadCount:(c.unreadCount||0)+1});
-                });
-              }
-              return prev;
-            });
-            var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
-            if(!mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
-          } else {
-            // Already viewing this chat — just update last message preview, no badge
-            setUserConvos(function(prev){
+          }
+          setUserConvos(function(prev){
+            var exists=prev.find(function(c){return c.convId===p.new.conversation_id;});
+            if(exists){
               return prev.map(function(c){
                 if(c.convId!==p.new.conversation_id) return c;
-                return Object.assign({},c,{lastMsg:p.new.text});
+                // For restricted users, update preview but don't increment unread count
+                return Object.assign({},c,{lastMsg:p.new.text,lastTime:p.new.created_at||c.lastTime,unreadCount:senderRestricted?(c.unreadCount||0):((c.unreadCount||0)+1)});
               });
+            }
+            return prev;
+          });
+          var mc=[];try{var ms=localStorage.getItem('ringin_muted_convos');if(ms)mc=JSON.parse(ms);}catch(e){}
+          if(!senderRestricted && !mc.includes(p.new.conversation_id) && !isCallLog(p.new.text)) playSound('notification');
+        } else {
+          // Already viewing this chat — just update last message preview, no badge
+          setUserConvos(function(prev){
+            return prev.map(function(c){
+              if(c.convId!==p.new.conversation_id) return c;
+              return Object.assign({},c,{lastMsg:p.new.text,lastTime:p.new.created_at||c.lastTime});
             });
-          }
-          return currentActive; // don't change active
+          });
+        }
+      })
+      // FIX #3: messages I send don't fire the receiver_id filter above. Add
+      // a sender-side chain so when I send a message (from anywhere — chat,
+      // another device, etc.), the inbox preview updates. Never bumps unread.
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'sender_id=eq.'+myId},function(p){
+        if (!p || !p.new) return;
+        setUserConvos(function(prev){
+          var exists = prev.find(function(c){ return c.convId === p.new.conversation_id; });
+          if (!exists) return prev; // unknown convo — let the full refresh path pick it up
+          return prev.map(function(c){
+            if (c.convId !== p.new.conversation_id) return c;
+            return Object.assign({}, c, { lastMsg: p.new.text, lastTime: p.new.created_at || c.lastTime });
+          });
         });
       }).subscribe();
     return function(){sb.removeChannel(ch);};
   },[myId]);
 
   // Search users
+  // R17 FIX #1c + #2: debounced + sequence-guarded + .catch'd. Previously
+  // every keystroke fired an immediate query, the older response could
+  // overwrite the newer one, and a rejected promise left state stale.
   useEffect(function(){
-    if(!search.trim()){setSearchRes([]);return;}
-    sb.from('profiles').select('*').or('email.ilike.%'+search+'%,full_name.ilike.%'+search+'%').then(function(res){
-      setSearchRes((res.data||[]).filter(function(u){return u.id!==myId;}));
-    });
+    if (peopleSearchDebounceRef.current) clearTimeout(peopleSearchDebounceRef.current);
+    if(!search.trim()){setSearchRes([]); setSearchingMsg(false); return;}
+    setSearchingMsg(true);
+    var mySeq = ++peopleSearchSeqRef.current;
+    peopleSearchDebounceRef.current = setTimeout(function(){
+      sb.from('profiles').select('*').or('email.ilike.%'+search+'%,full_name.ilike.%'+search+'%').then(function(res){
+        if (mySeq !== peopleSearchSeqRef.current) return; // newer query in flight
+        setSearchRes((res.data||[]).filter(function(u){return u.id!==myId;}));
+        setSearchingMsg(false);
+      }).catch(function(){
+        if (mySeq !== peopleSearchSeqRef.current) return;
+        setSearchRes([]); setSearchingMsg(false);
+      });
+    }, 150);
+    return function(){ if (peopleSearchDebounceRef.current) clearTimeout(peopleSearchDebounceRef.current); };
   },[search]);
 
   function refreshConvos(){
@@ -1487,7 +2076,13 @@ export default function MessagesScreen(props){
     setRefreshing(true);
     sb.from('messages').select('*').or('sender_id.eq.'+myId+',receiver_id.eq.'+myId).order('created_at',{ascending:false}).then(function(res){
       if(!res.data){setRefreshing(false);return;}
-      res.data = res.data.filter(function(m){return m.conversation_id&&!m.conversation_id.startsWith('e');});
+      // FIX #8: only drop mock expert convo IDs (e1, e2, e3…). UUIDs that
+      // happen to start with 'e' must pass through.
+      res.data = res.data.filter(function(m){
+        if(!m.conversation_id) return false;
+        if(typeof m.conversation_id === 'string' && /^e\d+$/.test(m.conversation_id)) return false;
+        return true;
+      });
       var convMap={};
       res.data.forEach(function(m){
         if(!convMap[m.conversation_id]){
@@ -1584,7 +2179,13 @@ export default function MessagesScreen(props){
     });
   }
 
-  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,coins:coins,onCoinsChange:setCoins,onEnd:function(){setActiveCall(null);}});
+  // FIX #9: pass the real `coinBal` from the hook instead of the deleted
+  // `coins` stub state. `onCoinsChange` is a no-op — CallScreen now
+  // broadcasts via setSharedCoinBalance, which the hook auto-listens for,
+  // so we don't need a setter callback. (This local CallScreen render is
+  // a fallback; the App-level path through window.__ringInStartCall is
+  // the primary one.)
+  if(activeCall) return React.createElement(CallScreen,{expert:activeCall,session:session,coins:coinBal,onCoinsChange:function(){},onEnd:function(){setActiveCall(null);}});
   if(active) return React.createElement(ChatBox,{convo:active,session:session,onBack:function(){setActive(null);},onViewExpert:props.onViewExpert,onViewUser:props.onViewUser,onCall:function(exp){
     // CRITICAL: prefer the actual user UUID fields (otherId/receiverId/user_id) over `id`,
     // because convo.id is the conversation_id (e.g. "userA_userB"), NOT a UUID. Using it
@@ -1595,7 +2196,15 @@ export default function MessagesScreen(props){
     else setActiveCall(exp);
   },onMessageSent:handleMessageSent});
 
-  return React.createElement('div',{
+  // FIX #8: PTR handlers were on the outer flex container which has no
+  // overflow:auto, so e.currentTarget.scrollTop was always 0 — the "scrolled
+  // to top" guard always passed, and the inner inbox scroller never got the
+  // touch events. Handlers are now mounted on the inner scrolling div
+  // (line ~2051 — `flex:1,overflowY:'auto'`).
+  return React.createElement(motion.div,{
+    initial:{opacity:0,y:4},
+    animate:{opacity:1,y:0},
+    transition:{duration:0.18,ease:[0.4,0,0.2,1]},
     style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)'},
   },
     // Header
@@ -1603,10 +2212,17 @@ export default function MessagesScreen(props){
       React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Messages'),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
         // + New message — moved to LEFT of the coin chip
-        React.createElement('button',{onClick:function(){setShowNew(!showNew);},title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
+        React.createElement('button',{onClick:function(){
+          // R17 FIX #8: when closing the new-message panel, also clear any
+          // lingering search query + results so it doesn't reopen showing
+          // a stale list from a previous session.
+          var willOpen = !showNew;
+          setShowNew(willOpen);
+          if (!willOpen) { setSearch(''); setSearchRes([]); setSearchingMsg(false); }
+        },title:'New message',style:{width:'30px',height:'30px',borderRadius:'50%',background:'var(--ac)',border:'none',color:'#fff',fontSize:'18px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},'+'),
         React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),
-          React.createElement('span',null,'1,240')
+          React.createElement('span',null,(Number(coinBal)||0).toLocaleString())
         ),
         React.createElement(TopBarAvatar, {
           session: props.session,
@@ -1622,12 +2238,19 @@ export default function MessagesScreen(props){
     showNew ? React.createElement('div',{style:{padding:'0 18px 10px',borderBottom:'1px solid var(--border)'}},
       React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'8px 12px',display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
         React.createElement('span',{style:{color:'var(--t3)',fontSize:'14px'}},'🔍'),
-        React.createElement('input',{autoFocus:true,placeholder:'Search people...',value:search,onChange:function(e){setSearch(e.target.value);},style:{flex:1,background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',fontFamily:'DM Sans,sans-serif'}})
+        // R13 FIX #6: people-search input — "Search" return key, no autocaps,
+        // no autocorrect (names get mangled by autocorrect, e.g. "Joao"→"Jean").
+        React.createElement('input',{autoFocus:true,placeholder:'Search people...',value:search,onChange:function(e){setSearch(e.target.value);},enterKeyHint:'search',autoCapitalize:'none',autoCorrect:'off',style:{flex:1,background:'none',border:'none',outline:'none',fontSize:'13px',color:'var(--text)',fontFamily:'DM Sans,sans-serif'}})
       ),
       searchRes.map(function(u,i){
         return React.createElement('div',{key:i,onClick:function(){startConvo(u);},style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px',borderRadius:'10px',cursor:'pointer',background:'var(--bg3)',marginBottom:'6px'}},
           React.createElement('div',{style:{width:'40px',height:'40px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0,position:'relative'}},
-            u.avatar_url ? React.createElement('img',{src:u.avatar_url,style:{width:'100%',height:'100%',objectFit:'cover'}}) : (u.full_name||u.email||'?').substring(0,2).toUpperCase(),
+            // R18 FIX C: ImgWithFallback for new-chat people-picker avatar.
+            React.createElement(ImgWithFallback,{
+              src:u.avatar_url, alt:(u.full_name||u.email||'User'),
+              fallback:(u.full_name||u.email||'?').substring(0,2).toUpperCase(),
+              style:{width:'100%',height:'100%',objectFit:'cover'}
+            }),
             u.is_online ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'10px',height:'10px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)'}}) : null
           ),
           React.createElement('div',null,
@@ -1635,7 +2258,12 @@ export default function MessagesScreen(props){
             React.createElement('div',{style:{fontSize:'11px',color:u.is_online?'var(--green)':'var(--t2)'}},u.is_online?'Online':'Member')
           )
         );
-      })
+      }),
+      // R17 FIX #2: empty-state when search has ≥2 chars and the query is
+      // settled (not in-flight) but matched no people.
+      (searchRes.length === 0 && search.trim().length >= 2 && !searchingMsg) ? React.createElement('div',{
+        style:{padding:'14px 10px',textAlign:'center',color:'var(--t3)',fontSize:'12px'}
+      },'No people found') : null
     ) : null,
     // Tabs — Friends / Experts / Business (Instagram Reels/Friends style)
     React.createElement('div',{
@@ -1677,7 +2305,32 @@ export default function MessagesScreen(props){
       })
     ),
     // Conversations
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'0 16px'}},
+    React.createElement('div',{
+      style:{flex:1,overflowY:'auto',padding:'0 16px'},
+      // FIX #8: PTR handlers moved here from the outer container so
+      // e.currentTarget.scrollTop reflects the actual scroll position.
+      onTouchStart:function(e){
+        if(refreshing) return;
+        // Only arm PTR when we're already scrolled to the very top of the
+        // inbox container. Otherwise swipe-down should keep scrolling content.
+        var sc = e.currentTarget;
+        if (sc && sc.scrollTop > 0) return;
+        var t = e.touches && e.touches[0]; if(!t) return;
+        setPullStart(t.clientY);
+      },
+      onTouchMove:function(e){
+        if(refreshing||!pullStart) return;
+        var t = e.touches && e.touches[0]; if(!t) return;
+        var d = t.clientY - pullStart;
+        if (d > 0) setPullDist(Math.min(d, 120));
+      },
+      onTouchEnd:function(){
+        if(refreshing) return;
+        if (pullDist > 50) { refreshConvos(); }
+        setPullStart(0);
+        setPullDist(0);
+      },
+    },
       loadingConvos ? React.createElement('div',null,
         React.createElement('div',{style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',padding:'10px 0 6px',textTransform:'uppercase',letterSpacing:'0.5px'}},'People'),
         [0,1,2].map(function(i){
@@ -1716,15 +2369,24 @@ export default function MessagesScreen(props){
             React.createElement('div',{onClick:openTheirProfile,style:{position:'relative',flexShrink:0,cursor:'pointer'}},
               React.createElement(AvatarRing,{ show: momentUserIds.has(c.otherId || c.receiverId || c.user_id) },
                 React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
-                  c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
+                  // R18 FIX C: ImgWithFallback for friend-row inbox avatar.
+                  React.createElement(ImgWithFallback,{
+                    src:c.img, alt:c.name, fallback:c.initials,
+                    style:{width:'100%',height:'100%',objectFit:'cover'}
+                  })
                 )
               ),
               c.isOnline ? React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)',zIndex:1}}) : null
             ),
             React.createElement('div',{style:{flex:1,minWidth:0}},
-              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px'}},
-                React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer'}},c.name),
-                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)'}},c.lastTime?timeAgo(c.lastTime):'')
+              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',alignItems:'center'}},
+                React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'5px',minWidth:0}},
+                  React.createElement('span',{onClick:openTheirProfile,style:{fontSize:'13px',fontWeight:c.unreadCount>0?700:600,color:'var(--text)',cursor:'pointer',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.name),
+                  // Mute icon — shows when this conversation is in ringin_muted_convos.
+                  // Matches Instagram / WhatsApp inbox convention.
+                  inboxMutedConvos.indexOf(c.convId||c.id) >= 0 ? React.createElement('span',{title:'Notifications muted',style:{fontSize:'11px',color:'var(--t3)',flexShrink:0,lineHeight:1}},'🔕') : null
+                ),
+                React.createElement('span',{style:{fontSize:'10px',color:'var(--t3)',flexShrink:0,marginLeft:'6px'}},c.lastTime?timeAgo(c.lastTime):'')
               ),
               React.createElement('div',{style:{fontSize:'11px',color:c.unreadCount>0?'var(--text)':'var(--t3)',fontWeight:c.unreadCount>0?600:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
                 (function(){
@@ -1732,6 +2394,8 @@ export default function MessagesScreen(props){
                   if(!lm) return 'Start a conversation';
                   if(isCallLog(lm)) return previewCallLog(parseCallLog(lm), myId);
                   if(typeof lm==='string' && lm.indexOf('[img]')===0) return '📷 Photo';
+                  // FIX #2: inbox preview for shared moment
+                  if(typeof lm==='string' && lm.indexOf('[mshare]')===0) return '✨ Shared a moment';
                   if(typeof lm==='string' && lm.indexOf('[mlike]')===0) return '❤️ Liked your status';
                   if(typeof lm==='string' && lm.indexOf('[mreply]')===0){
                     var body=lm.slice(8); var sep=body.indexOf('|');
@@ -1765,7 +2429,11 @@ export default function MessagesScreen(props){
         return React.createElement('div',{key:c.id,onClick:function(){setActive(c);},style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}},
           React.createElement('div',{style:{position:'relative',flexShrink:0}},
             React.createElement('div',{style:{width:'46px',height:'46px',borderRadius:'50%',background:c.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',fontWeight:700,color:'#fff',overflow:'hidden'}},
-              c.img ? React.createElement('img',{src:c.img,style:{width:'100%',height:'100%',objectFit:'cover'}}) : c.initials
+              // R18 FIX C: ImgWithFallback for expert-row inbox avatar.
+              React.createElement(ImgWithFallback,{
+                src:c.img, alt:c.name, fallback:c.initials,
+                style:{width:'100%',height:'100%',objectFit:'cover'}
+              })
             ),
             React.createElement('div',{style:{position:'absolute',bottom:'1px',right:'1px',width:'11px',height:'11px',borderRadius:'50%',background:'var(--green)',border:'2px solid var(--bg)'}})
           ),

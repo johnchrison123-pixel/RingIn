@@ -216,9 +216,13 @@ export default function UpdatePrompt(){
   if (!available) return null;
 
   // ── RENDER: neon-green AVAILABLE popup ─────────────────────────────
+  // Final polish: was ['Performance improvements', 'Bug fixes'] when notes
+  // were missing — claims work that may not exist. Replaced with a single
+  // vague-but-honest line. The real notes (when supplied via OTA manifest)
+  // override this.
   var notes = (updateInfo.notes && updateInfo.notes.length)
     ? updateInfo.notes.slice(0, 4)
-    : ['Performance improvements', 'Bug fixes'];
+    : ['Updates and improvements'];
 
   var cardStyle = {
     position: 'fixed',

@@ -1,8 +1,9 @@
 /* eslint-disable */
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {sb} from '../utils/supabase';
 import {playRingtone, stopRingtone, hapticPulse} from '../utils/soundEngine';
 import {hashUidToInt, prefetchAgora} from '../utils/agora';
+import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 
 // Full-screen overlay shown when someone calls this user.
 // Props:
@@ -14,6 +15,15 @@ export default function IncomingCallModal(props){
   var invite = props.invite || {};
   var session = props.session;
   var hapticRef = useRef(null);
+  // ROUND-9 FIX #3: prevent double-reject. If the user double-taps the
+  // decline button OR taps it while the UPDATE is in-flight, we'd
+  // previously fire two UPDATEs and two onReject() calls, occasionally
+  // leaving the modal in a partially-dismissed state. One-shot guard.
+  var rejectedRef = useRef(false);
+  // R13 FIX #8: caller_avatar can 404 (deleted/expired Supabase storage URL,
+  // CDN hiccup, etc.). Without onError, broken image icons appear inside the
+  // gradient circle. Fall back to initials when the network/decode fails.
+  var imgFailedS = useState(false); var imgFailed = imgFailedS[0]; var setImgFailed = imgFailedS[1];
 
   // Real ringtone (warm two-stroke bell, loops every 2.4s, capped at 6 cycles).
   // Shorter haptic pattern (single ~250ms buzz per cycle) to avoid Samsung Internet
@@ -64,7 +74,15 @@ export default function IncomingCallModal(props){
       }).then(function(data){
         if(cancelled || !data || !data.token) return;
         try{
+          // ROUND-9 FIX #10: tag the prefetched-token stash with this
+          // invite's id, so a stale token from a previous (or concurrent)
+          // ring can't be accidentally consumed by a different call.
+          // agora.js already gates on channel+uid match — inviteId is a
+          // belt-and-braces audit trail (consumed-side check can be
+          // strengthened later without breaking the existing contract).
           window.__ringinPrefetchedAgoraToken = {
+            ts: Date.now(),
+            inviteId: invite.id,
             channel: channel,
             uid: uidInt,
             token: data.token,
@@ -84,30 +102,51 @@ export default function IncomingCallModal(props){
     if(props.onAccept) props.onAccept(invite);
   }
   function reject(){
+    // ROUND-9 FIX #3: dedupe — if user double-taps or tap fires while the
+    // first UPDATE is in flight, bail. We also always call onReject (even
+    // on error) so the modal closes; App.js's dismissedInvitesRef prevents
+    // re-show from realtime/polling.
+    if (rejectedRef.current) return;
+    rejectedRef.current = true;
     try{ stopRingtone(); }catch(e){}
     if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
-    if(invite.id){
-      sb.from('call_invites').update({status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected'}).eq('id', invite.id).then(function(){});
+    try {
+      if(invite.id){
+        var p = sb.from('call_invites').update({status:'rejected', ended_at:new Date().toISOString(), end_reason:'callee_rejected'}).eq('id', invite.id);
+        if (p && p.then) {
+          p.then(function(){ if(props.onReject) props.onReject(invite); })
+           .catch(function(){ if(props.onReject) props.onReject(invite); });
+        } else {
+          if(props.onReject) props.onReject(invite);
+        }
+      } else {
+        if(props.onReject) props.onReject(invite);
+      }
+    } catch (_) {
+      if(props.onReject) props.onReject(invite);
     }
-    if(props.onReject) props.onReject(invite);
   }
 
   var name = invite.caller_name || 'Someone';
   var avatar = invite.caller_avatar || null;
-  var initials = (name || '?').substring(0,2).toUpperCase();
+  var initials = safeInitials(name); /* FIX #10 */
 
   // Note: NO backdrop-filter — Samsung Internet/Galaxy GPUs run backdrop-filter
   // on the CPU which pegs a core during the ripple animations. Solid alpha bg
   // looks nearly identical and costs ~0 CPU. Keyframes live in src/index.css.
+  // R13 FIX #1: zIndex raised from 1000 → 999999 so the ring overlay always
+  // sits ABOVE the Moments cube/clickGuard (zIndex 9997/9998/99999). Without
+  // this, a user watching a moment couldn't see or answer an incoming call
+  // because the Moments viewer covered the IncomingCallModal.
   return React.createElement('div',{
-    style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(9,9,14,0.98)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px'}
+    style:{position:'fixed',inset:0,zIndex:999999,background:'rgba(9,9,14,0.98)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px'}
   },
     React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'18px',textTransform:'uppercase',letterSpacing:'2px',fontWeight:700}},'Incoming Call'),
     React.createElement('div',{style:{position:'relative',marginBottom:'24px'}},
       React.createElement('div',{style:{position:'absolute',width:'140px',height:'140px',borderRadius:'50%',background:'rgba(123,110,255,0.15)',top:'-25px',left:'-25px',animation:'ripple 1.2s ease-out infinite'}}),
       React.createElement('div',{style:{position:'absolute',width:'170px',height:'170px',borderRadius:'50%',background:'rgba(232,77,154,0.10)',top:'-40px',left:'-40px',animation:'ripple 1.2s ease-out infinite 0.5s'}}),
       React.createElement('div',{style:{width:'90px',height:'90px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:700,color:'#fff',position:'relative',zIndex:1}},
-        avatar ? React.createElement('img',{src:avatar,alt:name,style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
+        (avatar && !imgFailed) ? React.createElement('img',{src:avatar,alt:name,onError:function(){ setImgFailed(true); },style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
       )
     ),
     React.createElement('div',{style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,color:'var(--text)',marginBottom:'6px'}}, name),

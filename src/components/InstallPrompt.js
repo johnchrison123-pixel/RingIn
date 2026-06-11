@@ -30,10 +30,26 @@ function isStandalone(){
   }catch(e){ return false; }
 }
 
+// Final polish: stricter iOS detection. The old `/Mac/ && maxTouchPoints>1`
+// branch tripped on touchscreen MacBooks (rare today but increasingly real
+// — and any future hybrid Mac). True iPadOS reports as Macintosh in UA but
+// has 'ontouchstart' in window. Real desktop Macs don't. Require BOTH
+// signals before treating a Macintosh UA as iOS.
+function isIOS(ua){
+  if (/iP(hone|ad|od)/.test(ua)) return true;
+  // iPadOS-as-Mac path — must have touch APIs AND multi-touch capacity.
+  if (ua.indexOf('Macintosh') >= 0
+      && (window.navigator.maxTouchPoints || 0) > 1
+      && ('ontouchstart' in window)) {
+    return true;
+  }
+  return false;
+}
+
 function detectPlatform(){
   try{
     var ua = window.navigator.userAgent || '';
-    if (/iP(hone|ad|od)/.test(ua) || (/Mac/.test(ua) && window.navigator.maxTouchPoints > 1)) return 'ios';
+    if (isIOS(ua)) return 'ios';
     if (/SamsungBrowser/i.test(ua)) return 'samsung';
     if (/Firefox/i.test(ua)) return 'firefox';
     if (/Edg\//.test(ua)) return 'edge';
@@ -98,11 +114,11 @@ export default function InstallPrompt(){
       if (!isStandalone() && !wasRecentlyDismissed()) setVisible(true);
     }
     function onInstalled(){
+      // FIX #12: user accepted install — just hide the prompt. Do NOT
+      // set the dismissed_at flag (was the same as explicit-dismiss
+      // before, locking the user out of re-prompts for 14 days even
+      // though they did the thing we wanted).
       setVisible(false);
-      try{
-        localStorage.setItem(STORAGE_KEY, '1');
-        localStorage.setItem(STORAGE_TS_KEY, String(Date.now()));
-      }catch(_){}
     }
     window.addEventListener('ringin-install-ready', onReady);
     window.addEventListener('ringin-install-done', onInstalled);
@@ -145,11 +161,19 @@ export default function InstallPrompt(){
     }
     try{
       ev.prompt();
-      ev.userChoice.then(function(){
+      ev.userChoice.then(function(choice){
         promptEventRef.current = null;
-        dismiss();
-      }).catch(function(){ dismiss(); });
-    }catch(e){ dismiss(); }
+        // FIX #12: only set the 14-day dismissed cooldown when the user
+        // EXPLICITLY dismissed. If they accepted, just hide the prompt —
+        // the appinstalled event will fire shortly and onInstalled will
+        // hide it for good without locking re-prompts.
+        if (choice && choice.outcome === 'dismissed') {
+          dismiss();
+        } else {
+          setVisible(false);
+        }
+      }).catch(function(){ setVisible(false); });
+    }catch(e){ setVisible(false); }
   }
 
   if (!visible) return null;
@@ -164,7 +188,10 @@ export default function InstallPrompt(){
     position:'fixed',
     left:'50%',
     transform:'translateX(-50%)',
-    bottom:'76px',
+    // R13 FIX #3: respect iOS home-indicator safe area so the pill doesn't
+    // sit under the gesture bar on notched/Dynamic-Island iPhones. Mirrors
+    // UpdatePrompt.js line 231.
+    bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
     zIndex:850,
     width:'calc(100% - 24px)',
     maxWidth:'420px',
