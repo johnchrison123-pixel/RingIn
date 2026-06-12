@@ -1,0 +1,188 @@
+/* eslint-disable */
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { motion, useMotionValue, useSpring, useVelocity, useTransform } from 'motion/react';
+import { hapticTap } from '../utils/haptics';
+
+/* LiquidGlassNav — iOS-26 "Liquid Glass" floating tab bar.
+ *
+ * A translucent glass droplet rests on the active tab and FOLLOWS the
+ * finger / cursor as it moves across the bar, deforming like water (it
+ * stretches in the direction of travel via velocity-driven scaleX/scaleY),
+ * then springs to settle on whichever tab you land on.
+ *
+ * Props:
+ *   tabs:        [{id, label, svg}]
+ *   activeTab:   string
+ *   unreadMsg:   number (badge on the messages tab)
+ *   onSelectTab: (tabId) => void   — host does the real navigation
+ *   onOrb:       () => void        — center anonymous-connect orb
+ *   connectActive: boolean         — orb is the active surface
+ */
+var BLOB_W = 60; // fixed droplet width keeps centering cheap + motion smooth
+
+function LiquidGlassNav(props){
+  var tabs = props.tabs || [];
+  var activeTab = props.activeTab;
+  var unreadMsg = props.unreadMsg || 0;
+
+  var navRef = useRef(null);
+  var draggingS = useState(false); var dragging = draggingS[0]; var setDragging = draggingS[1];
+  var hoverS = useState(false); var hovering = hoverS[0]; var setHovering = hoverS[1];
+
+  // Droplet horizontal CENTER (px, relative to the nav's padding box).
+  var blobX = useMotionValue(0);
+  var xSpring = useSpring(blobX, { stiffness: 360, damping: 28, mass: 0.9 });
+  // Left edge = center - half width (kept on the compositor via transform).
+  var xLeft = useTransform(xSpring, function(v){ return v - BLOB_W / 2; });
+  // Velocity -> liquid stretch (wider + flatter the faster it travels).
+  var xVel = useVelocity(xSpring);
+  var scaleX = useTransform(xVel, [-2000, 0, 2000], [1.4, 1, 1.4]);
+  var scaleY = useTransform(xVel, [-2000, 0, 2000], [0.66, 1, 0.66]);
+
+  var activeIsTab = tabs.some(function(t){ return t.id === activeTab; });
+  var showBlob = activeIsTab || dragging || hovering;
+
+  function tabCenter(tabId){
+    var nav = navRef.current; if(!nav) return null;
+    var btn = nav.querySelector('[data-navtab="'+tabId+'"]');
+    if(!btn) return null;
+    return btn.offsetLeft + btn.offsetWidth / 2;
+  }
+  function settleToActive(){
+    var c = tabCenter(activeTab);
+    if(c != null) blobX.set(c);
+  }
+  // Settle on mount, when the active tab changes, and on resize.
+  useLayoutEffect(function(){ settleToActive(); }, [activeTab, tabs.length]);
+  useEffect(function(){
+    function onResize(){ settleToActive(); }
+    window.addEventListener('resize', onResize);
+    return function(){ window.removeEventListener('resize', onResize); };
+  }, [activeTab]);
+
+  function follow(clientX){
+    var nav = navRef.current; if(!nav) return;
+    var rect = nav.getBoundingClientRect();
+    var x = clientX - rect.left;
+    var pad = BLOB_W / 2 + 4;
+    blobX.set(Math.max(pad, Math.min(rect.width - pad, x)));
+  }
+  function onPointerMove(e){
+    if(e.pointerType === 'mouse'){ setHovering(true); follow(e.clientX); }
+    else if(dragging){ follow(e.clientX); }
+  }
+  function onPointerDown(e){ setDragging(true); follow(e.clientX); }
+  function endPointer(){ if(dragging) setDragging(false); settleToActive(); }
+  function onPointerLeave(){ setHovering(false); setDragging(false); settleToActive(); }
+
+  function selectTab(tabId){
+    hapticTap();
+    var c = tabCenter(tabId); if(c != null) blobX.set(c);
+    if(props.onSelectTab) props.onSelectTab(tabId);
+  }
+  function tapOrb(){
+    hapticTap();
+    if(props.onOrb) props.onOrb();
+  }
+
+  function renderTab(tab){
+    var isActive = activeTab === tab.id;
+    return React.createElement(motion.button, {
+      key: tab.id,
+      'data-navtab': tab.id,
+      whileTap: { scale: 0.9 },
+      transition: { type: 'spring', stiffness: 420, damping: 24 },
+      onClick: function(){ selectTab(tab.id); },
+      style: {
+        position:'relative', zIndex:1, flex:'0 0 auto', minWidth:'60px',
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        gap:'3px', padding:'9px 14px', border:'none', background:'transparent',
+        cursor:'pointer', color: isActive ? '#fff' : 'rgba(255,255,255,0.52)',
+        WebkitTapHighlightColor:'transparent',
+      }
+    },
+      React.createElement('div', {style:{position:'relative',display:'inline-flex',alignItems:'center',justifyContent:'center'}},
+        React.createElement('svg', {viewBox:'0 0 24 24',width:22,height:22,fill:'none',stroke:'currentColor',strokeWidth:2},
+          React.createElement('path', {d:tab.svg})
+        ),
+        (tab.id==='messages' && unreadMsg>0) ? React.createElement('div', {
+          style:{position:'absolute',top:'-4px',right:'-6px',background:'#FF4757',borderRadius:'50%',
+            minWidth:'16px',height:'16px',display:'flex',alignItems:'center',justifyContent:'center',
+            fontSize:'9px',fontWeight:700,color:'#fff',padding:'0 3px'}
+        }, unreadMsg>99 ? '99+' : String(unreadMsg)) : null
+      ),
+      React.createElement('span', {style:{fontSize:'9.5px',fontWeight:600,letterSpacing:'0.2px'}}, tab.label)
+    );
+  }
+
+  var canBlur = (typeof navigator !== 'undefined' && (navigator.hardwareConcurrency || 8) > 4);
+
+  return React.createElement(motion.nav, {
+    ref: navRef,
+    onPointerMove: onPointerMove,
+    onPointerDown: onPointerDown,
+    onPointerUp: endPointer,
+    onPointerCancel: endPointer,
+    onPointerLeave: onPointerLeave,
+    style: {
+      position:'fixed', left:'50%', right:'auto',
+      bottom:'calc(14px + env(safe-area-inset-bottom, 0px))',
+      transform:'translateX(-50%)',
+      display:'flex', alignItems:'center', justifyContent:'center', gap:'2px',
+      width:'auto', maxWidth:'calc(100% - 24px)', padding:'6px 8px',
+      borderRadius:'30px',
+      background: canBlur ? 'rgba(18, 20, 30, 0.55)' : 'rgba(18, 20, 30, 0.92)',
+      backdropFilter: canBlur ? 'blur(22px) saturate(180%)' : 'none',
+      WebkitBackdropFilter: canBlur ? 'blur(22px) saturate(180%)' : 'none',
+      border:'1px solid rgba(255,255,255,0.10)',
+      boxShadow:'0 12px 40px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.3)',
+      zIndex:100, touchAction:'none',
+    }
+  },
+    // ── The liquid-glass droplet ────────────────────────────────────────
+    React.createElement(motion.div, {
+      'aria-hidden': true,
+      animate: { opacity: showBlob ? 1 : 0 },
+      transition: { duration: 0.2 },
+      style: {
+        position:'absolute', top:'6px', left:0, height:'calc(100% - 12px)',
+        width: BLOB_W + 'px', x: xLeft, scaleX: scaleX, scaleY: scaleY,
+        borderRadius:'22px', pointerEvents:'none', zIndex:0,
+        background:'linear-gradient(135deg, rgba(255,255,255,0.30), rgba(255,255,255,0.08))',
+        border:'1px solid rgba(255,255,255,0.30)',
+        boxShadow:'inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -2px 6px rgba(0,0,0,0.12), 0 4px 16px rgba(123,110,255,0.30)',
+      }
+    }),
+    // ── Tabs + center orb (orb sits after 'friends', visual center) ─────
+    tabs.map(function(tab){
+      if(tab.id === 'friends'){
+        var orb = React.createElement(motion.button, {
+          key:'connect-orb',
+          whileHover:{ scale: 1.1, y: -2 },
+          whileTap:{ scale: 0.9 },
+          transition:{ type:'spring', stiffness:420, damping:20 },
+          onClick: tapOrb,
+          title:'Anonymous Connect',
+          style:{
+            position:'relative', zIndex:1, width:'46px', height:'46px', borderRadius:'50%',
+            background:'linear-gradient(135deg,#7B6EFF,#E84D9A)', border:'none', cursor:'pointer',
+            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, margin:'0 4px',
+            boxShadow: props.connectActive
+              ? '0 0 0 3px rgba(123,110,255,0.45),0 6px 18px rgba(232,77,154,0.55)'
+              : '0 4px 14px rgba(232,77,154,0.45)',
+          }
+        },
+          React.createElement('svg',{viewBox:'0 0 24 24',width:20,height:20,fill:'none',stroke:'#fff',strokeWidth:2.4},
+            React.createElement('path',{d:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z'})
+          ),
+          React.createElement('span',{style:{position:'absolute',top:'2px',right:'2px',width:'8px',height:'8px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
+        );
+        return [renderTab(tab), orb];
+      }
+      return renderTab(tab);
+    })
+  );
+}
+
+export default LiquidGlassNav;
+export { LiquidGlassNav };
