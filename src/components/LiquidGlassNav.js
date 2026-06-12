@@ -26,6 +26,14 @@ function LiquidGlassNav(props){
   var unreadMsg = props.unreadMsg || 0;
 
   var navRef = useRef(null);
+  // Dedup so a tap (which fires BOTH pointerup-select and the click fallback)
+  // doesn't double-select / double-haptic.
+  var lastSelRef = useRef({ id: null, t: 0 });
+  // draggingRef is SYNCHRONOUS — React state updates lag behind fast touch
+  // gestures, so the pointerup handler would read a stale `dragging=false`
+  // and skip release-to-select. The ref is the source of truth for logic;
+  // the `dragging` state only drives the droplet's visibility.
+  var draggingRef = useRef(false);
   var draggingS = useState(false); var dragging = draggingS[0]; var setDragging = draggingS[1];
   var hoverS = useState(false); var hovering = hoverS[0]; var setHovering = hoverS[1];
 
@@ -68,19 +76,53 @@ function LiquidGlassNav(props){
     blobX.set(Math.max(pad, Math.min(rect.width - pad, x)));
   }
   function onPointerMove(e){
-    if(e.pointerType === 'mouse'){ setHovering(true); follow(e.clientX); }
-    else if(dragging){ follow(e.clientX); }
+    if(e.pointerType === 'mouse' && !draggingRef.current){ setHovering(true); follow(e.clientX); }
+    else if(draggingRef.current){ follow(e.clientX); }
   }
-  function onPointerDown(e){ setDragging(true); follow(e.clientX); }
-  function endPointer(){ if(dragging) setDragging(false); settleToActive(); }
-  function onPointerLeave(){ setHovering(false); setDragging(false); settleToActive(); }
+  function onPointerDown(e){ draggingRef.current = true; setDragging(true); follow(e.clientX); }
+
+  // Which nav element is under a screen point (walks up from svg/span children).
+  function targetUnderPoint(x, y){
+    try {
+      var el = document.elementFromPoint(x, y);
+      while(el && el !== document.body){
+        if(el.getAttribute){
+          var t = el.getAttribute('data-navtab');
+          if(t) return t;
+          if(el.getAttribute('data-orb') === '1') return '__orb__';
+        }
+        el = el.parentElement;
+      }
+    } catch(_){}
+    return null;
+  }
+  // Release-to-select (iOS-26): wherever you lift your finger becomes the
+  // selected surface — so dragging the droplet to Experts and letting go
+  // sticks it there instead of springing back to the active tab.
+  function onPointerUp(e){
+    if(draggingRef.current){
+      draggingRef.current = false; setDragging(false);
+      var id = targetUnderPoint(e.clientX, e.clientY);
+      if(id === '__orb__'){ tapOrb(); return; }
+      if(id){ selectTab(id); return; }
+    }
+    settleToActive();
+  }
+  function onPointerLeave(){ draggingRef.current = false; setHovering(false); setDragging(false); settleToActive(); }
+  function onPointerCancel(){ draggingRef.current = false; setDragging(false); settleToActive(); }
 
   function selectTab(tabId){
+    var now = Date.now();
+    if(lastSelRef.current.id === tabId && (now - lastSelRef.current.t) < 500) return; // dedup tap's pointerup+click
+    lastSelRef.current = { id: tabId, t: now };
     hapticTap();
     var c = tabCenter(tabId); if(c != null) blobX.set(c);
     if(props.onSelectTab) props.onSelectTab(tabId);
   }
   function tapOrb(){
+    var now = Date.now();
+    if(lastSelRef.current.id === '__orb__' && (now - lastSelRef.current.t) < 500) return;
+    lastSelRef.current = { id: '__orb__', t: now };
     hapticTap();
     if(props.onOrb) props.onOrb();
   }
@@ -121,8 +163,8 @@ function LiquidGlassNav(props){
     ref: navRef,
     onPointerMove: onPointerMove,
     onPointerDown: onPointerDown,
-    onPointerUp: endPointer,
-    onPointerCancel: endPointer,
+    onPointerUp: onPointerUp,
+    onPointerCancel: onPointerCancel,
     onPointerLeave: onPointerLeave,
     style: {
       position:'fixed', left:'50%', right:'auto',
@@ -158,6 +200,7 @@ function LiquidGlassNav(props){
       if(tab.id === 'friends'){
         var orb = React.createElement(motion.button, {
           key:'connect-orb',
+          'data-orb':'1',
           whileHover:{ scale: 1.1, y: -2 },
           whileTap:{ scale: 0.9 },
           transition:{ type:'spring', stiffness:420, damping:20 },
