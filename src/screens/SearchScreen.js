@@ -7,6 +7,7 @@ import {playSound} from '../utils/soundEngine';
 import TopBarAvatar from '../components/TopBarAvatar';
 import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
+import {toastSuccess, toastError, toastWarn, toastInfo} from '../utils/toast'; /* R54: replace window.alert (banned per CLAUDE.md) */
 
 // R24: hardcoded EXPERTS array (with i.pravatar.cc fake avatars) removed
 // pre-launch. The list now comes from real Supabase profiles who have
@@ -145,7 +146,7 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
   };
 
   function startSubscription(mode){
-    if (!currentUserId) { try { window.alert('Please log in first'); } catch(_){} return; }
+    if (!currentUserId) { try { toastWarn('Please log in first'); } catch(_){} return; }
     if (!subOffer) return;
     setSubBuying(true);
     var nowMs = Date.now();
@@ -184,22 +185,22 @@ function ExpertProfile({expert, onBack, onCall, following, toggleFollow, followL
       setSubBuying(false);
       if (r && r.error) {
         console.error('[ringin] subscribe error:', r.error);
-        try { window.alert('Could not subscribe: ' + (r.error.message || 'unknown error')); } catch(_){}
+        try { toastError('Could not subscribe: ' + (r.error.message || 'unknown error')); } catch(_){}
         return;
       }
       setMySub(r.data || row);
       setShowSubModal(false);
       try {
         if (mode === 'trial') {
-          window.alert('Free trial started! You have access for ' + (subOffer.trial_days || 7) + ' days.');
+          toastSuccess('Free trial started! You have access for ' + (subOffer.trial_days || 7) + ' days.');
         } else {
-          window.alert('Subscription pending — real-money billing wires up in v1.5. Your access is recorded.');
+          toastInfo('Subscription pending — your access is recorded.');
         }
       } catch(_){}
     }).catch(function(e){
       setSubBuying(false);
       console.warn('[ringin] subscribe reject:', e && e.message);
-      try { window.alert('Network error — please try again'); } catch(_){}
+      try { toastError('Network error — please try again'); } catch(_){}
     });
   }
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto',position:'relative'}},
@@ -495,7 +496,7 @@ export default function SearchScreen(props){
 
   return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
-      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Experts'),
+      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'0.3px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Experts'),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
         React.createElement('div',{onClick:function(){if(props.onOpenWallet)props.onOpenWallet();},style:{display:'flex',alignItems:'center',gap:'5px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',color:'var(--text)',cursor:'pointer'}},
           React.createElement('div',{style:{width:'15px',height:'15px',borderRadius:'50%',background:'linear-gradient(135deg,#F5A623,#f97316)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'7px',color:'#fff',fontWeight:700}},'C'),

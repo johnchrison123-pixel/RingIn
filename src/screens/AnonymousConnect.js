@@ -1339,7 +1339,7 @@ export default function AnonymousConnect(props) {
                        : ANON_AVATARS;
     return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
       React.createElement('div', {style:{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}},
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Welcome')
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,letterSpacing:'0.3px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Welcome')
       ),
       React.createElement('div', {style:{padding:'18px'}},
         React.createElement('h2', {style:{fontSize:'18px',fontWeight:800,color:'var(--text)',margin:'0 0 6px',fontFamily:'Syne, sans-serif'}}, 'Set up your anonymous profile'),
@@ -1421,7 +1421,7 @@ export default function AnonymousConnect(props) {
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     /* R34: simple header (title only, no longer sticky). */
     React.createElement('div', {style:{padding:'14px 18px 4px'}},
-      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
+      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'0.3px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🎭 Anonymous Connect')
     ),
 
     /* R34: Online toggle card — moved OUT of connections tab so it's visible

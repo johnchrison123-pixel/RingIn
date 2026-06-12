@@ -22,6 +22,8 @@ import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials
 import {isBlockedSync, onBlocksChanged} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed; R19 verifier-fix: subscribe to re-render on block-change */
 import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2: ref-counted lock prevents 2-modal overflow leak */
 import {formatDateTime, formatDate, formatTime, safeSetItem} from '../utils/dateFmt'; /* R18: timezone-aware date display + safe localStorage wrapper */
+import {ConfirmSheet} from '../components/ConfirmSheet'; /* in-app confirm sheet replaces window.confirm (banned per CLAUDE.md) */
+import {motion} from 'motion/react'; /* R54: spring micro-interactions (like button) */
 
 function playKeyClick(){playSound('typing');}
 function playEmojiClick(){playSound('emoji');}
@@ -223,6 +225,9 @@ export function UserProfileView(props){
   var hideLikesPair=useHideLikes(); var hideLikes=hideLikesPair[0];
   // Report modal state — replaces the previously fake alert("Thank you...").
   var reportTargetUS=useState(null); var reportTargetU=reportTargetUS[0]; var setReportTargetU=reportTargetUS[1];
+  // R54: in-app delete-post confirm sheet (replaces window.confirm). Holds
+  // {post} while open, null when closed.
+  var delConfUS=useState(null); var delConfU=delConfUS[0]; var setDelConfU=delConfUS[1];
 
   // R12 FIX #5: per-post in-flight guard for toggleLikeU — prevents the
   // double-toggle race where a fast tap fires two RPC calls and the second
@@ -635,7 +640,7 @@ export function UserProfileView(props){
             } catch(_){}
           }
           var items=isOwn?[
-            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);if(window.confirm('Delete this post?')){var snapU2=userPosts.slice();setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);toastError('Failed to delete post.');/* FIX #7 */}});}}},
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenuU(null);setDelConfU({post:p});}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenuU(null);}},
             {icon:'✏️',label:'Edit Post',fn:function(){setEditPostUData({id:p.id,content:p.text||p.content||''});setPostMenuU(null);}},
             {icon:'🔕',label:_mutedListU.indexOf(p.id)>=0?'Turn on notifications':'Turn off notifications',fn:function(){_toggleMutePostU(p.id);setPostMenuU(null);}}
@@ -885,7 +890,24 @@ export function UserProfileView(props){
           React.createElement('button',{onClick:saveEditPostU,style:{padding:'8px 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'13px',cursor:'pointer',fontWeight:600}},'Save')
         )
       )
-    ) : null
+    ) : null,
+    // R54: in-app delete-post confirm sheet (replaces window.confirm).
+    React.createElement(ConfirmSheet, {
+      open: !!delConfU,
+      title: 'Delete post?',
+      message: "This can't be undone.",
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: function(){
+        var p = delConfU && delConfU.post; setDelConfU(null);
+        if(!p) return;
+        var snapU2=userPosts.slice();
+        setUserPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});
+        sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePostU]:', r.error);setUserPosts(snapU2);toastError('Failed to delete post.');}});
+      },
+      onCancel: function(){ setDelConfU(null); }
+    })
   );
 }
 
@@ -918,6 +940,11 @@ export default function HomeScreen(props){
 
   // Post menu state
   var postMenuS=useState(null); var postMenu=postMenuS[0]; var setPostMenu=postMenuS[1];
+  // R54: in-app confirm sheets (replace window.confirm, banned per CLAUDE.md).
+  // delConf holds {post} for delete-post; modConf holds {flags, proceed} for
+  // the borderline-content moderation gate.
+  var delConfS=useState(null); var delConf=delConfS[0]; var setDelConf=delConfS[1];
+  var modConfS=useState(null); var modConf=modConfS[0]; var setModConf=modConfS[1];
   var showEditPostS=useState(false); var showEditPost=showEditPostS[0]; var setShowEditPost=showEditPostS[1];
   var editPostDataS=useState(null); var editPostData=editPostDataS[0]; var setEditPostData=editPostDataS[1];
   /* R19 verifier-fix: bump on every blocks-changed so isBlockedSync filters
@@ -2105,14 +2132,11 @@ export default function HomeScreen(props){
         setPosting(false);
         return;
       }
-      // Warn user on borderline content
-      if (detection && detection.action === 'review') {
-        if (!window.confirm('Heads up: your post may contain ' + (detection.flags||[]).join(', ') + '. Post anyway?')) {
-          setPosting(false);
-          return;
-        }
-      }
-
+      // Warn user on borderline content — the rest of the post pipeline is
+      // wrapped in continuePostPipeline() so the in-app ConfirmSheet (set
+      // below for the 'review' case) can resume it after the user taps
+      // "Post anyway". Replaces the old window.confirm (banned per CLAUDE.md).
+      function continuePostPipeline(){
       // Auto-tag posts
       // FIX #9: lowercase manual hashtags so `#Health` and `#health` collapse
       // into the same tag instead of fragmenting search results.
@@ -2258,6 +2282,15 @@ export default function HomeScreen(props){
         // Kick off the insert with retry handler.
         sbHome.from('posts').insert([postData]).select().then(handleInsertResult);
       });
+      } // close continuePostPipeline()
+
+      // Borderline ('review') content → ask via in-app ConfirmSheet, then
+      // resume the pipeline on "Post anyway". Otherwise continue immediately.
+      if (detection && detection.action === 'review') {
+        setModConf({ flags: (detection.flags || []), proceed: continuePostPipeline });
+        return;
+      }
+      continuePostPipeline();
     });
   }
 
@@ -2567,7 +2600,7 @@ export default function HomeScreen(props){
           if(!p) return null;
           var isOwn=p.userId===currentUserId;
           var items=isOwn?[
-            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);if(window.confirm('Delete this post?')){var snapBefore=posts.slice();setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePost]:', r.error);setPosts(snapBefore);toastError('Failed to delete post.');/* FIX #7 */}});}}},
+            {icon:'🗑️',label:'Delete Post',red:true,fn:function(){setPostMenu(null);setDelConf({post:p});}},
             {icon:'🔗',label:'Copy Link',fn:function(){var url='https://ring-in.vercel.app/post/'+p.id;copyToClipboardWithToast(url,'🔗 Link copied!');setPostMenu(null);}},
             {icon:'✏️',label:'Edit Post',fn:function(){setEditPostData({id:p.id,content:p.text||p.content||''});setShowEditPost(true);setPostMenu(null);}},
             {icon:'🔕',label:mutedPosts.includes(p.id)?'Turn on notifications':'Turn off notifications',fn:function(){toggleMutePost(p.id);setPostMenu(null);}}
@@ -3301,9 +3334,11 @@ export default function HomeScreen(props){
           React.createElement('div', {className:'pacts'},
             React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1}},
             React.createElement('button',{className:'pa'+(p.liked?' liked':''),onClick:function(){toggleLike(p.id);},style:{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px',padding:'8px 2px',fontSize:'13px',fontWeight:p.liked?700:400}},
-              React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22'},
-                p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
-                React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
+              React.createElement(motion.span,{key:p.liked?'liked':'unliked',whileTap:{scale:1.35},transition:{type:'spring',stiffness:300,damping:18},style:{display:'inline-flex',alignItems:'center'}},
+                React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22'},
+                  p.liked?React.createElement('defs',null,React.createElement('linearGradient',{id:'lg'+p.id,x1:'0%',y1:'0%',x2:'100%',y2:'100%'},React.createElement('stop',{offset:'0%',stopColor:'#5B4FD4'}),React.createElement('stop',{offset:'100%',stopColor:'#C4347A'}))):null,
+                  React.createElement('path',{d:'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',fill:p.liked?'url(#lg'+p.id+')':'none',stroke:p.liked?'none':'var(--t2)',strokeWidth:'2'})
+                )
               ),
               React.createElement('span',{onClick:function(e){openLikersPopup(e,p);},style:{color:p.liked?'#B44FE8':'var(--t2)',cursor:p.likes>0?'pointer':'default'}},
                 hideLikes ? (p.likes > 0 ? 'Liked' : '0 Likes') : (p.likes + ' Likes')
@@ -3389,6 +3424,37 @@ export default function HomeScreen(props){
           React.createElement('button',{onClick:saveEditPost,style:{padding:'8px 18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',borderRadius:'20px',color:'#fff',fontSize:'13px',cursor:'pointer',fontWeight:600}},'Save')
         )
       )
-    ) : null
+    ) : null,
+    // R54: in-app delete-post confirm (replaces window.confirm).
+    React.createElement(ConfirmSheet, {
+      open: !!delConf,
+      title: 'Delete post?',
+      message: "This can't be undone.",
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: function(){
+        var p = delConf && delConf.post; setDelConf(null);
+        if(!p) return;
+        var snapBefore=posts.slice();
+        setPosts(function(prev){return prev.filter(function(x){return x.id!==p.id;});});
+        sbHome.from('posts').delete().eq('id',p.id).then(function(r){if(r.error){console.error('RingIn Error [deletePost]:', r.error);setPosts(snapBefore);toastError('Failed to delete post.');}});
+      },
+      onCancel: function(){ setDelConf(null); }
+    }),
+    // R54: borderline-content moderation gate (replaces window.confirm).
+    React.createElement(ConfirmSheet, {
+      open: !!modConf,
+      title: 'Post anyway?',
+      message: modConf ? ('Your post may contain ' + (modConf.flags||[]).join(', ') + '.') : '',
+      confirmLabel: 'Post anyway',
+      cancelLabel: 'Edit first',
+      destructive: false,
+      onConfirm: function(){
+        var go = modConf && modConf.proceed; setModConf(null);
+        if(typeof go === 'function') go();
+      },
+      onCancel: function(){ setModConf(null); setPosting(false); }
+    })
   );
 }

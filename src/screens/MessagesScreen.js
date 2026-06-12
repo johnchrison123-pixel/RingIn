@@ -15,6 +15,8 @@ import {useCoinBalance} from '../utils/coinBalance';
 import {formatDateTime, formatDate, formatTime} from '../utils/dateFmt';
 // FIX #7: server-side block list unification — see src/utils/blocks.js.
 import {blockUser as serverBlockUser, isBlockedSync, loadBlocks} from '../utils/blocks';
+import {toastError, toastInfo} from '../utils/toast'; /* R54: real toasts (toastError was referenced but never imported) */
+import {ConfirmSheet} from '../components/ConfirmSheet'; /* R54: in-app confirm replaces window.confirm */
 
 var EXPERT_CONVOS_BASE=[
   {id:'e1',initials:'PN',name:'Dr. Priya Nair',role:'General Physician',color:'linear-gradient(135deg,#1D9E75,#5DCAA5)',last:'Thank you for your question!',time:'2m ago',unread:2,img:'https://i.pravatar.cc/150?img=47',rate:120},
@@ -128,6 +130,8 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   // window.confirm (banned per CLAUDE.md). Lives in ChatBox scope because
   // clearAllChat (and its supabase delete + msgs setter) all live here too.
   var clearChatConfirmS=useState(false); var clearChatConfirm=clearChatConfirmS[0]; var setClearChatConfirm=clearChatConfirmS[1];
+  // R54: in-app block confirm modal (replaces window.confirm, banned per CLAUDE.md).
+  var blockConfirmS=useState(false); var blockConfirm=blockConfirmS[0]; var setBlockConfirm=blockConfirmS[1];
 
   // Per-conversation read-receipts toggle (reciprocal — like WhatsApp).
   // Stored in localStorage `ringin_rr_off` as a Set of conversation IDs.
@@ -387,16 +391,17 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
   // open to avoid an always-on global keydown handler.
   // Also closes the R18 FIX A clear-chat confirm modal — same UX contract.
   useEffect(function(){
-    if (!chatMenuOpen && !clearChatConfirm) return;
+    if (!chatMenuOpen && !clearChatConfirm && !blockConfirm) return;
     function onKey(e){
       if (e.key === 'Escape' || e.keyCode === 27) {
-        if (clearChatConfirm) setClearChatConfirm(false);
+        if (blockConfirm) setBlockConfirm(false);
+        else if (clearChatConfirm) setClearChatConfirm(false);
         else if (chatMenuOpen) setChatMenuOpen(false);
       }
     }
     window.addEventListener('keydown', onKey);
     return function(){ window.removeEventListener('keydown', onKey); };
-  }, [chatMenuOpen, clearChatConfirm]);
+  }, [chatMenuOpen, clearChatConfirm, blockConfirm]);
 
   var bottomRef=useRef(null);
   var headerRef=useRef(null);
@@ -725,11 +730,15 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
     }
   }
 
+  // R18-style split: blockUser() opens the in-app confirm modal (replaces
+  // window.confirm, banned per CLAUDE.md); doBlock() performs the write.
   function blockUser(){
     setChatMenuOpen(false);
+    setBlockConfirm(true);
+  }
+  function doBlock(){
+    setBlockConfirm(false);
     var otherId = convo.receiverId || convo.other_user_id || convo.id;
-    var otherName = convo.name || 'this person';
-    if(!window.confirm('Block '+otherName+'? They will not be able to message you.')) return;
     // FIX R10-6: previous code wrote to localStorage + fired onBack BEFORE
     // checking the DB write — so a failed server write left a UI that
     // claimed "blocked" while the other user could still message us. Now
@@ -1129,6 +1138,38 @@ function ChatBox({convo,session,onBack,onViewExpert,onViewUser,onCall,onMessageS
             onClick:doClearChat,
             style:{padding:'8px 14px',borderRadius:'8px',background:'#FF4757',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
           }, 'Clear')
+        )
+      )
+    ) : null,
+
+    // ── R54: in-app confirm modal for "Block user" (mirrors clear-chat) ──
+    // Replaces native window.confirm (banned per CLAUDE.md).
+    blockConfirm ? React.createElement(React.Fragment, null,
+      React.createElement('div',{
+        style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:500,backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)'},
+        onClick:function(){ setBlockConfirm(false); }
+      }),
+      React.createElement('div',{
+        onClick:function(e){ e.stopPropagation(); },
+        style:{
+          position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+          zIndex:501, background:'var(--bg2,#161028)', border:'1px solid var(--border)',
+          borderRadius:'16px', padding:'18px 18px 14px', minWidth:'260px', maxWidth:'320px',
+          boxShadow:'0 16px 48px rgba(0,0,0,0.6)', color:'var(--text)', fontFamily:'inherit'
+        }
+      },
+        React.createElement('div',{style:{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}, 'Block '+((convo&&convo.name)?String(convo.name).split(' ')[0]:'user')+'?'),
+        React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.4,marginBottom:'14px'}},
+          'They will no longer be able to message you. You can unblock later in Settings.'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}},
+          React.createElement('button',{
+            onClick:function(){ setBlockConfirm(false); },
+            style:{padding:'8px 14px',borderRadius:'8px',background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Cancel'),
+          React.createElement('button',{
+            onClick:doBlock,
+            style:{padding:'8px 14px',borderRadius:'8px',background:'#FF4757',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+          }, 'Block')
         )
       )
     ) : null,
@@ -1718,6 +1759,7 @@ export default function MessagesScreen(props){
   var expertConvosS=useState(EXPERT_CONVOS_BASE); var expertConvos=expertConvosS[0]; var setExpertConvos=expertConvosS[1];
   var activeS=useState(props.initConvo||null); var active=activeS[0]; var setActive=activeS[1];
   var callS=useState(null); var activeCall=callS[0]; var setActiveCall=callS[1];
+  var delPostConfS=useState(null); var delPostConf=delPostConfS[0]; var setDelPostConf=delPostConfS[1]; /* R54: in-app delete-post confirm (replaces window.confirm) */
   /* R20 FIX #7: listen for the tap-on-active-tab reset event. Previously App.js
    * bumped a key prop to force remount, which caused a realtime-channel
    * collision (new instance + old instance both subscribing to identical
@@ -1969,7 +2011,7 @@ export default function MessagesScreen(props){
     var coins = parseInt(giftCoins, 10) || 0;
     if (!postId || coins <= 0) return;
     sb.rpc('gift_creator_post', { p_post_id: postId, p_coins: coins }).then(function(r){
-      if (r && r.error) { try { (window.alert || function(){})('Gift failed: ' + r.error.message); } catch(_){} return; }
+      if (r && r.error) { try { toastError('Gift failed: ' + r.error.message); } catch(_){} return; }
       setGiftingPostId(null);
       if (viewingCreator) loadCreatorPosts(viewingCreator.creator_id);
     }).catch(function(){});
@@ -2333,7 +2375,7 @@ export default function MessagesScreen(props){
   },
     // Header
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 18px 7px',gap:'8px'}},
-      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Messages'),
+      React.createElement('div',{style:{fontFamily:'Syne,sans-serif',fontSize:'26px',fontWeight:800,letterSpacing:'0.3px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Messages'),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
         // + New message — moved to LEFT of the coin chip
         React.createElement('button',{onClick:function(){
@@ -2724,7 +2766,7 @@ export default function MessagesScreen(props){
               return React.createElement('div',{key:p.id,style:{padding:'12px 0',borderBottom:'1px solid var(--border)'}},
                 React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'}},
                   React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)'}}, timeAgo(p.created_at)),
-                  React.createElement('button',{onClick:function(){ if(window.confirm('Delete this post?')) deleteMyPost(p.id); },style:{background:'none',border:'none',color:'var(--t3)',fontSize:'14px',cursor:'pointer'}}, '🗑')
+                  React.createElement('button',{onClick:function(){ setDelPostConf({id:p.id}); },style:{background:'none',border:'none',color:'var(--t3)',fontSize:'14px',cursor:'pointer'}}, '🗑')
                 ),
                 p.text ? React.createElement('div',{style:{fontSize:'14px',color:'var(--text)',lineHeight:1.55,whiteSpace:'pre-wrap',marginBottom:'8px'}}, p.text) : null,
                 React.createElement('div',{style:{fontSize:'11px',color:'var(--t3)'}},
@@ -2763,7 +2805,18 @@ export default function MessagesScreen(props){
         React.createElement('div',{style:{width:'56px',height:'56px',borderRadius:'16px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px'}}, '👥'),
         React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)'}}, 'No conversations yet'),
         React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',maxWidth:'260px',lineHeight:1.5}}, 'Tap + at the top to start a chat with someone.')
-      ) : null
+      ) : null,
+      // R54: in-app delete-post confirm (replaces window.confirm).
+      React.createElement(ConfirmSheet, {
+        open: !!delPostConf,
+        title: 'Delete post?',
+        message: "This can't be undone.",
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        destructive: true,
+        onConfirm: function(){ var d=delPostConf; setDelPostConf(null); if(d&&d.id) deleteMyPost(d.id); },
+        onCancel: function(){ setDelPostConf(null); }
+      })
     )
   );
 }

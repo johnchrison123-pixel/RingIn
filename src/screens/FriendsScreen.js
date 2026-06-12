@@ -22,6 +22,7 @@ import React, {useState, useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
 import {searchCities} from '../utils/worldCities';
+import {Skeleton} from '../components/Skeleton'; /* R54: shimmer skeleton on initial load (Bug 6) */
 
 /* Inject scrollbar-hide CSS once — used by every horizontal scroll
  * lane (filter pills + suggestion blocks). React inline styles can't
@@ -542,7 +543,9 @@ export default function FriendsScreen(props) {
 
     return React.createElement('div', {
       onClick: function(){ setPicker(null); },
-      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',zIndex:100,display:'flex',alignItems:'flex-end',justifyContent:'center'}
+      /* R54: nav stays visible on top (z90 < nav 100); the bottom sheet rests
+       * ABOVE the floating nav via paddingBottom — never under/touching it. */
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',zIndex:90,display:'flex',alignItems:'flex-end',justifyContent:'center',paddingBottom:'calc(88px + env(safe-area-inset-bottom, 0px))'}
     },
       React.createElement('div', {
         onClick: function(e){ e.stopPropagation(); },
@@ -559,11 +562,20 @@ export default function FriendsScreen(props) {
   /* ══════ SETUP MODAL ══════════════════════════════════════════════ */
   function renderSetupModal() {
     if (!setupOpen) return null;
-    return React.createElement('div', {style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',backdropFilter:'blur(6px)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}},
-      React.createElement('div', {style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',padding:'20px',maxWidth:'480px',width:'100%',maxHeight:'92vh',overflowY:'auto'}},
-        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',marginBottom:'4px'}}, '🤝 Tell us about you'),
-        React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginBottom:'16px'}}, 'These help find better friend matches. Skip anything optional.'),
-
+    /* R54: keep the floating nav VISIBLE on top (zIndex 90 < nav's 100) and
+     * constrain the card to sit ABOVE the nav with a gap — never under it,
+     * never touching it. paddingBottom reserves the nav footprint; the card
+     * maxHeight keeps it inside the area above the nav (scrolls internally). */
+    var navClear = 'calc(96px + env(safe-area-inset-bottom, 0px))';
+    return React.createElement('div', {style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',backdropFilter:'blur(6px)',zIndex:90,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px',paddingBottom:navClear}},
+      React.createElement('div', {style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',maxWidth:'480px',width:'100%',maxHeight:'calc(100vh - 130px)',display:'flex',flexDirection:'column',overflow:'hidden'}},
+        /* R54: sticky header — stays put while the body scrolls */
+        React.createElement('div', {style:{flexShrink:0,padding:'20px 20px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg)'}},
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'22px',fontWeight:800,color:'var(--text)',marginBottom:'4px'}}, '🤝 Tell us about you'),
+          React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)'}}, 'These help find better friend matches. Skip anything optional.')
+        ),
+        /* R54: scrollable body — frosted dark scrollbar via .ringin-frost-scroll */
+        React.createElement('div', {className:'ringin-frost-scroll', style:{flex:1,overflowY:'auto',padding:'16px 20px'}},
         React.createElement('label', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'6px'}}, 'HOME LANGUAGE'),
         React.createElement('select', {
           value: myLang,
@@ -604,7 +616,7 @@ export default function FriendsScreen(props) {
         ),
 
         React.createElement('label', {style:{fontSize:'11px',fontWeight:700,color:'var(--t3)',display:'block',marginBottom:'6px'}}, 'INTERESTS · TAP TO SELECT'),
-        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'16px',maxHeight:'140px',overflowY:'auto'}},
+        React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'4px'}},
           INTEREST_SUGGESTIONS.map(function(it){
             var sel = myInterests.indexOf(it) >= 0;
             return React.createElement('button', {
@@ -613,9 +625,10 @@ export default function FriendsScreen(props) {
               style:{padding:'6px 10px',borderRadius:'14px',background: sel ? 'linear-gradient(135deg,rgba(123,110,255,0.3),rgba(232,77,154,0.2))' : 'var(--bg2)',border: sel ? '1px solid var(--ac)' : '1px solid var(--border)',color: sel ? 'var(--text)' : 'var(--t2)',fontSize:'11px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
             }, (sel ? '✓ ' : '') + it);
           })
-        ),
-
-        React.createElement('div', {style:{display:'flex',gap:'10px'}},
+        )
+      ),
+        /* R54: sticky footer — Skip + Save stay put while the body scrolls */
+        React.createElement('div', {style:{flexShrink:0,padding:'12px 20px',borderTop:'1px solid var(--border)',background:'var(--bg)',display:'flex',gap:'10px'}},
           React.createElement('button', {
             onClick: function(){ setSetupOpen(false); },
             style:{flex:1,padding:'12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
@@ -643,11 +656,12 @@ export default function FriendsScreen(props) {
       : { background: gradientFromString(name + 'cover'), height: '110px' };
     return React.createElement('div', {
       onClick: function(){ setViewProfile(null); },
-      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',backdropFilter:'blur(6px)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}
+      /* R54: nav stays visible on top (z90 < nav 100); card constrained above it. */
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',backdropFilter:'blur(6px)',zIndex:90,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px',paddingBottom:'calc(96px + env(safe-area-inset-bottom, 0px))'}
     },
       React.createElement('div', {
         onClick: function(e){ e.stopPropagation(); },
-        style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',maxWidth:'440px',width:'100%',maxHeight:'92vh',overflowY:'auto',overflowX:'hidden'}
+        style:{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'18px',maxWidth:'440px',width:'100%',maxHeight:'calc(100vh - 130px)',overflowY:'auto',overflowX:'hidden'}
       },
         React.createElement('div', {style: Object.assign({width:'100%',position:'relative'}, coverStyle)},
           /* R64.10: clicking the avatar OR the name navigates to the
@@ -838,7 +852,7 @@ export default function FriendsScreen(props) {
   return React.createElement('div', {style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     /* Header */
     React.createElement('div', {style:{padding:'14px 18px 4px'}},
-      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'-0.5px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🤝 Real Friends')
+      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'24px',fontWeight:800,letterSpacing:'0.3px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}, '🤝 Real Friends')
     ),
     React.createElement('div', {style:{padding:'2px 18px 12px',fontSize:'11px',color:'var(--t2)'}}, 'Search · Filter · Discover'),
 
@@ -950,7 +964,24 @@ export default function FriendsScreen(props) {
       React.createElement('span', {style:{color:'var(--t3)',fontWeight:600,fontSize:'12px'}}, results.length + (results.length === 1 ? ' person' : ' people'))
     ),
 
-    loading ? React.createElement('div', {style:{padding:'40px 16px',textAlign:'center',color:'var(--t3)',fontSize:'13px'}}, 'Loading…')
+    loading ? React.createElement('div', {
+        className: 'ringin-hscroll',
+        style:{display:'flex',gap:'12px',padding:'10px 16px 90px 16px',overflowX:'hidden',flexWrap:'nowrap'}
+      },
+        /* R54 (Bug 6): shimmer skeleton cards on initial load — matches the
+         * Discover card footprint so the layout doesn't jump when data lands. */
+        [1,2,3,4,5].map(function(i){
+          return React.createElement('div', {
+            key:'sk'+i,
+            style:{flex:'0 0 168px',height:'210px',background:'var(--bg2,#161028)',border:'1px solid var(--border)',borderRadius:'18px',padding:'14px',display:'flex',flexDirection:'column',alignItems:'center',gap:'10px'}
+          },
+            React.createElement(Skeleton, {width:84,height:84,radius:42}),
+            React.createElement(Skeleton, {width:'80%',height:14,style:{marginTop:'4px'}}),
+            React.createElement(Skeleton, {width:'58%',height:10}),
+            React.createElement(Skeleton, {width:'90%',height:32,radius:16,style:{marginTop:'auto'}})
+          );
+        })
+      )
     : results.length === 0
       ? React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
           React.createElement('div', {style:{fontSize:'48px',marginBottom:'10px',opacity:0.4}}, '🌱'),

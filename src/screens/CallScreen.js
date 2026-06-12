@@ -32,7 +32,7 @@ var SVG_ATTRS = {viewBox:'0 0 24 24',width:'24',height:'24',fill:'none',stroke:'
 // at the bottom of the connected-call screen and logged on call start so we
 // can verify whether the user is actually running the latest code (or stuck
 // on a cached old build via service worker).
-var RINGIN_BUILD = 'v2.0-native-debug';
+var RINGIN_BUILD = ''; /* R54: blanked (was 'v2.0-native-debug'). Render is already gated behind the ringin_debug flag; blanking keeps it invisible even in debug mode. */
 
 // ── Module-level style constants ───────────────────────────────────────────
 // Every secs/coin tick re-renders the connected-call view. Hoisting the style

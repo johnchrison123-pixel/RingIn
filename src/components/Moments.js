@@ -4,6 +4,7 @@ import {sb} from '../utils/supabase';
 import {createPortal} from 'react-dom';
 import {isBlockedSync} from '../utils/blocks'; /* R15 FIX #2: filter blocked users from moments strip */
 import ImgWithFallback from './ImgWithFallback'; /* R18: shared image fallback for share-sheet/viewer/cube avatars */
+import {ConfirmSheet} from './ConfirmSheet'; /* R54: in-app confirm replaces window.confirm (banned per CLAUDE.md) */
 
 // R12 FIX #3: Mirror of HomeScreen.copyToClipboardWithToast — Moments lives
 // in components/ and we don't want to import from screens/. Same legacy
@@ -73,6 +74,9 @@ function MomentViewer(props){
   var replyText = replyTextS[0]; var setReplyText = replyTextS[1];
   var pausedS = useState(false);
   var paused = pausedS[0]; var setPaused = pausedS[1];
+  // R54: in-app confirm for block/delete inside the viewer (replaces
+  // window.confirm). Holds {kind:'block'|'delete', ...} while open.
+  var momConfirmS = useState(null); var momConfirm = momConfirmS[0]; var setMomConfirm = momConfirmS[1];
   // Instagram-style press-and-hold-to-pause. Separate from `paused` (which
   // is for reply composer focus) so they OR together cleanly without
   // accidentally resuming when the input is still focused.
@@ -408,9 +412,15 @@ function MomentViewer(props){
     setOtherMenu(false);
     var posterId = moment && moment.userId;
     if (!posterId) { showToast('Cannot block'); return; }
-    var ok = true;
-    try { ok = window.confirm('Block ' + (user.name || 'this user') + '?\n\nThey will no longer see your posts, moments, or messages.'); } catch(_){}
-    if (!ok) return;
+    // R54: open in-app confirm sheet (replaces window.confirm). Pause the
+    // viewer's auto-advance while it's open — window.confirm used to block
+    // the thread, which paused it implicitly; the sheet is async so we
+    // pause explicitly and resume on close.
+    setPaused(true);
+    setMomConfirm({ kind:'block', posterId: posterId, name: (user.name || 'this user') });
+  }
+  function doBlockContact(posterId){
+    if (!posterId) return;
     // Try server-side block via blocks util. Fall back to localStorage if
     // the util or the migration isn't available.
     try {
@@ -436,14 +446,17 @@ function MomentViewer(props){
   function deleteOwnMoment(){
     setOwnMenu(false);
     var cur = slides[idx]; if (!cur) return;
-    var ok = true;
-    try { ok = window.confirm('Delete this moment? It will disappear for everyone.'); } catch(_){}
-    if (!ok) return;
+    // R54: in-app confirm (replaces window.confirm). Pause while open.
+    setPaused(true);
+    setMomConfirm({ kind:'delete', slideId: cur.id });
+  }
+  function doDeleteMoment(slideId){
+    if (!slideId) return;
     // FIX R10-4: delete used to fire-and-forget — RLS denial or network
     // failure still showed "Deleted" toast and closed the viewer, but the
     // moment came back on next mount. Check r.error + add .catch.
     try {
-      sb.from('moments').delete().eq('id', cur.id).then(function(r){
+      sb.from('moments').delete().eq('id', slideId).then(function(r){
         if (r && r.error) {
           console.error('[ringin] delete moment failed:', r.error);
           try { showToast('Failed to delete'); } catch(_){}
@@ -1768,7 +1781,27 @@ function MomentViewer(props){
 
   var portalRoot = React.createElement(React.Fragment, null,
     backdrop,
-    cubeStage
+    cubeStage,
+    // R54: in-app confirm for block / delete-moment (replaces window.confirm).
+    React.createElement(ConfirmSheet, {
+      open: !!momConfirm,
+      title: momConfirm && momConfirm.kind === 'block'
+        ? ('Block ' + (momConfirm.name || 'this user') + '?')
+        : 'Delete this moment?',
+      message: momConfirm && momConfirm.kind === 'block'
+        ? 'They will no longer see your posts, moments, or messages.'
+        : 'It will disappear for everyone.',
+      confirmLabel: momConfirm && momConfirm.kind === 'block' ? 'Block' : 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+      onConfirm: function(){
+        var c = momConfirm; setMomConfirm(null); setPaused(false);
+        if (!c) return;
+        if (c.kind === 'block') doBlockContact(c.posterId);
+        else if (c.kind === 'delete') doDeleteMoment(c.slideId);
+      },
+      onCancel: function(){ setMomConfirm(null); setPaused(false); }
+    })
   );
 
   // SSR guard — document is undefined during server render; we only need

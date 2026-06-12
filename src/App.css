@@ -102,3 +102,17 @@ body{font-family:'DM Sans',sans-serif;background:#09090E;color:#EEEEF8;}
   50%  { opacity: 0.4; }
   100% { opacity: 1; }
 }
+
+/* R54: frosted dark scrollbar for modal bodies (replaces the stark white
+   native scrollbar). Translucent gray thumb on a transparent track so it
+   reads as "dark frosted glass" against the modal background. */
+.ringin-frost-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
+.ringin-frost-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.ringin-frost-scroll::-webkit-scrollbar-track { background: transparent; }
+.ringin-frost-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.ringin-frost-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.24); background-clip: padding-box; }

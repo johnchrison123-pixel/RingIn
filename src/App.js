@@ -1,5 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
+import { hapticTap } from './utils/haptics';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
@@ -1161,7 +1163,11 @@ export default function App() {
     }
   },
     // Global top bar removed — each screen renders its own header (RingIn/Workshops/Experts/...) with coin + bell + avatar
-    React.createElement('div', {className:'screen-content'},
+    React.createElement('div', {className:'screen-content',
+      /* floating nav is position:fixed (out of flow) so the scroll area
+       * needs bottom clearance or the last items hide behind the capsule.
+       * Covers browser + PWA (overrides the .screen-content PWA 80px). */
+      style:{paddingBottom:'calc(96px + env(safe-area-inset-bottom, 0px))'}},
       React.createElement(ErrorBoundary, { scope: activeTab + ' tab' }, renderScreen())
     ),
 
@@ -1227,12 +1233,51 @@ export default function App() {
     //    a live call so we never reload mid-conversation.
     !activeCall && !incomingCall ? React.createElement(UpdatePrompt, null) : null,
 
-    React.createElement('nav', {className:'bottom-nav'},
+    /* ── WhatsApp/iOS-26-style floating frosted capsule nav ──────────────
+     * - position:fixed, lifted off the bottom edge → floats over content
+     * - backdrop-filter blur + saturate → translucent "liquid glass"
+     * - active tab gets a motion.div with layoutId:'nav-pill' that SLIDES
+     *   smoothly between tabs (motion's shared-layout FLIP animation)
+     * - whileHover scales each tab so a desktop mouse moving across the bar
+     *   feels alive; whileTap gives a press-in spring on every device
+     * Inline styles intentionally override .bottom-nav (browser + PWA)
+     * via specificity — env(safe-area-inset-bottom) keeps it clear of the
+     * iOS home indicator. .screen-content gets matching bottom padding
+     * (set inline on the screen-content wrapper above). */
+    React.createElement(motion.nav, {
+      className:'bottom-nav rin-float-nav',
+      initial:false,
+      style:{
+        position:'fixed',
+        left:'50%',
+        right:'auto', /* neutralize PWA media-query right:0 on .bottom-nav */
+        bottom:'calc(14px + env(safe-area-inset-bottom, 0px))',
+        transform:'translateX(-50%)',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        gap:'2px',
+        width:'auto',
+        maxWidth:'calc(100% - 24px)',
+        padding:'6px 8px',
+        borderRadius:'30px',
+        background:'rgba(18, 20, 30, 0.55)',
+        backdropFilter:'blur(22px) saturate(180%)',
+        WebkitBackdropFilter:'blur(22px) saturate(180%)',
+        border:'1px solid rgba(255,255,255,0.10)',
+        boxShadow:'0 12px 40px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.3)',
+        zIndex:100,
+      }
+    },
       tabs.map(function(tab, idx) {
-        var btn = React.createElement('button', {
+        var isActive = activeTab===tab.id;
+        var btn = React.createElement(motion.button, {
           key:tab.id,
-          className:'nav-tab '+(activeTab===tab.id?'active':''),
+          whileHover:{ scale: 1.12, y: -2 },
+          whileTap:{ scale: 0.90 },
+          transition:{ type:'spring', stiffness:420, damping:24 },
           onClick:function(){
+            hapticTap();
             if(tab.id==='messages' && activeTab==='messages'){
               /* R20 FIX #7: dispatch event instead of remount to avoid the
                * realtime-channel collision. MessagesScreen listens for this
@@ -1256,10 +1301,39 @@ export default function App() {
              * here lets the tab navigation actually navigate. No-op when stack
              * is already empty (normal nav unaffected). */
             if (viewUserStack && viewUserStack.length > 0) setViewUserStack([]);
+          },
+          style:{
+            position:'relative',
+            flex:'0 0 auto',
+            minWidth:'58px',
+            display:'flex',
+            flexDirection:'column',
+            alignItems:'center',
+            justifyContent:'center',
+            gap:'3px',
+            padding:'9px 14px',
+            border:'none',
+            background:'transparent',
+            cursor:'pointer',
+            color: isActive ? '#fff' : 'rgba(255,255,255,0.52)',
+            WebkitTapHighlightColor:'transparent',
           }
         },
-          React.createElement('div', {style:{position:'relative',display:'inline-flex',alignItems:'center',justifyContent:'center'}},
-            React.createElement('svg', {viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:2},
+          /* sliding active pill — the layoutId magic */
+          isActive ? React.createElement(motion.div, {
+            layoutId:'nav-pill',
+            transition:{ type:'spring', stiffness:380, damping:32 },
+            style:{
+              position:'absolute',
+              inset:0,
+              borderRadius:'20px',
+              background:'linear-gradient(135deg, rgba(123,110,255,0.92), rgba(232,77,154,0.92))',
+              boxShadow:'0 4px 16px rgba(232,77,154,0.42)',
+              zIndex:0,
+            }
+          }) : null,
+          React.createElement('div', {style:{position:'relative',zIndex:1,display:'inline-flex',alignItems:'center',justifyContent:'center'}},
+            React.createElement('svg', {viewBox:'0 0 24 24',width:22,height:22,fill:'none',stroke:'currentColor',strokeWidth:2},
               React.createElement('path', {d:tab.svg})
             ),
             tab.id==='messages' && unreadMsg>0 ? React.createElement('div', {
@@ -1270,7 +1344,7 @@ export default function App() {
                 fontSize:'9px',fontWeight:700,color:'#fff',padding:'0 3px'}
             }, unreadMsg>99 ? '99+' : String(unreadMsg)) : null
           ),
-          React.createElement('span', null, tab.label)
+          React.createElement('span', {style:{position:'relative',zIndex:1,fontSize:'9.5px',fontWeight:600,letterSpacing:'0.2px'}}, tab.label)
         );
         /* R27: Anonymous Connect orb restored. The Connect Voice button is
          * now wired (uses window.__ringInStartCall — same Agora pipeline as
@@ -1282,9 +1356,13 @@ export default function App() {
          * Previously it rendered after 'search' (Experts), which moved
          * out of center when the tab order changed. */
         if (tab.id === 'friends') {
-          var orb = React.createElement('button', {
+          var orb = React.createElement(motion.button, {
             key:'connect-orb',
+            whileHover:{ scale: 1.12, y: -2 },
+            whileTap:{ scale: 0.90 },
+            transition:{ type:'spring', stiffness:420, damping:20 },
             onClick:function(){
+              hapticTap();
               setPrevTab(activeTab);
               setActiveTab('connect');
               /* R43: same fix as tab buttons — clear UserProfileView stack so
@@ -1292,16 +1370,16 @@ export default function App() {
               if (viewUserStack && viewUserStack.length > 0) setViewUserStack([]);
             },
             style:{
-              width:'40px',height:'40px',borderRadius:'50%',
+              width:'46px',height:'46px',borderRadius:'50%',
               background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',
               border:'none',cursor:'pointer',position:'relative',
               display:'flex',alignItems:'center',justifyContent:'center',
-              boxShadow:activeTab==='connect'?'0 0 0 3px rgba(123,110,255,0.4),0 4px 14px rgba(232,77,154,0.5)':'0 3px 10px rgba(232,77,154,0.4)',
-              flexShrink:0,margin:'0 2px',
+              boxShadow:activeTab==='connect'?'0 0 0 3px rgba(123,110,255,0.45),0 6px 18px rgba(232,77,154,0.55)':'0 4px 14px rgba(232,77,154,0.45)',
+              flexShrink:0,margin:'0 4px',
             },
             title:'Anonymous Connect',
           },
-            React.createElement('svg',{viewBox:'0 0 24 24',width:18,height:18,fill:'none',stroke:'#fff',strokeWidth:2.4},
+            React.createElement('svg',{viewBox:'0 0 24 24',width:20,height:20,fill:'none',stroke:'#fff',strokeWidth:2.4},
               React.createElement('path',{d:'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z'})
             ),
             React.createElement('span',{style:{position:'absolute',top:'2px',right:'2px',width:'8px',height:'8px',borderRadius:'50%',background:'#27C96A',border:'2px solid #09090E'}})
