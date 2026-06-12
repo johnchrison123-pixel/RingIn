@@ -45,26 +45,25 @@ function FrostyFluidGlassNav(props){
   var blobW = useMotionValue(BLOB_W);
   var blobH = useMotionValue(44);
   var blobR = useMotionValue(22);
-  // Springy + slightly under-damped so the magnetic snap has a visible elastic pull.
-  var xSpring = useSpring(blobX, { stiffness: 300, damping: 19, mass: 1 });
-  var wSpring = useSpring(blobW, { stiffness: 320, damping: 26 });
-  var hSpring = useSpring(blobH, { stiffness: 320, damping: 26 });
-  var rSpring = useSpring(blobR, { stiffness: 320, damping: 26 });
+  // SOFT + SMOOTH glide: low stiffness = unhurried travel, high damping = no
+  // harsh bounce/overshoot. The droplet eases between tabs instead of snapping.
+  var xSpring = useSpring(blobX, { stiffness: 170, damping: 30, mass: 1.1 });
+  var wSpring = useSpring(blobW, { stiffness: 210, damping: 32 });
+  var hSpring = useSpring(blobH, { stiffness: 210, damping: 32 });
+  var rSpring = useSpring(blobR, { stiffness: 210, damping: 32 });
   // Left edge = center - half (current) width; top offset = -half height (so
   // top:50% + this y keeps it vertically centered as the height morphs).
   var xLeft = useTransform([xSpring, wSpring], function(v){ return v[0] - v[1] / 2; });
   var yTop  = useTransform(hSpring, function(h){ return -h / 2; });
-  // Velocity -> fluid stretch: the droplet elongates as it's pulled toward
-  // the tab it's attracted to, then rounds out once it sticks. The stronger
-  // range makes the "magnet" stretch clearly visible.
+  // Velocity -> gentle fluid stretch: a soft elongation as it glides, rounding
+  // out once it settles. Kept subtle so it reads as "fluid", not rubber-band.
   var xVel = useVelocity(xSpring);
-  var scaleX = useTransform(xVel, [-2800, 0, 2800], [1.85, 1, 1.85]);
-  var scaleY = useTransform(xVel, [-2800, 0, 2800], [0.46, 1, 0.46]);
-  // Lead the stretch toward the direction of travel (origin trails behind),
-  // so the droplet visibly reaches toward the nav it's snapping to.
+  var scaleX = useTransform(xVel, [-2200, 0, 2200], [1.28, 1, 1.28]);
+  var scaleY = useTransform(xVel, [-2200, 0, 2200], [0.74, 1, 0.74]);
+  // Lead the stretch slightly toward the direction of travel.
   var originX = useTransform(xVel, function(v){
-    if(v > 80) return '12%';      // moving right -> stretch leads rightward
-    if(v < -80) return '88%';     // moving left  -> stretch leads leftward
+    if(v > 120) return '28%';     // moving right -> stretch leads rightward
+    if(v < -120) return '72%';    // moving left  -> stretch leads leftward
     return '50%';
   });
 
