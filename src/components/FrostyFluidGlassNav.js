@@ -162,7 +162,8 @@ function FrostyFluidGlassNav(props){
     if(lastSelRef.current.id === tabId && (now - lastSelRef.current.t) < 500) return; // dedup tap's pointerup+click
     lastSelRef.current = { id: tabId, t: now };
     hapticTap();
-    var c = tabCenter(tabId); if(c != null) blobX.set(c);
+    var nav = navRef.current;
+    if(nav){ var el = nav.querySelector('[data-navtab="'+tabId+'"]'); if(el) applyGeom(geomOf(el)); }
     if(props.onSelectTab) props.onSelectTab(tabId);
   }
   function tapOrb(){
