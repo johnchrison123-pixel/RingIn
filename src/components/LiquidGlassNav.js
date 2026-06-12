@@ -166,7 +166,7 @@ function LiquidGlassNav(props){
         display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
         gap:'3px', padding:'9px 14px', border:'none', background:'transparent',
         cursor:'pointer', color: isActive ? '#fff' : 'rgba(255,255,255,0.52)',
-        WebkitTapHighlightColor:'transparent',
+        WebkitTapHighlightColor:'transparent', outline:'none', WebkitTouchCallout:'none', userSelect:'none', WebkitUserSelect:'none',
       }
     },
       React.createElement('div', {style:{position:'relative',display:'inline-flex',alignItems:'center',justifyContent:'center'}},
@@ -237,6 +237,8 @@ function LiquidGlassNav(props){
             position:'relative', zIndex:1, width:'46px', height:'46px', borderRadius:'50%',
             background:'linear-gradient(135deg,#7B6EFF,#E84D9A)', border:'none', cursor:'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, margin:'0 4px',
+            /* remove the square light-blue tap highlight / focus outline on tap */
+            WebkitTapHighlightColor:'transparent', outline:'none', WebkitTouchCallout:'none', userSelect:'none', WebkitUserSelect:'none',
             boxShadow: props.connectActive
               ? '0 0 0 3px rgba(123,110,255,0.45),0 6px 18px rgba(232,77,154,0.55)'
               : '0 4px 14px rgba(232,77,154,0.45)',
