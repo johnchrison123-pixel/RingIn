@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { motion, useMotionValue, useSpring, useVelocity, useTransform } from 'motion/react';
 import { hapticTap } from '../utils/haptics';
 
-/* LiquidGlassNav — iOS-26 "Liquid Glass" floating tab bar.
+/* FrostyFluidGlassNav — Frosty Fluid Glass floating tab bar.
  *
  * A translucent glass droplet rests on the active tab and FOLLOWS the
  * finger / cursor as it moves across the bar, deforming like water (it
@@ -20,7 +20,7 @@ import { hapticTap } from '../utils/haptics';
  */
 var BLOB_W = 60; // fixed droplet width keeps centering cheap + motion smooth
 
-function LiquidGlassNav(props){
+function FrostyFluidGlassNav(props){
   var tabs = props.tabs || [];
   var activeTab = props.activeTab;
   var unreadMsg = props.unreadMsg || 0;
@@ -45,7 +45,7 @@ function LiquidGlassNav(props){
   var xSpring = useSpring(blobX, { stiffness: 300, damping: 19, mass: 1 });
   // Left edge = center - half width (kept on the compositor via transform).
   var xLeft = useTransform(xSpring, function(v){ return v - BLOB_W / 2; });
-  // Velocity -> liquid stretch: the droplet elongates as it's pulled toward
+  // Velocity -> fluid stretch: the droplet elongates as it's pulled toward
   // the tab it's attracted to, then rounds out once it sticks. The stronger
   // range makes the "magnet" stretch clearly visible.
   var xVel = useVelocity(xSpring);
@@ -207,7 +207,7 @@ function LiquidGlassNav(props){
       zIndex:100, touchAction:'none',
     }
   },
-    // ── The liquid-glass droplet ────────────────────────────────────────
+    // ── The frosty-fluid-glass droplet ────────────────────────────────────────
     React.createElement(motion.div, {
       'aria-hidden': true,
       animate: { opacity: showBlob ? 1 : 0 },
@@ -256,5 +256,5 @@ function LiquidGlassNav(props){
   );
 }
 
-export default LiquidGlassNav;
-export { LiquidGlassNav };
+export default FrostyFluidGlassNav;
+export { FrostyFluidGlassNav };

@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react';
-import LiquidGlassNav from './components/LiquidGlassNav';
+import FrostyFluidGlassNav from './components/FrostyFluidGlassNav';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import {startLastSeen, stopLastSeen} from './utils/lastSeen';
@@ -1232,9 +1232,9 @@ export default function App() {
     //    a live call so we never reload mid-conversation.
     !activeCall && !incomingCall ? React.createElement(UpdatePrompt, null) : null,
 
-    /* iOS-26 Liquid Glass floating nav — translucent droplet follows the
+    /* Frosty Fluid Glass floating nav — translucent droplet follows the
      * finger/cursor across the bar and settles on the selected tab. */
-    React.createElement(LiquidGlassNav, {
+    React.createElement(FrostyFluidGlassNav, {
       tabs: tabs,
       activeTab: activeTab,
       unreadMsg: unreadMsg,
