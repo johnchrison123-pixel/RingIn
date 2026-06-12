@@ -287,8 +287,47 @@ export default function FriendsScreen(props) {
   var friendMapS = useState({});   var friendMap = friendMapS[0];   var setFriendMap = friendMapS[1];
   var pendingMapS = useState({});  var pendingMap = pendingMapS[0]; var setPendingMap = pendingMapS[1];
   var busyMapS = useState({});     var busyMap = busyMapS[0];       var setBusyMap = busyMapS[1];
+  /* R55: incoming friend requests I've received (to accept/decline). */
+  var incomingReqsS = useState([]); var incomingReqs = incomingReqsS[0]; var setIncomingReqs = incomingReqsS[1];
 
   function friendStatusOf(uid){ return friendMap[uid] ? 'friends' : (pendingMap[uid] ? 'pending' : 'none'); }
+
+  /* Load incoming friend requests (recipient = me), enriched with the
+   * requester's real profile name/avatar where available. */
+  function loadIncomingRequests(){
+    if (!userId) return;
+    sb.rpc('list_pending_anon_requests').then(function(r){
+      if (!(r && !r.error && Array.isArray(r.data))) return;
+      var reqs = r.data;
+      var ids = reqs.map(function(x){ return x.requester_id; }).filter(Boolean);
+      if (!ids.length){ setIncomingReqs(reqs); return; }
+      sb.from('profiles').select('id,full_name,avatar_url').in('id', ids).then(function(pr){
+        var pm = {}; if (pr && pr.data) pr.data.forEach(function(p){ pm[p.id] = p; });
+        setIncomingReqs(reqs.map(function(x){
+          var prof = pm[x.requester_id] || {};
+          return Object.assign({}, x, {
+            display_name: (prof.full_name && prof.full_name.trim()) || x.requester_nickname || 'Someone',
+            display_avatar: prof.avatar_url || null
+          });
+        }));
+      }).catch(function(){ setIncomingReqs(reqs); });
+    }).catch(function(){});
+  }
+  useEffect(function(){ loadIncomingRequests(); /* eslint-disable-next-line */ }, [userId]);
+
+  function respondToRequest(reqId, requesterId, accept){
+    var snap = incomingReqs;
+    setIncomingReqs(incomingReqs.filter(function(x){ return x.id !== reqId; }));
+    if (accept && requesterId) setFriendMap(function(m){ var n=Object.assign({},m); n[requesterId]=true; return n; });
+    sb.rpc('respond_anon_connection', { p_request_id: reqId, p_accept: accept }).then(function(r){
+      if (r && r.error){
+        setIncomingReqs(snap);
+        if (accept && requesterId) setFriendMap(function(m){ var n=Object.assign({},m); delete n[requesterId]; return n; });
+        toastError('Could not respond: ' + (r.error.message || 'error')); return;
+      }
+      toastInfo(accept ? 'You are now friends ✓' : 'Request declined');
+    }).catch(function(){ setIncomingReqs(snap); toastError('Network error'); });
+  }
 
   /* Load my follow + connection + outgoing-pending state so the buttons show
    * the right label without a tap. Best-effort: any piece failing just leaves
@@ -947,6 +986,28 @@ export default function FriendsScreen(props) {
     );
   }
 
+  /* ══════ FRIEND REQUESTS (incoming) ═════════════════════════════ */
+  function renderFriendRequests(){
+    return React.createElement('div', {style:{flexShrink:0, padding:'4px 16px 6px'}},
+      React.createElement('div', {style:{fontSize:'15px',fontWeight:800,color:'var(--text)',marginBottom:'10px',display:'flex',alignItems:'center',gap:'8px'}},
+        React.createElement('span', null, '👋 Friend Requests'),
+        React.createElement('span', {style:{background:'#FF4757',color:'#fff',borderRadius:'10px',fontSize:'11px',fontWeight:700,padding:'1px 7px',minWidth:'18px',textAlign:'center'}}, String(incomingReqs.length))
+      ),
+      incomingReqs.map(function(req){
+        var nm = req.display_name || req.requester_nickname || 'Someone';
+        return React.createElement('div', {key:req.id, style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',marginBottom:'8px'}},
+          React.createElement('div', {style:{width:'46px',height:'46px',borderRadius:'50%',flexShrink:0,background: req.display_avatar ? ('url('+req.display_avatar+') center/cover') : gradientFromString(nm),display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:800,fontSize:'17px'}}, req.display_avatar ? null : initialOf(nm)),
+          React.createElement('div', {style:{flex:1,minWidth:0}},
+            React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, nm),
+            React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'1px'}}, 'wants to be your friend')
+          ),
+          React.createElement('button', {onClick:function(){ respondToRequest(req.id, req.requester_id, false); }, style:{padding:'8px 12px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}, 'Decline'),
+          React.createElement('button', {onClick:function(){ respondToRequest(req.id, req.requester_id, true); }, style:{padding:'8px 14px',borderRadius:'10px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}, 'Accept')
+        );
+      })
+    );
+  }
+
   /* ══════ FILTER PILLS BAR ═══════════════════════════════════════ */
   var activeCount = (fLang?1:0) + (fCity?1:0) + (fHome?1:0) + (fOcc?1:0) + (fGender?1:0) + (fInterests.length>0?1:0) + (fOnline?1:0);
 
@@ -1020,6 +1081,9 @@ export default function FriendsScreen(props) {
         style:{padding:'8px 14px',borderRadius:'20px',background:'transparent',border:'1px solid var(--border)',color:'var(--t3)',fontSize:'12px',fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,fontFamily:'inherit'}
       }, '✕ Clear all') : null
     ),
+
+    /* R55: incoming friend requests — surfaced at the top, Facebook-style. */
+    (incomingReqs.length > 0 && search.length === 0) ? renderFriendRequests() : null,
 
     /* SUGGESTED FOR YOU — R64.7
      *   Default: 9 cards, 1 row, horizontal scroll
