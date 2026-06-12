@@ -38,13 +38,22 @@ function FrostyFluidGlassNav(props){
   var draggingS = useState(false); var dragging = draggingS[0]; var setDragging = draggingS[1];
   var hoverS = useState(false); var hovering = hoverS[0]; var setHovering = hoverS[1];
 
-  // Droplet horizontal CENTER (px, relative to the nav's padding box).
+  // Droplet geometry as motion values — center X + width/height/radius — so the
+  // droplet can MORPH to each target's shape: a wide capsule on the tabs, a
+  // circle on the round connect orb.
   var blobX = useMotionValue(0);
-  // Springy + slightly under-damped so the magnetic snap between tabs has a
-  // visible elastic pull (it overshoots a touch, then settles).
+  var blobW = useMotionValue(BLOB_W);
+  var blobH = useMotionValue(44);
+  var blobR = useMotionValue(22);
+  // Springy + slightly under-damped so the magnetic snap has a visible elastic pull.
   var xSpring = useSpring(blobX, { stiffness: 300, damping: 19, mass: 1 });
-  // Left edge = center - half width (kept on the compositor via transform).
-  var xLeft = useTransform(xSpring, function(v){ return v - BLOB_W / 2; });
+  var wSpring = useSpring(blobW, { stiffness: 320, damping: 26 });
+  var hSpring = useSpring(blobH, { stiffness: 320, damping: 26 });
+  var rSpring = useSpring(blobR, { stiffness: 320, damping: 26 });
+  // Left edge = center - half (current) width; top offset = -half height (so
+  // top:50% + this y keeps it vertically centered as the height morphs).
+  var xLeft = useTransform([xSpring, wSpring], function(v){ return v[0] - v[1] / 2; });
+  var yTop  = useTransform(hSpring, function(h){ return -h / 2; });
   // Velocity -> fluid stretch: the droplet elongates as it's pulled toward
   // the tab it's attracted to, then rounds out once it sticks. The stronger
   // range makes the "magnet" stretch clearly visible.
@@ -60,20 +69,34 @@ function FrostyFluidGlassNav(props){
   });
 
   var activeIsTab = tabs.some(function(t){ return t.id === activeTab; });
-  var showBlob = activeIsTab || dragging || hovering;
+  var showBlob = activeIsTab || props.connectActive || dragging || hovering;
 
-  function tabCenter(tabId){
-    var nav = navRef.current; if(!nav) return null;
-    var btn = nav.querySelector('[data-navtab="'+tabId+'"]');
-    if(!btn) return null;
-    return btn.offsetLeft + btn.offsetWidth / 2;
+  // Read a target's geometry: tab = capsule (inset from the button box); orb =
+  // a circle slightly larger than the orb so the frosty glass frames it, the
+  // same way the capsule frames a tab icon.
+  function geomOf(el){
+    if(!el) return null;
+    var center = el.offsetLeft + el.offsetWidth / 2;
+    if(el.getAttribute('data-orb') === '1'){
+      var dia = el.offsetHeight + 12;
+      return { id: '__orb__', center: center, w: dia, h: dia, r: dia / 2 };
+    }
+    return { id: el.getAttribute('data-navtab'), center: center, w: el.offsetWidth - 6, h: el.offsetHeight - 8, r: 20 };
+  }
+  function applyGeom(g){
+    if(!g) return;
+    blobX.set(g.center); blobW.set(g.w); blobH.set(g.h); blobR.set(g.r);
+    snapTabRef.current = g.id;
   }
   function settleToActive(){
-    var c = tabCenter(activeTab);
-    if(c != null) blobX.set(c);
+    var nav = navRef.current; if(!nav) return;
+    var el = props.connectActive
+      ? nav.querySelector('[data-orb="1"]')
+      : nav.querySelector('[data-navtab="'+activeTab+'"]');
+    if(el) applyGeom(geomOf(el));
   }
-  // Settle on mount, when the active tab changes, and on resize.
-  useLayoutEffect(function(){ settleToActive(); }, [activeTab, tabs.length]);
+  // Settle on mount, when the active tab / connect state changes, and on resize.
+  useLayoutEffect(function(){ settleToActive(); }, [activeTab, props.connectActive, tabs.length]);
   useEffect(function(){
     function onResize(){ settleToActive(); }
     window.addEventListener('resize', onResize);
@@ -84,18 +107,16 @@ function FrostyFluidGlassNav(props){
     var nav = navRef.current; if(!nav) return;
     var rect = nav.getBoundingClientRect();
     var x = clientX - rect.left;
-    // MAGNETIC SNAP: pull the droplet to the CENTER of the nearest tab, so it
-    // sticks to whichever nav it's closest to as it glides (it never floats
-    // free between tabs). The spring + velocity stretch make it reach/pull
-    // toward each tab it snaps onto.
-    var btns = nav.querySelectorAll('[data-navtab]');
-    var bestC = null, bestId = null, bestD = Infinity;
-    for(var i=0;i<btns.length;i++){
-      var c = btns[i].offsetLeft + btns[i].offsetWidth/2;
+    // MAGNETIC SNAP across tabs AND the orb: snap to the nearest target and
+    // morph the droplet to its shape (capsule on a tab, circle on the orb).
+    var els = nav.querySelectorAll('[data-navtab],[data-orb="1"]');
+    var best = null, bestD = Infinity;
+    for(var i=0;i<els.length;i++){
+      var c = els[i].offsetLeft + els[i].offsetWidth/2;
       var d = Math.abs(c - x);
-      if(d < bestD){ bestD = d; bestC = c; bestId = btns[i].getAttribute('data-navtab'); }
+      if(d < bestD){ bestD = d; best = els[i]; }
     }
-    if(bestC != null){ blobX.set(bestC); snapTabRef.current = bestId; }
+    if(best) applyGeom(geomOf(best));
   }
   function onPointerMove(e){
     if(e.pointerType === 'mouse' && !draggingRef.current){ setHovering(true); follow(e.clientX); }
@@ -124,12 +145,11 @@ function FrostyFluidGlassNav(props){
   function onPointerUp(e){
     if(draggingRef.current){
       draggingRef.current = false; setDragging(false);
-      var over = targetUnderPoint(e.clientX, e.clientY);
-      if(over === '__orb__'){ snapTabRef.current = null; tapOrb(); return; }
-      // Commit to the tab the droplet magnetically stuck to (fallback: tab
-      // under the release point).
-      var pick = snapTabRef.current || over;
+      // Commit to whatever the droplet magnetically stuck to (fallback: the
+      // element under the release point). Orb -> connect; tab -> select.
+      var pick = snapTabRef.current || targetUnderPoint(e.clientX, e.clientY);
       snapTabRef.current = null;
+      if(pick === '__orb__'){ tapOrb(); return; }
       if(pick){ selectTab(pick); return; }
     }
     settleToActive();
@@ -213,10 +233,10 @@ function FrostyFluidGlassNav(props){
       animate: { opacity: showBlob ? 1 : 0 },
       transition: { duration: 0.2 },
       style: {
-        position:'absolute', top:'6px', left:0, height:'calc(100% - 12px)',
-        width: BLOB_W + 'px', x: xLeft, scaleX: scaleX, scaleY: scaleY,
-        transformOrigin: originX,
-        borderRadius:'22px', pointerEvents:'none', zIndex:0,
+        position:'absolute', top:'50%', left:0,
+        width: wSpring, height: hSpring, x: xLeft, y: yTop,
+        scaleX: scaleX, scaleY: scaleY, transformOrigin: originX,
+        borderRadius: rSpring, pointerEvents:'none', zIndex:0,
         background:'linear-gradient(135deg, rgba(255,255,255,0.30), rgba(255,255,255,0.08))',
         border:'1px solid rgba(255,255,255,0.30)',
         boxShadow:'inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -2px 6px rgba(0,0,0,0.12), 0 4px 16px rgba(123,110,255,0.30)',
