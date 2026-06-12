@@ -45,9 +45,9 @@ function FrostyFluidGlassNav(props){
   var blobW = useMotionValue(BLOB_W);
   var blobH = useMotionValue(44);
   var blobR = useMotionValue(22);
-  // SOFT + SMOOTH glide: low stiffness = unhurried travel, high damping = no
-  // harsh bounce/overshoot. The droplet eases between tabs instead of snapping.
-  var xSpring = useSpring(blobX, { stiffness: 170, damping: 30, mass: 1.1 });
+  // Responsive-but-smooth: tracks the finger closely during a drag, settles
+  // softly (no harsh bounce) when it snaps to a nav on release.
+  var xSpring = useSpring(blobX, { stiffness: 260, damping: 28, mass: 1 });
   var wSpring = useSpring(blobW, { stiffness: 210, damping: 32 });
   var hSpring = useSpring(blobH, { stiffness: 210, damping: 32 });
   var rSpring = useSpring(blobR, { stiffness: 210, damping: 32 });
@@ -106,8 +106,9 @@ function FrostyFluidGlassNav(props){
     var nav = navRef.current; if(!nav) return;
     var rect = nav.getBoundingClientRect();
     var x = clientX - rect.left;
-    // MAGNETIC SNAP across tabs AND the orb: snap to the nearest target and
-    // morph the droplet to its shape (capsule on a tab, circle on the orb).
+    // FREE-FOLLOW: the droplet tracks the finger directly while dragging. Its
+    // SHAPE morphs to the NEAREST target (capsule on a tab, circle on the orb)
+    // and we remember that target so RELEASE snaps onto it (magnetic stick).
     var els = nav.querySelectorAll('[data-navtab],[data-orb="1"]');
     var best = null, bestD = Infinity;
     for(var i=0;i<els.length;i++){
@@ -115,7 +116,9 @@ function FrostyFluidGlassNav(props){
       var d = Math.abs(c - x);
       if(d < bestD){ bestD = d; best = els[i]; }
     }
-    if(best) applyGeom(geomOf(best));
+    var pad = 26;
+    blobX.set(Math.max(pad, Math.min(rect.width - pad, x))); // X follows the finger
+    if(best){ var g = geomOf(best); blobW.set(g.w); blobH.set(g.h); blobR.set(g.r); snapTabRef.current = g.id; } // shape + release target = nearest
   }
   function onPointerMove(e){
     if(e.pointerType === 'mouse' && !draggingRef.current){ setHovering(true); follow(e.clientX); }
