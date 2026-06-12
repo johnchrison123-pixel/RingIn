@@ -34,18 +34,30 @@ function LiquidGlassNav(props){
   // and skip release-to-select. The ref is the source of truth for logic;
   // the `dragging` state only drives the droplet's visibility.
   var draggingRef = useRef(false);
+  var snapTabRef = useRef(null); // tab the droplet is magnetically snapped to mid-drag
   var draggingS = useState(false); var dragging = draggingS[0]; var setDragging = draggingS[1];
   var hoverS = useState(false); var hovering = hoverS[0]; var setHovering = hoverS[1];
 
   // Droplet horizontal CENTER (px, relative to the nav's padding box).
   var blobX = useMotionValue(0);
-  var xSpring = useSpring(blobX, { stiffness: 360, damping: 28, mass: 0.9 });
+  // Springy + slightly under-damped so the magnetic snap between tabs has a
+  // visible elastic pull (it overshoots a touch, then settles).
+  var xSpring = useSpring(blobX, { stiffness: 300, damping: 19, mass: 1 });
   // Left edge = center - half width (kept on the compositor via transform).
   var xLeft = useTransform(xSpring, function(v){ return v - BLOB_W / 2; });
-  // Velocity -> liquid stretch (wider + flatter the faster it travels).
+  // Velocity -> liquid stretch: the droplet elongates as it's pulled toward
+  // the tab it's attracted to, then rounds out once it sticks. The stronger
+  // range makes the "magnet" stretch clearly visible.
   var xVel = useVelocity(xSpring);
-  var scaleX = useTransform(xVel, [-2000, 0, 2000], [1.4, 1, 1.4]);
-  var scaleY = useTransform(xVel, [-2000, 0, 2000], [0.66, 1, 0.66]);
+  var scaleX = useTransform(xVel, [-2800, 0, 2800], [1.85, 1, 1.85]);
+  var scaleY = useTransform(xVel, [-2800, 0, 2800], [0.46, 1, 0.46]);
+  // Lead the stretch toward the direction of travel (origin trails behind),
+  // so the droplet visibly reaches toward the nav it's snapping to.
+  var originX = useTransform(xVel, function(v){
+    if(v > 80) return '12%';      // moving right -> stretch leads rightward
+    if(v < -80) return '88%';     // moving left  -> stretch leads leftward
+    return '50%';
+  });
 
   var activeIsTab = tabs.some(function(t){ return t.id === activeTab; });
   var showBlob = activeIsTab || dragging || hovering;
@@ -72,8 +84,18 @@ function LiquidGlassNav(props){
     var nav = navRef.current; if(!nav) return;
     var rect = nav.getBoundingClientRect();
     var x = clientX - rect.left;
-    var pad = BLOB_W / 2 + 4;
-    blobX.set(Math.max(pad, Math.min(rect.width - pad, x)));
+    // MAGNETIC SNAP: pull the droplet to the CENTER of the nearest tab, so it
+    // sticks to whichever nav it's closest to as it glides (it never floats
+    // free between tabs). The spring + velocity stretch make it reach/pull
+    // toward each tab it snaps onto.
+    var btns = nav.querySelectorAll('[data-navtab]');
+    var bestC = null, bestId = null, bestD = Infinity;
+    for(var i=0;i<btns.length;i++){
+      var c = btns[i].offsetLeft + btns[i].offsetWidth/2;
+      var d = Math.abs(c - x);
+      if(d < bestD){ bestD = d; bestC = c; bestId = btns[i].getAttribute('data-navtab'); }
+    }
+    if(bestC != null){ blobX.set(bestC); snapTabRef.current = bestId; }
   }
   function onPointerMove(e){
     if(e.pointerType === 'mouse' && !draggingRef.current){ setHovering(true); follow(e.clientX); }
@@ -102,9 +124,13 @@ function LiquidGlassNav(props){
   function onPointerUp(e){
     if(draggingRef.current){
       draggingRef.current = false; setDragging(false);
-      var id = targetUnderPoint(e.clientX, e.clientY);
-      if(id === '__orb__'){ tapOrb(); return; }
-      if(id){ selectTab(id); return; }
+      var over = targetUnderPoint(e.clientX, e.clientY);
+      if(over === '__orb__'){ snapTabRef.current = null; tapOrb(); return; }
+      // Commit to the tab the droplet magnetically stuck to (fallback: tab
+      // under the release point).
+      var pick = snapTabRef.current || over;
+      snapTabRef.current = null;
+      if(pick){ selectTab(pick); return; }
     }
     settleToActive();
   }
@@ -189,6 +215,7 @@ function LiquidGlassNav(props){
       style: {
         position:'absolute', top:'6px', left:0, height:'calc(100% - 12px)',
         width: BLOB_W + 'px', x: xLeft, scaleX: scaleX, scaleY: scaleY,
+        transformOrigin: originX,
         borderRadius:'22px', pointerEvents:'none', zIndex:0,
         background:'linear-gradient(135deg, rgba(255,255,255,0.30), rgba(255,255,255,0.08))',
         border:'1px solid rgba(255,255,255,0.30)',
