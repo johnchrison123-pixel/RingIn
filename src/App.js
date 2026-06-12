@@ -1072,7 +1072,7 @@ export default function App() {
      * back later, but no nav button surfaces it anymore.
      * R64.10: onViewUser wired so tapping the avatar/name inside the
      * Friends profile-summary modal pushes a full UserProfileView. */
-    if (activeTab === 'friends') return React.createElement(FriendsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('friends');setActiveTab('profile');}, onViewUser:pushViewUser});
+    if (activeTab === 'friends') return React.createElement(FriendsScreen, {session:session, onOpenWallet:openWallet, onOpenProfile:function(){setPrevTab('friends');setActiveTab('profile');}, onViewUser:pushViewUser, onGoToMessages:function(convo){setInitConvo(convo);setActiveTab('messages');}});
     /* R20 FIX #7: removed key='messages-'+msgResetKey to avoid remount race.
      * When user taps Messages tab while already on Messages, React-18's stable-
      * parent reconciliation could mount the NEW MessagesScreen BEFORE the old

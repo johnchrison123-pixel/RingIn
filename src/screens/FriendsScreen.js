@@ -23,6 +23,7 @@ import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
 import {searchCities} from '../utils/worldCities';
 import {Skeleton} from '../components/Skeleton'; /* R54: shimmer skeleton on initial load (Bug 6) */
+import {FollowButton, AddFriendButton, MessageButton} from '../components/FriendActions'; /* R55: shared follow + friend-request + message buttons */
 
 /* Inject scrollbar-hide CSS once — used by every horizontal scroll
  * lane (filter pills + suggestion blocks). React inline styles can't
@@ -277,6 +278,46 @@ export default function FriendsScreen(props) {
   var connSendingS = useState(false); var connSending = connSendingS[0]; var setConnSending = connSendingS[1];
   var followSendingS = useState(false); var followSending = followSendingS[0]; var setFollowSending = followSendingS[1];
 
+  /* R55: per-profile follow + friend status. Maps keyed by user_id.
+   *   followedMap[uid] = true            (one-way follow)
+   *   friendMap[uid]   = true            (accepted mutual connection)
+   *   pendingMap[uid]  = true            (friend request I sent, awaiting accept)
+   * busyMap tracks in-flight per-button so taps don't double-fire. */
+  var followedMapS = useState({}); var followedMap = followedMapS[0]; var setFollowedMap = followedMapS[1];
+  var friendMapS = useState({});   var friendMap = friendMapS[0];   var setFriendMap = friendMapS[1];
+  var pendingMapS = useState({});  var pendingMap = pendingMapS[0]; var setPendingMap = pendingMapS[1];
+  var busyMapS = useState({});     var busyMap = busyMapS[0];       var setBusyMap = busyMapS[1];
+
+  function friendStatusOf(uid){ return friendMap[uid] ? 'friends' : (pendingMap[uid] ? 'pending' : 'none'); }
+
+  /* Load my follow + connection + outgoing-pending state so the buttons show
+   * the right label without a tap. Best-effort: any piece failing just leaves
+   * that map empty (buttons default to actionable). */
+  function loadFriendStatus(){
+    if (!userId) return;
+    try {
+      sb.from('follows').select('following_id').eq('follower_id', userId).then(function(r){
+        if (r && !r.error && Array.isArray(r.data)){
+          var m = {}; r.data.forEach(function(x){ if(x.following_id) m[x.following_id] = true; });
+          setFollowedMap(m);
+        }
+      }).catch(function(){});
+      sb.rpc('list_anon_connections').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)){
+          var m = {}; r.data.forEach(function(x){ if(x.user_id) m[x.user_id] = true; });
+          setFriendMap(m);
+        }
+      }).catch(function(){});
+      sb.from('anon_connection_requests').select('recipient_id,status').eq('requester_id', userId).eq('status','pending').then(function(r){
+        if (r && !r.error && Array.isArray(r.data)){
+          var m = {}; r.data.forEach(function(x){ if(x.recipient_id) m[x.recipient_id] = true; });
+          setPendingMap(m);
+        }
+      }).catch(function(){});
+    } catch(_){}
+  }
+  useEffect(function(){ loadFriendStatus(); /* eslint-disable-next-line */ }, [userId]);
+
   /* ── Load my profile ────────────────────────────────────────────── */
   useEffect(function(){
     if (!userId) return;
@@ -392,27 +433,57 @@ export default function FriendsScreen(props) {
   }
 
   function sendConnectionRequest(p) {
-    if (!p || !p.user_id || connSending) return;
-    setConnSending(true);
-    sb.rpc('request_anon_connection', { p_recipient: p.user_id }).then(function(r){
-      setConnSending(false);
-      if (r && r.error) { toastError('Could not send: ' + (r.error.message || 'error')); return; }
+    if (!p || !p.user_id) return;
+    var uid = p.user_id;
+    if (busyMap['fr_'+uid] || friendMap[uid] || pendingMap[uid]) return;
+    setBusyMap(function(b){ var n=Object.assign({},b); n['fr_'+uid]=true; return n; });
+    setPendingMap(function(m){ var n=Object.assign({},m); n[uid]=true; return n; }); // optimistic
+    sb.rpc('request_anon_connection', { p_recipient: uid }).then(function(r){
+      setBusyMap(function(b){ var n=Object.assign({},b); delete n['fr_'+uid]; return n; });
+      if (r && r.error) {
+        setPendingMap(function(m){ var n=Object.assign({},m); delete n[uid]; return n; });
+        toastError('Could not send: ' + (r.error.message || 'error')); return;
+      }
       var status = r && r.data && r.data.status;
-      if (status === 'already_connected') toastInfo('You are already connected');
-      else if (status === 'already_pending') toastInfo('Request already sent');
-      else toastInfo('Friend request sent ✓');
-      setViewProfile(null);
-    }).catch(function(){ setConnSending(false); toastError('Network error'); });
+      if (status === 'accepted' || status === 'already_connected') {
+        // auto-accepted (dummy) or already friends -> promote to friend
+        setPendingMap(function(m){ var n=Object.assign({},m); delete n[uid]; return n; });
+        setFriendMap(function(m){ var n=Object.assign({},m); n[uid]=true; return n; });
+        toastInfo(status === 'accepted' ? 'You are now friends ✓' : 'You are already connected');
+      } else if (status === 'already_pending') {
+        toastInfo('Request already sent');
+      } else {
+        toastInfo('Friend request sent ✓');
+      }
+    }).catch(function(){
+      setBusyMap(function(b){ var n=Object.assign({},b); delete n['fr_'+uid]; return n; });
+      setPendingMap(function(m){ var n=Object.assign({},m); delete n[uid]; return n; });
+      toastError('Network error');
+    });
   }
 
-  function followUser(p) {
-    if (!p || !p.user_id || followSending) return;
-    setFollowSending(true);
-    sb.from('follows').upsert({ follower_id: userId, following_id: p.user_id }).then(function(r){
-      setFollowSending(false);
-      if (r && r.error) { toastError('Follow failed: ' + (r.error.message || 'error')); return; }
-      toastInfo('Following ' + (p.full_name || p.anon_nickname || ''));
-    }).catch(function(){ setFollowSending(false); toastError('Network error'); });
+  function toggleFollowUser(p) {
+    if (!p || !p.user_id) return;
+    var uid = p.user_id;
+    if (busyMap['fo_'+uid]) return;
+    var was = !!followedMap[uid];
+    setBusyMap(function(b){ var n=Object.assign({},b); n['fo_'+uid]=true; return n; });
+    setFollowedMap(function(m){ var n=Object.assign({},m); if(was) delete n[uid]; else n[uid]=true; return n; });
+    var op = was
+      ? sb.from('follows').delete().eq('follower_id', userId).eq('following_id', uid)
+      : sb.from('follows').upsert({ follower_id: userId, following_id: uid });
+    op.then(function(r){
+      setBusyMap(function(b){ var n=Object.assign({},b); delete n['fo_'+uid]; return n; });
+      if (r && r.error) {
+        setFollowedMap(function(m){ var n=Object.assign({},m); if(was) n[uid]=true; else delete n[uid]; return n; });
+        toastError('Follow failed: ' + (r.error.message || 'error')); return;
+      }
+      if (!was) toastInfo('Following ' + (p.full_name || p.anon_nickname || ''));
+    }).catch(function(){
+      setBusyMap(function(b){ var n=Object.assign({},b); delete n['fo_'+uid]; return n; });
+      setFollowedMap(function(m){ var n=Object.assign({},m); if(was) n[uid]=true; else delete n[uid]; return n; });
+      toastError('Network error');
+    });
   }
 
   function toggleInterestFilter(it) {
@@ -699,16 +770,33 @@ export default function FriendsScreen(props) {
               )
             : null,
           React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'18px'}},
-            React.createElement('button', {
-              onClick: function(){ followUser(p); },
-              disabled: followSending,
-              style:{flex:1,padding:'12px',borderRadius:'12px',background:'var(--bg2)',border:'1px solid var(--ac)',color:'var(--ac)',fontSize:'13px',fontWeight:700,cursor: followSending ? 'wait' : 'pointer',fontFamily:'inherit',opacity: followSending ? 0.7 : 1}
-            }, followSending ? '...' : '👁 Follow'),
-            React.createElement('button', {
+            React.createElement(FollowButton, {
+              following: !!followedMap[p.user_id], busy: !!busyMap['fo_'+p.user_id], full: true,
+              onClick: function(){ toggleFollowUser(p); },
+              style: { padding:'12px', fontSize:'13px', borderRadius:'12px' }
+            }),
+            React.createElement(AddFriendButton, {
+              status: friendStatusOf(p.user_id), busy: !!busyMap['fr_'+p.user_id], full: true,
               onClick: function(){ sendConnectionRequest(p); },
-              disabled: connSending,
-              style:{flex:2,padding:'12px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:700,cursor: connSending ? 'wait' : 'pointer',fontFamily:'inherit',opacity: connSending ? 0.7 : 1}
-            }, connSending ? 'Sending…' : '➕ Friend Request')
+              style: { padding:'12px', fontSize:'13px', borderRadius:'12px' }
+            })
+          ),
+          /* Message — only works once they accept your friend request. */
+          React.createElement('div', {style:{marginTop:'8px'}},
+            React.createElement(MessageButton, {
+              enabled: friendMap[p.user_id] === true, full: true,
+              label: friendMap[p.user_id] ? 'Message' : 'Message · friends only',
+              onClick: function(){
+                var nm = p.full_name || p.anon_nickname || 'Anonymous';
+                var convId = [userId, p.user_id].sort().join('_');
+                if (props.onGoToMessages){
+                  props.onGoToMessages({id:convId,convId:convId,otherId:p.user_id,receiverId:p.user_id,user_id:p.user_id,name:nm,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:initialOf(nm)});
+                  setViewProfile(null);
+                }
+              },
+              onLocked: function(){ toastInfo('You can message them once you are friends'); },
+              style: { padding:'12px', fontSize:'13px', borderRadius:'12px', width:'100%' }
+            })
           ),
           React.createElement('button', {
             onClick: function(){ setViewProfile(null); },
@@ -798,15 +886,19 @@ export default function FriendsScreen(props) {
       /* Action row anchored to bottom by marginTop:'auto' (works because
        * the card has fixed height). All cards' buttons line up exactly. */
       React.createElement('div', {style:{display:'flex',gap:'6px',marginTop:'auto',paddingTop:'10px',width:'100%',alignItems:'center'}},
-        React.createElement('button', {
-          onClick: function(e){ e.stopPropagation(); setViewProfile(p); },
-          style:{width:'34px',height:'34px',borderRadius:'50%',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'14px',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',padding:0}
-        }, '💬'),
-        React.createElement('button', {
-          onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
-          disabled: connSending,
-          style:{flex:1,padding:'9px 8px',borderRadius:'17px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',opacity: connSending ? 0.7 : 1}
-        }, 'Add')
+        React.createElement(FollowButton, {
+          following: !!followedMap[p.user_id],
+          busy: !!busyMap['fo_'+p.user_id],
+          onClick: function(e){ if(e&&e.stopPropagation)e.stopPropagation(); toggleFollowUser(p); },
+          style: { flex:1, padding:'9px 6px', fontSize:'12px', borderRadius:'12px' }
+        }),
+        React.createElement(AddFriendButton, {
+          status: friendStatusOf(p.user_id),
+          busy: !!busyMap['fr_'+p.user_id],
+          iconOnly: true,
+          onClick: function(e){ if(e&&e.stopPropagation)e.stopPropagation(); sendConnectionRequest(p); },
+          style: { flexShrink:0, width:'38px', height:'36px', padding:'8px', borderRadius:'12px' }
+        })
       )
     );
   }
@@ -837,12 +929,21 @@ export default function FriendsScreen(props) {
           (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
         )
       ),
-      /* Add Friend button on the right */
-      React.createElement('button', {
-        onClick: function(e){ e.stopPropagation(); sendConnectionRequest(p); },
-        disabled: connSending,
-        style:{padding:'8px 16px',borderRadius:'18px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0,opacity: connSending ? 0.7 : 1}
-      }, 'Add')
+      /* Follow + Add-Friend on the right */
+      React.createElement('div', {style:{display:'flex',gap:'6px',flexShrink:0,alignItems:'center'}},
+        React.createElement(FollowButton, {
+          following: !!followedMap[p.user_id],
+          busy: !!busyMap['fo_'+p.user_id],
+          onClick: function(e){ if(e&&e.stopPropagation)e.stopPropagation(); toggleFollowUser(p); }
+        }),
+        React.createElement(AddFriendButton, {
+          status: friendStatusOf(p.user_id),
+          busy: !!busyMap['fr_'+p.user_id],
+          iconOnly: true,
+          onClick: function(e){ if(e&&e.stopPropagation)e.stopPropagation(); sendConnectionRequest(p); },
+          style: { width:'40px', height:'38px', padding:'8px' }
+        })
+      )
     );
   }
 
