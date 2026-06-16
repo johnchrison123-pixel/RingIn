@@ -17,8 +17,10 @@ import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.animation.OvershootInterpolator;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -131,13 +133,9 @@ public class IncomingCallActivity extends Activity {
         row.setGravity(Gravity.CENTER);
 
         Button decline = pillButton("Decline", "#E5484D");
-        decline.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { handOff("decline"); }
-        });
+        springButton(decline, new Runnable() { public void run() { handOff("decline"); } });
         Button accept = pillButton("Accept", "#27C96A");
-        accept.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { handOff("accept"); }
-        });
+        springButton(accept, new Runnable() { public void run() { handOff("accept"); } });
 
         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(dp(132), dp(58));
         bLp.leftMargin = dp(14);
@@ -163,6 +161,28 @@ public class IncomingCallActivity extends Activity {
         bg.setColor(Color.parseColor(color));
         btn.setBackground(bg);
         return btn;
+    }
+
+    // Press feedback: scale down on touch-down, spring back with an overshoot
+    // bounce on release. The custom background removes the default ripple, so
+    // without this the buttons feel dead — this makes a tap obviously register.
+    private void springButton(Button btn, final Runnable action) {
+        btn.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent ev) {
+                int a = ev.getActionMasked();
+                if (a == MotionEvent.ACTION_DOWN) {
+                    v.animate().scaleX(0.90f).scaleY(0.90f).setDuration(70).start();
+                } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(320)
+                        .setInterpolator(new OvershootInterpolator(3f)).start();
+                }
+                return false; // don't consume — the Button still fires its click
+            }
+        });
+        btn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { if (action != null) action.run(); }
+        });
     }
 
     private void startRinging() {

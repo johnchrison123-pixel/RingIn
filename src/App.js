@@ -271,7 +271,17 @@ export default function App() {
           }).eq('id', inviteId).then(function(){});
           return;
         }
-        setIncomingCall(inv);
+        // ACCEPT → connect the call directly (same path as the in-app modal's
+        // Accept button) instead of popping a SECOND accept screen. acceptIncomingCall
+        // is a hoisted function declaration, so it's callable here even though it's
+        // defined lower in the component. Fall back to the ring modal if it throws.
+        try {
+          if (typeof acceptIncomingCall === 'function') { acceptIncomingCall(inv); }
+          else { setIncomingCall(inv); }
+        } catch(e) {
+          console.warn('[ringin] direct accept failed, showing modal:', e);
+          setIncomingCall(inv);
+        }
       });
     }
     function onCallDeepLink(ev){ var d = ev && ev.detail; if(d) processInvite(d.inviteId, d.action); }
