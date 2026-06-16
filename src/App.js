@@ -658,6 +658,15 @@ export default function App() {
       if(activeCallRef.current) return;
       // Already showing THIS invite? don't re-trigger
       if(incomingCallRef.current && incomingCallRef.current.id === inv.id) return;
+      // DOUBLE-RING / DOUBLE-UI FIX: only show the in-app modal when the app is
+      // actually foreground/visible. When the app is backgrounded/minimized (but
+      // still alive), the NATIVE full-screen ringer + CallStyle notification own
+      // the single ringtone (the native service early-returns via isAppInForeground
+      // only when we're foreground, so when we're hidden it rings). If the web
+      // modal also mounted here it would start a SECOND ringtone + redundant UI.
+      // The deep-link/native Accept path is unaffected: tapping Accept brings the
+      // app to the foreground and routes through acceptIncomingCall(), not here.
+      if(typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       setIncomingCall(inv);
     }
 
@@ -1330,7 +1339,16 @@ export default function App() {
        * needs bottom clearance or the last items hide behind the capsule.
        * Covers browser + PWA (overrides the .screen-content PWA 80px). */
       style:{paddingBottom:'calc(96px + env(safe-area-inset-bottom, 0px))'}},
-      React.createElement(ErrorBoundary, { scope: activeTab + ' tab' }, renderScreen())
+      /* NO-FEED-UNDER-CALL FIX: when a call was launched FROM a notification
+       * (launchedForCallRef = deep-link/native accept or cold-start drain), the
+       * full-screen call overlay sits on top of whatever tab was mounted, so the
+       * home feed flashes/peeks behind the connecting call. Skip rendering the
+       * tab UI entirely in that case — render only the call overlay below. When
+       * the call was started from INSIDE the app (flag false) we keep the screen
+       * mounted underneath so returning from the call is instant, as before.
+       * Note: this is a conditional INSIDE the returned tree (not an early return),
+       * so every hook above still runs unconditionally on every render. */
+      React.createElement(ErrorBoundary, { scope: activeTab + ' tab' }, (activeCall && launchedForCallRef.current) ? null : renderScreen())
     ),
 
     // ── Active call overlay (above bottom nav) ──

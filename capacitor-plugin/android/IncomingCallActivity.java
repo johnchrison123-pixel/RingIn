@@ -10,16 +10,11 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
-import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -46,11 +41,9 @@ public class IncomingCallActivity extends Activity {
     // Ring forever protection: if the cancel push is missed, auto-finish.
     private static final long AUTO_FINISH_MS = 40_000L;
 
-    // Static, guarded singleton so only ONE ringtone ever plays even if two
-    // IncomingCallActivity instances briefly coexist (FSI + a stray launch).
-    private static MediaPlayer sRingtone;
-
-    private Vibrator vibrator;
+    // NOTE: this activity no longer owns a ringtone. The single app-wide
+    // ringtone is owned by RingInNotifChannelsPlugin (start/stopRingtone) — the
+    // service starts it; here we just (idempotently) ensure it and stop it.
     private String inviteId = "";
     private BroadcastReceiver cancelReceiver;
     private Handler autoFinishHandler;
@@ -205,53 +198,16 @@ public class IncomingCallActivity extends Activity {
     }
 
     private void startRinging() {
-        try {
-            // Guarded singleton: if a ringtone is already playing (e.g. a second
-            // instance briefly exists), do nothing — never stack two players.
-            if (sRingtone != null) {
-                boolean alreadyPlaying = false;
-                try { alreadyPlaying = sRingtone.isPlaying(); } catch (Throwable ignored) {}
-                if (alreadyPlaying) {
-                    // leave the existing ringtone running.
-                } else {
-                    try { sRingtone.release(); } catch (Throwable ignored) {}
-                    sRingtone = null;
-                }
-            }
-            if (sRingtone == null) {
-                Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-                if (uri == null) uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-                if (uri != null) {
-                    MediaPlayer mp = new MediaPlayer();
-                    mp.setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build());
-                    mp.setDataSource(this, uri);
-                    mp.setLooping(true);
-                    mp.prepare();
-                    mp.start();
-                    sRingtone = mp;
-                }
-            }
-        } catch (Throwable t) { /* ring is best-effort */ }
-
-        try {
-            vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            if (vibrator != null && vibrator.hasVibrator()) {
-                long[] pattern = {0, 1000, 1000};
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0));
-                } else {
-                    vibrator.vibrate(pattern, 0);
-                }
-            }
-        } catch (Throwable t) { /* vibrate is best-effort */ }
+        // The ringtone is owned by the single static player in
+        // RingInNotifChannelsPlugin. The service normally starts it before this
+        // activity is shown (FSI path), but call it here too in case this
+        // activity was reached without that — startRingtone() tears down first,
+        // so it's idempotent and can never stack a second ringtone.
+        try { RingInNotifChannelsPlugin.startRingtone(getApplicationContext()); } catch (Throwable ignored) {}
     }
 
     private void stopRinging() {
-        try { if (sRingtone != null) { sRingtone.stop(); sRingtone.release(); sRingtone = null; } } catch (Throwable t) { sRingtone = null; }
-        try { if (vibrator != null) vibrator.cancel(); } catch (Throwable t) {}
+        try { RingInNotifChannelsPlugin.stopRingtone(); } catch (Throwable ignored) {}
     }
 
     private void clearNotif() {

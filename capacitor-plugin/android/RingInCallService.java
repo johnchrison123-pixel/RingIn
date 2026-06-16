@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.Person;
 
 import com.capacitorjs.plugins.pushnotifications.MessagingService;
 import com.google.firebase.messaging.RemoteMessage;
@@ -50,6 +51,10 @@ public class RingInCallService extends MessagingService {
             try {
                 NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 if (nm != null) nm.cancel(CALL_NOTIF_ID);
+                // Silence the single app-wide ringtone owned by the plugin (the
+                // service started it in showFullScreenCall), then broadcast so any
+                // showing IncomingCallActivity stops + finishes.
+                RingInNotifChannelsPlugin.stopRingtone();
                 sendBroadcast(new Intent("app.ringin.mobile.CALL_CANCELLED").setPackage(getPackageName()));
             } catch (Throwable ignored) {}
             return;
@@ -84,29 +89,35 @@ public class RingInCallService extends MessagingService {
             piFlags |= PendingIntent.FLAG_IMMUTABLE;
         }
 
-        // Full-screen intent → our native ringer activity (shows over lock screen).
+        // Full-screen intent → our native ringer activity. Used ONLY for the
+        // LOCKED / screen-off case: Android fires the full-screen intent then,
+        // showing IncomingCallActivity over the keyguard. When the phone is
+        // UNLOCKED, Android instead surfaces the CallStyle banner below (with
+        // Answer/Decline) and the FSI stays dormant — no SYSTEM_ALERT_WINDOW hack.
         Intent fsIntent = new Intent(this, IncomingCallActivity.class);
         fsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         fsIntent.putExtra("invite_id", inviteId);
         fsIntent.putExtra("caller_name", callerName);
         PendingIntent fsPending = PendingIntent.getActivity(this, 1001, fsIntent, piFlags);
 
-        // NO Accept/Decline buttons on the notification. The user wants a tap on
-        // the banner to OPEN THE FULL CALL SCREEN (and choose Accept/Decline
-        // there) — never to accept/decline straight from the banner. So BOTH the
-        // full-screen intent (locked/screen-off) and the tap content intent
-        // (unlocked heads-up) point at the full-screen ringer activity. Result:
-        // tapping the banner anywhere = the call screen opens, never auto-accept.
+        // Answer / Decline actions for the CallStyle banner → the ringin:// deep
+        // link, which App.js routes into the real accept / reject flow (same
+        // handoff IncomingCallActivity uses on its own buttons).
+        PendingIntent answerPending  = deepLink(1002, inviteId, "accept",  piFlags);
+        PendingIntent declinePending = deepLink(1003, inviteId, "decline", piFlags);
+
+        // CallStyle incoming-call notification: gives a proper system call banner
+        // with Answer/Decline (unlocked) and drives the full-screen ringer via the
+        // FSI (locked). The "calls_v2" channel is SILENT — the ringtone is played
+        // by the single static owner (started just below), not by the channel.
+        Person caller = new Person.Builder().setName(callerName).build();
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, "calls_v2")
             .setSmallIcon(android.R.drawable.sym_call_incoming)
-            .setContentTitle("Incoming Call")
-            .setContentText(callerName + " is calling you")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
-            .setAutoCancel(true)
             .setFullScreenIntent(fsPending, true)
-            .setContentIntent(fsPending);
+            .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, declinePending, answerPending));
 
         // Cold-boot fix: on a data-only FCM wake the Capacitor bridge / plugin
         // load() may not have run, so the "calls_v2" channel might not exist yet.
@@ -118,22 +129,13 @@ public class RingInCallService extends MessagingService {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(CALL_NOTIF_ID, b.build());
 
-        // Force the full-screen ringer to the FRONT even when the phone is
-        // UNLOCKED and RingIn is backgrounded/minimised. Android downgrades a
-        // full-screen INTENT to a heads-up banner while the screen is on, so we
-        // ALSO launch the activity directly. A background startActivity is allowed
-        // on Android 10+ only if the user granted "Display over other apps"
-        // (SYSTEM_ALERT_WINDOW) — RingInNotifChannelsPlugin requests it on launch.
-        // Without that permission this is blocked and we fall back to the heads-up
-        // banner above. Safe against double-launch now: IncomingCallActivity is
-        // launchMode=singleTask and the ringtone is a static singleton, so even if
-        // the full-screen intent also fires there is only ever ONE activity + ONE
-        // ringtone.
-        try {
-            startActivity(fsIntent);
-        } catch (Throwable t) {
-            /* no overlay permission (or OEM block) → the heads-up banner above is the fallback */
-        }
+        // The SERVICE owns the ringtone now — start the single app-wide ringtone
+        // (+ vibration) for BOTH the locked full-screen case and the unlocked
+        // CallStyle banner. startRingtone() tears down first, so even if
+        // IncomingCallActivity (FSI) also calls it there is only ever ONE
+        // ringtone. The old SYSTEM_ALERT_WINDOW startActivity(fsIntent) hack is
+        // gone: locked relies on the FSI, unlocked relies on the CallStyle banner.
+        RingInNotifChannelsPlugin.startRingtone(this);
     }
 
     private PendingIntent deepLink(int reqCode, String inviteId, String action, int piFlags) {

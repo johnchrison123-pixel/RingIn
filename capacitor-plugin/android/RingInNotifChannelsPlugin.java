@@ -9,6 +9,8 @@ import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
 
 import com.getcapacitor.JSObject;
@@ -130,47 +132,105 @@ public class RingInNotifChannelsPlugin extends Plugin {
         }
     }
 
-    // The phone's DEFAULT ringtone, looped — used by the in-app (foreground)
-    // IncomingCallModal so the web modal rings with the same system ringtone
-    // the native full-screen IncomingCallActivity uses, instead of the synth
-    // tone from soundEngine. (Browsers can't read the system ringtone; the
-    // native plugin can.) Shared static so stopSystemRingtone() can reach it.
+    // ────────────────────────────────────────────────────────────────────────
+    // THE single, app-wide ringtone owner.
+    //
+    // There is exactly ONE ringtone for the whole incoming-call flow, owned by
+    // these static fields. The FCM service (RingInCallService), the full-screen
+    // ringer (IncomingCallActivity) and this plugin (for the in-app foreground
+    // modal) all call the SAME startRingtone()/stopRingtone() — so no matter how
+    // many of those paths fire for a single call, only one ringtone + one
+    // vibration ever plays, and a single stopRingtone() silences everything.
+    //
+    // startRingtone() is idempotent: it tears down any existing player/vibrator
+    // first, so calling it twice never stacks audio.
+    // ────────────────────────────────────────────────────────────────────────
     private static MediaPlayer ringtonePlayer;
+    private static Vibrator ringtoneVibrator;
 
-    @PluginMethod
-    public void playSystemRingtone(PluginCall call) {
+    /**
+     * Start (or restart) the single app-wide ringtone + looping vibration.
+     * Idempotent / tears-down-first: safe to call from multiple code paths for
+     * the same call. Plays the phone's default TYPE_RINGTONE (falling back to
+     * TYPE_NOTIFICATION) on a loop with USAGE_NOTIFICATION_RINGTONE attributes.
+     */
+    public static void startRingtone(Context ctx) {
+        if (ctx == null) return;
+
+        // Always tear down any existing player FIRST so we never stack two
+        // MediaPlayers (which would double the ringtone).
+        if (ringtonePlayer != null) {
+            try { ringtonePlayer.stop(); } catch (Exception ignored) {}
+            try { ringtonePlayer.release(); } catch (Exception ignored) {}
+            ringtonePlayer = null;
+        }
+        // And cancel any in-flight vibration so we don't stack waveforms either.
+        if (ringtoneVibrator != null) {
+            try { ringtoneVibrator.cancel(); } catch (Exception ignored) {}
+            ringtoneVibrator = null;
+        }
+
+        // Ringtone (best-effort — a missing/unreadable ringtone must not break
+        // the incoming-call flow; the UI still shows, it just won't ring).
         try {
-            // If a ringtone is already playing, tear it down first so we never
-            // stack two MediaPlayers (which would double the ringtone).
-            if (ringtonePlayer != null) {
-                try { ringtonePlayer.stop(); } catch (Exception ignored) {}
-                try { ringtonePlayer.release(); } catch (Exception ignored) {}
-                ringtonePlayer = null;
-            }
-
             Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
             if (uri == null) {
                 uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             }
-            if (uri == null) {
-                // No ringtone available on this device — nothing to play.
-                call.resolve();
-                return;
+            if (uri != null) {
+                MediaPlayer mp = new MediaPlayer();
+                mp.setDataSource(ctx, uri);
+                mp.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+                mp.setLooping(true);
+                mp.prepare();
+                mp.start();
+                ringtonePlayer = mp;
             }
+        } catch (Exception ignored) { /* ring is best-effort */ }
 
-            MediaPlayer mp = new MediaPlayer();
-            mp.setDataSource(getContext(), uri);
-            mp.setAudioAttributes(new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build());
-            mp.setLooping(true);
-            mp.prepare();
-            mp.start();
-            ringtonePlayer = mp;
-        } catch (Exception e) {
+        // Looping vibration (best-effort).
+        try {
+            Vibrator vib = (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
+            if (vib != null && vib.hasVibrator()) {
+                long[] pattern = {0, 1000, 1000};
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vib.vibrate(VibrationEffect.createWaveform(pattern, 0));
+                } else {
+                    vib.vibrate(pattern, 0);
+                }
+                ringtoneVibrator = vib;
+            }
+        } catch (Exception ignored) { /* vibrate is best-effort */ }
+    }
+
+    /** Stop + release the single app-wide ringtone and cancel its vibration. */
+    public static void stopRingtone() {
+        if (ringtonePlayer != null) {
+            try { ringtonePlayer.stop(); } catch (Exception ignored) {}
+            try { ringtonePlayer.release(); } catch (Exception ignored) {}
+            ringtonePlayer = null;
+        }
+        if (ringtoneVibrator != null) {
+            try { ringtoneVibrator.cancel(); } catch (Exception ignored) {}
+            ringtoneVibrator = null;
+        }
+    }
+
+    // The phone's DEFAULT ringtone, looped — used by the in-app (foreground)
+    // IncomingCallModal so the web modal rings with the same system ringtone the
+    // native full-screen IncomingCallActivity uses, instead of the synth tone
+    // from soundEngine. (Browsers can't read the system ringtone; the native
+    // plugin can.) Delegates to the single static owner above.
+    @PluginMethod
+    public void playSystemRingtone(PluginCall call) {
+        try {
+            startRingtone(getContext());
+        } catch (Exception ignored) {
             // Never reject — a missing/unreadable ringtone shouldn't break the
-            // incoming-call flow. The modal still shows; it just won't ring.
+            // incoming-call flow.
         }
         call.resolve();
     }
@@ -178,12 +238,8 @@ public class RingInNotifChannelsPlugin extends Plugin {
     @PluginMethod
     public void stopSystemRingtone(PluginCall call) {
         try {
-            if (ringtonePlayer != null) {
-                try { ringtonePlayer.stop(); } catch (Exception ignored) {}
-                try { ringtonePlayer.release(); } catch (Exception ignored) {}
-                ringtonePlayer = null;
-            }
-        } catch (Exception e) {
+            stopRingtone();
+        } catch (Exception ignored) {
             // best-effort — fall through to resolve.
         }
         call.resolve();
@@ -200,14 +256,8 @@ public class RingInNotifChannelsPlugin extends Plugin {
             if (nm != null) nm.cancel(CALL_NOTIF_ID);
         } catch (Exception ignored) {}
 
-        // Stop the in-app system ringtone (same teardown as stopSystemRingtone).
-        try {
-            if (ringtonePlayer != null) {
-                try { ringtonePlayer.stop(); } catch (Exception ignored) {}
-                try { ringtonePlayer.release(); } catch (Exception ignored) {}
-                ringtonePlayer = null;
-            }
-        } catch (Exception ignored) {}
+        // Stop the single app-wide ringtone + vibration.
+        try { stopRingtone(); } catch (Exception ignored) {}
 
         // Tell any showing full-screen IncomingCallActivity to stop + finish.
         try {
