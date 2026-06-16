@@ -85,6 +85,15 @@ messaging.onBackgroundMessage(function(payload){
     return self.registration.showNotification(title, options);
   }
 
+  // ── Caller cancelled/hung up before answer → close the ringing notification
+  //    so a stale "Incoming Call" (requireInteraction) banner doesn't linger.
+  if (data.type === 'call_cancelled'){
+    var cancelId = data.invite_id || '';
+    return self.registration.getNotifications({ tag: 'ringin-call-' + cancelId }).then(function(ns){
+      ns.forEach(function(n){ try { n.close(); } catch(_){} });
+    });
+  }
+
   // ── Generic notification (messages, likes, follows, etc.) ─────────────
   var t = notification.title || 'RingIn';
   var b = notification.body  || 'You have a new notification';

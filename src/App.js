@@ -266,6 +266,11 @@ export default function App() {
         if(inv.callee_id !== session.user.id) return;   // not addressed to me
         if(inv.status !== 'ringing') return;             // stale / already handled
         if(action === 'decline'){
+          // CRITICAL: stop the native ringer + clear the call notification. The
+          // ringtone is owned by the native plugin and the banner-decline path
+          // (unlocked, no IncomingCallActivity) has NO Activity to auto-stop it —
+          // without this explicit teardown the phone rings forever on decline.
+          try { var _cap=window.Capacitor; if(_cap && _cap.isNativePlatform && _cap.isNativePlatform() && _cap.Plugins && _cap.Plugins.RingInNotifChannels && _cap.Plugins.RingInNotifChannels.dismissCallNotification){ _cap.Plugins.RingInNotifChannels.dismissCallNotification(); } } catch(_){}
           supabase.from('call_invites').update({
             status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected_from_notification',
           }).eq('id', inviteId).then(function(){});
@@ -363,6 +368,9 @@ export default function App() {
         if(inv.status !== 'ringing') return;
 
         if(actionParam === 'decline'){
+          // Stop the native ringer + clear the call notification on decline (no-op
+          // on pure web; essential on native so a banner-decline doesn't ring on).
+          try { var _capD=window.Capacitor; if(_capD && _capD.isNativePlatform && _capD.isNativePlatform() && _capD.Plugins && _capD.Plugins.RingInNotifChannels && _capD.Plugins.RingInNotifChannels.dismissCallNotification){ _capD.Plugins.RingInNotifChannels.dismissCallNotification(); } } catch(_){}
           supabase.from('call_invites').update({
             status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected_from_notification',
           }).eq('id', inviteIdParam).then(function(){});
