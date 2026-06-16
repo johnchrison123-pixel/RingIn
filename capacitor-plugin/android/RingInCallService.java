@@ -82,7 +82,7 @@ public class RingInCallService extends MessagingService {
         PendingIntent acceptPending = deepLink(1002, inviteId, "accept", piFlags);
         PendingIntent declinePending = deepLink(1003, inviteId, "decline", piFlags);
 
-        NotificationCompat.Builder b = new NotificationCompat.Builder(this, "calls")
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, "calls_v2")
             .setSmallIcon(android.R.drawable.sym_call_incoming)
             .setContentTitle("Incoming Call")
             .setContentText(callerName + " is calling you")
@@ -99,6 +99,16 @@ public class RingInCallService extends MessagingService {
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(CALL_NOTIF_ID, b.build());
+
+        // Also try to bring up the full-screen call UI directly, so it appears
+        // even when the device is UNLOCKED (a full-screen intent otherwise shows
+        // only as a heads-up while the screen is on). Best-effort: background
+        // activity launch can be restricted on Android 12+, in which case the
+        // full-screen-intent notification above is the fallback. fsIntent already
+        // has NEW_TASK | CLEAR_TOP set.
+        try {
+            startActivity(fsIntent);
+        } catch (Throwable t) { /* FSI notification handles it */ }
     }
 
     private PendingIntent deepLink(int reqCode, String inviteId, String action, int piFlags) {

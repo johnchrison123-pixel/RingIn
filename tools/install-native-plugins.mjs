@@ -201,9 +201,23 @@ ${regLines}
       patched = true;
     }
 
+    // (d) MainActivity over the lock screen. When a call is accepted, the web
+    //     app (call screen) opens via the ringin:// deep link. Without
+    //     showWhenLocked it launches BEHIND the keyguard, so the call only
+    //     connects after the user manually unlocks. showWhenLocked + turnScreenOn
+    //     let the call screen appear AND connect over the lock screen.
+    if (/android:name="\.MainActivity"/.test(manifest) &&
+        !/android:name="\.MainActivity"[^>]*android:showWhenLocked/.test(manifest)) {
+      manifest = manifest.replace(
+        /(android:name="\.MainActivity")/,
+        '$1\n            android:showWhenLocked="true"\n            android:turnScreenOn="true"'
+      );
+      patched = true;
+    }
+
     if (patched) {
       write(manifestPath, manifest);
-      log('✔ Patched AndroidManifest.xml (permissions + full-screen call service/activity/deep-link)');
+      log('✔ Patched AndroidManifest.xml (permissions + call service/activity/deep-link + MainActivity lock-screen)');
     } else {
       log('• AndroidManifest.xml already fully patched');
     }

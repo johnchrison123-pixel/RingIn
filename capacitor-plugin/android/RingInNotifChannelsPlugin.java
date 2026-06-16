@@ -38,7 +38,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "RingInNotifChannels")
 public class RingInNotifChannelsPlugin extends Plugin {
 
-    public static final String CHANNEL_CALLS    = "calls";
+    // "calls_v2": a channel's sound/vibration is immutable once created, so we
+    // can't silence the old "calls" channel in place — use a fresh id instead.
+    public static final String CHANNEL_CALLS    = "calls_v2";
     public static final String CHANNEL_MESSAGES = "messages";
     public static final String CHANNEL_SOCIAL   = "social";
 
@@ -52,22 +54,18 @@ public class RingInNotifChannelsPlugin extends Plugin {
         NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
-        // Calls channel — high importance, ringtone, full-screen intent.
+        // Calls channel — high importance + bypasses DND so the full-screen
+        // intent fires. Deliberately SILENT and NON-VIBRATING: the full-screen
+        // IncomingCallActivity plays the phone's ringtone + vibrates itself, so a
+        // channel sound/vibration here would double it (the user heard two
+        // ringtones at once).
         NotificationChannel calls = new NotificationChannel(
             CHANNEL_CALLS, "Incoming calls", NotificationManager.IMPORTANCE_HIGH
         );
-        calls.setDescription("Ringtone alerts when someone calls you on RingIn.");
-        calls.enableVibration(true);
-        calls.setVibrationPattern(new long[]{0, 1000, 500, 1000});
+        calls.setDescription("Full-screen ringer when someone calls you on RingIn.");
+        calls.enableVibration(false);
         calls.setBypassDnd(true);
-        try {
-            Uri ring = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            AudioAttributes attrs = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build();
-            calls.setSound(ring, attrs);
-        } catch (Throwable ignored) {}
+        calls.setSound(null, null);
         nm.createNotificationChannel(calls);
 
         // Messages channel — default importance, normal notification sound.
