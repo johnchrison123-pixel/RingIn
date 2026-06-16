@@ -118,9 +118,14 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Profile fetch threw: ' + (e && e.message) });
   }
 
-  // Build the FCM payload. `data` is what the service worker reads.
-  // `notification` is the fallback for platforms that don't run the SW
-  // handler (some background states on Android).
+  // DATA-ONLY FCM payload — deliberately NO top-level `notification` and NO
+  // `android.notification`. This is REQUIRED so that on native Android the app's
+  // RingInCallService.onMessageReceived ALWAYS runs (even backgrounded / screen
+  // locked) and can raise the full-screen WhatsApp-style ringer
+  // (IncomingCallActivity). A notification-type message would instead be drawn
+  // by the system tray in the background and our service would never run.
+  // The web PWA still works: firebase-messaging-sw.js builds its own
+  // notification from `data` in onBackgroundMessage.
   const message = {
     token,
     data: {
@@ -128,23 +133,13 @@ module.exports = async (req, res) => {
       invite_id: inviteId,
       caller_name: callerName,
       caller_avatar: callerAvatar,
-    },
-    notification: {
+      // Carry text in `data` so the web SW (and any fallback) have a title/body.
       title: 'Incoming Call',
       body: callerName + ' is calling you',
     },
     android: {
+      // High priority → delivered immediately even in Doze. Essential for calls.
       priority: 'high',
-      notification: {
-        // MUST match a channel created by RingInNotifChannelsPlugin.java
-        // (CHANNEL_CALLS = "calls"). A mismatched/unknown channel id makes
-        // Android 8+ drop the call to a default channel (no ringtone, no
-        // heads-up) — or suppress it entirely on strict OEM builds.
-        channelId: 'calls',
-        sound: 'default',
-        priority: 'max',
-        // Vibration handled by the SW notification options too
-      },
     },
     apns: {
       headers: {

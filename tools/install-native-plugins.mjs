@@ -53,6 +53,23 @@ function installAndroid() {
     log('✔ Wrote', dst);
   });
 
+  // 1b. Copy the native Service + Activity that power full-screen incoming calls.
+  //     These are NOT Capacitor plugins (no registerPlugin) — they are declared
+  //     in AndroidManifest.xml instead (see the manifest patch below).
+  const NATIVE_FILES = [
+    'RingInCallService.java',     // replaces Capacitor's FCM service; raises the ringer
+    'IncomingCallActivity.java',  // the WhatsApp-style full-screen call UI
+  ];
+  NATIVE_FILES.forEach(function(name){
+    const src = path.join(ROOT, 'capacitor-plugin', 'android', name);
+    if (!exists(src)) { warn('native source missing:', src); return; }
+    const dst = path.join(
+      androidRoot, 'app', 'src', 'main', 'java', 'app', 'ringin', 'mobile', name
+    );
+    write(dst, read(src));
+    log('✔ Wrote', dst);
+  });
+
   // 2. Patch MainActivity.java so Capacitor knows about the plugin.
   //    MainActivity must call registerPlugin(RingInAudioPlugin::class.java)
   //    inside onCreate, AFTER super.onCreate().
@@ -132,11 +149,63 @@ ${regLines}
         patched = true;
       }
     }
+    // ── Full-screen incoming calls: tools namespace + deep link + service/activity ──
+    // (a) xmlns:tools on <manifest> (required for tools:node="remove" below).
+    if (!manifest.includes('xmlns:tools=')) {
+      manifest = manifest.replace(
+        'xmlns:android="http://schemas.android.com/apk/res/android"',
+        'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"'
+      );
+      patched = true;
+    }
+    // (b) ringin:// deep-link intent-filter on MainActivity — the native ringer
+    //     hands Accept/Decline back to the web app, which App.js routes via its
+    //     appUrlOpen handler into the real accept / reject flow.
+    if (!manifest.includes('android:scheme="ringin"')) {
+      manifest = manifest.replace(
+        /(<category android:name="android.intent.category.LAUNCHER"\s*\/>\s*<\/intent-filter>)/,
+        '$1\n\n            <intent-filter>\n' +
+        '                <action android:name="android.intent.action.VIEW" />\n' +
+        '                <category android:name="android.intent.category.DEFAULT" />\n' +
+        '                <category android:name="android.intent.category.BROWSABLE" />\n' +
+        '                <data android:scheme="ringin" />\n' +
+        '            </intent-filter>'
+      );
+      patched = true;
+    }
+    // (c) Replace Capacitor's default FCM service with ours, and declare the
+    //     full-screen incoming-call activity. RingInCallService extends the
+    //     Capacitor service and delegates non-call messages to super, so token
+    //     registration + normal notifications are preserved.
+    if (!manifest.includes('app.ringin.mobile.RingInCallService')) {
+      const callBlock =
+        '\n        <!-- Full-screen incoming calls (WhatsApp style). Ours replaces\n' +
+        '             Capacitor\'s FCM receiver but extends it (super for non-calls). -->\n' +
+        '        <service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" tools:node="remove" />\n' +
+        '        <service\n' +
+        '            android:name="app.ringin.mobile.RingInCallService"\n' +
+        '            android:exported="false">\n' +
+        '            <intent-filter>\n' +
+        '                <action android:name="com.google.firebase.MESSAGING_EVENT" />\n' +
+        '            </intent-filter>\n' +
+        '        </service>\n' +
+        '        <activity\n' +
+        '            android:name="app.ringin.mobile.IncomingCallActivity"\n' +
+        '            android:exported="false"\n' +
+        '            android:launchMode="singleTop"\n' +
+        '            android:excludeFromRecents="true"\n' +
+        '            android:showWhenLocked="true"\n' +
+        '            android:turnScreenOn="true"\n' +
+        '            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />\n';
+      manifest = manifest.replace(/(\n?[ \t]*)<\/application>/, callBlock + '$1</application>');
+      patched = true;
+    }
+
     if (patched) {
       write(manifestPath, manifest);
-      log('✔ Patched AndroidManifest.xml (added missing permissions)');
+      log('✔ Patched AndroidManifest.xml (permissions + full-screen call service/activity/deep-link)');
     } else {
-      log('• AndroidManifest.xml already has required permissions');
+      log('• AndroidManifest.xml already fully patched');
     }
   }
 }

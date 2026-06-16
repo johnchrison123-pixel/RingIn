@@ -198,38 +198,49 @@ export default function App() {
     var handleRef = { current: null };
     var Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
     if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return; // web/PWA picks links up via normal nav
+
+    // Shared parser for both warm opens (appUrlOpen) and cold starts (getLaunchUrl).
+    function handleUrl(url){
+      try {
+        if (!url) return;
+        console.log('[ringin] deep link:', url);
+        var u;
+        try { u = new URL(url); } catch(_){ u = null; }
+        if (!u) return;
+        // Supabase recovery emails put the session token in the URL fragment
+        // (#access_token=...&type=recovery) — supabase-js auto-detects it when the
+        // location updates, so just navigate.
+        if (u.pathname && /reset-password|recovery/i.test(u.pathname + u.hash)) {
+          try { window.location.hash = u.hash || ''; } catch(_){}
+        }
+        // Incoming-call handoff from the native full-screen ringer:
+        //   ringin://call?invite=<id>&action=accept|decline
+        var invite = null, action = '';
+        try { invite = u.searchParams.get('invite'); action = u.searchParams.get('action') || ''; } catch(_){}
+        if (invite) {
+          // Stash for cold-start (the call-deeplink effect drains it once the
+          // session is ready) AND dispatch live for the warm case.
+          try { window.__ringinPendingCallInvite = { inviteId: invite, action: action }; } catch(_){}
+          try { window.dispatchEvent(new CustomEvent('ringin:call-deeplink', { detail: { inviteId: invite, action: action } })); } catch(_){}
+        }
+      } catch (e) {
+        console.warn('[ringin] deep link handler failed:', e);
+      }
+    }
+
     try {
       import('@capacitor/app').then(function(mod){
         if (cancelled) return;
         var CapApp = mod && (mod.App || mod.default || mod);
         if (!CapApp || !CapApp.addListener) return;
-        CapApp.addListener('appUrlOpen', function(data){
-          try {
-            var url = data && data.url;
-            if (!url) return;
-            console.log('[ringin] appUrlOpen:', url);
-            // Strip any custom scheme / host so we get just the path+search+hash
-            var u;
-            try { u = new URL(url); } catch(_){ u = null; }
-            if (!u) return;
-            // Route by path. Supabase recovery emails put the session token in
-            // the URL fragment (#access_token=...&type=recovery) — supabase-js
-            // auto-detects this when the location updates, so just navigate.
-            if (u.pathname && /reset-password|recovery/i.test(u.pathname + u.hash)) {
-              try {
-                window.location.hash = u.hash || '';
-                // Drop the user on the login screen — supabase will fire
-                // PASSWORD_RECOVERY which the auth listener (below) handles.
-              } catch(_){}
-            }
-            // Future deep links (post, profile, moment) can be added here.
-          } catch (e) {
-            console.warn('[ringin] appUrlOpen handler failed:', e);
-          }
-        }).then(function(h){
+        CapApp.addListener('appUrlOpen', function(data){ handleUrl(data && data.url); }).then(function(h){
           if (cancelled) { try { if (h && h.remove) h.remove(); } catch(_){} return; }
           handleRef.current = h;
         }).catch(function(){});
+        // Cold start: the URL that launched the app is NOT delivered via
+        // appUrlOpen — read it explicitly so a tap on the lock-screen ringer
+        // that boots the app from dead still routes the call.
+        try { CapApp.getLaunchUrl().then(function(res){ if(!cancelled) handleUrl(res && res.url); }).catch(function(){}); } catch(_){}
       }).catch(function(){});
     } catch(_) {}
     return function(){
@@ -237,6 +248,43 @@ export default function App() {
       try { if (handleRef.current && handleRef.current.remove) handleRef.current.remove(); } catch(_){}
     };
   }, []);
+
+  // ── Native full-screen ringer → web app handoff ────────────────────────
+  // The native IncomingCallActivity (and the call notification's Accept/Decline
+  // actions) open ringin://call?invite=<id>&action=... The deep-link effect above
+  // parses that and emits 'ringin:call-deeplink'. Here we resolve the invite with
+  // the CURRENT session and route it the same way the web ?invite= handler does:
+  //   accept  → open the in-app incoming-call modal (real acceptIncomingCall)
+  //   decline → mark the invite rejected
+  useEffect(function(){
+    if(!session || !session.user) return;
+    function processInvite(inviteId, action){
+      if(!inviteId) return;
+      supabase.from('call_invites').select('*').eq('id', inviteId).maybeSingle().then(function(r){
+        if(!r || !r.data) return;
+        var inv = r.data;
+        if(inv.callee_id !== session.user.id) return;   // not addressed to me
+        if(inv.status !== 'ringing') return;             // stale / already handled
+        if(action === 'decline'){
+          supabase.from('call_invites').update({
+            status:'rejected', ended_at:new Date().toISOString(), end_reason:'rejected_from_notification',
+          }).eq('id', inviteId).then(function(){});
+          return;
+        }
+        setIncomingCall(inv);
+      });
+    }
+    function onCallDeepLink(ev){ var d = ev && ev.detail; if(d) processInvite(d.inviteId, d.action); }
+    window.addEventListener('ringin:call-deeplink', onCallDeepLink);
+    // Drain any deep link that arrived before this listener / the session existed
+    // (cold start launched straight from the lock-screen ringer).
+    try {
+      var pend = window.__ringinPendingCallInvite;
+      if (pend && pend.inviteId) { window.__ringinPendingCallInvite = null; processInvite(pend.inviteId, pend.action); }
+    } catch(_){}
+    return function(){ window.removeEventListener('ringin:call-deeplink', onCallDeepLink); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   // PWA shortcut deep-link — manifest.json advertises `/?tab=messages` and
   // `/?tab=search` as home-screen long-press shortcuts. Read the query once on
