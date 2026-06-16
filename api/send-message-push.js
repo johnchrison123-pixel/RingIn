@@ -121,7 +121,8 @@ module.exports = async (req, res) => {
       /* Normal priority — Android can batch + respects DND. Calls use 'high'. */
       priority: 'high', /* still high so devices wake briefly + ring tone */
       notification: {
-        channelId: 'ringin_messages',
+        // MUST match RingInNotifChannelsPlugin.java (CHANNEL_MESSAGES = "messages").
+        channelId: 'messages',
         sound: 'default',
         priority: 'default',
         tag: conversationId, /* coalesce repeated msgs from the same convo */

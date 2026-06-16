@@ -136,7 +136,11 @@ module.exports = async (req, res) => {
     android: {
       priority: 'high',
       notification: {
-        channelId: 'ringin_calls',
+        // MUST match a channel created by RingInNotifChannelsPlugin.java
+        // (CHANNEL_CALLS = "calls"). A mismatched/unknown channel id makes
+        // Android 8+ drop the call to a default channel (no ringtone, no
+        // heads-up) — or suppress it entirely on strict OEM builds.
+        channelId: 'calls',
         sound: 'default',
         priority: 'max',
         // Vibration handled by the SW notification options too
