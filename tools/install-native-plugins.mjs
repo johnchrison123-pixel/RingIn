@@ -208,6 +208,32 @@ ${regLines}
       log('• AndroidManifest.xml already fully patched');
     }
   }
+
+  // 4. Put firebase-messaging on the APP module's compile classpath.
+  //    RingInCallService extends FirebaseMessagingService (via Capacitor's
+  //    MessagingService). @capacitor/push-notifications declares firebase-messaging
+  //    as `implementation` (not `api`), so the app module can't see the
+  //    FirebaseMessagingService -> Context hierarchy and every inherited Context
+  //    call (getSystemService, getPackageName, `this` as Context) fails to compile.
+  //    Declaring it here fixes that. Pinned to the SAME version the plugin uses
+  //    (23.3.1) to avoid a version skew.
+  const appGradlePath = path.join(androidRoot, 'app', 'build.gradle');
+  if (exists(appGradlePath)) {
+    let g = read(appGradlePath);
+    if (!/com\.google\.firebase:firebase-messaging/.test(g)) {
+      g = g.replace(/dependencies\s*\{/, function(m){
+        return m +
+          '\n    // Full-screen call ringer: RingInCallService extends FirebaseMessagingService,' +
+          '\n    // which needs firebase-messaging on the app module\'s compile classpath.' +
+          '\n    // Pinned to @capacitor/push-notifications\' version to avoid a skew.' +
+          '\n    implementation "com.google.firebase:firebase-messaging:23.3.1"';
+      });
+      write(appGradlePath, g);
+      log('✔ Patched app/build.gradle (firebase-messaging for the full-screen call service)');
+    } else {
+      log('• app/build.gradle already has firebase-messaging');
+    }
+  }
 }
 
 // ── iOS ──────────────────────────────────────────────────────────────────
