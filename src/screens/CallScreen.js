@@ -125,6 +125,12 @@ export default function CallScreen(props){
   // directly. The mirror lets the listener bail if the call already ended.
   var phaseRef = useRef(phase);
   useEffect(function(){ phaseRef.current = phase; }, [phase]);
+  // Ref mirror of `secs`. hangup() is invoked from listeners/intervals captured
+  // at mount, where the `secs` const is stale (frozen at 0). Reading
+  // secsRef.current inside hangup gives the live duration for duration_secs and
+  // the call log.
+  var secsRef = useRef(0);
+  useEffect(function(){ secsRef.current = secs; }, [secs]);
   var mutedS = useState(false); var muted = mutedS[0]; var setMuted = mutedS[1];
   // Speaker off = normal call volume (100). Speaker on = loudspeaker boost (250).
   // Browser can't actually route to earpiece — this is volume-based "loudspeaker" mode.
@@ -453,15 +459,19 @@ export default function CallScreen(props){
       })
       .subscribe();
     // 3-second poll backup in case realtime drops the UPDATE
-    // FIX #11 — once the row reaches a terminal state (accepted / ended /
-    // rejected / cancelled), tear down the interval. Previously the poll
-    // kept hammering Supabase every 3s for the entire call duration.
+    // FIX #11 — once the row reaches a TERMINAL state (ended / rejected /
+    // cancelled / missed), tear down the interval. 'accepted' is deliberately
+    // NOT treated as terminal: the call is still live, so we keep polling to
+    // catch a later terminal status that realtime might drop.
     var pollIv = setInterval(function(){
-      sb.from('call_invites').select('status').eq('id', inviteId).single().then(function(r){
+      sb.from('call_invites').select('status').eq('id', inviteId).maybeSingle().then(function(r){
         if(r && r.data){
           var st = r.data.status;
           applyStatus(st);
-          if(st === 'accepted' || st === 'ended' || st === 'rejected' || st === 'cancelled'){
+          // Only tear down the poll on TERMINAL states. 'accepted' is NOT
+          // terminal — the call is still live and we must keep polling so a
+          // later 'ended'/'cancelled' that realtime drops still gets caught.
+          if(st === 'ended' || st === 'rejected' || st === 'cancelled' || st === 'missed'){
             clearInterval(pollIv);
           }
         }
@@ -508,14 +518,24 @@ export default function CallScreen(props){
   },[phase, isIncoming]);
 
   // ── 4. Connected timer + coin deduction (every 60s, charge rate_per_min)
+  // Coins are deducted ONLY for paid OUTGOING calls. The callee is never
+  // billed, and a free call (rate 0) is never billed — so for those we must
+  // never deduct and never fire the no_coins auto-hangup (which previously
+  // tore down a callee's call who simply had a 0 balance).
   useEffect(function(){
     if(phase!=='connected') return;
-    var rate = parseInt(expert.rate, 10) || 30; // coins per minute
+    var rate = parseInt(expert.rate, 10) || 0; // coins per minute (||0: free if unset)
+    // Whether THIS side bills: only the caller on a paid (rate>0) call.
+    // The callee is never billed; a free call is never billed. For those the
+    // timer below still ticks (so the duration display works) but the entire
+    // deduction + no_coins auto-hangup branch is skipped.
+    var billing = !isIncoming && rate > 0;
     var iv = setInterval(function(){
       setSecs(function(s){
         var next = s+1;
-        // Deduct rate/60 coins every second (rate per minute)
-        if(next % 60 === 0){
+        // Deduct rate/60 coins every second (rate per minute) — ONLY when
+        // this side is the billed caller on a paid call.
+        if(billing && next % 60 === 0){
           // FIX #8: don't deduct if localCoins hasn't been populated yet
           // (hook fetch hasn't landed). Skipping the deduction this
           // minute is better than auto-hanging up "no_coins" on a user
@@ -578,28 +598,39 @@ export default function CallScreen(props){
     // Restore the native audio session to idle (no-op on web/PWA).
     try{ NativeAudio.endCallMode(); }catch(_){}
     setEndReason(reason || 'caller_hangup');
+    // Duration is read from the ref, not the captured `secs` const — hangup()
+    // is called from mount-captured listeners/intervals where `secs` is stale.
+    var durSecs = secsRef.current;
     // Update invite row. If we hang up BEFORE the insert returns (inviteId is null),
     // mark the most recent ringing invite WE created as cancelled — this catches
     // the race where user taps Call then immediately taps red.
+    //
+    // CALLER ONLY: the callee must NOT write the invite row — that's the
+    // caller's authoritative record. The callee just leaves Agora (above) and
+    // sets phase 'ended' (below); the caller's onRemoteLeft fires and the
+    // caller writes the final status/duration. Writing from both sides raced
+    // and could clobber the caller's duration with the callee's stale value.
     var newStatus = (reason==='rejected') ? 'rejected' : (reason==='no_answer'?'missed':(reason==='caller_hangup' && phase==='ringing' ? 'cancelled' : 'ended'));
-    if(inviteId){
-      sb.from('call_invites').update({
-        status: newStatus,
-        ended_at: new Date().toISOString(),
-        duration_secs: secs,
-        end_reason: reason || 'caller_hangup',
-      }).eq('id', inviteId).then(function(){});
-    } else if(session && session.user){
-      // Try to find the row we created (most recent ringing where caller=me) and cancel it
-      sb.from('call_invites')
-        .update({ status:newStatus, ended_at:new Date().toISOString(), duration_secs:secs, end_reason:reason||'caller_hangup' })
-        .eq('caller_id', session.user.id)
-        .eq('status','ringing')
-        .gte('created_at', new Date(Date.now() - 30000).toISOString())
-        .then(function(r){
-          if(r && r.error){ console.error('[ringin] late-cancel failed:', r.error); }
-          else console.log('[ringin] late-cancel applied');
-        });
+    if(!isIncoming){
+      if(inviteId){
+        sb.from('call_invites').update({
+          status: newStatus,
+          ended_at: new Date().toISOString(),
+          duration_secs: durSecs,
+          end_reason: reason || 'caller_hangup',
+        }).eq('id', inviteId).then(function(){});
+      } else if(session && session.user){
+        // Try to find the row we created (most recent ringing where caller=me) and cancel it
+        sb.from('call_invites')
+          .update({ status:newStatus, ended_at:new Date().toISOString(), duration_secs:durSecs, end_reason:reason||'caller_hangup' })
+          .eq('caller_id', session.user.id)
+          .eq('status','ringing')
+          .gte('created_at', new Date(Date.now() - 30000).toISOString())
+          .then(function(r){
+            if(r && r.error){ console.error('[ringin] late-cancel failed:', r.error); }
+            else console.log('[ringin] late-cancel applied');
+          });
+      }
     }
     // Write an in-chat call log message. Only the CALLER writes (to avoid duplicates).
     // The callee's hangup() runs locally but they don't insert — the caller's onRemoteLeft
@@ -611,7 +642,7 @@ export default function CallScreen(props){
         if(otherId && UUID_RE.test(String(otherId)) && otherId !== session.user.id){
           var convId = [session.user.id, otherId].sort().join('_');
           var logText = buildCallLog({
-            d: secs,
+            d: durSecs,
             s: newStatus,
             r: reason || 'caller_hangup',
             cid: session.user.id,
@@ -672,10 +703,13 @@ export default function CallScreen(props){
     }
 
     setPhase('ended');
+    // FASTER HANGUP: 250ms (was 800ms). All DB writes above are
+    // fire-and-forget (never awaited), so we don't need to hold the UI on the
+    // ended screen — close out quickly. The writes complete in the background.
     endTimerRef.current = setTimeout(function(){
       endTimerRef.current = null;
       if(onEnd) onEnd();
-    }, 800);
+    }, 250);
   }
 
   // Final unmount safety net — clear any remaining orphan timers, and reset
@@ -813,7 +847,9 @@ export default function CallScreen(props){
         )
       ),
       React.createElement('div',{style:{fontSize:'20px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
-      React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'8px'}},expert.role||'Member'),
+      // Only show a role line when it's meaningful (an expert title or anon tag).
+      // Plain member-to-member calls have no role to show — "Member" was noise.
+      (expert.role && expert.role!=='Member' && expert.role!=='User') ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',marginBottom:'8px'}},expert.role) : null,
       /* R35: anon in-call actions — View Profile + Add Connection (ringing state) */
       isAnonCallView ? React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'12px',justifyContent:'center'}},
         React.createElement('button', {
@@ -906,7 +942,8 @@ export default function CallScreen(props){
         React.createElement(ImgWithFallback,{src:expert.img,alt:expert.name,fallback:(expert.initials||'?'),style:{width:'100%',height:'100%',objectFit:'cover'}})
     ),
     React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}},expert.name||'User'),
-    React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'6px'}},expert.role||'Member'),
+    // Only show a role line when meaningful (expert title / anon tag), not "Member".
+    (expert.role && expert.role!=='Member' && expert.role!=='User') ? React.createElement('div',{style:{fontSize:'12px',color:'var(--t2)',marginBottom:'6px'}},expert.role) : null,
     /* R35: anon in-call actions — View Profile + Add Connection (connected state) */
     isAnonCallView ? React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'12px',justifyContent:'center'}},
       React.createElement('button', {
@@ -931,7 +968,10 @@ export default function CallScreen(props){
       : phase==='connecting'
         ? React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, 'Connecting audio…')
         : React.createElement('div',{style:{fontSize:'14px',color:'var(--t2)',marginBottom:'24px'}}, endReason==='no_coins' ? 'Out of coins' : 'Call ended'),
-    phase==='connected' ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
+    // Coin counter is shown ONLY on a paid OUTGOING call (the only case where
+    // coins are actually deducted). Callees and free (rate 0) calls show no
+    // coin counter — matches the deduction gate above.
+    (phase==='connected' && !isIncoming && (parseInt(expert.rate,10)||0) > 0) ? React.createElement('div',{style:{fontSize:'13px',color:'var(--amber)',marginBottom:'40px'}}, localCoins+' coins remaining') : null,
     // Final polish: build stamp only renders when ringin_debug flag is set.
     // Used to leak the internal "v2.0-native-debug" string to every prod user.
     (function(){ try { return localStorage.getItem('ringin_debug') === '1' ? React.createElement('div',{style:{position:'fixed',bottom:'6px',left:'8px',fontSize:'8px',color:'rgba(255,255,255,0.2)',pointerEvents:'none',fontFamily:'monospace'}}, RINGIN_BUILD) : null; } catch(_){ return null; } })(),

@@ -4,6 +4,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -97,5 +98,64 @@ public class RingInNotifChannelsPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("ensure failed: " + e.getMessage(), e);
         }
+    }
+
+    // The phone's DEFAULT ringtone, looped — used by the in-app (foreground)
+    // IncomingCallModal so the web modal rings with the same system ringtone
+    // the native full-screen IncomingCallActivity uses, instead of the synth
+    // tone from soundEngine. (Browsers can't read the system ringtone; the
+    // native plugin can.) Shared static so stopSystemRingtone() can reach it.
+    private static MediaPlayer ringtonePlayer;
+
+    @PluginMethod
+    public void playSystemRingtone(PluginCall call) {
+        try {
+            // If a ringtone is already playing, tear it down first so we never
+            // stack two MediaPlayers (which would double the ringtone).
+            if (ringtonePlayer != null) {
+                try { ringtonePlayer.stop(); } catch (Exception ignored) {}
+                try { ringtonePlayer.release(); } catch (Exception ignored) {}
+                ringtonePlayer = null;
+            }
+
+            Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if (uri == null) {
+                uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
+            if (uri == null) {
+                // No ringtone available on this device — nothing to play.
+                call.resolve();
+                return;
+            }
+
+            MediaPlayer mp = new MediaPlayer();
+            mp.setDataSource(getContext(), uri);
+            mp.setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build());
+            mp.setLooping(true);
+            mp.prepare();
+            mp.start();
+            ringtonePlayer = mp;
+        } catch (Exception e) {
+            // Never reject — a missing/unreadable ringtone shouldn't break the
+            // incoming-call flow. The modal still shows; it just won't ring.
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stopSystemRingtone(PluginCall call) {
+        try {
+            if (ringtonePlayer != null) {
+                try { ringtonePlayer.stop(); } catch (Exception ignored) {}
+                try { ringtonePlayer.release(); } catch (Exception ignored) {}
+                ringtonePlayer = null;
+            }
+        } catch (Exception e) {
+            // best-effort — fall through to resolve.
+        }
+        call.resolve();
     }
 }

@@ -50,7 +50,17 @@ export default function IncomingCallModal(props){
   // queuing long vibrate patterns — accumulated vibrate calls there can freeze
   // the JS thread when the call is finally accepted. Haptic also caps at 6 cycles.
   useEffect(function(){
-    try{ playRingtone(); }catch(e){}
+    // ON NATIVE (Capacitor): ring with the phone's DEFAULT ringtone via the
+    // native plugin — same ringtone the native full-screen IncomingCallActivity
+    // uses when the app is backgrounded — instead of the soundEngine synth.
+    // ON WEB: browsers can't access the system ringtone, so keep the synth.
+    var isNative = false;
+    try{ isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }catch(e){ isNative = false; }
+    if(isNative){
+      try{ window.Capacitor.Plugins.RingInNotifChannels.playSystemRingtone(); }catch(e){}
+    } else {
+      try{ playRingtone(); }catch(e){}
+    }
     var hapticCount = 0;
     function pulse(){ try{ hapticPulse([250]); }catch(e){} }
     pulse();
@@ -60,7 +70,13 @@ export default function IncomingCallModal(props){
       pulse();
     }, 2400);
     return function(){
-      try{ stopRingtone(); }catch(e){}
+      // Stop whichever ringtone source we started. Runs on accept/reject too
+      // (both unmount the modal), so the ringtone always stops on answer/decline.
+      if(isNative){
+        try{ window.Capacitor.Plugins.RingInNotifChannels.stopSystemRingtone(); }catch(e){}
+      } else {
+        try{ stopRingtone(); }catch(e){}
+      }
       if(hapticRef.current){ clearInterval(hapticRef.current); hapticRef.current = null; }
     };
   },[]);

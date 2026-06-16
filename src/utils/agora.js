@@ -165,14 +165,6 @@ export async function startCallSession(opts) {
       try { window.__ringinPrefetchedAgoraToken = null; } catch (e) {}
     }
   } catch (e) { /* ignore — fall through to fresh fetch */ }
-  if (!tokenData) {
-    try {
-      tokenData = await fetchToken(opts.channel, uid);
-    } catch (e) {
-      if (opts.onError) opts.onError(new Error('Token fetch failed: ' + e.message));
-      throw e;
-    }
-  }
 
   var client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
   var localAudioTrack = null;
@@ -186,6 +178,13 @@ export async function startCallSession(opts) {
   // wait until after fetchToken (slow), the activation expires and mic creation
   // silently fails, leaving the user unable to be heard while still hearing the peer.
   //
+  // The previous code awaited fetchToken BEFORE creating the mic, defeating this
+  // comment and reintroducing the iOS one-way-audio + slow-connect bug. We now:
+  //   1. kick off createMicrophoneAudioTrack synchronously (inside the activation window),
+  //   2. kick off the token resolution CONCURRENTLY (prefetched → resolved instantly,
+  //      otherwise fetchToken in flight — no added latency),
+  //   3. await the mic first (preserves iOS activation), then await the token.
+  //
   // iOS PWA audio session: must be 'play-and-record' BEFORE calling getUserMedia.
   // If the previous call set it to 'playback' (media-only), Agora throws
   // PERMISSION_DENIED with "AudioSession category is not compatible with audio
@@ -195,16 +194,26 @@ export async function startCallSession(opts) {
       navigator.audioSession.type = 'play-and-record';
     }
   } catch (e) { /* not supported on this browser — fine */ }
+
+  // CPU profile: speech_standard (16kHz mono) instead of music_standard (48kHz stereo)
+  // is a ~3-4× CPU reduction on low-end Android (Samsung Internet's main pain point).
+  // Voice calls don't need music fidelity — speech is the right tool for the job.
+  // Keep echo-cancel + noise-suppression but drop AGC (auto-gain) which adds processing
+  // overhead and can pump the mic level mid-call on weak hardware.
+  // Start mic creation NOW (synchronously, inside the user-activation window).
+  var micPromise = AgoraRTC.createMicrophoneAudioTrack({
+    encoderConfig: 'speech_standard',
+    ANS: true, AEC: true, AGC: false,
+  });
+  // Start token resolution concurrently — already-warmed prefetch resolves instantly,
+  // otherwise the network fetch runs in parallel with mic init (no added latency).
+  var tokenPromise = tokenData ? Promise.resolve(tokenData) : fetchToken(opts.channel, uid);
+  // Guard so an early token-fetch rejection doesn't trigger an unhandled-rejection
+  // warning while we're still awaiting the mic. We await/handle it explicitly below.
+  try { if (tokenPromise && typeof tokenPromise.catch === 'function') tokenPromise.catch(function(){}); } catch (e) {}
+
   try {
-    // CPU profile: speech_standard (16kHz mono) instead of music_standard (48kHz stereo)
-    // is a ~3-4× CPU reduction on low-end Android (Samsung Internet's main pain point).
-    // Voice calls don't need music fidelity — speech is the right tool for the job.
-    // Keep echo-cancel + noise-suppression but drop AGC (auto-gain) which adds processing
-    // overhead and can pump the mic level mid-call on weak hardware.
-    localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-      encoderConfig: 'speech_standard',
-      ANS: true, AEC: true, AGC: false,
-    });
+    localAudioTrack = await micPromise;   // await mic FIRST to preserve iOS activation
   } catch (e) {
     // Make this VISIBLE — silently going to listen-only is what caused the "one-way audio" bug
     var errMsg = 'Microphone unavailable: ' + (e && e.message ? e.message : 'permission denied') + '. Tap Call again, or check site permissions.';
@@ -271,6 +280,18 @@ export async function startCallSession(opts) {
   client.on('connection-state-change', function (cur, prev) {
     if (opts.onConnectionState) opts.onConnectionState(cur, prev);
   });
+
+  // Now resolve the token — already in flight (prefetch resolved instantly, or
+  // fetchToken was started concurrently with mic creation above), so this adds
+  // no latency on top of the mic init we just awaited.
+  try {
+    tokenData = await tokenPromise;
+  } catch (e) {
+    if (opts.onError) opts.onError(new Error('Token fetch failed: ' + e.message));
+    // Clean up the mic track we already created so we don't leak it
+    try { if (localAudioTrack) localAudioTrack.close(); } catch (e2) {}
+    throw e;
+  }
 
   try {
     await client.join(tokenData.appId || APP_ID, opts.channel, tokenData.token, uid);

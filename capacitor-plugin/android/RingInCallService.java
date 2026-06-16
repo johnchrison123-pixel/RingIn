@@ -97,6 +97,13 @@ public class RingInCallService extends MessagingService {
             .addAction(android.R.drawable.sym_action_call, "Accept", acceptPending)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePending);
 
+        // Cold-boot fix: on a data-only FCM wake the Capacitor bridge / plugin
+        // load() may not have run, so the "calls_v2" channel might not exist yet.
+        // On Android 8+ posting to a missing channel SILENTLY drops the
+        // notification (no ring, no full-screen intent). Re-create it here —
+        // createNotificationChannel is a no-op when it already exists.
+        RingInNotifChannelsPlugin.ensureChannels(this);
+
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(CALL_NOTIF_ID, b.build());
 

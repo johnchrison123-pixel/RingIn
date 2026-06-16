@@ -25,7 +25,7 @@ import {sb as supabase} from './utils/supabase';
 import {initPushNotifications} from './utils/pushNotifications';
 import {clearFcmToken} from './utils/firebase'; /* R16 FIX #3 */
 import {playSound} from './utils/soundEngine';
-import {prefetchAgora} from './utils/agora';
+import {prefetchAgora, hashUidToInt} from './utils/agora';
 import {useCoinBalance, getCachedCoinBalance} from './utils/coinBalance';
 import {ANON_AVATAR_LOOKUP} from './utils/anonAvatars'; /* R37: shared with AnonymousConnect — single source of truth */
 // Final polish: native alert() blocks the JS thread + looks system-y on Android.
@@ -275,6 +275,11 @@ export default function App() {
         // Accept button) instead of popping a SECOND accept screen. acceptIncomingCall
         // is a hoisted function declaration, so it's callable here even though it's
         // defined lower in the component. Fall back to the ring modal if it throws.
+        // This path covers BOTH a warm deep-link (ringin:// tapped while running)
+        // AND the cold-start pending-invite drain below — both flag the call as
+        // launched-from-notification so the app minimizes back to the lock screen
+        // (instead of the app home) when the call ends.
+        launchedForCallRef.current = true;
         try {
           if (typeof acceptIncomingCall === 'function') { acceptIncomingCall(inv); }
           else { setIncomingCall(inv); }
@@ -363,15 +368,27 @@ export default function App() {
           }).eq('id', inviteIdParam).then(function(){});
           return;
         }
-        /* R21 FIX #1: previously the actionParam==='accept' branch tried to
-         * call acceptIncomingCall directly — but that's declared LATER in this
-         * component as a function expression (line 607+) and is `undefined`
-         * inside this earlier useEffect due to var hoisting. The check silently
-         * failed every time, so push-Accept did nothing (user thought app
-         * froze). Always opening the ring modal works for both Accept and
-         * default cases — user taps Accept on the in-app modal, which uses the
-         * real (fully-declared) acceptIncomingCall. Costs one extra tap but
-         * always works. */
+        /* DIRECT ACCEPT: acceptIncomingCall is a HOISTED function declaration
+         * (function acceptIncomingCall(inv){...}), so it IS defined here even
+         * though it appears lower in the component — same as the native
+         * ringin:// handler relies on. (The old comment here claimed it was a
+         * function *expression* and undefined; that was wrong — it's a
+         * declaration.) When the action is 'accept' we connect the call
+         * directly instead of popping a second Accept screen. Flag this as a
+         * launched-for-call path so the app minimizes (returns to lock screen)
+         * when the call ends, rather than dropping into the app home. */
+        if(actionParam === 'accept'){
+          launchedForCallRef.current = true;
+          try {
+            if (typeof acceptIncomingCall === 'function') { acceptIncomingCall(inv); }
+            else { setIncomingCall(inv); }
+          } catch(e) {
+            console.warn('[ringin] web direct accept failed, showing modal:', e);
+            setIncomingCall(inv);
+          }
+          return;
+        }
+        // No action param — fall back to the in-app ring modal.
         setIncomingCall(inv);
       });
     }catch(e){ /* never break the app on a URL parse error */ }
@@ -604,6 +621,14 @@ export default function App() {
    * event when the call ends — AnonymousConnect listens and saves a row to
    * anon_call_logs. Cleared in the onEnd handler. */
   var anonCallContextRef = useRef(null);
+  /* Set TRUE only when a call is accepted from a deep-link / cold-start path
+   * (native ringin:// accept, web ?invite=&action=accept, or the drained
+   * pending-invite) — i.e. the app was launched/woken specifically to take
+   * the call. When the resulting call ENDS we minimize the app (back to lock
+   * screen / previous app) instead of dropping the user into the app home.
+   * Deliberately NOT set when the user accepts from the in-app IncomingCallModal
+   * (they were already using the app), so in-app calls return to the app. */
+  var launchedForCallRef = useRef(false);
   /* R37: ANON_AVATAR_LOOKUP imported from utils/anonAvatars (was duplicated
    * here with different emoji/gradient values — caused caller and callee
    * to see different avatars for the same person). Now both screens
@@ -779,7 +804,7 @@ export default function App() {
         initials: initials,
         color: color,
         role: isAnon ? 'Anonymous Connect' : 'Member',
-        rate: isAnon ? 0 : (inv.rate_per_min || 30),
+        rate: isAnon ? 0 : (inv.rate_per_min || 0),
         /* R35: pass partner-avatar id through so the CallScreen's
          * "View Profile" button has data to show. */
         _partnerAvatar: isAnon ? (inv.caller_avatar || null) : null,
@@ -790,7 +815,7 @@ export default function App() {
   function startOutgoingCall(otherUser, opts){
     if(!appUserId) return;
     opts = opts || {};
-    var rate = parseInt(opts.rate||otherUser.rate, 10) || 30;
+    var rate = parseInt(opts.rate||otherUser.rate, 10) || 0;
     // 1) Pick the callee's REAL user UUID — NOT conversation_id. Some callers pass a convo
     //    object whose `id` is "<uuid1>_<uuid2>" (the convo id), so we prefer user-uuid
     //    fields first and only fall back to `id` if it actually looks like a UUID.
@@ -873,6 +898,38 @@ export default function App() {
     if (anonCallContextRef.current) {
       anonCallContextRef.current.invite_id = inviteUuid;
     }
+
+    /* Prefetch the outgoing Agora token NOW (channel == inviteUuid) so the
+     * caller's startCallSession can consume it from window instead of paying
+     * the ~200-500ms /api/agora-token roundtrip after the callee accepts.
+     * Mirrors what IncomingCallModal does for the incoming side. Best-effort:
+     * try/catch, keepalive, and never blocks the call. agora.js gates the
+     * stash on channel+uid match, so a stale token can't be misconsumed. */
+    try {
+      var _ogUidInt = hashUidToInt(appUserId);
+      fetch((process.env.REACT_APP_API_BASE_URL || 'https://ring-in.vercel.app') + '/api/agora-token', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ channel: inviteUuid, uid: _ogUidInt }),
+        keepalive: true,
+      }).then(function(r){
+        if(!r || !r.ok) return null;
+        return r.json();
+      }).then(function(data){
+        if(!data || !data.token) return;
+        try{
+          window.__ringinPrefetchedAgoraToken = {
+            ts: Date.now(),
+            inviteId: inviteUuid,
+            channel: inviteUuid,
+            uid: _ogUidInt,
+            token: data.token,
+            appId: data.appId,
+            expiresAt: data.expiresAt,
+          };
+        }catch(_){}
+      }).catch(function(){ /* network hiccup — fall back to inline fetch later */ });
+    } catch(_){ /* never block the call on a pre-fetch error */ }
 
     // Optimistic UI — show "Calling..." instantly with the REAL channel ready.
     setActiveCall({
@@ -1264,6 +1321,22 @@ export default function App() {
               }
             } catch(e){ console.warn('[ringin] anon call-end dispatch failed:', e); }
             setActiveCall(null);
+            /* NO-APP-OPEN ON END: if this call was accepted from a
+             * notification / cold start (app was backgrounded/locked/closed
+             * and launched specifically to take the call), send the app back
+             * to the background when it ends — returning the user to the lock
+             * screen / previous app instead of dropping them into the app home.
+             * Only on native; in-app calls (flag false) behave exactly as
+             * before and stay in the app. */
+            try {
+              if (launchedForCallRef.current && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+                import('@capacitor/app').then(function(m){
+                  var A = m.App || m.default || m;
+                  if (A && A.minimizeApp) A.minimizeApp();
+                }).catch(function(){});
+              }
+            } catch(_){}
+            launchedForCallRef.current = false;
           },
         })
       )
