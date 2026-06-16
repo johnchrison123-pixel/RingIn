@@ -91,11 +91,12 @@ public class RingInCallService extends MessagingService {
         fsIntent.putExtra("caller_name", callerName);
         PendingIntent fsPending = PendingIntent.getActivity(this, 1001, fsIntent, piFlags);
 
-        // Accept / Decline hand back to the web app through the ringin:// deep link
-        // (App.js appUrlOpen handler → opens the call / marks the invite rejected).
-        PendingIntent acceptPending = deepLink(1002, inviteId, "accept", piFlags);
-        PendingIntent declinePending = deepLink(1003, inviteId, "decline", piFlags);
-
+        // NO Accept/Decline buttons on the notification. The user wants a tap on
+        // the banner to OPEN THE FULL CALL SCREEN (and choose Accept/Decline
+        // there) — never to accept/decline straight from the banner. So BOTH the
+        // full-screen intent (locked/screen-off) and the tap content intent
+        // (unlocked heads-up) point at the full-screen ringer activity. Result:
+        // tapping the banner anywhere = the call screen opens, never auto-accept.
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, "calls_v2")
             .setSmallIcon(android.R.drawable.sym_call_incoming)
             .setContentTitle("Incoming Call")
@@ -104,16 +105,8 @@ public class RingInCallService extends MessagingService {
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setOngoing(true)
             .setAutoCancel(true)
-            // The WhatsApp magic: launch the full-screen activity when locked /
-            // screen-off; otherwise the system shows it as a heads-up banner.
             .setFullScreenIntent(fsPending, true)
-            // Tapping the banner body opens the full-screen ringer (where the
-            // user picks Accept/Decline) — NOT the accept deep link directly, so
-            // a body tap never auto-accepts. The Accept/Decline ACTION buttons
-            // below still hand off via the deep link.
-            .setContentIntent(fsPending)
-            .addAction(android.R.drawable.sym_action_call, "Accept", acceptPending)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePending);
+            .setContentIntent(fsPending);
 
         // Cold-boot fix: on a data-only FCM wake the Capacitor bridge / plugin
         // load() may not have run, so the "calls_v2" channel might not exist yet.
