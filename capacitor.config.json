@@ -25,7 +25,7 @@
       "autoSplashscreen": false,
       "responseTimeout": 30,
       "appReadyTimeout": 10000,
-      "resetWhenUpdate": false
+      "resetWhenUpdate": true
     }
   }
 }
