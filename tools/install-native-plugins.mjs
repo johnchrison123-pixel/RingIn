@@ -138,6 +138,10 @@ ${regLines}
       'android.permission.VIBRATE',
       'android.permission.WAKE_LOCK',
       'android.permission.USE_FULL_SCREEN_INTENT',
+      // Lets RingInCallService launch the full-screen call screen OVER other apps
+      // when the phone is unlocked + RingIn is backgrounded (WhatsApp/Truecaller
+      // style). Without it, an unlocked incoming call only shows a heads-up banner.
+      'android.permission.SYSTEM_ALERT_WINDOW',
     ];
     let patched = false;
     for (const perm of perms) {

@@ -118,13 +118,22 @@ public class RingInCallService extends MessagingService {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(CALL_NOTIF_ID, b.build());
 
-        // NOTE: we deliberately do NOT startActivity(fsIntent) here. The
-        // full-screen intent (setFullScreenIntent above) launches the ringer
-        // when the device is locked/screen-off; when unlocked the system shows
-        // a heads-up banner and tapping it opens the ringer (setContentIntent =
-        // fsPending). A manual startActivity used to race the FSI and spawn a
-        // SECOND IncomingCallActivity → two MediaPlayers → double ringtone; and
-        // on Android 12+ a background startActivity is blocked anyway.
+        // Force the full-screen ringer to the FRONT even when the phone is
+        // UNLOCKED and RingIn is backgrounded/minimised. Android downgrades a
+        // full-screen INTENT to a heads-up banner while the screen is on, so we
+        // ALSO launch the activity directly. A background startActivity is allowed
+        // on Android 10+ only if the user granted "Display over other apps"
+        // (SYSTEM_ALERT_WINDOW) — RingInNotifChannelsPlugin requests it on launch.
+        // Without that permission this is blocked and we fall back to the heads-up
+        // banner above. Safe against double-launch now: IncomingCallActivity is
+        // launchMode=singleTask and the ringtone is a static singleton, so even if
+        // the full-screen intent also fires there is only ever ONE activity + ONE
+        // ringtone.
+        try {
+            startActivity(fsIntent);
+        } catch (Throwable t) {
+            /* no overlay permission (or OEM block) → the heads-up banner above is the fallback */
+        }
     }
 
     private PendingIntent deepLink(int reqCode, String inviteId, String action, int piFlags) {

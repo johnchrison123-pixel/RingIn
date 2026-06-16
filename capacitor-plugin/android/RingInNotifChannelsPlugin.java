@@ -9,6 +9,7 @@ import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -52,6 +53,31 @@ public class RingInNotifChannelsPlugin extends Plugin {
     @Override
     public void load() {
         ensureChannels(getContext());
+        maybeRequestOverlayPermission();
+    }
+
+    // "Display over other apps" (SYSTEM_ALERT_WINDOW) is what lets
+    // RingInCallService launch the full-screen incoming-call screen OVER other
+    // apps / the launcher when the phone is UNLOCKED and RingIn is
+    // backgrounded/minimised. Without it Android only shows a heads-up banner.
+    // Prompt once after install (the user can also toggle it later in Settings →
+    // Apps → RingIn → "Display over other apps"). canDrawOverlays short-circuits
+    // once it's granted, so we never nag after that.
+    private void maybeRequestOverlayPermission() {
+        try {
+            Context ctx = getContext();
+            if (ctx == null) return;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;  // <23: granted at install
+            if (Settings.canDrawOverlays(ctx)) return;                  // already granted
+            android.content.SharedPreferences sp =
+                ctx.getSharedPreferences("ringin_perms", Context.MODE_PRIVATE);
+            if (sp.getBoolean("overlay_asked", false)) return;          // auto-ask only once
+            sp.edit().putBoolean("overlay_asked", true).apply();
+            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + ctx.getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        } catch (Throwable ignored) { /* never block app start on this */ }
     }
 
     public static void ensureChannels(Context ctx) {
