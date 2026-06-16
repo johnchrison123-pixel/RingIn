@@ -89,6 +89,15 @@ module.exports = async (req, res) => {
 
   if (!toUserId) return res.status(400).json({ error: 'to_user_id is required' });
 
+  /* Skip system / call-log messages. When a call ends the app inserts a
+   * row into `messages` with sender_name='system' and a body like
+   * '[call] {"d":0,"s":"cancelled",...}'. That insert must NOT surface as a
+   * push — otherwise the callee sees raw JSON in a notification. Bail before
+   * touching FCM. */
+  if (senderName.trim().toLowerCase() === 'system' || text.trim().indexOf('[call]') === 0) {
+    return res.status(200).json({ ok: true, skipped: 'system_message' });
+  }
+
   /* Look up recipient's FCM token + their muted-convos prefs (best-effort). */
   let token;
   try {

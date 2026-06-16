@@ -631,6 +631,25 @@ export default function CallScreen(props){
             else console.log('[ringin] late-cancel applied');
           });
       }
+      // ── CALLER-SIDE CANCEL PUSH ──────────────────────────────────────────
+      // If we (the caller) bail BEFORE the callee answered, their device may
+      // still be ringing on a lock-screen / full-screen native ringer that the
+      // realtime 'cancelled' UPDATE can't always silence (Doze / app killed).
+      // Fire a best-effort DATA-ONLY push (type:'cancel') so the callee's
+      // native handler dismisses the ringtone + call notification immediately.
+      // Only when the call never connected — once connected, a normal hangup
+      // already tears both sides down via Agora onRemoteLeft + status='ended'.
+      try {
+        var calleeIdForCancel = (expert && (expert.id || expert.user_id)) || null;
+        if (phaseRef.current !== 'connected' && inviteId && calleeIdForCancel) {
+          fetch((process.env.REACT_APP_API_BASE_URL || 'https://ring-in.vercel.app') + '/api/send-call-push', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({ invite_id: inviteId, callee_id: calleeIdForCancel, type:'cancel' }),
+            keepalive: true,
+          }).catch(function(){});
+        }
+      } catch(_){ /* never block hangup on a cancel-push error */ }
     }
     // Write an in-chat call log message. Only the CALLER writes (to avoid duplicates).
     // The callee's hangup() runs locally but they don't insert — the caller's onRemoteLeft

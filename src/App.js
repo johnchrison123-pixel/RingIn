@@ -767,6 +767,54 @@ export default function App() {
   },[incomingCall && incomingCall.id]);
 
   function acceptIncomingCall(inv){
+    // CLEAR-ON-ACCEPT: dismiss the native call notification + ringtone the
+    // instant we answer, so the lock-screen banner / heads-up doesn't linger
+    // behind the connecting call. Covers the deep-link accept path too, since
+    // both the native ringin:// and web ?action=accept routes call this fn.
+    // No-op on web/PWA (no native plugin).
+    try {
+      var Cap = window.Capacitor;
+      if (Cap && Cap.isNativePlatform && Cap.isNativePlatform() && Cap.Plugins
+          && Cap.Plugins.RingInNotifChannels
+          && Cap.Plugins.RingInNotifChannels.dismissCallNotification) {
+        Cap.Plugins.RingInNotifChannels.dismissCallNotification();
+      }
+    } catch(_){}
+    // CALLEE TOKEN PREFETCH: warm the Agora token for THIS call now (channel +
+    // our hashed uid) so CallScreen's startCallSession consumes it from
+    // window.__ringinPrefetchedAgoraToken instead of paying the ~200-500ms
+    // /api/agora-token roundtrip — critical for a fast connect when accepting
+    // from a cold lock-screen/banner tap. agora.js gates the stash on
+    // channel+uid match, so a mismatched/stale token can't be misconsumed.
+    // Best-effort: never blocks accept.
+    try {
+      if (inv && session && session.user) {
+        var _ptChannel = inv.channel || inv.id;
+        var _ptUidInt = hashUidToInt(session.user.id);
+        fetch((process.env.REACT_APP_API_BASE_URL || 'https://ring-in.vercel.app') + '/api/agora-token', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ channel: _ptChannel, uid: _ptUidInt }),
+          keepalive: true,
+        }).then(function(r){
+          if(!r || !r.ok) return null;
+          return r.json();
+        }).then(function(data){
+          if(!data || !data.token) return;
+          try {
+            window.__ringinPrefetchedAgoraToken = {
+              ts: Date.now(),
+              inviteId: inv.id,
+              channel: _ptChannel,
+              uid: _ptUidInt,
+              token: data.token,
+              appId: data.appId,
+              expiresAt: data.expiresAt,
+            };
+          } catch(_){}
+        }).catch(function(){ /* network hiccup — startCallSession falls back to inline fetch */ });
+      }
+    } catch(_){ /* never block accept on a prefetch error */ }
     // Mark this invite as handled IMMEDIATELY so polling doesn't re-show the modal
     dismissedInvitesRef.current.add(inv.id);
     setIncomingCall(null);

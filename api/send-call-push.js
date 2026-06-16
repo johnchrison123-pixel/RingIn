@@ -89,6 +89,10 @@ module.exports = async (req, res) => {
   const calleeId    = (body.callee_id    || '').toString().trim();
   const callerName  = (body.caller_name  || 'Someone').toString();
   const callerAvatar = body.caller_avatar ? body.caller_avatar.toString() : '';
+  // CANCEL mode: type==='cancel' tells the callee device to stop ringing +
+  // dismiss the local call notification (sent as a DATA-ONLY push below).
+  const mode        = (body.type || '').toString().trim().toLowerCase();
+  const isCancel    = mode === 'cancel';
 
   if (!inviteId || !calleeId) {
     return res.status(400).json({ error: 'invite_id and callee_id are required' });
@@ -116,6 +120,41 @@ module.exports = async (req, res) => {
   } catch (e) {
     console.error('send-call-push: profile fetch threw', e);
     return res.status(500).json({ error: 'Profile fetch threw: ' + (e && e.message) });
+  }
+
+  // ── CANCEL path ──────────────────────────────────────────────────────────
+  // Caller gave up / hung up before the callee answered. Send a DATA-ONLY
+  // high-priority FCM telling the callee device to stop ringing + dismiss the
+  // call notification (native handler calls dismissCallNotification(); the web
+  // SW closes its notification on type==='call_cancelled'). No `notification`
+  // block — same reason as the incoming-call path: the native service must run.
+  if (isCancel) {
+    const cancelMsg = {
+      token,
+      data: {
+        type: 'call_cancelled',
+        invite_id: inviteId,
+      },
+      android: {
+        // High priority → delivered immediately even in Doze, so the ring
+        // actually stops promptly instead of lingering until next wake.
+        priority: 'high',
+      },
+    };
+    try {
+      const cancelId = await adminInst.messaging().send(cancelMsg);
+      return res.status(200).json({ ok: true, cancelled: true, messageId: cancelId });
+    } catch (err) {
+      console.error('send-call-push: cancel FCM send failed', err);
+      // Stale/expired token — blank it so we stop retrying (same as below).
+      if (err && (err.code === 'messaging/registration-token-not-registered'
+                || err.code === 'messaging/invalid-registration-token')) {
+        try {
+          await sb.from('profiles').update({ fcm_token: null }).eq('id', calleeId);
+        } catch (_) { /* best-effort */ }
+      }
+      return res.status(500).json({ error: 'Cancel FCM send failed: ' + (err && err.message) });
+    }
   }
 
   // DATA-ONLY FCM payload — deliberately NO top-level `notification` and NO

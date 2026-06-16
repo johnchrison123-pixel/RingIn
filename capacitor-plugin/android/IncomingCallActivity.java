@@ -3,8 +3,10 @@ package app.ringin.mobile;
 import android.app.Activity;
 import android.app.KeyguardManager;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -14,6 +16,8 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.Gravity;
@@ -38,10 +42,19 @@ import android.widget.TextView;
 public class IncomingCallActivity extends Activity {
 
     private static final int CALL_NOTIF_ID = 7001;
+    private static final String ACTION_CALL_CANCELLED = "app.ringin.mobile.CALL_CANCELLED";
+    // Ring forever protection: if the cancel push is missed, auto-finish.
+    private static final long AUTO_FINISH_MS = 40_000L;
 
-    private MediaPlayer player;
+    // Static, guarded singleton so only ONE ringtone ever plays even if two
+    // IncomingCallActivity instances briefly coexist (FSI + a stray launch).
+    private static MediaPlayer sRingtone;
+
     private Vibrator vibrator;
     private String inviteId = "";
+    private BroadcastReceiver cancelReceiver;
+    private Handler autoFinishHandler;
+    private Runnable autoFinishRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +85,32 @@ public class IncomingCallActivity extends Activity {
 
         setContentView(buildUi(callerName));
         startRinging();
+
+        // Caller cancelled / hung up → RingInCallService broadcasts this; stop
+        // ringing and dismiss the ringer.
+        cancelReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                stopRinging();
+                finish();
+            }
+        };
+        IntentFilter filter = new IntentFilter(ACTION_CALL_CANCELLED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(cancelReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(cancelReceiver, filter);
+        }
+
+        // Fallback: if the call is never answered and the cancel push is missed,
+        // stop ringing forever after a timeout.
+        autoFinishHandler = new Handler(Looper.getMainLooper());
+        autoFinishRunnable = new Runnable() {
+            @Override public void run() {
+                stopRinging();
+                finish();
+            }
+        };
+        autoFinishHandler.postDelayed(autoFinishRunnable, AUTO_FINISH_MS);
     }
 
     private View buildUi(String callerName) {
@@ -167,18 +206,33 @@ public class IncomingCallActivity extends Activity {
 
     private void startRinging() {
         try {
-            Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            if (uri == null) uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-            if (uri != null) {
-                player = new MediaPlayer();
-                player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build());
-                player.setDataSource(this, uri);
-                player.setLooping(true);
-                player.prepare();
-                player.start();
+            // Guarded singleton: if a ringtone is already playing (e.g. a second
+            // instance briefly exists), do nothing — never stack two players.
+            if (sRingtone != null) {
+                boolean alreadyPlaying = false;
+                try { alreadyPlaying = sRingtone.isPlaying(); } catch (Throwable ignored) {}
+                if (alreadyPlaying) {
+                    // leave the existing ringtone running.
+                } else {
+                    try { sRingtone.release(); } catch (Throwable ignored) {}
+                    sRingtone = null;
+                }
+            }
+            if (sRingtone == null) {
+                Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                if (uri == null) uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                if (uri != null) {
+                    MediaPlayer mp = new MediaPlayer();
+                    mp.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build());
+                    mp.setDataSource(this, uri);
+                    mp.setLooping(true);
+                    mp.prepare();
+                    mp.start();
+                    sRingtone = mp;
+                }
             }
         } catch (Throwable t) { /* ring is best-effort */ }
 
@@ -196,7 +250,7 @@ public class IncomingCallActivity extends Activity {
     }
 
     private void stopRinging() {
-        try { if (player != null) { player.stop(); player.release(); player = null; } } catch (Throwable t) {}
+        try { if (sRingtone != null) { sRingtone.stop(); sRingtone.release(); sRingtone = null; } } catch (Throwable t) { sRingtone = null; }
         try { if (vibrator != null) vibrator.cancel(); } catch (Throwable t) {}
     }
 
@@ -209,6 +263,7 @@ public class IncomingCallActivity extends Activity {
 
     // Hand off to the web app via the ringin:// deep link (App.js routes it).
     private void handOff(String action) {
+        cancelAutoFinish();
         stopRinging();
         clearNotif();
         try {
@@ -224,7 +279,22 @@ public class IncomingCallActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        cancelAutoFinish();
+        if (cancelReceiver != null) {
+            try { unregisterReceiver(cancelReceiver); } catch (Throwable ignored) {}
+            cancelReceiver = null;
+        }
         stopRinging();
+        // Whenever the ringer activity goes away, clear the call notification too.
+        clearNotif();
+    }
+
+    private void cancelAutoFinish() {
+        try {
+            if (autoFinishHandler != null && autoFinishRunnable != null) {
+                autoFinishHandler.removeCallbacks(autoFinishRunnable);
+            }
+        } catch (Throwable ignored) {}
     }
 
     private LinearLayout.LayoutParams marginTop(int top) {

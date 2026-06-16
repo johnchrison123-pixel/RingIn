@@ -192,7 +192,7 @@ ${regLines}
         '        <activity\n' +
         '            android:name="app.ringin.mobile.IncomingCallActivity"\n' +
         '            android:exported="false"\n' +
-        '            android:launchMode="singleTop"\n' +
+        '            android:launchMode="singleTask"\n' +
         '            android:excludeFromRecents="true"\n' +
         '            android:showWhenLocked="true"\n' +
         '            android:turnScreenOn="true"\n' +
@@ -211,6 +211,18 @@ ${regLines}
       manifest = manifest.replace(
         /(android:name="\.MainActivity")/,
         '$1\n            android:showWhenLocked="true"\n            android:turnScreenOn="true"'
+      );
+      patched = true;
+    }
+
+    // (e) IncomingCallActivity launchMode: singleTop → singleTask. singleTask
+    //     guarantees a single ringer instance (no second activity → no double
+    //     ringtone). Idempotent: only rewrites if currently singleTop. Earlier
+    //     installs (and the callBlock above on first run) may have used singleTop.
+    if (/IncomingCallActivity[\s\S]*?android:launchMode="singleTop"/.test(manifest)) {
+      manifest = manifest.replace(
+        /(android:name="app\.ringin\.mobile\.IncomingCallActivity"[\s\S]*?android:launchMode=)"singleTop"/,
+        '$1"singleTask"'
       );
       patched = true;
     }

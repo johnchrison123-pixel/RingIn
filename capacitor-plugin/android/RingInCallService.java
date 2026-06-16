@@ -41,7 +41,21 @@ public class RingInCallService extends MessagingService {
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
-        boolean isCall = data != null && "incoming_call".equals(data.get("type"));
+        String type = data != null ? data.get("type") : null;
+
+        // Caller hung up / cancelled before the callee answered → dismiss the
+        // ringer notification and broadcast so any showing IncomingCallActivity
+        // stops ringing + finishes. Do NOT call super and do NOT show a call.
+        if ("call_cancelled".equals(type)) {
+            try {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) nm.cancel(CALL_NOTIF_ID);
+                sendBroadcast(new Intent("app.ringin.mobile.CALL_CANCELLED").setPackage(getPackageName()));
+            } catch (Throwable ignored) {}
+            return;
+        }
+
+        boolean isCall = "incoming_call".equals(type);
         if (!isCall) {
             // Messages / social / everything else → let the push plugin handle it.
             super.onMessageReceived(remoteMessage);
@@ -93,7 +107,11 @@ public class RingInCallService extends MessagingService {
             // The WhatsApp magic: launch the full-screen activity when locked /
             // screen-off; otherwise the system shows it as a heads-up banner.
             .setFullScreenIntent(fsPending, true)
-            .setContentIntent(acceptPending)
+            // Tapping the banner body opens the full-screen ringer (where the
+            // user picks Accept/Decline) — NOT the accept deep link directly, so
+            // a body tap never auto-accepts. The Accept/Decline ACTION buttons
+            // below still hand off via the deep link.
+            .setContentIntent(fsPending)
             .addAction(android.R.drawable.sym_action_call, "Accept", acceptPending)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePending);
 
@@ -107,15 +125,13 @@ public class RingInCallService extends MessagingService {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(CALL_NOTIF_ID, b.build());
 
-        // Also try to bring up the full-screen call UI directly, so it appears
-        // even when the device is UNLOCKED (a full-screen intent otherwise shows
-        // only as a heads-up while the screen is on). Best-effort: background
-        // activity launch can be restricted on Android 12+, in which case the
-        // full-screen-intent notification above is the fallback. fsIntent already
-        // has NEW_TASK | CLEAR_TOP set.
-        try {
-            startActivity(fsIntent);
-        } catch (Throwable t) { /* FSI notification handles it */ }
+        // NOTE: we deliberately do NOT startActivity(fsIntent) here. The
+        // full-screen intent (setFullScreenIntent above) launches the ringer
+        // when the device is locked/screen-off; when unlocked the system shows
+        // a heads-up banner and tapping it opens the ringer (setContentIntent =
+        // fsPending). A manual startActivity used to race the FSI and spawn a
+        // SECOND IncomingCallActivity → two MediaPlayers → double ringtone; and
+        // on Android 12+ a background startActivity is blocked anyway.
     }
 
     private PendingIntent deepLink(int reqCode, String inviteId, String action, int piFlags) {

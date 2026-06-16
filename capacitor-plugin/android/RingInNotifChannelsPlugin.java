@@ -3,6 +3,7 @@ package app.ringin.mobile;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
@@ -44,6 +45,9 @@ public class RingInNotifChannelsPlugin extends Plugin {
     public static final String CHANNEL_CALLS    = "calls_v2";
     public static final String CHANNEL_MESSAGES = "messages";
     public static final String CHANNEL_SOCIAL   = "social";
+
+    // Must match RingInCallService / IncomingCallActivity CALL_NOTIF_ID.
+    private static final int CALL_NOTIF_ID = 7001;
 
     @Override
     public void load() {
@@ -156,6 +160,36 @@ public class RingInNotifChannelsPlugin extends Plugin {
         } catch (Exception e) {
             // best-effort — fall through to resolve.
         }
+        call.resolve();
+    }
+
+    // Called from the web app when the callee accepts/declines the call from
+    // within the app, so the native ringer notification + ringtone + any
+    // showing full-screen IncomingCallActivity all get torn down.
+    @PluginMethod
+    public void dismissCallNotification(PluginCall call) {
+        try {
+            NotificationManager nm = (NotificationManager) getContext()
+                .getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(CALL_NOTIF_ID);
+        } catch (Exception ignored) {}
+
+        // Stop the in-app system ringtone (same teardown as stopSystemRingtone).
+        try {
+            if (ringtonePlayer != null) {
+                try { ringtonePlayer.stop(); } catch (Exception ignored) {}
+                try { ringtonePlayer.release(); } catch (Exception ignored) {}
+                ringtonePlayer = null;
+            }
+        } catch (Exception ignored) {}
+
+        // Tell any showing full-screen IncomingCallActivity to stop + finish.
+        try {
+            getContext().sendBroadcast(
+                new Intent("app.ringin.mobile.CALL_CANCELLED")
+                    .setPackage(getContext().getPackageName()));
+        } catch (Exception ignored) {}
+
         call.resolve();
     }
 }
