@@ -16,6 +16,8 @@ import {sb as sbProfileCoin} from '../utils/supabase';
 /* R18: timezone-aware date display + safe localStorage wrapper */
 import {formatDate, safeSetItem} from '../utils/dateFmt';
 import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2 */
+import StoreScreen from './StoreScreen';
+import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay} from '../utils/cosmetics';
 
 // Copy a URL to the clipboard and toast ONLY on real success.
 // Same helper pattern as HomeScreen — eliminates false-positive "Link
@@ -186,6 +188,27 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // "12 Calls" in both the own-profile stats card AND the Settings page
   // stats card. Single shared state — both views read from this one query.
   var realCallCountS = useState(0); var realCallCount = realCallCountS[0]; var setRealCallCount = realCallCountS[1];
+
+  // Redesigned stats card: Followers (people who follow me) + Friends
+  // (accepted mutual connections). Both fetched defensively in an effect
+  // below; Hearts is derived from likes on the user's own posts at render.
+  var followersCountS = useState(0); var followersCount = followersCountS[0]; var setFollowersCount = followersCountS[1];
+  var friendsCountS = useState(0); var friendsCount = friendsCountS[0]; var setFriendsCount = friendsCountS[1];
+
+  // Compact stat formatter: 1.2k / 3.4M. Used by the Followers/Friends/Hearts card.
+  function fmtStatCount(n){
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n/1000000).toFixed(n%1000000===0?0:1).replace(/\.0$/,'') + 'M';
+    if (n >= 1000) return (n/1000).toFixed(n%1000===0?0:1).replace(/\.0$/,'') + 'k';
+    return String(Math.round(n));
+  }
+
+  // Cosmetics (Style Store): showStore toggles the store overlay; myEquipped
+  // holds this user's equipped tag/frame/sticker/theme; catReady bumps a
+  // re-render once the catalog finishes loading so equipped ids resolve.
+  var showStoreS = useState(false); var showStore = showStoreS[0]; var setShowStore = showStoreS[1];
+  var myEquippedS = useState({}); var myEquipped = myEquippedS[0]; var setMyEquipped = myEquippedS[1];
+  var catReadyS = useState(0); var catReady = catReadyS[0]; var setCatReady = catReadyS[1];
 
   // FIX #5: real friends list driven by the follows table. Replaces the
   // hardcoded FRIENDS mock array on the Friends tab. Empty until loaded.
@@ -650,6 +673,60 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     } catch(_){}
     return function(){ cancelled = true; };
   }, [userId]);
+
+  // Followers count (people who follow ME = follows.following_id) + Friends
+  // count (accepted mutual connections via list_anon_connections, the same
+  // source FriendsScreen uses). Defensive: failure leaves the count at 0.
+  useEffect(function(){
+    if(!userId) return;
+    var cancelled = false;
+    try {
+      sbProfile.from('follows')
+        .select('id', { count: 'exact', head: true })
+        .eq('following_id', userId)
+        .then(function(r){
+          if (cancelled) return;
+          if (r && !r.error && typeof r.count === 'number') setFollowersCount(r.count);
+        }).catch(function(){});
+    } catch(_){}
+    try {
+      sbProfile.rpc('list_anon_connections').then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && Array.isArray(r.data)) setFriendsCount(r.data.length);
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  }, [userId]);
+
+  // Cosmetics: load the catalog (so equipped ids resolve to visuals) + this
+  // user's equipped selection. Refresh on the 'ringin-cosmetics-changed' event
+  // the Style Store fires after an equip. Defensive: no catalog / no columns
+  // → nothing rendered (forward-compatible with the 0049 migration).
+  useEffect(function(){
+    if(!userId) return;
+    var cancelled = false;
+    function loadCat(){ loadCatalog(sbProfile).then(function(){ if(!cancelled) setCatReady(function(x){return x+1;}); }); }
+    function pull(){
+      try {
+        sbProfile.from('profiles').select('equipped').eq('id', userId).maybeSingle().then(function(r){
+          if (cancelled) return;
+          if (r && !r.error && r.data && r.data.equipped && typeof r.data.equipped === 'object') setMyEquipped(r.data.equipped);
+        }).catch(function(){});
+      } catch(_){}
+    }
+    loadCat(); pull();
+    function onChange(){ loadCat(); pull(); }
+    window.addEventListener('ringin-cosmetics-changed', onChange);
+    return function(){ cancelled = true; window.removeEventListener('ringin-cosmetics-changed', onChange); };
+  }, [userId]);
+
+  // Resolve equipped cosmetics → catalog items (re-resolves when myEquipped or
+  // catReady change). Used in the own-profile render below.
+  var eqTag = equippedItem(myEquipped, 'tag');
+  var eqFrame = equippedItem(myEquipped, 'frame');
+  var eqSticker = equippedItem(myEquipped, 'sticker');
+  var eqTheme = equippedItem(myEquipped, 'theme');
+  void catReady;
 
   // FIX #5: load the people the current user follows for the Friends tab.
   // Try the FK-join syntax first; on failure (e.g. column rename or no FK
@@ -3330,6 +3407,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         )
   );
 
+  if(showStore) return React.createElement(StoreScreen, { sb: sbProfile, userId: userId, onClose: function(){ setShowStore(false); }, onOpenWallet: onOpenWallet });
+
   if(showSettings) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)'}},
       React.createElement('button',{onClick:function(){setShowSettings(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
@@ -3423,7 +3502,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v4.13';
+              var APK_VERSION = 'v4.14';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -3821,8 +3900,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       )
     ) : null,
     // Cover
-    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
+    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':(eqTheme&&eqTheme.payload?('linear-gradient(135deg,'+(eqTheme.payload.accent2||'#534AB7')+','+(eqTheme.payload.accent||'#7C6FFF')+')'):'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)'),position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl ? React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}) : null,
+      eqSticker ? React.createElement('div',{style:{position:'absolute',right:'14px',bottom:'12px',zIndex:3}}, React.createElement(Sticker,{item:eqSticker,size:40})) : null,
       React.createElement('label',{style:{position:'absolute',top:'10px',right:'10px',background:'rgba(0,0,0,0.5)',borderRadius:'20px',padding:'5px 10px',fontSize:'10px',color:'#fff',cursor:'pointer'}},
         uploading?'Uploading...':'✏️ Edit Cover',
         React.createElement('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(e){if(e.target.files[0])uploadCover(e.target.files[0]);}})
@@ -3836,7 +3916,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{onClick:function(){setShowAvatarMenu(true);},style:{width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',cursor:'pointer'}},
             avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
           )
-        )
+        ),
+        eqFrame ? frameOverlay(eqFrame, 80) : null
       )
     ),
     // Name row
@@ -3847,6 +3928,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           profileInfo.name||email.split('@')[0],
           isVerified ? React.createElement(VerificationBadge, {size:18, style:{marginLeft:2}}) : null
         ),
+        eqTag ? React.createElement('div',{style:{marginTop:'1px',marginBottom:'5px'}}, React.createElement(TagPill,{item:eqTag})) : null,
         profileInfo.tag ? React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag) : null,
         profileInfo.about ? React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},renderAbout(profileInfo.about)) : null,
         (profileInfo.website_name||profileInfo.website_url) ? React.createElement('a',{href:profileInfo.website_url||(profileInfo.website_name&&profileInfo.website_name.startsWith('http')?profileInfo.website_name:'https://'+profileInfo.website_name),target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+(profileInfo.website_name||profileInfo.website_url)) : null,
@@ -3856,17 +3938,21 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       ),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexShrink:0}},
         React.createElement('button',{onClick:openEditProfile,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'6px 12px',display:'flex',alignItems:'center',gap:'4px',cursor:'pointer',fontSize:'12px',color:'var(--text)',fontWeight:600}},'✏️ Edit'),
+        React.createElement('button',{onClick:function(){setShowStore(true);},title:'Style Store',style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'50%',width:'36px',height:'36px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px'}},'✨'),
         React.createElement('button',{onClick:function(){setShowSettings(true);},style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'50%',width:'36px',height:'36px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px'}},'⚙️')
       )
     ),
     // Stats
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',padding:'0 18px 12px'}},
-      // FIX #2: own-profile stats card. Calls = real call_invites count
-      // (was hardcoded "12"). Reviews intentionally "0" with a comment —
-      // there's no reviews table yet, so 0 is technically accurate.
-      [{v:String(realCallCount||0),l:'Calls'},{v:(Number(profileCoinBal)||0).toLocaleString(),l:'Coins'},{v:'0',l:'Reviews'}].map(function(s){
+      // Redesigned identity stats: Followers / Friends / Hearts (replaces the
+      // old Calls/Coins/Reviews). Followers + Friends come from the effect
+      // above; Hearts = total likes received across the user's own posts
+      // (v1 — the full hearts earn-ledger lands next). Hearts shown in brand pink.
+      [{v:fmtStatCount(followersCount),l:'Followers'},
+       {v:fmtStatCount(friendsCount),l:'Friends'},
+       {v:fmtStatCount((myPosts||[]).reduce(function(n,p){return n+(Array.isArray(p.likes)?p.likes.length:0);},0)),l:'Hearts'}].map(function(s){
         return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
-          React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:'var(--text)'}},s.v),
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:s.l==='Hearts'?'#E84D9A':'var(--text)'}},s.v),
           React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)
         );
       })

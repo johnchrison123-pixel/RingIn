@@ -21,6 +21,7 @@ import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 import {isBlockedSync, onBlocksChanged} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed; R19 verifier-fix: subscribe to re-render on block-change */
 import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2: ref-counted lock prevents 2-modal overflow leak */
+import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay} from '../utils/cosmetics';
 import {formatDateTime, formatDate, formatTime, safeSetItem} from '../utils/dateFmt'; /* R18: timezone-aware date display + safe localStorage wrapper */
 import {ConfirmSheet} from '../components/ConfirmSheet'; /* in-app confirm sheet replaces window.confirm (banned per CLAUDE.md) */
 import {motion} from 'motion/react'; /* R54: spring micro-interactions (like button) */
@@ -252,6 +253,24 @@ export function UserProfileView(props){
   var subOfferUS=useState(null); var subOfferU=subOfferUS[0]; var setSubOfferU=subOfferUS[1];
   var mySubUS=useState(null); var mySubU=mySubUS[0]; var setMySubU=mySubUS[1];
   var subbingUS=useState(false); var subbingU=subbingUS[0]; var setSubbingU=subbingUS[1];
+
+  // Redesigned stats: Followers + Friends counts for the VIEWED user, via
+  // SECURITY DEFINER RPCs (follows + anon_connections are RLS-restricted to
+  // participants, so a direct client count returns 0 for other people).
+  // Hearts are derived from this user's loaded posts at render time.
+  var uFollowersS=useState(0); var uFollowers=uFollowersS[0]; var setUFollowers=uFollowersS[1];
+  var uFriendsS=useState(0); var uFriends=uFriendsS[0]; var setUFriends=uFriendsS[1];
+  var uEquippedS=useState({}); var uEquipped=uEquippedS[0]; var setUEquipped=uEquippedS[1];
+  var uCatReadyS=useState(0); var uCatReady=uCatReadyS[0]; var setUCatReady=uCatReadyS[1];
+
+  // Compact stat formatter: 1.2k / 3.4M (mirrors ProfileScreen.fmtStatCount).
+  function fmtStatCount(n){
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n/1000000).toFixed(n%1000000===0?0:1).replace(/\.0$/,'') + 'M';
+    if (n >= 1000) return (n/1000).toFixed(n%1000===0?0:1).replace(/\.0$/,'') + 'k';
+    return String(Math.round(n));
+  }
+
   useEffect(function(){
     if (!user || !user.id) return;
     try {
@@ -268,6 +287,44 @@ export function UserProfileView(props){
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user && user.id, currentUserId]);
+
+  // Followers + Friends counts for the viewed user (Hearts derived at render
+  // from userPosts). RPCs are forward-compatible: if the 0048 migration hasn't
+  // run yet, the counts simply stay 0 rather than throwing.
+  useEffect(function(){
+    if (!user || !user.id) return;
+    var cancelled = false;
+    try {
+      sbHome.rpc('count_user_followers', { p_uid: user.id }).then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && typeof r.data === 'number') setUFollowers(r.data);
+      }).catch(function(){});
+    } catch(_){}
+    try {
+      sbHome.rpc('count_user_friends', { p_uid: user.id }).then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && typeof r.data === 'number') setUFriends(r.data);
+      }).catch(function(){});
+    } catch(_){}
+    loadCatalog(sbHome).then(function(){ if(!cancelled) setUCatReady(function(x){return x+1;}); });
+    try {
+      sbHome.from('profiles').select('equipped').eq('id', user.id).maybeSingle().then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data && r.data.equipped && typeof r.data.equipped === 'object') setUEquipped(r.data.equipped);
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user && user.id]);
+
+  // Resolve the viewed user's equipped cosmetics → catalog items (re-resolves
+  // when uEquipped / uCatReady change). Rendered on the cover/avatar/name below.
+  var eqTagU = equippedItem(uEquipped, 'tag');
+  var eqFrameU = equippedItem(uEquipped, 'frame');
+  var eqStickerU = equippedItem(uEquipped, 'sticker');
+  var eqThemeU = equippedItem(uEquipped, 'theme');
+  void uCatReady;
+
   /* R54: replace the old window.confirm() + window.alert() pair with a
    * styled bottom-sheet confirmation + toast notifications, matching the
    * rest of the app's modal pattern (safety sheet, gift drawer, etc). */
@@ -675,8 +732,9 @@ export function UserProfileView(props){
       React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'84vw',height:'84vw',maxWidth:'380px',maxHeight:'380px',borderRadius:'50%',objectFit:'cover',boxShadow:'0 0 60px rgba(123,110,255,0.4)'}})
     ) : null,
     // Cover
-    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)',position:'relative',flexShrink:0,overflow:'visible'}},
+    React.createElement('div',{style:{height:'130px',background:coverUrl?'none':(eqThemeU&&eqThemeU.payload?('linear-gradient(135deg,'+(eqThemeU.payload.accent2||'#534AB7')+','+(eqThemeU.payload.accent||'#7C6FFF')+')'):'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)'),position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
+      eqStickerU?React.createElement('div',{style:{position:'absolute',right:'14px',bottom:'12px',zIndex:3}},React.createElement(Sticker,{item:eqStickerU,size:40})):null,
       React.createElement('button',{onClick:props.onBack,title:'Back',style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.55)',border:'none',borderRadius:'50%',width:'34px',height:'34px',color:'#fff',padding:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3}},
         React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
           React.createElement('polyline',{points:'15 18 9 12 15 6'})
@@ -695,13 +753,15 @@ export function UserProfileView(props){
             style:{width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',cursor:avatarUrl?'pointer':'default'}},
             avatarUrl?React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}):initials
           )
-        )
+        ),
+        eqFrameU ? frameOverlay(eqFrameU, 80) : null
       )
     ),
     // Name + info
     React.createElement('div',{style:{padding:'50px 18px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
         React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},displayName),
+        eqTagU?React.createElement('div',{style:{marginTop:'1px',marginBottom:'5px'}},React.createElement(TagPill,{item:eqTagU})):null,
         profileInfo.tag?React.createElement('div',{style:{fontSize:'12px',color:'#7B6EFF',fontWeight:600,marginBottom:'4px'}},profileInfo.tag):null,
         profileInfo.about?React.createElement('div',{style:{fontSize:'13px',color:'var(--t2)',lineHeight:1.5,marginBottom:'4px',whiteSpace:'pre-wrap'}},profileInfo.about):null,
         (profileInfo.website_name||profileInfo.website_url)?React.createElement('a',{href:profileInfo.website_url||(profileInfo.website_name&&profileInfo.website_name.startsWith('http')?profileInfo.website_name:'https://'+profileInfo.website_name),target:'_blank',rel:'noreferrer',style:{fontSize:'12px',color:'#7B6EFF',display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',textDecoration:'none'}},'🔗 '+(profileInfo.website_name||profileInfo.website_url)):null,
@@ -734,6 +794,19 @@ export function UserProfileView(props){
           style:{padding:'8px 16px',background: mySubU ? 'rgba(123,110,255,0.18)' : 'linear-gradient(135deg,#7B6EFF,#E84D9A)',border: mySubU ? '1px solid var(--ac)' : 'none',borderRadius:'20px',color: mySubU ? '#7B6EFF' : '#fff',fontSize:'13px',fontWeight:700,cursor: subbingU ? 'wait' : (mySubU ? 'default' : 'pointer'),whiteSpace:'nowrap',opacity:subbingU?0.7:1}
         }, mySubU ? '💜 Subscribed' : (subbingU ? '...' : ('💜 Subscribe · ' + (subOfferU.coin_gift_price || 500) + ' 🪙'))) : null
       )
+    ),
+    // Redesigned identity stats — Followers / Friends / Hearts for the viewed
+    // user. Followers + Friends from the count RPCs above; Hearts = total
+    // likes received across their loaded posts. Hearts shown in brand pink.
+    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',padding:'0 18px 12px'}},
+      [{v:fmtStatCount(uFollowers),l:'Followers'},
+       {v:fmtStatCount(uFriends),l:'Friends'},
+       {v:fmtStatCount(userPosts.reduce(function(n,p){return n+(Number(p.likes)||0);},0)),l:'Hearts'}].map(function(s){
+        return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:s.l==='Hearts'?'#E84D9A':'var(--text)'}},s.v),
+          React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)
+        );
+      })
     ),
     // Moments — this user's Instagram-style round Stories tiles. UI-only;
     // the viewing user can't add to someone else's moments, so showAdd is false.
