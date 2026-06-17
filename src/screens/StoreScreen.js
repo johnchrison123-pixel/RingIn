@@ -104,12 +104,17 @@ export default function StoreScreen(props){
         background:'linear-gradient(135deg,' + (p.accent||'#7B6EFF') + ',' + (p.accent2||'#E84D9A') + ')',
         boxShadow:'0 0 12px ' + (p.glow || hexA(p.accent||'#7B6EFF',0.5)) } });
     }
-    // frame — real PNG shows contained in the cell (no overflow); vector rings use a mini avatar
+    // frame — real PNG shows contained in the cell (no overflow); vector rings use a mini avatar.
+    // display:block + maxHeight bound to the 72px cell so the winged art is fully contained
+    // and can never spill upward over the section heading above this card.
     if (item.payload && item.payload.img) {
-      return React.createElement('img', { src:frameSrc(item.payload.img), alt:item.name, style:{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain' } });
+      return React.createElement('img', { src:frameSrc(item.payload.img), alt:item.name, style:{ display:'block', maxWidth:'100%', maxHeight:'100%', width:'auto', height:'auto', objectFit:'contain' } });
     }
-    return React.createElement('div', { style:{ position:'relative', width:'40px', height:'40px', display:'flex', alignItems:'center', justifyContent:'center' } },
-      React.createElement('div', { style:{ width:'28px', height:'28px', borderRadius:'50%', background:'linear-gradient(135deg,#7B6EFF,#E84D9A)' } }),
+    // Vector frames: the overlay is an absolutely-positioned SVG whose wings/glow
+    // extend well past the mini-avatar. Keep it contained so it can never spill
+    // up over the section heading — this wrapper clips it to the preview cell.
+    return React.createElement('div', { style:{ position:'relative', width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' } },
+      React.createElement('div', { style:{ position:'relative', width:'28px', height:'28px', borderRadius:'50%', background:'linear-gradient(135deg,#7B6EFF,#E84D9A)' } }),
       frameOverlay(item, 28)
     );
   }
@@ -137,7 +142,7 @@ export default function StoreScreen(props){
       borderRadius:'14px', padding:'12px 10px', textAlign:'center', position:'relative'
     } },
       item.is_premium ? React.createElement('div', { style:{ position:'absolute', top:'6px', right:'8px', fontSize:'9px', fontWeight:800, color:'#FFD93D', letterSpacing:'.5px' } }, 'VIP') : null,
-      React.createElement('div', { style:{ height:'72px', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'6px', overflow:'hidden' } }, preview(item)),
+      React.createElement('div', { style:{ position:'relative', height:'72px', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'6px', overflow:'hidden', borderRadius:'10px' } }, preview(item)),
       React.createElement('div', { style:{ fontSize:'12px', fontWeight:600, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' } }, item.name),
       btn
     );
@@ -183,10 +188,13 @@ export default function StoreScreen(props){
             React.createElement('div', { style:{ fontSize:'14px', fontWeight:600, color:'var(--text)', marginBottom:'6px' } }, 'Store is warming up'),
             React.createElement('div', { style:{ fontSize:'12px', lineHeight:1.5 } }, 'Neon tags, winged frames, stickers and themes are on the way. Check back in a moment.')
           )
-        : sectionsFor(activeKind).map(function(grp){
-            return React.createElement('div', { key:activeKind + '-' + grp.section, style:{ marginBottom:'22px' } },
-              React.createElement('div', { style:{ fontSize:'13px', fontWeight:700, color:'var(--text)', marginBottom:'10px', display:'flex', alignItems:'center', gap:'7px' } }, grp.section),
-              React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px' } },
+        : sectionsFor(activeKind).map(function(grp, gi){
+            // Each section: heading on its own line with clear breathing room above
+            // (so the previous row's glowing cards never crowd/cover it) and below.
+            // scrollMarginTop keeps an anchored heading clear of the sticky header+tabs.
+            return React.createElement('div', { key:activeKind + '-' + grp.section, style:{ marginTop: gi === 0 ? '2px' : '28px', marginBottom:'14px' } },
+              React.createElement('div', { style:{ fontSize:'13px', fontWeight:700, color:'var(--text)', margin:'0 0 12px', paddingBottom:'2px', display:'flex', alignItems:'center', gap:'7px', position:'relative', zIndex:1, scrollMarginTop:'112px' } }, grp.section),
+              React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px', alignItems:'start' } },
                 grp.items.map(function(it){ return card(it); })
               )
             );
