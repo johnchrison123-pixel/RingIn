@@ -51,11 +51,9 @@ export default function StoreScreen(props){
 
   function buy(item){
     if (busy[item.id] || owned[item.id]) return;
-    if ((Number(coinBalance) || 0) < item.price_coins){
-      try{ toastWarn('Not enough coins — top up to unlock this.'); }catch(_){}
-      if (props.onOpenWallet) props.onOpenWallet();
-      return;
-    }
+    // No client-side balance pre-check — useCoinBalance can be momentarily stale
+    // (0 before it hydrates), which would wrongly bounce a valid buy to the wallet.
+    // buy_cosmetic checks coins server-side and returns 'insufficient' if truly short.
     setBusyId(item.id, true);
     sb.rpc('buy_cosmetic', { p_item_id: item.id }).then(function(r){
       setBusyId(item.id, false);
