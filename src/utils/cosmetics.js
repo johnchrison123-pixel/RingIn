@@ -126,13 +126,13 @@ export function frameOverlay(item, size){
   var p = item.payload || {};
 
   // Image-override path: a transparent PNG renders directly (exact art). The
-  // sliced frames put the ring at ~(49.8%, 56.8%) of the PNG, so translate so
-  // the RING (not the image centre) lands on the avatar. ~4.3x avatar width
-  // fits the ring to the photo with the wings extending beyond.
+  // cleaned frames are ring-centred in a square canvas, so a plain centre
+  // translate lands the ring on the avatar. ~3.5x avatar width fits the ring
+  // to the photo with the wings extending beyond.
   if (p.img){
     return React.createElement('img', { key:'fimg', src:p.img, alt:'', 'aria-hidden':'true', style:{
-      position:'absolute', left:'50%', top:'50%', width:(size*4.3)+'px', height:'auto',
-      transform:'translate(-49.8%,-56.8%)', pointerEvents:'none', zIndex:1
+      position:'absolute', left:'50%', top:'50%', width:(size*3.5)+'px', height:'auto',
+      transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:1
     } });
   }
 
