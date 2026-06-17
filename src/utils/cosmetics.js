@@ -123,7 +123,7 @@ export function Sticker(props){
 //   img (optional transparent-PNG override → exact art with no code change) }
 // Cache-bust frame asset URLs: public/ PNGs keep their filename across deploys,
 // so browsers serve stale versions. Bump FRAME_ASSET_V whenever the art changes.
-var FRAME_ASSET_V = '3';
+var FRAME_ASSET_V = '4';
 export function frameSrc(u){ return u ? (u + (u.indexOf('?') < 0 ? ('?v=' + FRAME_ASSET_V) : '')) : u; }
 
 export function frameOverlay(item, size){
