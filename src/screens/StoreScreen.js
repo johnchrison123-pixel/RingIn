@@ -25,6 +25,7 @@ export default function StoreScreen(props){
   var ownedS = useState({}); var owned = ownedS[0]; var setOwned = ownedS[1];
   var equippedS = useState({}); var equipped = equippedS[0]; var setEquipped = equippedS[1];
   var busyS = useState({}); var busy = busyS[0]; var setBusy = busyS[1];
+  var activeKindS = useState('frame'); var activeKind = activeKindS[0]; var setActiveKind = activeKindS[1];
 
   useEffect(function(){
     var cancelled = false;
@@ -163,6 +164,17 @@ export default function StoreScreen(props){
         React.createElement('span', { style:{ fontSize:'13px', fontWeight:800, color:'var(--text)' } }, (Number(coinBalance)||0).toLocaleString())
       )
     ),
+    // Category tabs — each kind is its own view (no long scroll)
+    hasCatalog ? React.createElement('div', { style:{ display:'flex', gap:'6px', padding:'10px 12px', borderBottom:'1px solid var(--border)', position:'sticky', top:'56px', background:'var(--bg)', zIndex:9, overflowX:'auto' } },
+      [{k:'frame',l:'Frames'},{k:'theme',l:'Themes'},{k:'tag',l:'Tags'},{k:'sticker',l:'Stickers'}].map(function(t){
+        var on = activeKind === t.k;
+        return React.createElement('button', { key:t.k, onClick:function(){ setActiveKind(t.k); }, style:{
+          flex:'1 0 auto', padding:'8px 14px', borderRadius:'20px', cursor:'pointer', fontFamily:'inherit', fontSize:'13px', fontWeight:700, whiteSpace:'nowrap',
+          background: on ? 'linear-gradient(135deg,#7B6EFF,#E84D9A)' : 'var(--bg3)',
+          color: on ? '#fff' : 'var(--t2)', border:'1px solid ' + (on ? 'transparent' : 'var(--border)')
+        } }, t.l);
+      })
+    ) : null,
     React.createElement('div', { style:{ padding:'14px 16px 90px' } },
       !hasCatalog
         ? React.createElement('div', { style:{ textAlign:'center', padding:'60px 24px', color:'var(--t2)' } },
@@ -170,15 +182,13 @@ export default function StoreScreen(props){
             React.createElement('div', { style:{ fontSize:'14px', fontWeight:600, color:'var(--text)', marginBottom:'6px' } }, 'Store is warming up'),
             React.createElement('div', { style:{ fontSize:'12px', lineHeight:1.5 } }, 'Neon tags, winged frames, stickers and themes are on the way. Check back in a moment.')
           )
-        : KIND_ORDER.map(function(kind){
-            return sectionsFor(kind).map(function(grp){
-              return React.createElement('div', { key:kind + '-' + grp.section, style:{ marginBottom:'22px' } },
-                React.createElement('div', { style:{ fontSize:'13px', fontWeight:700, color:'var(--text)', marginBottom:'10px', display:'flex', alignItems:'center', gap:'7px' } }, grp.section),
-                React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px' } },
-                  grp.items.map(function(it){ return card(it); })
-                )
-              );
-            });
+        : sectionsFor(activeKind).map(function(grp){
+            return React.createElement('div', { key:activeKind + '-' + grp.section, style:{ marginBottom:'22px' } },
+              React.createElement('div', { style:{ fontSize:'13px', fontWeight:700, color:'var(--text)', marginBottom:'10px', display:'flex', alignItems:'center', gap:'7px' } }, grp.section),
+              React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px' } },
+                grp.items.map(function(it){ return card(it); })
+              )
+            );
           })
     )
   );
