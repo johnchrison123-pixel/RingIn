@@ -121,6 +121,11 @@ export function Sticker(props){
 // payload: { wing:'angel'|'butterfly'|'demon'|'feather', c1, c2 (gradient),
 //   crown:'king'|'tiara'|null, badge:'VIP'|'PREMIUM'|'Σ'|null,
 //   img (optional transparent-PNG override → exact art with no code change) }
+// Cache-bust frame asset URLs: public/ PNGs keep their filename across deploys,
+// so browsers serve stale versions. Bump FRAME_ASSET_V whenever the art changes.
+var FRAME_ASSET_V = '2';
+export function frameSrc(u){ return u ? (u + (u.indexOf('?') < 0 ? ('?v=' + FRAME_ASSET_V) : '')) : u; }
+
 export function frameOverlay(item, size){
   if (!item) return null;
   var p = item.payload || {};
@@ -130,7 +135,7 @@ export function frameOverlay(item, size){
   // translate lands the ring on the avatar. ~3.5x avatar width fits the ring
   // to the photo with the wings extending beyond.
   if (p.img){
-    return React.createElement('img', { key:'fimg', src:p.img, alt:'', 'aria-hidden':'true', style:{
+    return React.createElement('img', { key:'fimg', src:frameSrc(p.img), alt:'', 'aria-hidden':'true', style:{
       position:'absolute', left:'50%', top:'50%', width:(size*3.5)+'px', height:'auto',
       transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:1
     } });

@@ -9,7 +9,7 @@
 import React, { useState, useEffect } from 'react';
 import { sb as defaultClient } from '../utils/supabase';
 import { useCoinBalance, setSharedCoinBalance } from '../utils/coinBalance';
-import { loadCatalog, getCachedCatalog, TagPill, Sticker, frameOverlay, hexA } from '../utils/cosmetics';
+import { loadCatalog, getCachedCatalog, TagPill, Sticker, frameOverlay, frameSrc, hexA } from '../utils/cosmetics';
 import { toastError, toastSuccess, toastWarn, toastInfo } from '../utils/toast';
 
 var KIND_ORDER = ['theme','frame','tag','sticker'];
@@ -106,7 +106,7 @@ export default function StoreScreen(props){
     }
     // frame — real PNG shows contained in the cell (no overflow); vector rings use a mini avatar
     if (item.payload && item.payload.img) {
-      return React.createElement('img', { src:item.payload.img, alt:item.name, style:{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain' } });
+      return React.createElement('img', { src:frameSrc(item.payload.img), alt:item.name, style:{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain' } });
     }
     return React.createElement('div', { style:{ position:'relative', width:'40px', height:'40px', display:'flex', alignItems:'center', justifyContent:'center' } },
       React.createElement('div', { style:{ width:'28px', height:'28px', borderRadius:'50%', background:'linear-gradient(135deg,#7B6EFF,#E84D9A)' } }),
