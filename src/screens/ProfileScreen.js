@@ -3502,7 +3502,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v4.14';
+              var APK_VERSION = 'v4.15';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -3911,7 +3911,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       // on their profile cover whenever they have an active moment posted.
       // The ring ALSO renders even outside the cover area for the user's
       // own avatar (post headers below, etc.).
-      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:'18px',zIndex:2}},
+      React.createElement('div',{style:{position:'absolute',bottom:'-40px',left:eqFrame?'50%':'18px',transform:eqFrame?'translateX(-50%)':'none',zIndex:2}},
         React.createElement(AvatarRing,{ show: momentUserIds.has(userId), thickness: 4 },
           React.createElement('div',{onClick:function(){setShowAvatarMenu(true);},style:{width:'80px',height:'80px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',fontWeight:700,color:'#fff',border:'3px solid var(--bg)',overflow:'hidden',cursor:'pointer'}},
             avatarUrl ? React.createElement('img',{src:avatarUrl,alt:'avatar',style:{width:'100%',height:'100%',objectFit:'cover'}}) : initials
@@ -3921,7 +3921,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       )
     ),
     // Name row
-    React.createElement('div',{style:{padding:'50px 18px 8px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
+    React.createElement('div',{style:{padding:(eqFrame?'104px':'50px')+' 18px 8px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
         /* R40: profile name + 12-point pink-purple star verification badge. */
         React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'6px'}},

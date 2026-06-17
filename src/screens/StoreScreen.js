@@ -106,9 +106,9 @@ export default function StoreScreen(props){
         boxShadow:'0 0 12px ' + (p.glow || hexA(p.accent||'#7B6EFF',0.5)) } });
     }
     // frame — mini avatar with the frame overlay
-    return React.createElement('div', { style:{ position:'relative', width:'46px', height:'46px', display:'flex', alignItems:'center', justifyContent:'center' } },
-      React.createElement('div', { style:{ width:'40px', height:'40px', borderRadius:'50%', background:'linear-gradient(135deg,#7B6EFF,#E84D9A)' } }),
-      frameOverlay(item, 40)
+    return React.createElement('div', { style:{ position:'relative', width:'40px', height:'40px', display:'flex', alignItems:'center', justifyContent:'center' } },
+      React.createElement('div', { style:{ width:'28px', height:'28px', borderRadius:'50%', background:'linear-gradient(135deg,#7B6EFF,#E84D9A)' } }),
+      frameOverlay(item, 28)
     );
   }
 
@@ -135,7 +135,7 @@ export default function StoreScreen(props){
       borderRadius:'14px', padding:'12px 10px', textAlign:'center', position:'relative'
     } },
       item.is_premium ? React.createElement('div', { style:{ position:'absolute', top:'6px', right:'8px', fontSize:'9px', fontWeight:800, color:'#FFD93D', letterSpacing:'.5px' } }, 'VIP') : null,
-      React.createElement('div', { style:{ height:'52px', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'6px' } }, preview(item)),
+      React.createElement('div', { style:{ height:'72px', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'6px' } }, preview(item)),
       React.createElement('div', { style:{ fontSize:'12px', fontWeight:600, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' } }, item.name),
       btn
     );

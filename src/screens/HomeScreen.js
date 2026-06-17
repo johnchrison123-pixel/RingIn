@@ -745,7 +745,7 @@ export function UserProfileView(props){
       // The wrapper itself becomes the absolute-positioned element so
       // the ring lives at the same coordinates as the original avatar.
       React.createElement('div',{
-        style:{position:'absolute',bottom:'-40px',left:'18px',zIndex:4}
+        style:{position:'absolute',bottom:'-40px',left:eqFrameU?'50%':'18px',transform:eqFrameU?'translateX(-50%)':'none',zIndex:4}
       },
         React.createElement(AvatarRing,{ show: momentUserIds.has(user.id), thickness: 3 },
           React.createElement('div',{
@@ -758,7 +758,7 @@ export function UserProfileView(props){
       )
     ),
     // Name + info
-    React.createElement('div',{style:{padding:'50px 18px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
+    React.createElement('div',{style:{padding:(eqFrameU?'104px':'50px')+' 18px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
       React.createElement('div',{style:{flex:1,minWidth:0,paddingRight:'10px'}},
         React.createElement('div',{style:{fontSize:'18px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}},displayName),
         eqTagU?React.createElement('div',{style:{marginTop:'1px',marginBottom:'5px'}},React.createElement(TagPill,{item:eqTagU})):null,
