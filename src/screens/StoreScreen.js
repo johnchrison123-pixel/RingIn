@@ -186,8 +186,13 @@ export default function StoreScreen(props){
   var hasCatalog = cat && cat.rows && cat.rows.length > 0;
 
   return React.createElement('div', { ref: scrollRef, style:{ display:'flex', flexDirection:'column', height:'100%', background:'var(--bg)', overflowY:'auto' } },
+    // Sticky chrome: header + tabs kept in ONE sticky block so the tabs can
+    // NEVER tuck under a taller-than-expected header (mobile/native status-bar
+    // + safe-area made the header ~74px while the tabs were pinned at top:56px,
+    // so the header covered the tab labels). One block = no magic offset.
+    React.createElement('div', { style:{ position:'sticky', top:0, zIndex:10, background:'var(--bg)' } },
     // Header
-    React.createElement('div', { style:{ display:'flex', alignItems:'center', gap:'12px', padding:'16px 18px', borderBottom:'1px solid var(--border)', position:'sticky', top:0, background:'var(--bg)', zIndex:10 } },
+    React.createElement('div', { style:{ display:'flex', alignItems:'center', gap:'12px', padding:'16px 18px', borderBottom:'1px solid var(--border)', background:'var(--bg)' } },
       React.createElement('button', { onClick: props.onClose, style:{ background:'none', border:'none', color:'var(--text)', cursor:'pointer', padding:'4px', display:'flex' } },
         React.createElement('svg', { viewBox:'0 0 24 24', width:'22', height:'22', fill:'none', stroke:'currentColor', strokeWidth:'2.3', strokeLinecap:'round', strokeLinejoin:'round' }, React.createElement('polyline', { points:'15 18 9 12 15 6' }))
       ),
@@ -198,7 +203,7 @@ export default function StoreScreen(props){
       )
     ),
     // Category tabs — each kind is its own view (no long scroll)
-    hasCatalog ? React.createElement('div', { role:'tablist', 'aria-label':'Store categories', style:{ display:'flex', gap:'6px', padding:'10px 12px', borderBottom:'1px solid var(--border)', position:'sticky', top:'56px', background:'var(--bg)', zIndex:9, overflowX:'auto' } },
+    hasCatalog ? React.createElement('div', { role:'tablist', 'aria-label':'Store categories', style:{ display:'flex', gap:'6px', padding:'10px 12px', borderBottom:'1px solid var(--border)', background:'var(--bg)', overflowX:'auto' } },
       [{k:'frame',l:'Frames'},{k:'theme',l:'Themes'},{k:'tag',l:'Tags'},{k:'sticker',l:'Stickers'}].map(function(t){
         var on = activeKind === t.k;
         return React.createElement('button', { key:t.k, role:'tab', 'aria-selected': on, onClick:function(){ setActiveKind(t.k); try{ if (scrollRef.current) scrollRef.current.scrollTop = 0; }catch(_){} }, style:{
@@ -207,7 +212,8 @@ export default function StoreScreen(props){
           color: on ? '#fff' : 'var(--t2)', border:'1px solid ' + (on ? 'transparent' : 'var(--border)')
         } }, t.l);
       })
-    ) : null,
+    ) : null
+    ),
     React.createElement('div', { role:'tabpanel', 'aria-label': activeKind, style:{ padding:'14px 16px 24px' } },
       (loading && !hasCatalog)
         ? React.createElement('div', { style:{ textAlign:'center', padding:'60px 24px', color:'var(--t2)' } },
