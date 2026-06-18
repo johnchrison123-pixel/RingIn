@@ -17,3 +17,10 @@
 
 revoke update (owned_cosmetics) on public.profiles from authenticated;
 revoke update (equipped)        on public.profiles from authenticated;
+
+-- ── Cosmetic-badge consistency ──────────────────────────────────────
+-- frame_goldaura / frame_aurora were is_premium=true in 0049 and never
+-- reset, so a 149-coin "Classic Rings" item still shows the gold VIP
+-- badge. Clear is_premium for the whole Classic Rings tier so the badge
+-- matches the section/price. (VIP Wings keep is_premium=true.)
+update public.catalog_items set is_premium = false where section = 'Classic Rings';

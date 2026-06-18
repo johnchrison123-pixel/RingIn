@@ -87,9 +87,13 @@ export default function StoreScreen(props){
     var target = isEq ? '' : item.id; // tapping the equipped one unequips it
     setEquipped(function(e){ var n = Object.assign({}, e); n[item.kind] = target || null; return n; });
     sb.rpc('equip_cosmetic', { p_kind: item.kind, p_item_id: target }).then(function(r){
-      if (r && r.error){
+      // Roll back the optimistic equip on a hard error OR an explicit non-ok
+      // status (e.g. 'not_owned') — the RPC returns not_owned with NO .error,
+      // so checking r.error alone left the UI showing ✓Equipped after a reject.
+      var st = r && r.data && r.data.status;
+      if ((r && r.error) || (st && st !== 'ok')){
         setEquipped(function(e){ var n = Object.assign({}, e); n[item.kind] = prev; return n; });
-        try{ toastError('Could not equip.'); }catch(_){}
+        try{ toastError(st === 'not_owned' ? 'You don’t own this yet.' : 'Could not equip.'); }catch(_){}
         return;
       }
       if (!silent){ try{ toastInfo(target ? ('Equipped ' + item.name) : ('Removed ' + item.name)); }catch(_){} }
