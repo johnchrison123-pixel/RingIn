@@ -21,7 +21,7 @@ import {useCoinBalance} from '../utils/coinBalance';
 import {safeInitials} from '../utils/initials'; /* FIX #10: UTF-16 safe initials */
 import {isBlockedSync, onBlocksChanged} from '../utils/blocks'; /* R15 FIX #1: filter blocked users from feed; R19 verifier-fix: subscribe to re-render on block-change */
 import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2: ref-counted lock prevents 2-modal overflow leak */
-import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay} from '../utils/cosmetics';
+import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay, themeStyle} from '../utils/cosmetics';
 import {formatDateTime, formatDate, formatTime, safeSetItem} from '../utils/dateFmt'; /* R18: timezone-aware date display + safe localStorage wrapper */
 import {ConfirmSheet} from '../components/ConfirmSheet'; /* in-app confirm sheet replaces window.confirm (banned per CLAUDE.md) */
 import {motion} from 'motion/react'; /* R54: spring micro-interactions (like button) */
@@ -734,6 +734,8 @@ export function UserProfileView(props){
     // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':(eqThemeU&&eqThemeU.payload?('linear-gradient(135deg,'+(eqThemeU.payload.accent2||'#534AB7')+','+(eqThemeU.payload.accent||'#7C6FFF')+')'):'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)'),position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,overflow:'hidden'}},React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}})):null,
+      // Theme tint stays visible over a cover photo (visitors see the themed profile too).
+      (coverUrl && eqThemeU && eqThemeU.payload)?React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'linear-gradient(135deg,'+(eqThemeU.payload.accent2||'#534AB7')+','+(eqThemeU.payload.accent||'#7C6FFF')+')',opacity:0.32,mixBlendMode:'overlay',pointerEvents:'none',zIndex:1}}):null,
       eqStickerU?React.createElement('div',{style:{position:'absolute',right:'14px',bottom:'12px',zIndex:3}},React.createElement(Sticker,{item:eqStickerU,size:40})):null,
       React.createElement('button',{onClick:props.onBack,title:'Back',style:{position:'absolute',top:'12px',left:'12px',background:'rgba(0,0,0,0.55)',border:'none',borderRadius:'50%',width:'34px',height:'34px',color:'#fff',padding:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3}},
         React.createElement('svg',{viewBox:'0 0 24 24',width:'18',height:'18',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},

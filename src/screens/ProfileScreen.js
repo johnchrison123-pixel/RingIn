@@ -17,7 +17,7 @@ import {sb as sbProfileCoin} from '../utils/supabase';
 import {formatDate, safeSetItem} from '../utils/dateFmt';
 import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2 */
 import StoreScreen from './StoreScreen';
-import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay} from '../utils/cosmetics';
+import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay, themeStyle} from '../utils/cosmetics';
 
 // Copy a URL to the clipboard and toast ONLY on real success.
 // Same helper pattern as HomeScreen — eliminates false-positive "Link
@@ -781,6 +781,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
         if (ev && ev.preventDefault) ev.preventDefault();
         close();
       }
+      // Style Store is a full-screen overlay over the profile — close it FIRST so
+      // Android hardware back returns to the profile instead of App.js's goBack
+      // ladder falling through to the Home tab.
+      if (showStore) return consume(function(){ setShowStore(false); });
       // ─── Modals (highest priority — always-on-top overlays) ───
       // FIX #8: edit-post modal (Batch 1 added the state but the back-handler
       // never closed it). Put it AT THE TOP of the priority chain — most
@@ -827,7 +831,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     showEditProfile, showAvatarView, showAvatarMenu, showCoverAdjust, showAdjust, showEmoji, showLikersProf,
     showCountryPicker, showPhoneCodePicker, showTzPicker,
     showCloseFriends, showAcct, showPrivacy, showSupport, showNotif, showActivityLog, showSound, showBlocked, showMuted, showExpertApp, showSubsMgr, showVerifyApp, showAdminReview, showRate,
-    showSettings,
+    showSettings, showStore,
   ]);
 
   /* R18: ESC closes phone-code picker + body-scroll-lock while open */
@@ -3643,7 +3647,10 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   );
 
   // MAIN PROFILE
-  return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+  // Equipped THEME re-tints the profile accent (--ac/--acg) across the whole
+  // own-profile subtree — tab underline, links, accents inherit it. themeStyle
+  // returns null when no theme is equipped, so the merge is a no-op by default.
+  return React.createElement('div',{style:Object.assign({display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}, themeStyle(eqTheme)||{})},
     showLikersProf ? React.createElement('div',{
       onClick:function(){setShowLikersProf(null);},
       style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9000,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}
@@ -3902,6 +3909,9 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     // Cover
     React.createElement('div',{style:{height:'130px',background:coverUrl?'none':(eqTheme&&eqTheme.payload?('linear-gradient(135deg,'+(eqTheme.payload.accent2||'#534AB7')+','+(eqTheme.payload.accent||'#7C6FFF')+')'):'linear-gradient(135deg,#1a1040,#534AB7,#7C6FFF)'),position:'relative',flexShrink:0,overflow:'visible'}},
       coverUrl ? React.createElement('img',{src:coverUrl,alt:'cover',style:{width:'100%',height:'100%',objectFit:'cover'}}) : null,
+      // Theme tint stays visible even when a cover photo is uploaded — otherwise
+      // the purchased theme would be silently hidden behind the image.
+      (coverUrl && eqTheme && eqTheme.payload) ? React.createElement('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,background:'linear-gradient(135deg,'+(eqTheme.payload.accent2||'#534AB7')+','+(eqTheme.payload.accent||'#7C6FFF')+')',opacity:0.32,mixBlendMode:'overlay',pointerEvents:'none',zIndex:1}}) : null,
       eqSticker ? React.createElement('div',{style:{position:'absolute',right:'14px',bottom:'12px',zIndex:3}}, React.createElement(Sticker,{item:eqSticker,size:40})) : null,
       React.createElement('label',{style:{position:'absolute',top:'10px',right:'10px',background:'rgba(0,0,0,0.5)',borderRadius:'20px',padding:'5px 10px',fontSize:'10px',color:'#fff',cursor:'pointer'}},
         uploading?'Uploading...':'✏️ Edit Cover',

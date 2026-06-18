@@ -17,8 +17,9 @@
 import React from 'react';
 import { sb as defaultClient } from './supabase';
 
-var CACHE_KEY = 'ringin_cosmetics_catalog_v1';
+var CACHE_KEY = 'ringin_cosmetics_catalog_v2'; // bump → clients miss the pre-0052 cache once and re-fetch fresh rows (kills stale prices/retired items)
 var _mem = null; // { byId, byKind, rows }
+try { localStorage.removeItem('ringin_cosmetics_catalog_v1'); } catch(_){} // clean up the orphaned old cache
 
 function indexCatalog(rows){
   var byId = {};
@@ -124,7 +125,7 @@ export function Sticker(props){
 // Cache-bust frame asset URLs: public/ PNGs keep their filename across deploys,
 // so browsers serve stale versions. Bump FRAME_ASSET_V whenever the art changes.
 var FRAME_ASSET_V = '5';
-export function frameSrc(u){ return u ? (u + (u.indexOf('?') < 0 ? ('?v=' + FRAME_ASSET_V) : '')) : u; }
+export function frameSrc(u){ if(!u) return u; if(u.indexOf('v='+FRAME_ASSET_V)>=0) return u; return u + (u.indexOf('?')<0 ? '?' : '&') + 'v=' + FRAME_ASSET_V; }
 
 export function frameOverlay(item, size){
   if (!item) return null;

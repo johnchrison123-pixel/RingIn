@@ -6,14 +6,16 @@
 // (migration 0049). Forward-compatible: if the migration hasn't run, the
 // catalog is empty and the screen shows a friendly empty-state.
 // ──────────────────────────────────────────────────────────────────────────
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sb as defaultClient } from '../utils/supabase';
 import { useCoinBalance, setSharedCoinBalance } from '../utils/coinBalance';
 import { loadCatalog, getCachedCatalog, TagPill, Sticker, frameOverlay, frameSrc, hexA } from '../utils/cosmetics';
 import { toastError, toastSuccess, toastWarn, toastInfo } from '../utils/toast';
 
-var KIND_ORDER = ['theme','frame','tag','sticker'];
 var EMPTY_CAT = { byId:{}, byKind:{ tag:[], frame:[], sticker:[], theme:[] }, rows:[] };
+// Canonical category order per kind, so section headings render in a stable
+// order regardless of DB sort-value hygiene (defends the pre-0052 state).
+var SECTION_ORDER = { frame: ['Neon Wings','VIP Wings','Classic Rings'], theme: [], tag: [], sticker: [] };
 
 export default function StoreScreen(props){
   var sb = props.sb || defaultClient;
@@ -26,10 +28,14 @@ export default function StoreScreen(props){
   var equippedS = useState({}); var equipped = equippedS[0]; var setEquipped = equippedS[1];
   var busyS = useState({}); var busy = busyS[0]; var setBusy = busyS[1];
   var activeKindS = useState('frame'); var activeKind = activeKindS[0]; var setActiveKind = activeKindS[1];
+  // Distinguish "still loading on a cold install" from "genuinely empty" so we
+  // don't show the warming-up empty-state during a normal first fetch.
+  var loadingS = useState(function(){ return !getCachedCatalog(); }); var loading = loadingS[0]; var setLoading = loadingS[1];
+  var scrollRef = useRef(null); // reset scroll to top when switching category tabs
 
   useEffect(function(){
     var cancelled = false;
-    loadCatalog(sb).then(function(c){ if (!cancelled && c) setCat(c); });
+    loadCatalog(sb).then(function(c){ if (!cancelled){ if (c) setCat(c); setLoading(false); } });
     if (userId){
       try {
         sb.from('profiles').select('owned_cosmetics,equipped').eq('id', userId).maybeSingle().then(function(r){
@@ -124,10 +130,15 @@ export default function StoreScreen(props){
     var isEq = equipped[item.kind] === item.id;
     var btn;
     if (!isOwned){
+      var price = Number(item.price_coins) || 0;
+      // bal>0 gate avoids a stale-0 false-negative before the balance hydrates;
+      // tap stays enabled (server is the source of truth) — this is just an affordance.
+      var bal = Number(coinBalance) || 0;
+      var cantAfford = price > 0 && bal > 0 && price > bal;
       btn = React.createElement('button', { onClick:function(){ buy(item); }, disabled:!!busy[item.id], style:{
         marginTop:'8px', width:'100%', padding:'7px', borderRadius:'10px', border:'none', cursor:'pointer',
         background:'linear-gradient(135deg,#7B6EFF,#E84D9A)', color:'#fff', fontSize:'12px', fontWeight:700,
-        opacity: busy[item.id] ? 0.6 : 1, fontFamily:'inherit'
+        opacity: busy[item.id] ? 0.6 : (cantAfford ? 0.5 : 1), fontFamily:'inherit'
       } }, busy[item.id] ? '…' : (item.price_coins > 0 ? ('🪙 ' + item.price_coins) : 'Free'));
     } else {
       btn = React.createElement('button', { onClick:function(){ doEquip(item, false); }, style:{
@@ -148,17 +159,29 @@ export default function StoreScreen(props){
     );
   }
 
-  // group a kind's items by section, preserving order
+  // group a kind's items by section in a DETERMINISTIC order: canonical
+  // SECTION_ORDER first, then any leftover sections by their min sort. Items
+  // within a section sort by their own sort value. Robust to colliding sort
+  // bands across sections (the pre-0052 state) so headings never reshuffle.
   function sectionsFor(kind){
     var items = (cat.byKind && cat.byKind[kind]) || [];
-    var order = []; var map = {};
-    items.forEach(function(it){ if (!map[it.section]){ map[it.section] = []; order.push(it.section); } map[it.section].push(it); });
-    return order.map(function(s){ return { section:s, items:map[s] }; });
+    var map = {};
+    items.forEach(function(it){ var s = it.section || ''; if (!map[s]) map[s] = []; map[s].push(it); });
+    Object.keys(map).forEach(function(s){ map[s].sort(function(a,b){ return (a.sort==null?0:a.sort) - (b.sort==null?0:b.sort); }); });
+    var canon = SECTION_ORDER[kind] || [];
+    var seen = {}; var ordered = [];
+    canon.forEach(function(s){ if (map[s]){ ordered.push(s); seen[s] = true; } });
+    Object.keys(map).filter(function(s){ return !seen[s]; }).sort(function(a,b){
+      var ma = Math.min.apply(null, map[a].map(function(x){ return x.sort==null?0:x.sort; }));
+      var mb = Math.min.apply(null, map[b].map(function(x){ return x.sort==null?0:x.sort; }));
+      return ma !== mb ? ma - mb : (a < b ? -1 : 1);
+    }).forEach(function(s){ ordered.push(s); });
+    return ordered.map(function(s){ return { section:s, items:map[s] }; });
   }
 
   var hasCatalog = cat && cat.rows && cat.rows.length > 0;
 
-  return React.createElement('div', { style:{ display:'flex', flexDirection:'column', height:'100%', background:'var(--bg)', overflowY:'auto' } },
+  return React.createElement('div', { ref: scrollRef, style:{ display:'flex', flexDirection:'column', height:'100%', background:'var(--bg)', overflowY:'auto' } },
     // Header
     React.createElement('div', { style:{ display:'flex', alignItems:'center', gap:'12px', padding:'16px 18px', borderBottom:'1px solid var(--border)', position:'sticky', top:0, background:'var(--bg)', zIndex:10 } },
       React.createElement('button', { onClick: props.onClose, style:{ background:'none', border:'none', color:'var(--text)', cursor:'pointer', padding:'4px', display:'flex' } },
@@ -171,18 +194,23 @@ export default function StoreScreen(props){
       )
     ),
     // Category tabs — each kind is its own view (no long scroll)
-    hasCatalog ? React.createElement('div', { style:{ display:'flex', gap:'6px', padding:'10px 12px', borderBottom:'1px solid var(--border)', position:'sticky', top:'56px', background:'var(--bg)', zIndex:9, overflowX:'auto' } },
+    hasCatalog ? React.createElement('div', { role:'tablist', 'aria-label':'Store categories', style:{ display:'flex', gap:'6px', padding:'10px 12px', borderBottom:'1px solid var(--border)', position:'sticky', top:'56px', background:'var(--bg)', zIndex:9, overflowX:'auto' } },
       [{k:'frame',l:'Frames'},{k:'theme',l:'Themes'},{k:'tag',l:'Tags'},{k:'sticker',l:'Stickers'}].map(function(t){
         var on = activeKind === t.k;
-        return React.createElement('button', { key:t.k, onClick:function(){ setActiveKind(t.k); }, style:{
+        return React.createElement('button', { key:t.k, role:'tab', 'aria-selected': on, onClick:function(){ setActiveKind(t.k); try{ if (scrollRef.current) scrollRef.current.scrollTop = 0; }catch(_){} }, style:{
           flex:'1 0 auto', padding:'8px 14px', borderRadius:'20px', cursor:'pointer', fontFamily:'inherit', fontSize:'13px', fontWeight:700, whiteSpace:'nowrap',
           background: on ? 'linear-gradient(135deg,#7B6EFF,#E84D9A)' : 'var(--bg3)',
           color: on ? '#fff' : 'var(--t2)', border:'1px solid ' + (on ? 'transparent' : 'var(--border)')
         } }, t.l);
       })
     ) : null,
-    React.createElement('div', { style:{ padding:'14px 16px 90px' } },
-      !hasCatalog
+    React.createElement('div', { role:'tabpanel', 'aria-label': activeKind, style:{ padding:'14px 16px 24px' } },
+      (loading && !hasCatalog)
+        ? React.createElement('div', { style:{ textAlign:'center', padding:'60px 24px', color:'var(--t2)' } },
+            React.createElement('div', { style:{ fontSize:'30px', marginBottom:'12px' } }, '✨'),
+            React.createElement('div', { style:{ fontSize:'13px', fontWeight:600, color:'var(--text)' } }, 'Loading the store…')
+          )
+      : !hasCatalog
         ? React.createElement('div', { style:{ textAlign:'center', padding:'60px 24px', color:'var(--t2)' } },
             React.createElement('div', { style:{ fontSize:'40px', marginBottom:'12px' } }, '✨'),
             React.createElement('div', { style:{ fontSize:'14px', fontWeight:600, color:'var(--text)', marginBottom:'6px' } }, 'Store is warming up'),
@@ -193,7 +221,7 @@ export default function StoreScreen(props){
             // (so the previous row's glowing cards never crowd/cover it) and below.
             // scrollMarginTop keeps an anchored heading clear of the sticky header+tabs.
             return React.createElement('div', { key:activeKind + '-' + grp.section, style:{ marginTop: gi === 0 ? '2px' : '28px', marginBottom:'14px' } },
-              React.createElement('div', { style:{ fontSize:'13px', fontWeight:700, color:'var(--text)', margin:'0 0 12px', paddingBottom:'2px', display:'flex', alignItems:'center', gap:'7px', position:'relative', zIndex:1, scrollMarginTop:'112px' } }, grp.section),
+              React.createElement('div', { role:'heading', 'aria-level':2, style:{ fontSize:'13px', fontWeight:700, color:'var(--text)', margin:'0 0 12px', paddingBottom:'2px', display:'flex', alignItems:'center', gap:'7px', position:'relative', zIndex:1, scrollMarginTop:'112px' } }, grp.section),
               React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px', alignItems:'start' } },
                 grp.items.map(function(it){ return card(it); })
               )
