@@ -4,8 +4,9 @@ import {startCallSession, setAudioOutputMode} from '../utils/agora';
 import * as NativeAudio from '../utils/nativeAudio';
 import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
-import {playRingback,stopRingback,hapticPulse} from '../utils/soundEngine';
+import {playRingback,stopRingback,hapticPulse,playGiftSound} from '../utils/soundEngine';
 import {setSharedCoinBalance} from '../utils/coinBalance';
+import {loadGiftCatalog, giftByKey} from '../utils/giftCatalog';
 /* R18: shared image fallback so expired Supabase avatar URLs don't show broken-image */
 import ImgWithFallback from '../components/ImgWithFallback';
 
@@ -160,25 +161,12 @@ export default function CallScreen(props){
       } }));
     } catch(e){ /* never break the call */ }
   }
-  /* R48: virtual gift catalog (same shape as anon_chat_gifts — 3 tiers).
-   * Inlined here to avoid coupling CallScreen to AnonymousConnect's module.
-   * R59: keep this list IN SYNC with GIFT_CATALOG in AnonymousConnect.js. */
-  var CALL_GIFT_CATALOG = [
-    { key:'chai',     emoji:'🍵', name:'Chai',       tier:'sticker', coins:5 },
-    { key:'coffee',   emoji:'☕', name:'Coffee',     tier:'sticker', coins:10 },
-    { key:'wave',     emoji:'👋', name:'Wave',       tier:'sticker', coins:10 },
-    { key:'heart',    emoji:'❤️', name:'Heart',      tier:'sticker', coins:15 },
-    { key:'shake',    emoji:'🥤', name:'Shake',      tier:'sticker', coins:20 },
-    { key:'rose',     emoji:'🌹', name:'Rose',       tier:'sticker', coins:25 },
-    { key:'icecream', emoji:'🍦', name:'Ice Cream',  tier:'sticker', coins:30 },
-    { key:'lollipop', emoji:'🍭', name:'Lollipop',   tier:'premium', coins:40 },
-    { key:'cake',     emoji:'🎂', name:'Cake',       tier:'premium', coins:50 },
-    { key:'kiss',     emoji:'💋', name:'Kiss',       tier:'premium', coins:100 },
-    { key:'crown',    emoji:'👑', name:'Crown',      tier:'premium', coins:200 },
-    { key:'car',      emoji:'🏎',  name:'Sports Car', tier:'mega', coins:500 },
-    { key:'castle',   emoji:'🏰', name:'Castle',     tier:'mega', coins:1000 },
-    { key:'diamond',  emoji:'💎', name:'Diamond',    tier:'mega', coins:2000 },
-  ];
+  /* R60: virtual gifts now load from the DB gift_catalog (migration 0054),
+   * grouped by category; sent via the server-priced send_gift RPC (no
+   * client-supplied price → kills the old p_coins trust-vuln). */
+  var giftCatS = useState([]); var giftCat = giftCatS[0]; var setGiftCat = giftCatS[1];
+  var giftTabS = useState(null); var giftTab = giftTabS[0]; var setGiftTab = giftTabS[1];
+  useEffect(function(){ loadGiftCatalog(sb).then(function(list){ setGiftCat(list || []); }); }, []);
   var giftDrawerS = useState(false); var giftDrawerOpen = giftDrawerS[0]; var setGiftDrawerOpen = giftDrawerS[1];
   var giftSendingS = useState(null); var giftSending = giftSendingS[0]; var setGiftSending = giftSendingS[1];
   /* incomingAnim: { emoji, tier, coins, key, fromName, ts } — set when a
@@ -187,28 +175,36 @@ export default function CallScreen(props){
   var incomingAnimS = useState(null); var incomingAnim = incomingAnimS[0]; var setIncomingAnim = incomingAnimS[1];
   var animTimerRef = useRef(null);
   function fireGiftAnim(g, fromName){
-    setIncomingAnim({ emoji:g.emoji, tier:g.tier, coins:g.coins, key:g.key, fromName: fromName || '', ts: Date.now() });
+    setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', fromName: fromName || '', ts: Date.now() });
+    try { playGiftSound(g.sound === 'fanfare' ? 'fanfare' : (g.sound === 'chime_big' || (g.coins||0) >= 399 ? 'chime' : 'bell')); } catch(_){}
     if (animTimerRef.current) { clearTimeout(animTimerRef.current); }
-    animTimerRef.current = setTimeout(function(){ setIncomingAnim(null); animTimerRef.current = null; }, g.tier === 'mega' ? 4500 : (g.tier === 'premium' ? 3500 : 2500));
+    animTimerRef.current = setTimeout(function(){ setIncomingAnim(null); animTimerRef.current = null; }, g.fullscreen ? 5200 : 3000);
   }
 
   /* R48: send a gift during the active call. Atomic on server. */
   function sendCallGift(g){
     if (!g || !expert || !expert.id || giftSending) return;
-    setGiftSending(g.key);
-    sb.rpc('send_anon_call_gift', {
-      p_recipient: expert.id,
-      p_call_invite_id: props.inviteId || null,
-      p_gift_key: g.key,
-      p_emoji: g.emoji,
-      p_tier: g.tier,
-      p_coins: g.coins,
+    setGiftSending(g.gift_key);
+    sb.rpc('send_gift', {
+      p_gift_key: g.gift_key,
+      p_to_user: expert.id,
+      p_call_id: props.inviteId || null,
     }).then(function(r){
       setGiftSending(null);
-      if (r && r.error) { setError(r.error.message || 'Gift failed'); return; }
-      setGiftDrawerOpen(false);
-      /* Show local animation on sender's screen too (with "You sent" framing). */
-      fireGiftAnim(g, 'You');
+      var d = r && r.data;
+      if ((r && r.error) || !d || d.status !== 'ok') {
+        setError(d && d.status === 'insufficient' ? 'Not enough coins' : ((r && r.error && r.error.message) || 'Gift failed'));
+        return;
+      }
+      // server-authoritative balance after the debit → sync the call counter + wallet
+      if (typeof d.balance === 'number') {
+        setLocalCoins(d.balance); localCoinsRef.current = d.balance;
+        try { setSharedCoinBalance(d.balance, {userId: myUserId}); } catch(_){}
+      }
+      // animate what was actually delivered (a lucky box may roll a different gift)
+      fireGiftAnim({ icon:d.icon, coins:d.coins, fullscreen:d.fullscreen, sound:d.sound, name:d.name }, 'You');
+      // keep the drawer open for cheap combo-able gifts; close for the big ones
+      if (d.fullscreen || (d.coins||0) > 99) setGiftDrawerOpen(false);
     }).catch(function(){ setGiftSending(null); setError('Network error'); });
   }
 
@@ -216,17 +212,18 @@ export default function CallScreen(props){
    * anon_call_gifts INSERT where receiver_id = me. RLS already gates this. */
   useEffect(function(){
     if (!myUserId) return;
-    var ch = sb.channel('anon-call-gifts-' + myUserId)
+    var ch = sb.channel('gift-sends-' + myUserId)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
-        table: 'anon_call_gifts',
+        table: 'gift_sends',
         filter: 'receiver_id=eq.' + myUserId,
       }, function(p){
         var row = p && p.new;
         if (!row) return;
-        var g = CALL_GIFT_CATALOG.find(function(x){ return x.key === row.gift_key; }) || { emoji: row.emoji, tier: row.tier, coins: row.coins, key: row.gift_key };
-        fireGiftAnim(g, (expert && expert.name) || 'Them');
+        var key = row.rolled_gift_key || row.gift_key;
+        var g = giftByKey(key) || { icon:'🎁', coins: row.coins_spent, fullscreen:false, sound:'bell', name:'Gift' };
+        fireGiftAnim({ icon:g.icon, coins:g.coins || row.coins_spent, fullscreen:g.fullscreen, sound:g.sound, name:g.name }, (expert && expert.name) || 'Them');
       })
       .subscribe();
     return function(){ try { sb.removeChannel(ch); } catch(_){} if (animTimerRef.current) { clearTimeout(animTimerRef.current); animTimerRef.current = null; } };
@@ -1061,31 +1058,41 @@ export default function CallScreen(props){
         style:{width:'100%',maxWidth:'520px',background:'var(--bg2)',borderRadius:'18px 18px 0 0',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -6px 28px rgba(0,0,0,0.5)',maxHeight:'80vh',overflowY:'auto'}
       },
         React.createElement('div', {style:{width:'40px',height:'4px',borderRadius:'2px',background:'var(--border)',margin:'0 auto 14px'}}),
-        React.createElement('div', {style:{display:'flex',alignItems:'center',marginBottom:'14px'}},
-          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'17px',fontWeight:800,color:'var(--text)',flex:1}}, 'Send a gift to ' + ((expert && expert.name) || 'them'))
+        React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'14px'}},
+          React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'16px',fontWeight:800,color:'var(--text)',flex:1}}, 'Send a gift to ' + ((expert && expert.name) || 'them')),
+          React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'4px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',padding:'5px 10px',fontWeight:800,fontSize:'13px',color:'var(--amber)',flexShrink:0}}, '🪙 ' + (Number(localCoins)||0))
         ),
-        ['sticker','premium','mega'].map(function(tier){
-          var label = tier === 'sticker' ? '💌 Stickers' : tier === 'premium' ? '💎 Premium' : '🚀 Mega';
-          var gifts = CALL_GIFT_CATALOG.filter(function(g){ return g.tier === tier; });
-          return React.createElement('div', {key:tier,style:{marginBottom:'16px'}},
-            React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px'}}, label),
+        (function(){
+          if (!giftCat.length) return React.createElement('div', {style:{padding:'34px',textAlign:'center',color:'var(--t2)',fontSize:'13px'}}, 'Loading gifts…');
+          var cats = []; var seen = {};
+          giftCat.forEach(function(g){ if(!seen[g.category]){ seen[g.category]=1; cats.push(g.category); } });
+          var active = giftTab || cats[0] || null;
+          var tabGifts = giftCat.filter(function(g){ return g.category === active; });
+          return React.createElement('div', null,
+            // category tabs (horizontal scroll)
+            React.createElement('div', {style:{display:'flex',gap:'7px',overflowX:'auto',paddingBottom:'10px',marginBottom:'12px',WebkitOverflowScrolling:'touch'}},
+              cats.map(function(cat){
+                var on = cat === active;
+                return React.createElement('button', {key:cat,onClick:function(){ setGiftTab(cat); },
+                  style:{flex:'0 0 auto',padding:'7px 13px',borderRadius:'14px',fontSize:'12px',fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',fontFamily:'inherit',border:'1px solid '+(on?'transparent':'var(--border)'),background:on?'linear-gradient(135deg,#7B6EFF,#E84D9A)':'var(--bg3)',color:on?'#fff':'var(--t2)'}}, cat);
+              })
+            ),
+            // gift grid for the active category
             React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}},
-              gifts.map(function(g){
-                var sending = giftSending === g.key;
-                return React.createElement('button', {
-                  key: g.key,
-                  onClick: function(){ sendCallGift(g); },
-                  disabled: !!giftSending,
-                  style:{padding:'14px 8px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',cursor: giftSending ? 'wait' : 'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:'6px',opacity: giftSending && !sending ? 0.5 : 1}
-                },
-                  React.createElement('div', {style:{fontSize: tier === 'mega' ? '34px' : (tier === 'premium' ? '30px' : '26px'),lineHeight:1}}, g.emoji),
-                  React.createElement('div', {style:{fontSize:'11px',fontWeight:700,color:'var(--text)'}}, g.name),
-                  React.createElement('div', {style:{fontSize:'10px',color:'var(--ac)',fontWeight:700}}, sending ? 'Sending…' : (g.coins + ' 🪙'))
+              tabGifts.map(function(g){
+                var sending = giftSending === g.gift_key;
+                var afford = (Number(localCoins)||0) >= g.coins;
+                return React.createElement('button', {key:g.gift_key,onClick:function(){ sendCallGift(g); },disabled: !!giftSending || !afford,
+                  style:{position:'relative',padding:'14px 6px',background:'var(--bg3)',border:'1px solid '+(g.tier==='premium'?'rgba(255,217,61,0.4)':'var(--border)'),borderRadius:'12px',cursor:(giftSending||!afford)?'not-allowed':'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:'5px',opacity:(!afford?0.4:(giftSending&&!sending?0.5:1))}},
+                  g.tier==='premium'?React.createElement('div',{style:{position:'absolute',top:'4px',right:'5px',fontSize:'9px'}}, g.fullscreen?'🎬':'👑'):null,
+                  React.createElement('div', {style:{fontSize: g.fullscreen?'32px':(g.tier==='premium'?'28px':'24px'),lineHeight:1}}, g.icon),
+                  React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--text)',textAlign:'center',lineHeight:1.15}}, g.name),
+                  React.createElement('div', {style:{fontSize:'10px',color:'var(--ac)',fontWeight:700}}, sending ? '…' : (g.coins + ' 🪙'))
                 );
               })
             )
           );
-        }),
+        })(),
         React.createElement('button', {
           onClick: function(){ if (!giftSending) setGiftDrawerOpen(false); },
           style:{width:'100%',padding:'13px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor: giftSending ? 'wait' : 'pointer',marginTop:'8px'}
@@ -1098,11 +1105,11 @@ export default function CallScreen(props){
      * Tier dictates size + duration (set via fireGiftAnim timer).
      * For 'mega', adds a sparkle/glow background. */
     incomingAnim ? (function(){
-      var bigSize = incomingAnim.tier === 'mega' ? '140px'
-                  : incomingAnim.tier === 'premium' ? '100px'
-                  : '72px';
-      var bgGlow = incomingAnim.tier === 'mega' ? 'radial-gradient(circle, rgba(255,215,0,0.35), transparent 60%)'
-                  : incomingAnim.tier === 'premium' ? 'radial-gradient(circle, rgba(232,77,154,0.25), transparent 60%)'
+      var fs = !!incomingAnim.fullscreen;
+      var premium = (incomingAnim.coins||0) >= 399;
+      var bigSize = fs ? '150px' : (premium ? '108px' : '74px');
+      var bgGlow = fs ? 'radial-gradient(circle, rgba(255,215,0,0.38), rgba(0,0,0,0.55) 70%)'
+                  : premium ? 'radial-gradient(circle, rgba(232,77,154,0.22), transparent 60%)'
                   : 'transparent';
       return React.createElement('div', {
         style:{position:'fixed',inset:0,zIndex:980,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center',background:bgGlow}
@@ -1115,12 +1122,13 @@ export default function CallScreen(props){
           '100% { transform: translateY(-30vh) scale(0.85); opacity: 0; } }'
         ),
         React.createElement('div', {
-          style:{textAlign:'center',animation:'ringinGiftFloat 3s ease-out forwards'}
+          style:{textAlign:'center',animation:'ringinGiftFloat ' + (fs ? '5s' : '3s') + ' ease-out forwards'}
         },
-          React.createElement('div', {style:{fontSize:bigSize,lineHeight:1,filter:'drop-shadow(0 8px 32px rgba(232,77,154,0.6))'}}, incomingAnim.emoji),
-          React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'#fff',marginTop:'12px',textShadow:'0 2px 8px rgba(0,0,0,0.7)'}},
-            (incomingAnim.fromName || '') + ' • ' + incomingAnim.coins + ' 🪙'
-          )
+          React.createElement('div', {style:{fontSize:bigSize,lineHeight:1,filter:'drop-shadow(0 8px 32px rgba(232,77,154,0.6))'}}, incomingAnim.icon),
+          React.createElement('div', {style:{fontSize: fs ? '16px' : '13px',fontWeight:800,color:'#fff',marginTop:'12px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}},
+            (incomingAnim.fromName || '') + ' sent ' + (incomingAnim.name || 'a gift')
+          ),
+          React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'#FFD93D',marginTop:'4px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, (incomingAnim.coins||0) + ' 🪙')
         )
       );
     })() : null

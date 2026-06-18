@@ -499,3 +499,38 @@ export function playUnlikeSound(){
     o.start();o.stop(ctx.currentTime+0.20);
   }catch(e){}
 }
+
+// Gift sounds — self-contained (don't depend on the _TYPE_MAP/prefs variants).
+// kind: 'bell' (regular tap) | 'chime' (premium) | 'fanfare' (fullscreen mega).
+// Gated on the 'gift' pref, falling back to 'notification' so a user who muted
+// notifications also mutes gift sounds.
+export function playGiftSound(kind){
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
+  var ctx=getSCtx(); if(!ctx) return;
+  var prefs=getSoundPrefs();
+  var p=(prefs && (prefs.gift || prefs.notification)) || {enabled:true, volume:0.6};
+  if(p && p.enabled===false) return;
+  var vol=(p && p.volume!=null) ? p.volume : 0.6;
+  var t0=ctx.currentTime;
+  function ping(freq, start, dur, type, peak){
+    try{
+      var o=ctx.createOscillator(), g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type=type||'sine';
+      o.frequency.setValueAtTime(freq, t0+start);
+      g.gain.setValueAtTime(0.0001, t0+start);
+      g.gain.exponentialRampToValueAtTime(vol*(peak||0.18), t0+start+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+start+dur);
+      o.start(t0+start); o.stop(t0+start+dur+0.03);
+    }catch(e){}
+  }
+  if(kind==='fanfare'){
+    [523,659,784,1047].forEach(function(f,i){ ping(f, i*0.12, 0.5, 'triangle', 0.22); });
+    ping(1568, 0.5, 0.7, 'sine', 0.16);
+  } else if(kind==='chime'){
+    [659,880,1175].forEach(function(f,i){ ping(f, i*0.09, 0.4, 'sine', 0.2); });
+  } else {
+    ping(1320, 0, 0.18, 'sine', 0.2);
+    ping(1760, 0.05, 0.22, 'sine', 0.14);
+  }
+}
