@@ -274,14 +274,78 @@ function installIos() {
     return;
   }
 
-  // Copy the Swift plugin into App/App/
+  // 1. Copy the Swift audio-routing plugin into App/App/.
   const pluginSrc = path.join(ROOT, 'capacitor-plugin', 'ios', 'RingInAudioPlugin.swift');
   const pluginDst = path.join(iosRoot, 'App', 'App', 'RingInAudioPlugin.swift');
-  write(pluginDst, read(pluginSrc));
-  log('✔ Wrote', pluginDst);
-  log('  → After running this, open ios/App/App.xcworkspace in Xcode and verify');
-  log('    RingInAudioPlugin.swift appears under the App target. If not, drag it in.');
-  log('  → Also add NSMicrophoneUsageDescription to Info.plist (Xcode will warn otherwise).');
+  if (exists(pluginSrc)) {
+    write(pluginDst, read(pluginSrc));
+    log('✔ Wrote', pluginDst);
+    log('  → If RingInAudioPlugin.swift does not appear under the App target in');
+    log('    Xcode, drag it into the App group once (CocoaPods usually auto-adds it).');
+  } else {
+    warn('iOS plugin source missing:', pluginSrc);
+  }
+
+  // 2. Patch Info.plist with the permission strings + background modes the app
+  //    needs at runtime. Without NSMicrophoneUsageDescription the app
+  //    HARD-CRASHES the first time Agora opens the mic; without the camera /
+  //    photo strings the attachment + avatar pickers crash; the background
+  //    modes keep call audio alive and let push wake the app.
+  patchInfoPlist(path.join(iosRoot, 'App', 'App', 'Info.plist'));
+}
+
+// Idempotent <key>/<value> injector for the generated App Info.plist.
+function patchInfoPlist(plistPath) {
+  if (!exists(plistPath)) {
+    warn('Info.plist not found at', plistPath, '— skipping plist patch. Add permissions manually in Xcode.');
+    return;
+  }
+  let plist = read(plistPath);
+
+  // String permission keys → the reason text iOS shows in the consent prompt.
+  const STRING_KEYS = {
+    NSMicrophoneUsageDescription: 'RingIn needs the microphone for voice calls.',
+    NSCameraUsageDescription: 'RingIn needs the camera to take photos and videos for your posts and avatar.',
+    NSPhotoLibraryUsageDescription: 'RingIn needs photo access to attach images and videos to posts and messages.',
+    NSPhotoLibraryAddUsageDescription: 'RingIn needs permission to save photos and videos to your library.',
+  };
+  Object.keys(STRING_KEYS).forEach(function(key){
+    if (plist.indexOf('<key>' + key + '</key>') !== -1) { log('• Info.plist already has', key); return; }
+    const entry = '\t<key>' + key + '</key>\n\t<string>' + STRING_KEYS[key] + '</string>\n';
+    plist = insertBeforeDictClose(plist, entry);
+    log('✔ Info.plist + ' + key);
+  });
+
+  // UIBackgroundModes — 'audio' keeps call audio alive when backgrounded,
+  // 'remote-notification' lets a push wake the app for incoming calls.
+  const NEEDED_MODES = ['audio', 'remote-notification'];
+  if (plist.indexOf('<key>UIBackgroundModes</key>') === -1) {
+    let arr = '\t<key>UIBackgroundModes</key>\n\t<array>\n';
+    NEEDED_MODES.forEach(function(m){ arr += '\t\t<string>' + m + '</string>\n'; });
+    arr += '\t</array>\n';
+    plist = insertBeforeDictClose(plist, arr);
+    log('✔ Info.plist + UIBackgroundModes (' + NEEDED_MODES.join(', ') + ')');
+  } else {
+    NEEDED_MODES.forEach(function(m){
+      const has = new RegExp('<key>UIBackgroundModes</key>\\s*<array>[\\s\\S]*?<string>' + m + '</string>[\\s\\S]*?</array>');
+      if (has.test(plist)) { log('• UIBackgroundModes already has', m); return; }
+      plist = plist.replace(/(<key>UIBackgroundModes<\/key>\s*<array>)/, '$1\n\t\t<string>' + m + '</string>');
+      log('✔ UIBackgroundModes + ' + m);
+    });
+  }
+
+  write(plistPath, plist);
+  log('✔ Patched', plistPath);
+  log('  → Still required in Xcode (needs your signing team): Target → Signing &');
+  log('    Capabilities → + Push Notifications, + Background Modes (tick Audio +');
+  log('    Remote notifications). See IOS_BUILD.md for the full checklist.');
+}
+
+// Insert an entry just before the final </dict> that closes the root plist dict.
+function insertBeforeDictClose(plist, entry) {
+  const idx = plist.lastIndexOf('</dict>');
+  if (idx === -1) { warn('could not find root </dict> in Info.plist — entry skipped'); return plist; }
+  return plist.slice(0, idx) + entry + plist.slice(idx);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────
