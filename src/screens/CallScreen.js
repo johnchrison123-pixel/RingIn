@@ -10,6 +10,7 @@ import {loadGiftCatalog, giftByKey, giftColor} from '../utils/giftCatalog';
 import {hexA} from '../utils/cosmetics';
 /* R18: shared image fallback so expired Supabase avatar URLs don't show broken-image */
 import ImgWithFallback from '../components/ImgWithFallback';
+import TicTacToeGame from './TicTacToeGame';
 
 // ── Module-level SVG nodes ─────────────────────────────────────────────────
 // React.createElement creates a fresh object on every render. Hoisting the
@@ -170,6 +171,10 @@ export default function CallScreen(props){
   useEffect(function(){ loadGiftCatalog(sb).then(function(list){ setGiftCat(list || []); }); }, []);
   var giftDrawerS = useState(false); var giftDrawerOpen = giftDrawerS[0]; var setGiftDrawerOpen = giftDrawerS[1];
   var giftSendingS = useState(null); var giftSending = giftSendingS[0]; var setGiftSending = giftSendingS[1];
+  /* In-call Tic-Tac-Toe: {gameId, myMark}. Opens for BOTH players when either
+   * starts one (the other side learns via the game_sessions realtime sub). */
+  var ttGameS = useState(null); var ttGame = ttGameS[0]; var setTtGame = ttGameS[1];
+  var ttBusyS = useState(false); var ttBusy = ttBusyS[0]; var setTtBusy = ttBusyS[1];
   /* incomingAnim: { emoji, tier, coins, key, fromName, ts } — set when a
    * realtime row arrives in anon_call_gifts where receiver_id = me. The
    * overlay reads this and runs a 3-second animation, then clears. */
@@ -238,6 +243,39 @@ export default function CallScreen(props){
     return function(){ try { sb.removeChannel(ch); } catch(_){} if (animTimerRef.current) { clearTimeout(animTimerRef.current); animTimerRef.current = null; } };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myUserId, expert && expert.id]);
+
+  /* In-call game: start Tic-Tac-Toe with the person on the call. The server
+   * creates it (I'm player_x); the OTHER party's screen opens via the realtime
+   * sub below. Best-effort + graceful: if migration 0060 isn't run it no-ops.
+   * Touches NO billing/coin logic — only create_game + a game_sessions sub. */
+  function startTtGame(){
+    if (ttBusy || !expert || !expert.id || !myUserId) return;
+    setTtBusy(true);
+    try {
+      sb.rpc('create_game', { p_opponent: expert.id, p_context_id: inviteId, p_context_kind: 'call' }).then(function(r){
+        setTtBusy(false);
+        var d = r && r.data;
+        if ((r && r.error) || !d) return; /* 0060 not run / error → silently ignore */
+        var gid = d.id || d.game_id || (d.game && d.game.id) || null;
+        if (gid) setTtGame({ gameId: gid, myMark: 'X' });
+      }).catch(function(){ setTtBusy(false); });
+    } catch(_){ setTtBusy(false); }
+  }
+  /* When a game is started on THIS call (by either side), open the board on
+   * both screens. Filtered on context_id = this call's invite id. */
+  useEffect(function(){
+    if (!inviteId || !myUserId) return;
+    var ch = sb.channel('call-game-' + inviteId)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_sessions', filter: 'context_id=eq.' + inviteId }, function(p){
+        var row = p && p.new;
+        if (!row || !row.id) return;
+        if (row.player_x !== myUserId && row.player_o !== myUserId) return;
+        setTtGame({ gameId: row.id, myMark: (row.player_x === myUserId) ? 'X' : 'O' });
+      })
+      .subscribe();
+    return function(){ try { sb.removeChannel(ch); } catch(_){} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteId, myUserId]);
 
   /* R46: open the safety sheet (Block / Report) — dispatches an event that
    * AnonymousConnect listens for so the sheet renders above this CallScreen. */
@@ -894,6 +932,13 @@ export default function CallScreen(props){
           title: 'Send a gift',
           style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700}
         }, '🎁'),
+        /* 🎮 in-call Tic-Tac-Toe with the person you're calling. */
+        React.createElement('button', {
+          onClick: startTtGame,
+          disabled: ttBusy,
+          title: 'Play Tic-Tac-Toe',
+          style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700,opacity: ttBusy?0.6:1}
+        }, '🎮'),
         /* R46: ⋯ opens the Block/Report sheet via AnonymousConnect window event. */
         React.createElement('button', {
           onClick: callOpenSafety,
@@ -1107,6 +1152,14 @@ export default function CallScreen(props){
           style:{width:'100%',padding:'13px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor: giftSending ? 'wait' : 'pointer',marginTop:'8px'}
         }, 'Close')
       )
+    ) : null,
+
+    /* In-call Tic-Tac-Toe overlay (1:1 calls only). The game component owns its
+     * own realtime + close; this is just the dimmed container. */
+    ttGame ? React.createElement('div', {
+      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
+    },
+      React.createElement(TicTacToeGame, { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId, onClose: function(){ setTtGame(null); } })
     ) : null,
 
     /* ════════ R48 + Feature 2: FRND/Tango gift pop ════════

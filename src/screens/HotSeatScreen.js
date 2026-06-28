@@ -551,10 +551,9 @@ export default function HotSeatScreen(props) {
     // ── footer action bar ──
     C('div', { style: { display: 'flex', gap: '10px', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 } },
       C('button', { onClick: doRequestSeat, disabled: seatReqBusy, style: btn(false, '#7B6EFF', seatReqBusy) }, seatReqBusy ? '…' : 'Request Seat'),
-      C('button', { onClick: function(){ setGiftDrawerOpen(true); }, style: btn(false, '#E84D9A') }, '🎁 Gift'),
-      isHost
-        ? C('button', { onClick: doStartGame, disabled: gameStarting, style: btn(false, '#FFC83D', gameStarting) }, gameStarting ? '…' : '❌⭕ Play')
-        : null
+      C('button', { onClick: function(){ setGiftDrawerOpen(true); }, style: btn(false, '#E84D9A') }, '🎁 Gift')
+      /* Games are NOT in Hot Seat — they belong in 1:1 calls (listeners
+       * shouldn't have to watch two people play). Wired into CallScreen. */
     ),
 
     // ── moderation action sheet ──
