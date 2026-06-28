@@ -264,6 +264,10 @@ export default function FriendsScreen(props) {
   var suggestedS = useState([]); var suggested = suggestedS[0]; var setSuggested = suggestedS[1];
   var loadingS = useState(true); var loading = loadingS[0]; var setLoading = loadingS[1];
 
+  /* F4: connected friends (accepted mutual connections) — shown in the
+   * Discover state (no search, no filters). READ ONLY. */
+  var connFriendsS = useState([]); var connFriends = connFriendsS[0]; var setConnFriends = connFriendsS[1];
+
   /* R64.7: "See all" toggle for the Suggested strip.
    *   - false (default): show only 9 cards in 1 row
    *   - true: show up to 28 cards in 2 rows (CSS grid horizontal flow) */
@@ -325,6 +329,7 @@ export default function FriendsScreen(props) {
         if (accept && requesterId) setFriendMap(function(m){ var n=Object.assign({},m); delete n[requesterId]; return n; });
         toastError('Could not respond: ' + (r.error.message || 'error')); return;
       }
+      if (accept) loadConnectedFriends(); /* F4: refresh Discover friends list */
       toastInfo(accept ? 'You are now friends ✓' : 'Request declined');
     }).catch(function(){ setIncomingReqs(snap); toastError('Network error'); });
   }
@@ -356,6 +361,71 @@ export default function FriendsScreen(props) {
     } catch(_){}
   }
   useEffect(function(){ loadFriendStatus(); /* eslint-disable-next-line */ }, [userId]);
+
+  /* ── F4: Load connected friends (accepted mutual connections) ──────
+   * Same source as loadFriendStatus (list_anon_connections), then enrich
+   * with profile rows. READ ONLY — never writes profiles. Preserves the
+   * order returned by list_anon_connections. Tolerates a missing column
+   * by falling back to a narrow select (expand-contract). */
+  function loadConnectedFriends(isCancelled){
+    if (!userId) return;
+    function dead(){ return typeof isCancelled === 'function' && isCancelled(); }
+    sb.rpc('list_anon_connections').then(function(r){
+      if (dead()) return;
+      if (!(r && !r.error && Array.isArray(r.data))) { setConnFriends([]); return; }
+      var ids = r.data.map(function(x){ return x.user_id; }).filter(Boolean);
+      if (!ids.length) { setConnFriends([]); return; }
+      function buildRows(profs){
+        if (dead()) return;
+        var pm = {};
+        (profs || []).forEach(function(p){ pm[p.id] = p; });
+        /* Preserve the connected order returned by list_anon_connections. */
+        var rows = [];
+        ids.forEach(function(id){
+          var p = pm[id];
+          if (!p) return;
+          rows.push({
+            user_id: p.id,
+            full_name: p.full_name || null,
+            avatar_url: p.avatar_url || null,
+            current_city: p.current_city || null,
+            home_language: p.home_language || null,
+            occupation: p.occupation || null,
+            is_online: !!p.is_online,
+            gender: p.gender || null,
+            interests: Array.isArray(p.interests) ? p.interests : [],
+            bio: p.bio || null
+          });
+        });
+        setConnFriends(rows);
+      }
+      function fallback(){
+        sb.from('profiles').select('id,full_name,avatar_url').in('id', ids).then(function(pr2){
+          if (dead()) return;
+          if (pr2 && !pr2.error && Array.isArray(pr2.data)) buildRows(pr2.data);
+          else setConnFriends([]);
+        }).catch(function(){ if(!dead()) setConnFriends([]); });
+      }
+      try {
+        sb.from('profiles')
+          .select('id,full_name,avatar_url,current_city,home_language,occupation,is_online,gender,interests,bio')
+          .in('id', ids)
+          .then(function(pr){
+            if (dead()) return;
+            if (pr && !pr.error && Array.isArray(pr.data)) { buildRows(pr.data); return; }
+            /* Wide select failed (likely a missing column) — fall back. */
+            fallback();
+          }).catch(function(){ if(!dead()) fallback(); });
+      } catch(_){ if(!dead()) fallback(); }
+    }).catch(function(){ if(!dead()) setConnFriends([]); });
+  }
+  useEffect(function(){
+    if (!userId) return;
+    var cancelled = false;
+    loadConnectedFriends(function(){ return cancelled; });
+    return function(){ cancelled = true; };
+  /* eslint-disable-next-line */
+  }, [userId]);
 
   /* ── Load my profile ────────────────────────────────────────────── */
   useEffect(function(){
@@ -488,6 +558,7 @@ export default function FriendsScreen(props) {
         // auto-accepted (dummy) or already friends -> promote to friend
         setPendingMap(function(m){ var n=Object.assign({},m); delete n[uid]; return n; });
         setFriendMap(function(m){ var n=Object.assign({},m); n[uid]=true; return n; });
+        loadConnectedFriends(); /* F4: refresh Discover friends list */
         toastInfo(status === 'accepted' ? 'You are now friends ✓' : 'You are already connected');
       } else if (status === 'already_pending') {
         toastInfo('Request already sent');
@@ -986,6 +1057,58 @@ export default function FriendsScreen(props) {
     );
   }
 
+  /* ══════ F4: CONNECTED FRIEND ROW ═══════════════════════════════
+   * Full-width vertical row shown in the Discover state. Models its
+   * visuals on renderSearchResultRow, but the right-hand action cluster
+   * is two Facebook-style buttons: Message (opens the convo) + Call
+   * (member call at rate 30). Tapping the row body still opens the
+   * profile-summary modal; both buttons stopPropagation so they don't
+   * also fire that. */
+  function renderConnectedFriendRow(p) {
+    var nm = p.full_name || p.anon_nickname || 'Anonymous';
+    var convId = [userId, p.user_id].sort().join('_');
+    return React.createElement('div', {
+      key: p.user_id,
+      onClick: function(){ setViewProfile(p); },
+      style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',cursor:'pointer'}
+    },
+      /* Avatar with ring */
+      React.createElement('div', {style:{position:'relative',flexShrink:0}},
+        React.createElement('div', {style:{width:'52px',height:'52px',borderRadius:'50%',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',padding:'2px',boxSizing:'border-box'}},
+          React.createElement('div', {style:{width:'100%',height:'100%',borderRadius:'50%',background: p.avatar_url ? ('url(' + p.avatar_url + ') center/cover') : gradientFromString(nm),border:'2px solid var(--bg2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:800,color:'#fff',boxSizing:'border-box'}}, p.avatar_url ? null : initialOf(nm))
+        ),
+        p.is_online ? React.createElement('div', {style:{position:'absolute',bottom:'0',right:'0',width:'12px',height:'12px',borderRadius:'50%',background:'#27C96A',border:'2px solid var(--bg2)'}}) : null
+      ),
+      React.createElement('div', {style:{flex:1,minWidth:0}},
+        React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, nm),
+        React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+          (p.current_city ? ('📍 ' + p.current_city) : '') +
+          (p.home_language ? (' · ' + languageLabel(p.home_language)) : '')
+        )
+      ),
+      /* Message + Call action cluster on the right. */
+      React.createElement('div', {style:{display:'flex',gap:'6px',flexShrink:0,alignItems:'center'}},
+        React.createElement('button', {
+          onClick: function(e){
+            if(e&&e.stopPropagation)e.stopPropagation();
+            if (props.onGoToMessages){
+              props.onGoToMessages({id:convId,convId:convId,otherId:p.user_id,receiverId:p.user_id,user_id:p.user_id,name:nm,role:'RingIn Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',img:p.avatar_url||null,initials:initialOf(nm)});
+            }
+          },
+          style:{padding:'9px 14px',borderRadius:'12px',background:'var(--bg)',border:'1px solid var(--border)',color:'var(--text)',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'5px'}
+        }, '💬 Message'),
+        React.createElement('button', {
+          onClick: function(e){
+            if(e&&e.stopPropagation)e.stopPropagation();
+            var target={id:p.user_id,user_id:p.user_id,name:nm,img:p.avatar_url||null,role:'Member',color:'linear-gradient(135deg,#7B6EFF,#E84D9A)',rate:30};
+            if(window.__ringInStartCall) window.__ringInStartCall(target,{rate:30});
+          },
+          style:{padding:'9px 14px',borderRadius:'12px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'12px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'5px'}
+        }, '📞 Call')
+      )
+    );
+  }
+
   /* ══════ FRIEND REQUESTS (incoming) ═════════════════════════════ */
   function renderFriendRequests(){
     return React.createElement('div', {style:{flexShrink:0, padding:'4px 16px 6px'}},
@@ -1124,9 +1247,16 @@ export default function FriendsScreen(props) {
      * to match the larger filter pills (15px vs 12px). */
     React.createElement('div', {style:{padding:'12px 18px 8px',fontSize:'15px',fontWeight:800,color:'var(--text)',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,borderTop:'1px solid var(--border)',marginTop:'4px'}},
       React.createElement('span', null,
-        search.length > 0 ? '🔎 Search results' : (activeCount > 0 ? '🎯 Filter results' : '🌍 Discover')
+        search.length > 0 ? '🔎 Search results' : (activeCount > 0 ? '🎯 Filter results' : '🤝 Your Friends')
       ),
-      React.createElement('span', {style:{color:'var(--t3)',fontWeight:600,fontSize:'12px'}}, results.length + (results.length === 1 ? ' person' : ' people'))
+      (function(){
+        /* In Discover (no search, no filters) the body lists connected
+         * friends, so the count reflects connFriends; otherwise results. */
+        var isDiscover = (search === '' && activeCount === 0);
+        var n = isDiscover ? connFriends.length : results.length;
+        var noun = isDiscover ? (n === 1 ? ' friend' : ' friends') : (n === 1 ? ' person' : ' people');
+        return React.createElement('span', {style:{color:'var(--t3)',fontWeight:600,fontSize:'12px'}}, n + noun);
+      })()
     ),
 
     loading ? React.createElement('div', {
@@ -1147,6 +1277,21 @@ export default function FriendsScreen(props) {
           );
         })
       )
+    /* F4: DISCOVER (no search, no filters) — show my CONNECTED FRIENDS
+     * as a vertical scrollable column with Message + Call. The horizontal
+     * "Suggested for you" strip above already covers new-people discovery.
+     * paddingBottom clears the floating nav. */
+    : (search === '' && activeCount === 0)
+      ? (connFriends.length === 0
+          ? React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
+              React.createElement('div', {style:{fontSize:'48px',marginBottom:'10px',opacity:0.4}}, '🫂'),
+              React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'6px'}}, 'No friends yet'),
+              React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',lineHeight:1.5,maxWidth:'280px',margin:'0 auto'}}, 'Send a friend request from the Suggested strip above. Once they accept, they will show up here to message or call.')
+            )
+          : React.createElement('div', {style:{display:'flex',flexDirection:'column',gap:'10px',padding:'10px 16px 90px 16px'}},
+              connFriends.map(renderConnectedFriendRow)
+            )
+        )
     : results.length === 0
       ? React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
           React.createElement('div', {style:{fontSize:'48px',marginBottom:'10px',opacity:0.4}}, '🌱'),
@@ -1155,7 +1300,7 @@ export default function FriendsScreen(props) {
         )
       /* R64.10: when SEARCHING, results go in a vertical list (rows)
        * under Discover label — easier to scan when looking for a
-       * specific person. When NOT searching, Discover is a horizontal
+       * specific person. When filtering, results are a horizontal
        * scroll of cards (Online-Now style). */
       : search.length > 0
         ? React.createElement('div', {style:{padding:'10px 16px 90px 16px',display:'flex',flexDirection:'column',gap:'10px'}},

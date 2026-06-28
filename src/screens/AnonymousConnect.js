@@ -47,6 +47,10 @@ export default function AnonymousConnect(props) {
   var onBack = props.onBack;
   var userId = session && session.user ? session.user.id : null;
 
+  /* Feature 3: host-search window. The blueprint's "30 minutes" is a typo —
+   * we search for 30 SECONDS, same feel as the peer Find-Someone window. */
+  var SEARCH_WINDOW_MS = 30 * 1000;
+
   var interestsS = useState([]); var interests = interestsS[0]; var setInterests = interestsS[1];
   var inputS = useState(''); var input = inputS[0]; var setInput = inputS[1];
   var geoS = useState(true); var sameGeo = geoS[0]; var setSameGeo = geoS[1];
@@ -182,6 +186,24 @@ export default function AnonymousConnect(props) {
   var hostsLoadingS = useState(false); var hostsLoading = hostsLoadingS[0]; var setHostsLoading = hostsLoadingS[1];
   var hostCallConfirmS = useState(null); var hostCallConfirm = hostCallConfirmS[0]; var setHostCallConfirm = hostCallConfirmS[1];
   var randomHostLoadingS = useState(false); var randomHostLoading = randomHostLoadingS[0]; var setRandomHostLoading = randomHostLoadingS[1];
+  /* Feature 3: host-search "connecting…" UX. KEPT SEPARATE from the peer
+   * find() state (pollRef/countdownRef/searching) so the two flows never
+   * clobber each other.
+   *   - hostSearching: are we in the 30s host-search window?
+   *   - hostSecsLeft: live countdown shown in the connecting panel
+   *   - hostAllBusy: shown when the window expired with no host found
+   *   - rotAvatars / rotIdx: rotating online-host avatars during search
+   * Refs: dedicated poll + countdown + deadline + avatar-rotation intervals. */
+  var hostSearchingS = useState(false); var hostSearching = hostSearchingS[0]; var setHostSearching = hostSearchingS[1];
+  var hostSecsLeftS = useState(30); var hostSecsLeft = hostSecsLeftS[0]; var setHostSecsLeft = hostSecsLeftS[1];
+  var hostAllBusyS = useState(false); var hostAllBusy = hostAllBusyS[0]; var setHostAllBusy = hostAllBusyS[1];
+  var rotAvatarsS = useState([]); var rotAvatars = rotAvatarsS[0]; var setRotAvatars = rotAvatarsS[1];
+  var rotIdxS = useState(0); var rotIdx = rotIdxS[0]; var setRotIdx = rotIdxS[1];
+  var hostPollRef = useRef(null);
+  var hostCountdownRef = useRef(null);
+  var hostDeadlineRef = useRef(0);
+  var hostRotRef = useRef(null);
+  var hostActiveRef = useRef(false); /* true only while a host-search window is live — guards an in-flight find_host_match from resolving AFTER cancel/expiry */
   var chatGiftsS = useState([]); var chatGifts = chatGiftsS[0]; var setChatGifts = chatGiftsS[1];
   var chatReactionsS = useState({}); var chatReactions = chatReactionsS[0]; var setChatReactions = chatReactionsS[1];
   var reactionPickerForS = useState(null); var reactionPickerFor = reactionPickerForS[0]; var setReactionPickerFor = reactionPickerForS[1];
@@ -676,7 +698,7 @@ export default function AnonymousConnect(props) {
   /* Cleanup on unmount — leave the queue + clear timers so we don't keep
    * polling after the screen is gone. */
   useEffect(function(){
-    return function(){ stopSearching(); };
+    return function(){ stopSearching(); stopHostSearching(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -705,6 +727,10 @@ export default function AnonymousConnect(props) {
            * browse sub-view. Without this, hardware-back on these screens
            * exits the app instead of closing the sheet. */
           if (hostCallConfirm) { setHostCallConfirm(null); return; }
+          /* Feature 3: hardware-back cancels the host search / dismisses the
+           * all-busy panel instead of exiting the app. */
+          if (hostSearching) { cancelHostSearch(); return; }
+          if (hostAllBusy) { setHostAllBusy(false); return; }
           if (browsingHosts) { setBrowsingHosts(false); return; }
           /* R45: chat view goes back to conversation list before closing. */
           if (activeChat) { setActiveChat(null); setChatMessages([]); loadAnonConvos(); return; }
@@ -716,7 +742,7 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     })();
     return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
-  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen, hostCallConfirm, browsingHosts]);
+  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen, hostCallConfirm, browsingHosts, hostSearching, hostAllBusy]);
 
   /* R46: listen for events from CallScreen — tap ⋯ on the in-call action row
    * dispatches `ringin:anonsafety` with the partner context. */
@@ -1255,20 +1281,113 @@ export default function AnonymousConnect(props) {
     loadHostsList();
   }
 
-  /* Pick a random online host and open the confirm modal. */
+  /* Feature 3: stop the host-search window — clears the dedicated poll,
+   * countdown + avatar-rotation timers and exits the searching state. Safe
+   * to call multiple times. KEPT SEPARATE from peer stopSearching(). */
+  function stopHostSearching(){
+    hostActiveRef.current = false;
+    if (hostPollRef.current)     { clearInterval(hostPollRef.current);     hostPollRef.current = null; }
+    if (hostCountdownRef.current){ clearInterval(hostCountdownRef.current); hostCountdownRef.current = null; }
+    if (hostRotRef.current)      { clearInterval(hostRotRef.current);      hostRotRef.current = null; }
+    setHostSearching(false);
+  }
+
+  /* Feature 3: start rotating real online-host avatars during the search so
+   * the "connecting…" screen looks alive. Fetches a few hosts via the
+   * existing list_available_hosts RPC; falls back to generic ANON_AVATARS
+   * if none are online (so the pulse still animates with zero hosts). */
+  function startAvatarRotation(){
+    /* Seed immediately with the generic fallback so something shows on
+     * frame 1, then upgrade to real host avatars when the fetch returns. */
+    var fallback = ANON_AVATARS.map(function(a){ return a.id; });
+    setRotAvatars(fallback);
+    setRotIdx(0);
+    try {
+      sb.rpc('list_available_hosts', { p_limit: 12 }).then(function(r){
+        if (r && !r.error && Array.isArray(r.data) && r.data.length > 0) {
+          var avs = r.data.map(function(h){ return h.avatar || 'girl1'; });
+          if (avs.length > 0) setRotAvatars(avs);
+        }
+      }).catch(function(){});
+    } catch(_){}
+    if (hostRotRef.current) clearInterval(hostRotRef.current);
+    hostRotRef.current = setInterval(function(){
+      setRotIdx(function(i){ return i + 1; });
+    }, 700);
+  }
+
+  /* Feature 3: rewritten "Random Host" — a 30s SEARCH LOOP with a
+   * "connecting…" panel instead of a single instant RPC. Every ~2s it
+   * calls find_host_match (wait-time + interest scored). On a host found
+   * it opens the EXISTING per-host rate-confirm sheet → callHost (billing
+   * path untouched). On window expiry with no host it shows the all-busy
+   * panel. Forward-compatible: if find_host_match is missing/errors (the
+   * 0055 migration hasn't run yet) it falls back to find_random_host. */
   function findRandomHost(){
-    if (randomHostLoading) return;
-    setRandomHostLoading(true);
-    sb.rpc('find_random_host').then(function(r){
-      setRandomHostLoading(false);
-      if (r && r.error) { try { toastError('Could not find a host: ' + r.error.message); } catch(_){} return; }
-      var host = r && r.data && r.data[0];
-      if (!host) { try { toastInfo('No hosts available right now — try again in a moment.'); } catch(_){} return; }
+    if (!userId) { toastError('Please log in'); return; }
+    if (hostSearching) return; /* guard double-tap (hostSearching is the live-search flag) */
+    hostActiveRef.current = true;
+    setHostAllBusy(false);
+    setHostSearching(true);
+    setHostSecsLeft(Math.ceil(SEARCH_WINDOW_MS / 1000));
+    hostDeadlineRef.current = Date.now() + SEARCH_WINDOW_MS;
+    /* Best-effort interest payload: reuse the user's saved anon_languages
+     * as the interest proxy, else the interests chips, else []. */
+    var interestPayload = (languages && languages.length > 0)
+      ? languages
+      : ((interests && interests.length > 0) ? interests : []);
+
+    startAvatarRotation();
+
+    function onHostFound(host){
+      if (!host) return;
+      if (!hostActiveRef.current) return; /* search was cancelled/expired before this RPC resolved */
+      stopHostSearching();
       setHostCallConfirm({ host: host, rate: host.rate_per_min });
-    }).catch(function(){
-      setRandomHostLoading(false);
-      try { toastError('Network error'); } catch(_){}
-    });
+    }
+
+    function searchOnce(){
+      if (Date.now() >= hostDeadlineRef.current) {
+        stopHostSearching();
+        setHostAllBusy(true);
+        return;
+      }
+      sb.rpc('find_host_match', { p_interests: interestPayload, p_limit: 8 }).then(function(r){
+        if (!hostActiveRef.current) return; /* cancelled/expired mid-flight — don't open the sheet or fire the fallback */
+        if (r && r.error) {
+          /* FORWARD-COMPAT: find_host_match missing → fall back to the
+           * legacy single-shot find_random_host inside the loop. */
+          sb.rpc('find_random_host').then(function(rr){
+            if (rr && rr.error) return;
+            var h2 = rr && rr.data && rr.data[0];
+            if (h2) onHostFound(h2);
+          }).catch(function(){});
+          return;
+        }
+        var host = r && r.data && r.data[0];
+        if (host) onHostFound(host);
+      }).catch(function(){
+        /* Network blip on one poll — keep looping until the deadline. */
+      });
+    }
+
+    /* Live countdown for the connecting panel. */
+    if (hostCountdownRef.current) clearInterval(hostCountdownRef.current);
+    hostCountdownRef.current = setInterval(function(){
+      var ms = hostDeadlineRef.current - Date.now();
+      setHostSecsLeft(Math.max(0, Math.ceil(ms / 1000)));
+    }, 250);
+
+    /* First attempt immediately, then poll every 2s. */
+    searchOnce();
+    if (hostPollRef.current) clearInterval(hostPollRef.current);
+    hostPollRef.current = setInterval(searchOnce, 2000);
+  }
+
+  /* Feature 3: user cancels the host search explicitly. */
+  function cancelHostSearch(){
+    stopHostSearching();
+    setHostAllBusy(false);
   }
 
   /* Initiate a paid call to a host. Uses the standard call_invites + Agora
@@ -1491,6 +1610,43 @@ export default function AnonymousConnect(props) {
       }, 'Cancel search')
     ),
 
+    /* Feature 3: host-search "connecting…" panel — shown during the 30s
+     * find_host_match window. Rotates real online-host avatars (generic
+     * ANON_AVATARS fallback) every 700ms with the existing pulse keyframe
+     * so the screen stays alive even with zero hosts online. */
+    hostSearching && !searching && (function(){
+      var avId = (rotAvatars && rotAvatars.length > 0) ? rotAvatars[rotIdx % rotAvatars.length] : 'girl1';
+      var ra = getAvatar(avId);
+      return React.createElement('div', {style:{padding:'48px 24px',textAlign:'center'}},
+        React.createElement('div', {style:{width:'88px',height:'88px',borderRadius:'50%',margin:'0 auto 18px',background:ra.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px',animation:'pulse 1.5s ease-in-out infinite',boxShadow:'0 6px 20px rgba(232,77,154,0.4)'}}, ra.emoji),
+        React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'20px',fontWeight:700,color:'var(--text)'}}, 'Connecting you to a host…'),
+        React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginTop:'6px'}}, 'Finding the best match for you'),
+        React.createElement('div', {style:{fontSize:'13px',color:'var(--ac)',marginTop:'18px',fontWeight:700,letterSpacing:'0.5px'}}, hostSecsLeft + 's left'),
+        React.createElement('button', {
+          onClick: cancelHostSearch,
+          style:{marginTop:'24px',padding:'10px 24px',background:'transparent',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--t2)',fontSize:'12px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Cancel')
+      );
+    })(),
+
+    /* Feature 3: all-hosts-busy panel — shown when the 30s window expires
+     * with no host found. Try again restarts the search; Close dismisses. */
+    hostAllBusy && !hostSearching && !searching && React.createElement('div', {style:{padding:'40px 24px',textAlign:'center'}},
+      React.createElement('div', {style:{width:'72px',height:'72px',borderRadius:'50%',margin:'0 auto 14px',background:'var(--bg3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'34px'}}, '😴'),
+      React.createElement('div', {style:{fontFamily:'Syne, sans-serif',fontSize:'18px',fontWeight:700,color:'var(--text)'}}, 'All hosts are busy right now'),
+      React.createElement('div', {style:{fontSize:'12px',color:'var(--t2)',marginTop:'6px',lineHeight:1.5}}, 'No one is available at the moment. Try again in a little while.'),
+      React.createElement('div', {style:{display:'flex',gap:'8px',marginTop:'20px',justifyContent:'center'}},
+        React.createElement('button', {
+          onClick: function(){ setHostAllBusy(false); findRandomHost(); },
+          style:{padding:'11px 20px',borderRadius:'10px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:800,cursor:'pointer',fontFamily:'inherit'}
+        }, '🎲 Try again'),
+        React.createElement('button', {
+          onClick: function(){ setHostAllBusy(false); },
+          style:{padding:'11px 20px',borderRadius:'10px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Close')
+      )
+    ),
+
     /* R37: Dead match-preview UI removed (Bug #2). Match → call is now
      * instant (Omegle/FRND-style). All "Add Connection / Skip" controls
      * live on the CallScreen (during the call) and the post-call sheet
@@ -1546,8 +1702,9 @@ export default function AnonymousConnect(props) {
     })(),
 
     /* ── Connections tab body — main list area. R37: removed dead `match`
-     * check; post-call sheet now renders ABOVE this block instead. ── */
-    !searching && React.createElement('div', {style:{padding:'16px'}},
+     * check; post-call sheet now renders ABOVE this block instead.
+     * Feature 3: also hidden during the host-search / all-busy panels. ── */
+    !searching && !hostSearching && !hostAllBusy && React.createElement('div', {style:{padding:'16px'}},
 
       /* R33: Pending incoming connection requests */
       pendingReqs.length > 0 ? React.createElement('div', {style:{marginBottom:'16px'}},

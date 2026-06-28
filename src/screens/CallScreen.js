@@ -6,7 +6,8 @@ import {sb} from '../utils/supabase';
 import {buildCallLog} from '../utils/callLog';
 import {playRingback,stopRingback,hapticPulse,playGiftSound} from '../utils/soundEngine';
 import {setSharedCoinBalance} from '../utils/coinBalance';
-import {loadGiftCatalog, giftByKey} from '../utils/giftCatalog';
+import {loadGiftCatalog, giftByKey, giftColor} from '../utils/giftCatalog';
+import {hexA} from '../utils/cosmetics';
 /* R18: shared image fallback so expired Supabase avatar URLs don't show broken-image */
 import ImgWithFallback from '../components/ImgWithFallback';
 
@@ -175,7 +176,7 @@ export default function CallScreen(props){
   var incomingAnimS = useState(null); var incomingAnim = incomingAnimS[0]; var setIncomingAnim = incomingAnimS[1];
   var animTimerRef = useRef(null);
   function fireGiftAnim(g, fromName){
-    setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', fromName: fromName || '', ts: Date.now() });
+    setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', category: g.category || null, gift_key: g.gift_key || null, color: g.color || null, fromName: fromName || '', ts: Date.now() });
     try { playGiftSound(g.sound === 'fanfare' ? 'fanfare' : (g.sound === 'chime_big' || (g.coins||0) >= 399 ? 'chime' : 'bell')); } catch(_){}
     if (animTimerRef.current) { clearTimeout(animTimerRef.current); }
     animTimerRef.current = setTimeout(function(){ setIncomingAnim(null); animTimerRef.current = null; }, g.fullscreen ? 5200 : 3000);
@@ -201,8 +202,16 @@ export default function CallScreen(props){
         setLocalCoins(d.balance); localCoinsRef.current = d.balance;
         try { setSharedCoinBalance(d.balance, {userId: myUserId}); } catch(_){}
       }
-      // animate what was actually delivered (a lucky box may roll a different gift)
-      fireGiftAnim({ icon:d.icon, coins:d.coins, fullscreen:d.fullscreen, sound:d.sound, name:d.name }, 'You');
+      // animate what was actually delivered (a lucky box may roll a different gift).
+      // Prefer the delivered gift's own catalog row for its color; fall back to the
+      // sent gift's category so the neon burst still matches its tier.
+      var dg = (d.gift_key && giftByKey(d.gift_key)) || null;
+      fireGiftAnim({
+        icon:d.icon, coins:d.coins, fullscreen:d.fullscreen, sound:d.sound, name:d.name,
+        category: (dg && dg.category) || g.category || null,
+        gift_key: d.gift_key || g.gift_key || null,
+        color: d.color || (dg && dg.color) || g.color || null,
+      }, 'You');
       // keep the drawer open for cheap combo-able gifts; close for the big ones
       if (d.fullscreen || (d.coins||0) > 99) setGiftDrawerOpen(false);
     }).catch(function(){ setGiftSending(null); setError('Network error'); });
@@ -222,8 +231,8 @@ export default function CallScreen(props){
         var row = p && p.new;
         if (!row) return;
         var key = row.rolled_gift_key || row.gift_key;
-        var g = giftByKey(key) || { icon:'🎁', coins: row.coins_spent, fullscreen:false, sound:'bell', name:'Gift' };
-        fireGiftAnim({ icon:g.icon, coins:g.coins || row.coins_spent, fullscreen:g.fullscreen, sound:g.sound, name:g.name }, (expert && expert.name) || 'Them');
+        var g = giftByKey(key) || { icon:'🎁', coins: row.coins_spent, fullscreen:false, sound:'bell', name:'Gift', gift_key:key };
+        fireGiftAnim({ icon:g.icon, coins:g.coins || row.coins_spent, fullscreen:g.fullscreen, sound:g.sound, name:g.name, category:g.category || null, gift_key:g.gift_key || key, color:g.color || null }, (expert && expert.name) || 'Them');
       })
       .subscribe();
     return function(){ try { sb.removeChannel(ch); } catch(_){} if (animTimerRef.current) { clearTimeout(animTimerRef.current); animTimerRef.current = null; } };
@@ -1100,37 +1109,70 @@ export default function CallScreen(props){
       )
     ) : null,
 
-    /* ════════ R48: Gift animation overlay ════════
-     * Big emoji floats from bottom to top, scaling + fading.
-     * Tier dictates size + duration (set via fireGiftAnim timer).
-     * For 'mega', adds a sparkle/glow background. */
+    /* ════════ R48 + Feature 2: FRND/Tango gift pop ════════
+     * Enlarged sticker scale-in + a color-matched radiating neon burst.
+     * Keyframes live in index.css (ringinGiftPop / ringinBurstSpin /
+     * ringinRayPulse / ringinGlowPulse) — no inline @keyframes (Samsung
+     * re-parses those every render). transform/opacity only.
+     * Premium/fullscreen → full rays + glow; cheap combo gifts → just the
+     * icon scale-in + a tiny glow, so combo spam stays GPU-cheap. */
     incomingAnim ? (function(){
       var fs = !!incomingAnim.fullscreen;
       var premium = (incomingAnim.coins||0) >= 399;
+      var big = (fs || premium);
+      var col = giftColor(incomingAnim);
       var bigSize = fs ? '150px' : (premium ? '108px' : '74px');
-      var bgGlow = fs ? 'radial-gradient(circle, rgba(255,215,0,0.38), rgba(0,0,0,0.55) 70%)'
-                  : premium ? 'radial-gradient(circle, rgba(232,77,154,0.22), transparent 60%)'
-                  : 'transparent';
-      return React.createElement('div', {
-        style:{position:'fixed',inset:0,zIndex:980,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center',background:bgGlow}
+      var children = [];
+      if (big) {
+        // Layer A — radiating rays (conic stripes, spun + pulsed)
+        children.push(React.createElement('div', {
+          key:'rays',
+          style:{
+            position:'absolute', width:'min(90vw,460px)', height:'min(90vw,460px)',
+            transformOrigin:'center',
+            background:'repeating-conic-gradient(' + hexA(col.g1,0) + ' 0deg ' + 6 + 'deg, ' + hexA(col.g1,0.9) + ' 6deg 12deg)',
+            WebkitMaskImage:'radial-gradient(circle, #000 38%, transparent 70%)',
+            maskImage:'radial-gradient(circle, #000 38%, transparent 70%)',
+            animation:'ringinBurstSpin ' + (fs ? '5s' : '3s') + ' linear forwards, ringinRayPulse ' + (fs ? '5s' : '3s') + ' ease-out forwards'
+          }
+        }));
+        // Layer B — soft radial glow tinted to the gift's base color
+        children.push(React.createElement('div', {
+          key:'glow',
+          style:{
+            position:'absolute', width:'min(86vw,440px)', height:'min(86vw,440px)',
+            borderRadius:'50%', transformOrigin:'center',
+            background:'radial-gradient(circle, ' + hexA(col.base,0.55) + ', transparent 65%)',
+            animation:'ringinGlowPulse ' + (fs ? '5s' : '3s') + ' ease-out forwards'
+          }
+        }));
+      } else {
+        // cheap tier — tiny glow only, no spinning rays
+        children.push(React.createElement('div', {
+          key:'glow',
+          style:{
+            position:'absolute', width:'160px', height:'160px', borderRadius:'50%',
+            transformOrigin:'center',
+            background:'radial-gradient(circle, ' + hexA(col.base,0.4) + ', transparent 65%)',
+            animation:'ringinGlowPulse 3s ease-out forwards'
+          }
+        }));
+      }
+      // Layer C — the enlarged sticker, color-tinted drop-shadow
+      children.push(React.createElement('div', {
+        key:'card',
+        style:{position:'relative',textAlign:'center',animation:'ringinGiftPop ' + (fs ? '5s' : '3s') + ' ease-out forwards'}
       },
-        React.createElement('style', null,
-          '@keyframes ringinGiftFloat { ' +
-          '0% { transform: translateY(40vh) scale(0.6); opacity: 0; } ' +
-          '15% { opacity: 1; transform: translateY(20vh) scale(1); } ' +
-          '70% { opacity: 1; transform: translateY(-10vh) scale(1.05); } ' +
-          '100% { transform: translateY(-30vh) scale(0.85); opacity: 0; } }'
+        React.createElement('div', {style:{fontSize:bigSize,lineHeight:1,filter:'drop-shadow(0 6px 26px ' + hexA(col.g1,0.7) + ')'}}, incomingAnim.icon),
+        React.createElement('div', {style:{fontSize: fs ? '16px' : '13px',fontWeight:800,color:'#fff',marginTop:'12px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}},
+          (incomingAnim.fromName || '') + ' sent ' + (incomingAnim.name || 'gift')
         ),
-        React.createElement('div', {
-          style:{textAlign:'center',animation:'ringinGiftFloat ' + (fs ? '5s' : '3s') + ' ease-out forwards'}
-        },
-          React.createElement('div', {style:{fontSize:bigSize,lineHeight:1,filter:'drop-shadow(0 8px 32px rgba(232,77,154,0.6))'}}, incomingAnim.icon),
-          React.createElement('div', {style:{fontSize: fs ? '16px' : '13px',fontWeight:800,color:'#fff',marginTop:'12px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}},
-            (incomingAnim.fromName || '') + ' sent ' + (incomingAnim.name || 'a gift')
-          ),
-          React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'#FFD93D',marginTop:'4px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, (incomingAnim.coins||0) + ' 🪙')
-        )
-      );
+        React.createElement('div', {style:{fontSize: fs ? '13px' : '12px',fontWeight:700,color:'#fff',opacity:0.9,marginTop:'2px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, 'Gift sent successfully'),
+        React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'#FFD93D',marginTop:'4px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, (incomingAnim.coins||0) + ' 🪙')
+      ));
+      return React.createElement('div', {
+        style:{position:'fixed',inset:0,zIndex:980,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}
+      }, children);
     })() : null
   );
 }

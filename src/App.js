@@ -57,6 +57,7 @@ function isHorizontalScrollAncestor(node){
 
 export default function App() {
   var sessionS = useState(null); var session = sessionS[0]; var setSession = sessionS[1];
+  var authResolvedS = useState(false); var authResolved = authResolvedS[0]; var setAuthResolved = authResolvedS[1];
   var tabS = useState('home'); var activeTab = tabS[0]; var setActiveTab = tabS[1];
   var prevTabS = useState('home'); var prevTab = prevTabS[0]; var setPrevTab = prevTabS[1];
   var expS = useState(null); var selectedExpert = expS[0]; var setSelectedExpert = expS[1];
@@ -457,7 +458,8 @@ export default function App() {
         // T2.7 — load Close Friends list (cached + server refresh).
         try { startCloseFriends(res.data.session.user.id); } catch(_){}
       }
-    });
+      setAuthResolved(true);
+    }).catch(function(){ setAuthResolved(true); });
     // FIX #6: track the previous user id so we can wipe their per-user caches
     // on SIGNED_OUT (where `session` is null and we'd otherwise have no id).
     // supabase-js v2 has no sync supabase.auth.user(), so seed via the
@@ -1126,6 +1128,10 @@ export default function App() {
     }
     setLoading(false);
   };
+
+  if (!authResolved) {
+    return React.createElement('div', {style:{position:'fixed',inset:0,background:'#09090E',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100000}}, React.createElement('div', {className:'auth-logo', style:{fontSize:'48px', animation:'ringinPulse 1.4s ease-in-out infinite'}}, React.createElement('span',{className:'logo-ring'},'Ring'), React.createElement('span',{className:'logo-in'},'In')));
+  }
 
   if (!session) {
     // R23: Forgot Password flow — when forgotMode is set, render the reset
