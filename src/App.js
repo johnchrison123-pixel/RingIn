@@ -1393,7 +1393,8 @@ export default function App() {
   var avatarTopUrl = appUserId ? (localStorage.getItem('avatar_'+appUserId) || null) : null;
   var avatarInitial = session && session.user && session.user.email ? session.user.email.charAt(0).toUpperCase() : 'U';
 
-  return React.createElement('div', {
+  return React.createElement(ErrorBoundary, { scope: 'app-root' },
+   React.createElement('div', {
     className:'app-container',
     // ── Swipe-back gesture ────────────────────────────────────────────────
     // Standard iOS / Android pattern: touch starts within ~28px of the LEFT
@@ -1575,5 +1576,5 @@ export default function App() {
         if (viewUserStack && viewUserStack.length > 0) setViewUserStack([]);
       }
     })
-  );
+  ));
 }
