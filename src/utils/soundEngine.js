@@ -534,3 +534,56 @@ export function playGiftSound(kind){
     ping(1760, 0.05, 0.22, 'sine', 0.14);
   }
 }
+
+// ─── AUDIO UNLOCK (autoplay-policy workaround) ──────────────────────────────
+// Web Audio contexts start 'suspended' and can ONLY be resumed during/just
+// after a real user gesture. If an incoming call arrives when the user hasn't
+// interacted recently, playRingtone()'s own resume() is silently ignored and
+// the ringtone plays into a dead context — THIS is why the ring "sometimes"
+// didn't sound. Fix: on the FIRST user gesture of the session, resume the
+// context and play a 0-volume blip so it stays 'running' for the rest of the
+// session. Every later ringtone/notification/like sound then plays regardless
+// of whether a gesture is active at that exact moment. Idempotent; the
+// self-installed listener removes itself once the context is confirmed running.
+var _audioUnlocked=false;
+export function unlockAudio(){
+  if(_audioUnlocked) return;
+  try{
+    var ctx=getSCtx();
+    if(!ctx) return;
+    if(ctx.state==='suspended'){
+      try{ var pr=ctx.resume(); if(pr&&pr.then){ pr.then(function(){ if(ctx.state==='running') _audioUnlocked=true; }).catch(function(){}); } }catch(e){}
+    }
+    // Silent 1-frame buffer — required to satisfy the gesture-unlock on iOS Safari.
+    try{
+      var b=ctx.createBuffer(1,1,22050);
+      var src=ctx.createBufferSource();
+      src.buffer=b; src.connect(ctx.destination); src.start(0);
+    }catch(e){}
+    if(ctx.state==='running') _audioUnlocked=true;
+  }catch(e){}
+}
+// Self-install a one-time global gesture listener so no caller has to remember
+// to unlock. Capture + passive so it never interferes with app interactions.
+try{
+  if(typeof window!=='undefined' && typeof document!=='undefined'){
+    var _unlockOpts={capture:true, passive:true};
+    var _unlockOnce=function(){
+      unlockAudio();
+      if(_audioUnlocked){
+        try{
+          document.removeEventListener('pointerdown',_unlockOnce,_unlockOpts);
+          document.removeEventListener('touchstart',_unlockOnce,_unlockOpts);
+          document.removeEventListener('touchend',_unlockOnce,_unlockOpts);
+          document.removeEventListener('click',_unlockOnce,_unlockOpts);
+          document.removeEventListener('keydown',_unlockOnce,_unlockOpts);
+        }catch(e){}
+      }
+    };
+    document.addEventListener('pointerdown',_unlockOnce,_unlockOpts);
+    document.addEventListener('touchstart',_unlockOnce,_unlockOpts);
+    document.addEventListener('touchend',_unlockOnce,_unlockOpts);
+    document.addEventListener('click',_unlockOnce,_unlockOpts);
+    document.addEventListener('keydown',_unlockOnce,_unlockOpts);
+  }
+}catch(e){}

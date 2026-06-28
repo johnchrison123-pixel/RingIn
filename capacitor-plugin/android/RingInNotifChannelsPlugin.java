@@ -5,6 +5,8 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -56,6 +58,7 @@ public class RingInNotifChannelsPlugin extends Plugin {
     public void load() {
         ensureChannels(getContext());
         maybeRequestOverlayPermission();
+        maybeRequestFullScreenIntentPermission();
     }
 
     // "Display over other apps" (SYSTEM_ALERT_WINDOW) is what lets
@@ -76,6 +79,33 @@ public class RingInNotifChannelsPlugin extends Plugin {
             if (sp.getBoolean("overlay_asked", false)) return;          // auto-ask only once
             sp.edit().putBoolean("overlay_asked", true).apply();
             Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + ctx.getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        } catch (Throwable ignored) { /* never block app start on this */ }
+    }
+
+    // Android 14 (API 34)+ no longer auto-grants USE_FULL_SCREEN_INTENT to apps
+    // that aren't the default phone/dialer app. When it's NOT granted, the
+    // incoming-call notification's setFullScreenIntent(...) is silently
+    // DOWNGRADED to a heads-up banner — so the WhatsApp-style full-screen ringer
+    // never appears over the lock screen on those devices (this is the main
+    // reason calls "sometimes" didn't go full-screen: it was every Android 14+
+    // phone). Detect that once and send the user to the system page to allow it.
+    // canUseFullScreenIntent() returns true on <34 and once granted, so the
+    // version guard + this check together no-op everywhere they should.
+    private void maybeRequestFullScreenIntentPermission() {
+        try {
+            Context ctx = getContext();
+            if (ctx == null) return;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return; // <14: auto-granted
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null || nm.canUseFullScreenIntent()) return;  // already allowed
+            android.content.SharedPreferences sp =
+                ctx.getSharedPreferences("ringin_perms", Context.MODE_PRIVATE);
+            if (sp.getBoolean("fsi_asked", false)) return;          // auto-ask only once
+            sp.edit().putBoolean("fsi_asked", true).apply();
+            Intent i = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                 Uri.parse("package:" + ctx.getPackageName()));
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             ctx.startActivity(i);
@@ -147,6 +177,8 @@ public class RingInNotifChannelsPlugin extends Plugin {
     // ────────────────────────────────────────────────────────────────────────
     private static MediaPlayer ringtonePlayer;
     private static Vibrator ringtoneVibrator;
+    private static AudioManager ringtoneAudioManager;
+    private static AudioFocusRequest ringtoneFocusRequest;
 
     /**
      * Start (or restart) the single app-wide ringtone + looping vibration.
@@ -169,6 +201,30 @@ public class RingInNotifChannelsPlugin extends Plugin {
             try { ringtoneVibrator.cancel(); } catch (Exception ignored) {}
             ringtoneVibrator = null;
         }
+        // Drop any audio focus held from a previous ring before re-requesting.
+        abandonRingtoneFocus();
+
+        // Request transient audio focus so the ringtone is reliably HEARD even
+        // when music / a video currently holds focus — a common reason the ring
+        // "sometimes" wasn't audible. Best-effort: never block ringing on it.
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            if (am != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    AudioFocusRequest fr = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                        .setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build())
+                        .build();
+                    am.requestAudioFocus(fr);
+                    ringtoneFocusRequest = fr;
+                } else {
+                    am.requestAudioFocus(null, AudioManager.STREAM_RING, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                }
+                ringtoneAudioManager = am;
+            }
+        } catch (Exception ignored) { /* focus is best-effort */ }
 
         // Ringtone (best-effort — a missing/unreadable ringtone must not break
         // the incoming-call flow; the UI still shows, it just won't ring).
@@ -217,6 +273,21 @@ public class RingInNotifChannelsPlugin extends Plugin {
             try { ringtoneVibrator.cancel(); } catch (Exception ignored) {}
             ringtoneVibrator = null;
         }
+        abandonRingtoneFocus();
+    }
+
+    /** Release any ringtone audio focus we requested. Idempotent / best-effort. */
+    private static void abandonRingtoneFocus() {
+        if (ringtoneAudioManager == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && ringtoneFocusRequest != null) {
+                ringtoneAudioManager.abandonAudioFocusRequest(ringtoneFocusRequest);
+            } else {
+                ringtoneAudioManager.abandonAudioFocus(null);
+            }
+        } catch (Exception ignored) {}
+        ringtoneFocusRequest = null;
+        ringtoneAudioManager = null;
     }
 
     // The phone's DEFAULT ringtone, looped — used by the in-app (foreground)
