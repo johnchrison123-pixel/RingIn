@@ -57,8 +57,16 @@ public class RingInNotifChannelsPlugin extends Plugin {
     @Override
     public void load() {
         ensureChannels(getContext());
-        maybeRequestOverlayPermission();
-        maybeRequestFullScreenIntentPermission();
+        // Do NOT auto-launch the "Display over other apps" / full-screen-intent
+        // system settings pages on cold start. On a FRESH install both fire and
+        // throw the user out to a system settings screen right after the
+        // notification prompt — it looks exactly like the app "minimised/closed".
+        // Both permissions degrade gracefully to a heads-up call banner when
+        // ungranted, so we no longer nag at startup. (The helper methods are kept
+        // so they can be invoked from a contextual place later, e.g. a settings
+        // toggle or when the user turns on host mode.)
+        // maybeRequestOverlayPermission();
+        // maybeRequestFullScreenIntentPermission();
     }
 
     // "Display over other apps" (SYSTEM_ALERT_WINDOW) is what lets
