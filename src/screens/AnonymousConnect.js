@@ -3,6 +3,7 @@ import React, {useState, useRef, useEffect} from 'react';
 import {sb} from '../utils/supabase';
 import {toastError, toastInfo} from '../utils/toast';
 import {ANON_AVATARS, getAvatar} from '../utils/anonAvatars'; /* R37: single source of truth */
+import HotSeatScreen from './HotSeatScreen'; /* R63: Hot Seat group audio room (migration 0059) */
 
 /* R47: virtual gift catalog (Tango/Bigo-style 3-tier model).
  * - sticker: small cheap reactions (5-30 coins)
@@ -207,6 +208,25 @@ export default function AnonymousConnect(props) {
   var chatGiftsS = useState([]); var chatGifts = chatGiftsS[0]; var setChatGifts = chatGiftsS[1];
   var chatReactionsS = useState({}); var chatReactions = chatReactionsS[0]; var setChatReactions = chatReactionsS[1];
   var reactionPickerForS = useState(null); var reactionPickerFor = reactionPickerForS[0]; var setReactionPickerFor = reactionPickerForS[1];
+
+  /* R63: Hot Seat group audio rooms (migration 0059). All four pieces of
+   * state live ABOVE every conditional return (hooks rule). Forward-compatible:
+   * if 0059 hasn't run, create_room/list_live_rooms/join_room all error and we
+   * degrade to a "Hot Seat coming soon" toast (see openHotSeatRoom /
+   * openLiveRooms / joinLiveRoom). HotSeatScreen owns its OWN agora + realtime
+   * cleanup; AnonymousConnect cleans up nothing extra for it.
+   *   - showHotSeat:   is the room sub-view open?
+   *   - hotSeatRoom:   { roomId, channel, isHost, hostId } for the open room
+   *   - browsingRooms: is the live-rooms browser sub-view open?
+   *   - liveRooms:     array of rooms from list_live_rooms
+   *   - roomsLoading:  spinner state for the live-rooms browser
+   *   - roomBusy:      guards double-tap on Open/Join while an RPC is in flight */
+  var showHotSeatS = useState(false); var showHotSeat = showHotSeatS[0]; var setShowHotSeat = showHotSeatS[1];
+  var hotSeatRoomS = useState(null); var hotSeatRoom = hotSeatRoomS[0]; var setHotSeatRoom = hotSeatRoomS[1];
+  var browsingRoomsS = useState(false); var browsingRooms = browsingRoomsS[0]; var setBrowsingRooms = browsingRoomsS[1];
+  var liveRoomsS = useState([]); var liveRooms = liveRoomsS[0]; var setLiveRooms = liveRoomsS[1];
+  var roomsLoadingS = useState(false); var roomsLoading = roomsLoadingS[0]; var setRoomsLoading = roomsLoadingS[1];
+  var roomBusyS = useState(false); var roomBusy = roomBusyS[0]; var setRoomBusy = roomBusyS[1];
 
   function addLanguage(l){
     var v = (l || '').trim();
@@ -716,6 +736,12 @@ export default function AnonymousConnect(props) {
         if (!App || !App.addListener) return;
         handle = await App.addListener('backButton', function(){
           /* Close in priority order — most-recent UI first. */
+          /* R63: the Hot Seat room sub-view is full-screen + above everything;
+           * hardware-back leaves the room (HotSeatScreen.onLeave tears down its
+           * own agora/realtime, then this closes the sub-view) instead of
+           * exiting the app. The live-rooms browser closes before exit too. */
+          if (showHotSeat) { leaveHotSeatRoom(); return; }
+          if (browsingRooms) { setBrowsingRooms(false); return; }
           /* R47: gift drawer takes top priority when open. */
           if (giftDrawerOpen) { setGiftDrawerOpen(false); return; }
           /* R46: safety sheets take next priority. */
@@ -742,7 +768,7 @@ export default function AnonymousConnect(props) {
       } catch(_){}
     })();
     return function(){ try { if (handle && handle.remove) handle.remove(); } catch(_){} };
-  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen, hostCallConfirm, browsingHosts, hostSearching, hostAllBusy]);
+  }, [viewingProfile, editProfileOpen, activeChat, postCall, searching, safetySheetFor, reportSheetFor, giftDrawerOpen, hostCallConfirm, browsingHosts, hostSearching, hostAllBusy, showHotSeat, browsingRooms]);
 
   /* R46: listen for events from CallScreen — tap ⋯ on the in-call action row
    * dispatches `ringin:anonsafety` with the partner context. */
@@ -1281,6 +1307,98 @@ export default function AnonymousConnect(props) {
     loadHostsList();
   }
 
+  /* ════════ R63: Hot Seat group audio rooms (migration 0059) ════════
+   * All three entry points are try/catch + .catch() guarded. If 0059 hasn't
+   * run, the RPC returns an error → we toast "Hot Seat coming soon" and open
+   * NOTHING. The HotSeatScreen sub-view owns its own Agora + realtime cleanup;
+   * we only flip sub-view flags here. */
+
+  /* HOST: open (or re-enter) my Hot Seat room. Server clamps fees + cap and is
+   * idempotent (one live room per host → 'already_live' returns the existing
+   * room_id/channel). On 'not_host'/'rate_limited'/error we toast + bail. */
+  function openHotSeatRoom(){
+    if (!userId) { try { toastError('Please log in'); } catch(_){} return; }
+    if (roomBusy) return;
+    setRoomBusy(true);
+    try {
+      sb.rpc('create_room', {}).then(function(r){
+        setRoomBusy(false);
+        if (r && r.error) { try { toastInfo('Hot Seat coming soon'); } catch(_){} return; }
+        var d = r && r.data;
+        if (!d || (d.status !== 'ok' && d.status !== 'already_live')) {
+          if (d && d.status === 'not_host') { try { toastError('Turn on Host Mode to open a room'); } catch(_){} return; }
+          if (d && d.status === 'rate_limited') { try { toastError('Too many rooms — try again later'); } catch(_){} return; }
+          try { toastInfo('Hot Seat coming soon'); } catch(_){}
+          return;
+        }
+        if (!d.room_id || !d.channel) { try { toastInfo('Hot Seat coming soon'); } catch(_){} return; }
+        setHotSeatRoom({ roomId: d.room_id, channel: d.channel, isHost: true, hostId: userId });
+        setShowHotSeat(true);
+      }).catch(function(){ setRoomBusy(false); try { toastInfo('Hot Seat coming soon'); } catch(_){} });
+    } catch(_){ setRoomBusy(false); try { toastInfo('Hot Seat coming soon'); } catch(_){} }
+  }
+
+  /* EVERYONE: open the live-rooms browser + fetch the list. */
+  function openLiveRooms(){
+    setBrowsingRooms(true);
+    loadLiveRooms();
+  }
+
+  /* Fetch the discovery feed of live rooms. Guarded — on error (0059 unrun)
+   * we toast once + close the browser so the user isn't stuck on a blank list. */
+  function loadLiveRooms(){
+    setRoomsLoading(true);
+    try {
+      sb.rpc('list_live_rooms', { p_limit: 30 }).then(function(r){
+        setRoomsLoading(false);
+        if (r && r.error) { try { toastInfo('Hot Seat coming soon'); } catch(_){} setBrowsingRooms(false); return; }
+        setLiveRooms((r && !r.error && Array.isArray(r.data)) ? r.data : []);
+      }).catch(function(){ setRoomsLoading(false); try { toastInfo('Hot Seat coming soon'); } catch(_){} setBrowsingRooms(false); });
+    } catch(_){ setRoomsLoading(false); try { toastInfo('Hot Seat coming soon'); } catch(_){} setBrowsingRooms(false); }
+  }
+
+  /* Tap a room → pay the door fee server-side (join_room) → open the room
+   * sub-view as a listener. join_room is idempotent + returns the channel; we
+   * prefer the server channel, fall back to the row's channel. Non-ok statuses
+   * (full / insufficient / blocked / not_live) get a friendly toast. */
+  function joinLiveRoom(room){
+    if (!room || !room.room_id) return;
+    if (roomBusy) return;
+    setRoomBusy(true);
+    try {
+      sb.rpc('join_room', { p_room: room.room_id, p_pay_method: 'coins' }).then(function(r){
+        setRoomBusy(false);
+        if (r && r.error) { try { toastInfo('Hot Seat coming soon'); } catch(_){} return; }
+        var d = r && r.data;
+        if (!d) { try { toastInfo('Hot Seat coming soon'); } catch(_){} return; }
+        if (d.status !== 'ok' && d.status !== 'already_in') {
+          if (d.status === 'full') { try { toastError('Room is full'); } catch(_){} return; }
+          if (d.status === 'insufficient') { try { toastError('Not enough coins to enter'); } catch(_){} return; }
+          if (d.status === 'blocked' || d.status === 'excluded') { try { toastError('You can\'t join this room'); } catch(_){} return; }
+          if (d.status === 'not_live') { try { toastError('This room just ended'); } catch(_){} return; }
+          try { toastInfo('Hot Seat coming soon'); } catch(_){}
+          return;
+        }
+        setBrowsingRooms(false);
+        setHotSeatRoom({
+          roomId: room.room_id,
+          channel: d.channel || room.channel,
+          isHost: false,
+          hostId: room.host_id,
+        });
+        setShowHotSeat(true);
+      }).catch(function(){ setRoomBusy(false); try { toastInfo('Hot Seat coming soon'); } catch(_){} });
+    } catch(_){ setRoomBusy(false); try { toastInfo('Hot Seat coming soon'); } catch(_){} }
+  }
+
+  /* Close the room sub-view (passed to HotSeatScreen.onLeave). HotSeatScreen
+   * has already torn down its own Agora session + realtime channels by the
+   * time this fires; we only reset the sub-view flags. */
+  function leaveHotSeatRoom(){
+    setShowHotSeat(false);
+    setHotSeatRoom(null);
+  }
+
   /* Feature 3: stop the host-search window — clears the dedicated poll,
    * countdown + avatar-rotation timers and exits the searching state. Safe
    * to call multiple times. KEPT SEPARATE from peer stopSearching(). */
@@ -1798,6 +1916,33 @@ export default function AnonymousConnect(props) {
               : 'Get paid neons when callers ring you')
         ),
         React.createElement('div', {style:{fontSize:'18px',color:'var(--ac)',flexShrink:0}}, '›')
+      ) : null,
+      /* ════════ R63: Hot Seat group audio rooms (migration 0059) ════════
+       * Gated behind the SAME explicit-gender gate as the host CTAs above
+       * (hidden until onboarding sets a real 'm'/'f' value). Hosts (isHostMode)
+       * additionally get an "Open Hot Seat Room" button; EVERYONE gets
+       * "Join a Live Room". Both RPCs are guarded — if 0059 hasn't run they
+       * toast "Hot Seat coming soon" and open nothing. */
+      (gender === 'm' || gender === 'f') ? React.createElement('div', null,
+        React.createElement('div', {style:{fontSize:'10px',fontWeight:700,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'8px',marginTop:'4px',paddingLeft:'2px'}}, '🎙 Hot Seat · group audio rooms'),
+        React.createElement('div', {style:{display:'flex',gap:'8px',marginBottom:'12px'}},
+          isHostMode ? React.createElement('button', {
+            onClick: openHotSeatRoom,
+            disabled: roomBusy,
+            style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'13px',fontWeight:800,cursor: roomBusy ? 'wait' : 'pointer',fontFamily:'inherit',opacity: roomBusy ? 0.7 : 1,display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
+          },
+            React.createElement('div', {style:{fontSize:'15px'}}, roomBusy ? '...' : '🎙 Open Hot Seat Room'),
+            React.createElement('div', {style:{fontSize:'9px',opacity:0.85,fontWeight:600}}, 'You host the room')
+          ) : null,
+          React.createElement('button', {
+            onClick: openLiveRooms,
+            disabled: roomBusy,
+            style:{flex:1,padding:'13px 10px',borderRadius:'12px',background:'var(--bg2)',border:'1.5px solid var(--ac)',color:'var(--ac)',fontSize:'13px',fontWeight:800,cursor: roomBusy ? 'wait' : 'pointer',fontFamily:'inherit',opacity: roomBusy ? 0.7 : 1,display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}
+          },
+            React.createElement('div', {style:{fontSize:'15px'}}, '🚪 Join a Live Room'),
+            React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',fontWeight:600}}, 'Browse live audio rooms')
+          )
+        )
       ) : null,
       /* Free random anon (existing). Still works — for people who want
        * a no-charge random voice chat instead of a host. */
@@ -2541,6 +2686,83 @@ export default function AnonymousConnect(props) {
           }, 'Cancel')
         )
       );
-    })() : null
+    })() : null,
+
+    /* ════════ R63: Join a Live Room — live-rooms browser sub-view ════════
+     * Modeled on the Browse Hosts sub-view. Tapping a room → joinLiveRoom
+     * (pays the door fee server-side then opens the room sub-view). */
+    browsingRooms ? React.createElement('div', {
+      style:{position:'fixed',inset:0,background:'var(--bg)',zIndex:920,display:'flex',flexDirection:'column'}
+    },
+      React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,background:'var(--bg2)'}},
+        React.createElement('button', {
+          onClick: function(){ setBrowsingRooms(false); },
+          style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center'}
+        },
+          React.createElement('svg', {viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},
+            React.createElement('polyline', {points:'15 18 9 12 15 6'})
+          )
+        ),
+        React.createElement('div', {style:{flex:1}},
+          React.createElement('div', {style:{fontSize:'16px',fontWeight:800,color:'var(--text)',fontFamily:'Syne, sans-serif'}}, '🎙 Live Rooms'),
+          React.createElement('div', {style:{fontSize:'11px',color:'var(--t3)',marginTop:'2px'}}, roomsLoading ? 'Loading…' : (liveRooms.length + ' live · pay to enter'))
+        ),
+        React.createElement('button', {
+          onClick: loadLiveRooms,
+          style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--t2)',padding:'6px 10px',borderRadius:'10px',fontSize:'11px',cursor:'pointer',fontFamily:'inherit'}
+        }, '↻')
+      ),
+      React.createElement('div', {style:{flex:1,overflowY:'auto',padding:'12px 16px'}},
+        roomsLoading
+          ? React.createElement('div', {style:{textAlign:'center',color:'var(--t3)',fontSize:'12px',padding:'40px 16px'}}, 'Loading rooms…')
+          : liveRooms.length === 0
+            ? React.createElement('div', {style:{textAlign:'center',padding:'40px 16px',color:'var(--t3)',fontSize:'12px'}},
+                React.createElement('div', {style:{fontSize:'42px',marginBottom:'8px',opacity:0.4}}, '🎙'),
+                React.createElement('div', {style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}, 'No live rooms'),
+                'Be the first — open your own Hot Seat room.'
+              )
+            : liveRooms.map(function(room){
+                var ra = getAvatar(room.host_avatar || 'girl1');
+                return React.createElement('div', {
+                  key: room.room_id,
+                  onClick: function(){ if (!roomBusy) joinLiveRoom(room); },
+                  style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px',marginBottom:'8px',cursor: roomBusy ? 'wait' : 'pointer',opacity: roomBusy ? 0.7 : 1}
+                },
+                  React.createElement('div', {style:{width:'52px',height:'52px',borderRadius:'50%',background:ra.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',flexShrink:0,position:'relative'}},
+                    ra.emoji,
+                    React.createElement('div', {style:{position:'absolute',bottom:'-2px',right:'-2px',width:'13px',height:'13px',borderRadius:'50%',background:'#E84D9A',border:'2px solid var(--bg)'}})
+                  ),
+                  React.createElement('div', {style:{flex:1,minWidth:0}},
+                    React.createElement('div', {style:{fontSize:'14px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}, room.host_name || 'Host'),
+                    React.createElement('div', {style:{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}},
+                      '👥 ' + (room.listener_count || 0) + (room.listener_cap ? ' / ' + room.listener_cap : '') + ' listening'),
+                    room.seat_holder
+                      ? React.createElement('div', {style:{fontSize:'10px',color:'#E84D9A',marginTop:'2px',fontWeight:700}}, '🔥 Hot seat taken')
+                      : React.createElement('div', {style:{fontSize:'10px',color:'#27C96A',marginTop:'2px',fontWeight:700}}, '🪑 Hot seat open')
+                  ),
+                  React.createElement('div', {style:{textAlign:'right',flexShrink:0}},
+                    React.createElement('div', {style:{fontSize:'15px',fontWeight:800,color:'#FFD700'}}, '🪙 ' + (room.entry_fee_coins || 0)),
+                    React.createElement('div', {style:{fontSize:'9px',color:'var(--t3)',marginTop:'2px'}}, 'to enter'),
+                    React.createElement('div', {style:{marginTop:'4px',padding:'4px 8px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',borderRadius:'8px',color:'#fff',fontSize:'10px',fontWeight:700}}, '🚪 Join')
+                  )
+                );
+              })
+      )
+    ) : null,
+
+    /* ════════ R63: Hot Seat room sub-view (full-screen) ════════
+     * HotSeatScreen owns all of its own Agora session + realtime channel
+     * subscriptions + cleanup; AnonymousConnect only flips showHotSeat off via
+     * onLeave (leaveHotSeatRoom). hotSeatRoom is always non-null when
+     * showHotSeat is true (we set them together), but we guard anyway. */
+    (showHotSeat && hotSeatRoom) ? React.createElement(HotSeatScreen, {
+      roomId: hotSeatRoom.roomId,
+      channel: hotSeatRoom.channel,
+      isHost: hotSeatRoom.isHost,
+      hostId: hotSeatRoom.hostId,
+      myUserId: userId,
+      session: session,
+      onLeave: leaveHotSeatRoom,
+    }) : null
   );
 }

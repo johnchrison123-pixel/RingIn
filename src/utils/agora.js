@@ -370,4 +370,137 @@ export async function startCallSession(opts) {
   };
 }
 
-export default { startCallSession: startCallSession, hashUidToInt: hashUidToInt };
+// ── Hot Seat group rooms (live mode, audience/host roles) ──────────────────
+// DELIBERATELY SEPARATE from startCallSession so 1:1 calls are 100% unaffected
+// by this code. Uses Agora 'live' mode: LISTENERS join as 'audience'
+// (subscribe-only, NO mic — both cheaper to bill and far simpler to manage),
+// while the HOST and the single SEAT holder join as 'host' (publish mic). A
+// listener promoted to the seat (or a seat-holder released) flips role at
+// runtime via the returned setRole(). Reuses the SAME token endpoint — a
+// publisher token also authorizes the audience role.
+//
+// opts: { channel, uidString, role: 'host'|'audience', onRemotePresent,
+//         onRemoteJoined, onRemoteLeft, onError, onConnectionState }
+// returns: { client, getRole(), setMuted(bool), setRemoteVolume(0-400),
+//            setRole('host'|'audience'), leave() }
+export async function startRoomSession(opts) {
+  if (!opts || !opts.channel || !opts.uidString) {
+    throw new Error('startRoomSession: channel and uidString required');
+  }
+  var AgoraRTC = await getAgoraRTC();
+  var uid = hashUidToInt(opts.uidString);
+  var curRole = (opts.role === 'host') ? 'host' : 'audience';
+  // 'live' = interactive live streaming (host publishes, audience subscribes).
+  var client = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
+  var localAudioTrack = null;
+  var remoteUsers = {};
+  var currentRemoteVolume = 100;
+
+  function attachRemoteAudio(user) {
+    try {
+      if (user && user.audioTrack) {
+        user.audioTrack.play();
+        if (typeof user.audioTrack.setVolume === 'function') {
+          try { user.audioTrack.setVolume(currentRemoteVolume); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+
+  client.on('user-joined', function (user) {
+    try { if (opts.onRemotePresent) opts.onRemotePresent(user); } catch (e) {}
+  });
+  client.on('user-published', async function (user, mediaType) {
+    try {
+      await client.subscribe(user, mediaType);
+      if (mediaType === 'audio') {
+        remoteUsers[user.uid] = user;
+        attachRemoteAudio(user);
+        if (opts.onRemoteJoined) opts.onRemoteJoined(user);
+      }
+    } catch (e) {
+      if (opts.onError) opts.onError(new Error('Subscribe failed: ' + e.message));
+    }
+  });
+  client.on('user-unpublished', function (user) { /* seat handoffs unpublish — not a leave */ });
+  client.on('user-left', function (user) {
+    delete remoteUsers[user.uid];
+    if (opts.onRemoteLeft) opts.onRemoteLeft(user);
+  });
+  client.on('connection-state-change', function (cur, prev) {
+    if (opts.onConnectionState) opts.onConnectionState(cur, prev);
+  });
+
+  // Role MUST be set before join in live mode.
+  try { await client.setClientRole(curRole); } catch (e) {}
+
+  var tokenData;
+  try { tokenData = await fetchToken(opts.channel, uid); }
+  catch (e) { if (opts.onError) opts.onError(new Error('Token fetch failed: ' + e.message)); throw e; }
+
+  try { await client.join(tokenData.appId || APP_ID, opts.channel, tokenData.token, uid); }
+  catch (e) { if (opts.onError) opts.onError(new Error('Join failed: ' + e.message)); throw e; }
+
+  async function publishMic() {
+    if (localAudioTrack) return;
+    try { if (typeof navigator !== 'undefined' && navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
+    localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: 'speech_standard', ANS: true, AEC: true, AGC: false });
+    await client.publish([localAudioTrack]);
+  }
+  async function unpublishMic() {
+    if (!localAudioTrack) return;
+    try { await client.unpublish([localAudioTrack]); } catch (e) {}
+    try { localAudioTrack.stop(); } catch (e) {}
+    try { localAudioTrack.close(); } catch (e) {}
+    localAudioTrack = null;
+  }
+
+  // A host publishes immediately; audience stays subscribe-only.
+  if (curRole === 'host') {
+    try { await publishMic(); }
+    catch (e) { if (opts.onError) opts.onError(new Error('Mic publish failed: ' + (e && e.message ? e.message : 'failed'))); }
+  }
+
+  return {
+    client: client,
+    getRole: function () { return curRole; },
+    setMuted: function (muted) {
+      try {
+        if (!localAudioTrack) return;
+        if (typeof localAudioTrack.setMuted === 'function') localAudioTrack.setMuted(muted);
+        else localAudioTrack.setEnabled(!muted);
+      } catch (e) {}
+    },
+    setRemoteVolume: function (volume) {
+      currentRemoteVolume = Math.max(0, Math.min(400, volume));
+      Object.keys(remoteUsers).forEach(function (k) {
+        var u = remoteUsers[k];
+        if (u && u.audioTrack && u.audioTrack.setVolume) { try { u.audioTrack.setVolume(currentRemoteVolume); } catch (e) {} }
+      });
+    },
+    // Promote audience→host (took the seat) or demote host→audience (left seat).
+    setRole: async function (newRole) {
+      var target = (newRole === 'host') ? 'host' : 'audience';
+      if (target === curRole) return;
+      try { await client.setClientRole(target); } catch (e) {}
+      if (target === 'host') {
+        try { await publishMic(); } catch (e) { if (opts.onError) opts.onError(new Error('Mic publish failed')); }
+      } else {
+        await unpublishMic();
+      }
+      curRole = target;
+    },
+    leave: async function () {
+      try { await unpublishMic(); } catch (e) {}
+      try {
+        Object.keys(remoteUsers).forEach(function (k) {
+          var u = remoteUsers[k];
+          if (u && u.audioTrack) { try { u.audioTrack.stop(); } catch (e) {} }
+        });
+      } catch (e) {}
+      try { await client.leave(); } catch (e) {}
+    },
+  };
+}
+
+export default { startCallSession: startCallSession, startRoomSession: startRoomSession, hashUidToInt: hashUidToInt };
