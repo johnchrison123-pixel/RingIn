@@ -445,6 +445,10 @@ export default function App() {
       });
     } catch(e){}
 
+    /* Watchdog: never let the branded splash hang if getSession() wedges
+     * (flaky network / stalled token refresh). Falls through to login/home
+     * after 4s. Cleared the instant getSession settles (success or error). */
+    var _authWatchdog = setTimeout(function(){ setAuthResolved(true); }, 4000);
     supabase.auth.getSession().then(function(res) {
       setSession(res.data.session);
       // Start last_seen heartbeat — pings profiles.last_seen_at every 60s
@@ -458,8 +462,9 @@ export default function App() {
         // T2.7 — load Close Friends list (cached + server refresh).
         try { startCloseFriends(res.data.session.user.id); } catch(_){}
       }
+      clearTimeout(_authWatchdog);
       setAuthResolved(true);
-    }).catch(function(){ setAuthResolved(true); });
+    }).catch(function(){ clearTimeout(_authWatchdog); setAuthResolved(true); });
     // FIX #6: track the previous user id so we can wipe their per-user caches
     // on SIGNED_OUT (where `session` is null and we'd otherwise have no id).
     // supabase-js v2 has no sync supabase.auth.user(), so seed via the

@@ -537,6 +537,11 @@ function MomentViewer(props){
     showToast('Sent ✓');
   }
 
+  // dragNowRef MUST be declared before the early return below — it is a hook
+  // (useRef), and a slide-less render hitting `return null` would otherwise skip
+  // it, changing the hook count between renders (Rules of Hooks → crash).
+  var dragNowRef = useRef({ dx: 0, dy: 0, kind: null });
+
   if (!slides.length) return null;
   var cur = slides[idx];
   // Image moment vs gradient/text moment — real user-posted moments carry
@@ -668,10 +673,9 @@ function MomentViewer(props){
   var writeTransforms = writeCubeTransform;
   var animateTo = animateCubeTo;
 
-  // Tracks where the live drag is right now — separate from gestureRef
-  // because pointerup needs to know the final dx/dy without reading the
-  // DOM. Updated every pointermove via the rAF callback.
-  var dragNowRef = useRef({ dx: 0, dy: 0, kind: null });
+  // dragNowRef (live drag dx/dy, read by pointerup without touching the DOM)
+  // is now declared above with the other hooks — moved there so its useRef
+  // runs before the `if (!slides.length) return null` early return.
 
   var overlay = React.createElement('div', {
     ref: mainOverlayRef,

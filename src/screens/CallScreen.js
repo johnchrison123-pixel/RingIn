@@ -175,8 +175,8 @@ export default function CallScreen(props){
    * overlay reads this and runs a 3-second animation, then clears. */
   var incomingAnimS = useState(null); var incomingAnim = incomingAnimS[0]; var setIncomingAnim = incomingAnimS[1];
   var animTimerRef = useRef(null);
-  function fireGiftAnim(g, fromName){
-    setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', category: g.category || null, gift_key: g.gift_key || null, color: g.color || null, fromName: fromName || '', ts: Date.now() });
+  function fireGiftAnim(g, fromName, isOutgoing){
+    setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', category: g.category || null, gift_key: g.gift_key || null, color: g.color || null, fromName: fromName || '', sent: !!isOutgoing, ts: Date.now() });
     try { playGiftSound(g.sound === 'fanfare' ? 'fanfare' : (g.sound === 'chime_big' || (g.coins||0) >= 399 ? 'chime' : 'bell')); } catch(_){}
     if (animTimerRef.current) { clearTimeout(animTimerRef.current); }
     animTimerRef.current = setTimeout(function(){ setIncomingAnim(null); animTimerRef.current = null; }, g.fullscreen ? 5200 : 3000);
@@ -211,7 +211,7 @@ export default function CallScreen(props){
         category: (dg && dg.category) || g.category || null,
         gift_key: d.gift_key || g.gift_key || null,
         color: d.color || (dg && dg.color) || g.color || null,
-      }, 'You');
+      }, 'You', true);
       // keep the drawer open for cheap combo-able gifts; close for the big ones
       if (d.fullscreen || (d.coins||0) > 99) setGiftDrawerOpen(false);
     }).catch(function(){ setGiftSending(null); setError('Network error'); });
@@ -1167,7 +1167,7 @@ export default function CallScreen(props){
         React.createElement('div', {style:{fontSize: fs ? '16px' : '13px',fontWeight:800,color:'#fff',marginTop:'12px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}},
           (incomingAnim.fromName || '') + ' sent ' + (incomingAnim.name || 'gift')
         ),
-        React.createElement('div', {style:{fontSize: fs ? '13px' : '12px',fontWeight:700,color:'#fff',opacity:0.9,marginTop:'2px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, 'Gift sent successfully'),
+        incomingAnim.sent ? React.createElement('div', {style:{fontSize: fs ? '13px' : '12px',fontWeight:700,color:'#fff',opacity:0.9,marginTop:'2px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, 'Gift sent successfully') : null,
         React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'#FFD93D',marginTop:'4px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, (incomingAnim.coins||0) + ' 🪙')
       ));
       return React.createElement('div', {
