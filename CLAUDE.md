@@ -131,6 +131,7 @@ Until D is done, iOS PWA installs CAN'T receive lock-screen push (Android works 
 - **URL:** https://fnthuegoevgicqmzhwcw.supabase.co
 - **Anon Key:** eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZudGh1ZWdvZXZnaWNxbXpod2N3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjkxNzcsImV4cCI6MjA5Mjk0NTE3N30.RyUVn23aZOt8in-BiMhK0c2EfR9GN8wQ2HRA5cMJm7s
 - **Shared client:** `src/utils/supabase.js` exports `sb` — import from here, never call createClient directly
+- **ALWAYS paste SQL in chat (user preference):** migrations/RPCs are run MANUALLY by the user in the Supabase SQL editor. Whenever you create or change a migration — or write any Supabase SQL/RPC — paste the FULL, copy-pasteable SQL directly in the chat as a code block. Do not just reference the file path; the user needs to copy it into the SQL editor.
 
 ## Coding Rules (CRITICAL)
 - **NO JSX** — use `React.createElement()` exclusively everywhere
