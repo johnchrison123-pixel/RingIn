@@ -17,6 +17,7 @@ import {sb as sbProfileCoin} from '../utils/supabase';
 import {formatDate, safeSetItem} from '../utils/dateFmt';
 import {acquireBodyScrollLock} from '../utils/bodyScrollLock'; /* R20 FIX #2 */
 import StoreScreen from './StoreScreen';
+import LeaderboardScreen from './LeaderboardScreen';
 import {loadCatalog, equippedItem, TagPill, Sticker, frameOverlay, themeStyle} from '../utils/cosmetics';
 
 // Copy a URL to the clipboard and toast ONLY on real success.
@@ -194,6 +195,23 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
   // below; Hearts is derived from likes on the user's own posts at render.
   var followersCountS = useState(0); var followersCount = followersCountS[0]; var setFollowersCount = followersCountS[1];
   var friendsCountS = useState(0); var friendsCount = friendsCountS[0]; var setFriendsCount = friendsCountS[1];
+
+  // ── Invite & Earn (migration 0056) ──
+  // Sub-view visibility + referral data fetched lazily when the view opens.
+  // Every RPC wrapped in try/catch so an unrun migration hides the UI rather
+  // than crashing the profile screen.
+  var showInviteS = useState(false); var showInvite = showInviteS[0]; var setShowInvite = showInviteS[1];
+  var referralS = useState(null); var referral = referralS[0]; var setReferral = referralS[1]; // {code, qualified, coins_earned, giveaway_entries}
+  var referralLoadingS = useState(false); var referralLoading = referralLoadingS[0]; var setReferralLoading = referralLoadingS[1];
+  var referralClaimingS = useState(false); var referralClaiming = referralClaimingS[0]; var setReferralClaiming = referralClaimingS[1];
+
+  // ── Hearts streak flame (migration 0057) ──
+  // Active streak count shown beside the Hearts stat. Null = no streak / unrun.
+  var heartStreakS = useState(null); var heartStreak = heartStreakS[0]; var setHeartStreak = heartStreakS[1];
+
+  // ── Status / level crown (migration 0058) + Leaderboard sub-view ──
+  var myStatusS = useState(null); var myStatus = myStatusS[0]; var setMyStatus = myStatusS[1]; // {tier, level}
+  var showLeaderboardS = useState(false); var showLeaderboard = showLeaderboardS[0]; var setShowLeaderboard = showLeaderboardS[1];
 
   // Compact stat formatter: 1.2k / 3.4M. Used by the Followers/Friends/Hearts card.
   function fmtStatCount(n){
@@ -698,6 +716,58 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     return function(){ cancelled = true; };
   }, [userId]);
 
+  // Hearts streak (0057) + Status/level (0058). Both fully defensive: if the
+  // migration hasn't run the RPC errors with "function does not exist" and we
+  // simply leave the state null so the flame / crown render nothing.
+  useEffect(function(){
+    if(!userId) return;
+    var cancelled = false;
+    try {
+      sbProfile.rpc('get_my_streak').then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data != null) {
+          var d = r.data;
+          // Accept either a scalar count or a {streak, active} shape.
+          var count = (typeof d === 'number') ? d : (d && (d.streak != null ? d.streak : d.count));
+          var active = (typeof d === 'object' && d) ? (d.active !== false) : (count > 0);
+          if (active && Number(count) > 0) setHeartStreak(Number(count));
+        }
+      }).catch(function(){});
+    } catch(_){}
+    try {
+      sbProfile.rpc('my_status').then(function(r){
+        if (cancelled) return;
+        if (r && !r.error && r.data) {
+          var s = Array.isArray(r.data) ? r.data[0] : r.data;
+          // Accept either {tier,level} or the {host_tier,host_level} shape the
+        // Leaderboard's my_status RPC returns.
+        if (s && (s.tier || s.level != null || s.host_tier || s.host_level != null)) setMyStatus(s);
+        }
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ cancelled = true; };
+  }, [userId]);
+
+  // Load referral data lazily the first time the Invite & Earn view opens.
+  useEffect(function(){
+    if(!showInvite) return;
+    var cancelled = false;
+    setReferralLoading(true);
+    try {
+      sbProfile.rpc('get_my_referral_code').then(function(r){
+        if (cancelled) return;
+        setReferralLoading(false);
+        if (r && !r.error && r.data) {
+          var d = Array.isArray(r.data) ? r.data[0] : r.data;
+          // d may be a bare string code or a row with stats.
+          if (typeof d === 'string') setReferral({ code: d });
+          else if (d) setReferral(d);
+        }
+      }).catch(function(){ if(!cancelled) setReferralLoading(false); });
+    } catch(_){ setReferralLoading(false); }
+    return function(){ cancelled = true; };
+  }, [showInvite]);
+
   // Cosmetics: load the catalog (so equipped ids resolve to visuals) + this
   // user's equipped selection. Refresh on the 'ringin-cosmetics-changed' event
   // the Style Store fires after an equip. Defensive: no catalog / no columns
@@ -819,6 +889,8 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       if (showVerifyApp) return consume(function(){ setShowVerifyApp(false); }); /* R26 */
       if (showAdminReview) return consume(function(){ setShowAdminReview(false); }); /* R26 */
       if (showRate) return consume(function(){ setShowRate(false); });
+      if (showLeaderboard) return consume(function(){ setShowLeaderboard(false); });
+      if (showInvite) return consume(function(){ setShowInvite(false); });
       // ─── Settings panel itself — closes back to the Profile screen ───
       if (showSettings) return consume(function(){ setShowSettings(false); });
     }
@@ -831,6 +903,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     showEditProfile, showAvatarView, showAvatarMenu, showCoverAdjust, showAdjust, showEmoji, showLikersProf,
     showCountryPicker, showPhoneCodePicker, showTzPicker,
     showCloseFriends, showAcct, showPrivacy, showSupport, showNotif, showActivityLog, showSound, showBlocked, showMuted, showExpertApp, showSubsMgr, showVerifyApp, showAdminReview, showRate,
+    showInvite, showLeaderboard,
     showSettings, showStore,
   ]);
 
@@ -2624,6 +2697,92 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
     );
   }
 
+  // Leaderboard sub-view — renders the parallel LeaderboardScreen component,
+  // which owns its own header (incl. a back button via the onBack prop).
+  if(showLeaderboard) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+    React.createElement(LeaderboardScreen,{onBack:function(){setShowLeaderboard(false);}})
+  );
+
+  // Invite & Earn sub-view (migration 0056). All RPCs already wrapped above /
+  // in the claim handler — if the migration is unrun the stats simply read as 0
+  // and Claim toasts a friendly error rather than crashing.
+  if(showInvite) {
+    var refCode = (referral && referral.code) ? String(referral.code) : '';
+    var refLink = 'https://ring-in.vercel.app/?ref=' + encodeURIComponent(refCode);
+    var waText = 'Join me on RingIn! Use my code ' + refCode + ' to get started. ' + refLink;
+    var statRows = [
+      {l:'Referrals qualified', v:(referral && referral.qualified != null) ? referral.qualified : 0},
+      {l:'Coins earned', v:(referral && referral.coins_earned != null) ? referral.coins_earned : 0},
+      {l:'Giveaway entries', v:(referral && referral.giveaway_entries != null) ? referral.giveaway_entries : 0}
+    ];
+    return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
+        React.createElement('button',{onClick:function(){setShowInvite(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:'16px',fontWeight:700,color:'var(--text)'}},'Invite & Earn'),
+          React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},'Invite friends & win a great giveaway 🎁')
+        )
+      ),
+      React.createElement('div',{style:{padding:'16px',display:'flex',flexDirection:'column',gap:'16px'}},
+        referralLoading && !referral
+          ? React.createElement('div',{style:{textAlign:'center',padding:'40px 24px',color:'var(--t2)',fontSize:'14px'}},'Loading…')
+          : !refCode
+            ? React.createElement('div',{style:{textAlign:'center',padding:'40px 24px',color:'var(--t2)',fontSize:'14px'}},
+                React.createElement('div',{style:{fontSize:'40px',marginBottom:'12px'}},'🎁'),
+                React.createElement('div',{style:{fontWeight:600,marginBottom:'6px',color:'var(--text)'}},'Invites coming soon'),
+                React.createElement('div',null,'Check back shortly to grab your invite code.')
+              )
+            : React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'16px'}},
+                // Code card
+                React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',padding:'18px',textAlign:'center'}},
+                  React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'8px'}},'Your invite code'),
+                  React.createElement('div',{style:{fontSize:'26px',fontWeight:800,color:'var(--text)',letterSpacing:'2px'}},refCode)
+                ),
+                // Share on WhatsApp
+                React.createElement('button',{
+                  onClick:function(){ try{ window.open('https://wa.me/?text=' + encodeURIComponent(waText), '_blank'); }catch(_){} },
+                  style:{width:'100%',padding:'14px',background:'#25D366',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:'pointer'}
+                },'💬 Share on WhatsApp'),
+                // Copy link
+                React.createElement('button',{
+                  onClick:function(){ copyToClipboardWithToast(refLink, 'Invite link copied!'); },
+                  style:{width:'100%',padding:'12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--text)',fontSize:'14px',fontWeight:600,cursor:'pointer'}
+                },'🔗 Copy link'),
+                // Stats
+                React.createElement('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'14px',overflow:'hidden'}},
+                  statRows.map(function(r,i){
+                    return React.createElement('div',{key:r.l,style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 16px',borderBottom:i<statRows.length-1?'1px solid var(--border)':'none'}},
+                      React.createElement('span',{style:{fontSize:'13px',color:'var(--t2)'}},r.l),
+                      React.createElement('span',{style:{fontSize:'14px',fontWeight:700,color:'var(--text)'}},fmtStatCount(r.v))
+                    );
+                  })
+                ),
+                // Claim rewards
+                React.createElement('button',{
+                  disabled: referralClaiming,
+                  onClick:function(){
+                    if (referralClaiming) return;
+                    setReferralClaiming(true);
+                    try {
+                      sbProfile.rpc('claim_referral_reward').then(function(r){
+                        setReferralClaiming(false);
+                        if (r && r.error) { try{ toastError('Nothing to claim yet'); }catch(_){} return; }
+                        try{ toastSuccess('Rewards claimed! 🎉'); }catch(_){}
+                        // Refresh stats after a successful claim.
+                        try { sbProfile.rpc('get_my_referral_code').then(function(rr){
+                          if (rr && !rr.error && rr.data) { var d2 = Array.isArray(rr.data)?rr.data[0]:rr.data; if (typeof d2==='string') setReferral({code:d2}); else if (d2) setReferral(d2); }
+                        }).catch(function(){}); } catch(_){}
+                      }).catch(function(){ setReferralClaiming(false); try{ toastError('Could not claim right now'); }catch(_){} });
+                    } catch(_){ setReferralClaiming(false); }
+                  },
+                  style:{width:'100%',padding:'14px',background:'var(--ac)',border:'none',borderRadius:'12px',color:'#fff',fontSize:'15px',fontWeight:700,cursor:referralClaiming?'default':'pointer',opacity:referralClaiming?0.6:1}
+                }, referralClaiming ? 'Claiming…' : 'Claim rewards'),
+                React.createElement('div',{style:{textAlign:'center',fontSize:'12px',color:'var(--t2)',lineHeight:1.5}},'Invite friends & win a great giveaway 🎁')
+              )
+      )
+    );
+  }
+
   if(showBlocked) return React.createElement('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'var(--bg)',overflowY:'auto'}},
     React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'16px 18px',borderBottom:'1px solid var(--border)',flexShrink:0}},
       React.createElement('button',{onClick:function(){setShowBlocked(false);},style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('svg',{viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},React.createElement('polyline',{points:'15 18 9 12 15 6'}))),
@@ -3476,6 +3635,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           }} : null,
           /* R26: Admin tile — only for is_admin. Review pending verification requests. */
           isAdmin ? {icon:'🛡️',label:'Verification Review (Admin)',sub:'Approve or reject pending verification requests',fn:function(){setShowAdminReview(true);loadAdminQueue();}} : null,
+          {icon:'🎁',label:'Invite & Earn',sub:'Invite friends & win a great giveaway',fn:function(){setShowInvite(true);}},
           {icon:'👤',label:'Account Settings',sub:'Name, phone, country, timezone',fn:function(){setShowAcct(true);}},
           {icon:'🔒',label:'Privacy & Security',sub:'Password, visibility, locked profile',fn:function(){setShowPrivacy(true);}},
           {icon:'🔔',label:'Notification Settings',sub:'Manage your alerts',fn:function(){setShowNotif(true);}},
@@ -3506,7 +3666,7 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)',marginBottom:'1px'}},'App Version'),
             React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)',fontFamily:'ui-monospace, monospace'}}, (function(){
-              var APK_VERSION = 'v4.21';
+              var APK_VERSION = 'v4.22';
               var bundle = '';
               try {
                 var v = localStorage.getItem('ringin_ota_current_version');
@@ -3961,12 +4121,30 @@ export default function ProfileScreen({session, supabase, onOpenWallet, onGoToMe
       [{v:fmtStatCount(followersCount),l:'Followers'},
        {v:fmtStatCount(friendsCount),l:'Friends'},
        {v:fmtStatCount((myPosts||[]).reduce(function(n,p){return n+(Array.isArray(p.likes)?p.likes.length:0);},0)),l:'Hearts'}].map(function(s){
-        return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center'}},
-          React.createElement('div',{style:{fontSize:'16px',fontWeight:800,color:s.l==='Hearts'?'#E84D9A':'var(--text)'}},s.v),
+        return React.createElement('div',{key:s.l,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'10px',padding:'10px',textAlign:'center',position:'relative'}},
+          React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}},
+            React.createElement('span',{style:{fontSize:'16px',fontWeight:800,color:s.l==='Hearts'?'#E84D9A':'var(--text)'}},s.v),
+            // Hearts streak flame (0057) — only on the Hearts tile, only when active.
+            (s.l==='Hearts' && heartStreak)
+              ? React.createElement('span',{style:{fontSize:'12px',fontWeight:800,color:'#FF6A00'},title:heartStreak+'-day hearts streak'},'🔥'+heartStreak)
+              : null
+          ),
           React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)'}},s.l)
         );
       })
     ),
+    // Status / level crown badge (0058) + Leaderboard link. Hidden entirely
+    // until my_status returns a tier/level (migration unrun → nothing shown).
+    myStatus ? React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'10px',padding:'0 18px 12px'}},
+      React.createElement('div',{style:{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'20px',padding:'5px 12px',fontSize:'12px',fontWeight:700,color:'var(--text)'}},
+        React.createElement('span',null,'👑'),
+        React.createElement('span',null, (function(){ var t=myStatus.tier||myStatus.host_tier; var lv=(myStatus.level!=null)?myStatus.level:myStatus.host_level; return (t?String(t):'Host') + (lv!=null?(' · Lv '+lv):''); })())
+      ),
+      React.createElement('button',{
+        onClick:function(){ setShowLeaderboard(true); },
+        style:{background:'none',border:'none',color:'var(--ac)',fontSize:'12px',fontWeight:600,cursor:'pointer',padding:'4px'}
+      },'Leaderboard ›')
+    ) : null,
     // Tabs
     React.createElement('div',{style:{display:'flex',borderBottom:'1px solid var(--border)',padding:'0 18px',marginBottom:'12px'}},
       ['posts','friends','skills','reviews'].map(function(t){

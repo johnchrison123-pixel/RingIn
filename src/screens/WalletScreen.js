@@ -64,6 +64,12 @@ export default function WalletScreen(props){
   var doneS=useState(false); var done=doneS[0]; var setDone=doneS[1];
   var txS=useState([]); var transactions=txS[0]; var setTransactions=txS[1];
   var payingS=useState(false); var paying=payingS[0]; var setPaying=payingS[1];
+  // Display-only: whether this user came in via a referral, so we can show
+  // a small "+50 welcome coins after your first call" note. The actual
+  // crediting is server-side (future RPC) — this is informational copy only.
+  // get_my_referral_code may not exist yet (migration 0056 may be unrun);
+  // wrapped in try/catch so a missing function never crashes the screen.
+  var refS=useState(false); var hasReferral=refS[0]; var setHasReferral=refS[1];
   // FIX #6: track the simulated-payment setTimeout id so we can cancel it
   // on unmount. Previously the timeout fired even after the user
   // navigated away — the closure inside still called setPaying/setDone on
@@ -77,6 +83,22 @@ export default function WalletScreen(props){
     sb.from('transactions').select('*').eq('user_id',userId).order('created_at',{ascending:false}).limit(20).then(function(r){
       if(r.data) setTransactions(r.data);
     }).catch(function(){});
+  },[userId]);
+
+  // Display-only referral detection. We try the referral RPC; if it returns
+  // a code the user is enrolled in the referral program, so we surface the
+  // welcome-coins note. If the function doesn't exist yet (migration unrun)
+  // or errors, we silently leave the note hidden — never crash the screen.
+  useEffect(function(){
+    if(!userId) return;
+    var alive = true;
+    try {
+      sb.rpc('get_my_referral_code').then(function(r){
+        if(!alive) return;
+        if(r && !r.error && r.data) setHasReferral(true);
+      }).catch(function(){});
+    } catch(_){}
+    return function(){ alive = false; };
   },[userId]);
 
   // FIX #6: cancel any pending payment timer on unmount.
@@ -238,17 +260,28 @@ export default function WalletScreen(props){
     ),
     React.createElement('div',{style:{padding:'0 18px 6px'}},
       React.createElement('div',{style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:'10px'}},'Buy Coins'),
-      PACKAGES.map(function(pkg){
+      // Display-only welcome note for referred users. Crediting is server-side.
+      hasReferral && React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',background:'var(--acg)',border:'1px solid rgba(123,110,255,.3)',borderRadius:'10px',padding:'9px 12px',marginBottom:'10px'}},
+        React.createElement('div',{style:{fontSize:'16px'}},'🎉'),
+        React.createElement('div',{style:{fontSize:'11px',color:'var(--text)',fontWeight:600}},'+50 welcome coins unlocked after your first call')
+      ),
+      PACKAGES.map(function(pkg,pkgIdx){
+        // Display-only: show the "first top-up BOGO" ribbon only on the
+        // smallest/basic pack (the first one in the list, lowest coins).
+        // This is informational copy — the real BOGO crediting happens
+        // server-side in the future top-up RPC. No coin-granting here.
+        var isFirstPack = pkgIdx === 0;
         return React.createElement('div',{
           key:pkg.id,
           onClick:function(){setSelected(pkg);},
-          style:{background:'var(--bg3)',border:'1px solid '+(pkg.popular?'var(--ac)':'var(--border)'),borderRadius:'12px',padding:'13px 14px',marginBottom:'8px',display:'flex',alignItems:'center',cursor:'pointer',position:'relative',overflow:'hidden'}
+          style:{background:'var(--bg3)',border:'1px solid '+(isFirstPack?'var(--green)':(pkg.popular?'var(--ac)':'var(--border)')),borderRadius:'12px',padding:'13px 14px',marginBottom:'8px',display:'flex',alignItems:'center',cursor:'pointer',position:'relative',overflow:'hidden'}
         },
           pkg.popular && React.createElement('div',{style:{position:'absolute',top:0,right:0,background:'var(--ac)',fontSize:'9px',fontWeight:700,color:'#fff',padding:'3px 8px',borderRadius:'0 12px 0 8px'}},'POPULAR'),
           React.createElement('div',{style:{fontSize:'24px',marginRight:'12px'}},'🪙'),
           React.createElement('div',{style:{flex:1}},
             React.createElement('div',{style:{fontSize:'15px',fontWeight:700,color:'var(--text)'}},''+pkg.coins+' coins'+(pkg.bonus>0?' + '+pkg.bonus+' bonus':'')),
-            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},''+pkg.label)
+            React.createElement('div',{style:{fontSize:'11px',color:'var(--t2)'}},''+pkg.label),
+            isFirstPack && React.createElement('div',{style:{marginTop:'5px',display:'inline-block',background:'var(--green)',color:'#fff',fontSize:'10px',fontWeight:700,padding:'2px 8px',borderRadius:'20px'}},'🎁 Launch offer — 1st top-up: 100 + 100 FREE')
           ),
           React.createElement('div',{style:{textAlign:'right'}},
             pkg.bonus>0 && React.createElement('div',{style:{fontSize:'10px',color:'var(--t3)',textDecoration:'line-through',marginBottom:'1px'}},'₹'+(pkg.coins)),

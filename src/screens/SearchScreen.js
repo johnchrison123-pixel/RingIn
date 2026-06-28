@@ -55,6 +55,9 @@ function profileToExpert(p){
   if (!rate || Number.isNaN(rate)) rate = 30;
   return {
     id: p.id,
+    // R: real verified signal (was hardcoded 'Verified' on every card). Gated
+    // on profiles.is_verified like every other screen.
+    verified: !!(p && p.is_verified),
     initials: initials,
     name: name,
     role: req.area || bioJson.tag || 'RingIn Expert',
@@ -367,7 +370,7 @@ export default function SearchScreen(props){
       // older Supabase clients don't expose. Easier: fetch all profiles
       // (small early-stage population) and filter client-side.
       sb.from('profiles')
-        .select('id,full_name,email,avatar_url,bio')
+        .select('id,full_name,email,avatar_url,bio,is_verified')
         .not('bio', 'is', null)
         .limit(200)
         .then(function(res){
@@ -579,12 +582,12 @@ export default function SearchScreen(props){
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'5px',marginBottom:'2px'}},
               React.createElement('span',{style:{fontSize:'13px',fontWeight:600,color:'var(--text)'}},e.name),
-              React.createElement('span',{style:{fontSize:'9px',fontWeight:600,color:'#fff',background:'linear-gradient(135deg,#1877F2,#42B3FF)',padding:'1px 5px',borderRadius:'20px'}},'Verified')
+              e.verified ? React.createElement('span',{style:{fontSize:'9px',fontWeight:600,color:'#fff',background:'linear-gradient(135deg,#1877F2,#42B3FF)',padding:'1px 5px',borderRadius:'20px'}},'Verified') : null
             ),
             React.createElement('div',{style:{fontSize:'10px',color:'var(--t2)',marginBottom:'3px'}},e.role),
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
               React.createElement('span',{style:{fontSize:'9px',color:'var(--amber)',fontWeight:600}},e.rate+' coins/min'),
-              React.createElement('span',{style:{fontSize:'9px',color:'var(--t2)'}},'★'+e.rating)
+              e.rating != null ? React.createElement('span',{style:{fontSize:'9px',color:'var(--t2)'}},'★'+e.rating) : null
             )
           ),
           React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'5px',flexShrink:0}},

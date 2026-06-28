@@ -214,6 +214,16 @@ export default function App() {
         if (u.pathname && /reset-password|recovery/i.test(u.pathname + u.hash)) {
           try { window.location.hash = u.hash || ''; } catch(_){}
         }
+        // Referral capture from a native deep link: ringin://...?ref=CODE.
+        // Stash on window (drained by the ?ref= capture effect) AND directly
+        // into localStorage so a cold-start deep-link survives until session.
+        try {
+          var refDl = u.searchParams.get('ref');
+          if (refDl) {
+            try { window.__ringinPendingRef = refDl; } catch(_){}
+            try { localStorage.setItem('ringin_pending_ref', String(refDl)); } catch(_){}
+          }
+        } catch(_){}
         // Incoming-call handoff from the native full-screen ringer:
         //   ringin://call?invite=<id>&action=accept|decline
         var invite = null, action = '';
@@ -1097,6 +1107,89 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appUserId, session]);
 
+  // ── Referral + welcome + hearts-streak lifecycle ──────────────────────
+  // All best-effort: the backing migrations (0056 referral/welcome, 0057
+  // hearts streak) MAY NOT BE RUN YET in Supabase. Every sb.rpc here is
+  // wrapped in try/catch and degrades silently — a missing function (or any
+  // error) must NEVER block boot, crash a screen, or touch billing.
+
+  /* (1) ?ref= capture — on mount, read a referral code from the web query
+   * string (?ref=CODE) AND from any pending native deep-link, and stash it in
+   * localStorage so it survives until a session resolves. Pure read + write;
+   * never throws past the try/catch. */
+  useEffect(function(){
+    try {
+      var ref = null;
+      try {
+        var params = new URLSearchParams(window.location.search);
+        ref = params.get('ref');
+      } catch(_){}
+      // Native deep-link: ringin://...?ref=CODE may have been stashed on window
+      // by the appUrlOpen handler before this effect ran.
+      if (!ref) {
+        try {
+          var pend = window.__ringinPendingRef;
+          if (pend) ref = pend;
+        } catch(_){}
+      }
+      if (ref) {
+        try { localStorage.setItem('ringin_pending_ref', String(ref)); } catch(_){}
+      }
+    } catch(_){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* (2) Redeem-on-session — once a user id resolves, if we have a stored
+   * pending referral code, attempt to redeem it exactly once (clear the
+   * stored code regardless of outcome so we never retry / double-redeem).
+   * Guarded with a ref so it fires at most once per app session. */
+  var referralRedeemedRef = useRef(false);
+  useEffect(function(){
+    if (!appUserId) return;
+    if (referralRedeemedRef.current) return;
+    var code = null;
+    try { code = localStorage.getItem('ringin_pending_ref'); } catch(_){}
+    if (!code) return;
+    referralRedeemedRef.current = true;
+    // Clear immediately so it only ever tries once (even across re-renders).
+    try { localStorage.removeItem('ringin_pending_ref'); } catch(_){}
+    try {
+      var p = supabase.rpc('redeem_referral_code', { p_code: code });
+      if (p && p.then) {
+        p.then(function(){ /* success or graceful no-op */ })
+         .catch(function(){ /* function may not exist yet — ignore */ });
+      }
+    } catch(_){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appUserId]);
+
+  /* (4) Hearts-streak touch — once per app session (ref-guarded), after the
+   * user id is set, ping touch_heart_streak. If it returns a milestone_reward,
+   * surface a friendly toast. All best-effort. */
+  var heartStreakTouchedRef = useRef(false);
+  useEffect(function(){
+    if (!appUserId) return;
+    if (heartStreakTouchedRef.current) return;
+    heartStreakTouchedRef.current = true;
+    try {
+      var p = supabase.rpc('touch_heart_streak');
+      if (p && p.then) {
+        p.then(function(res){
+          try {
+            var data = res && res.data;
+            // RPC may return a scalar, a row, or an array-of-row.
+            var row = Array.isArray(data) ? data[0] : data;
+            var reward = row && (row.milestone_reward != null ? row.milestone_reward : null);
+            if (reward) {
+              try { toastInfo('Daily streak reward: +' + reward + ' hearts'); } catch(_){}
+            }
+          } catch(_){}
+        }).catch(function(){ /* function may not exist yet — ignore */ });
+      }
+    } catch(_){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appUserId]);
+
   function openWallet() { setPrevTab(activeTab); setActiveTab('wallet'); }
 
   function goToTab(tab) { setActiveTab(tab); }
@@ -1405,6 +1498,20 @@ export default function App() {
                 anonCallContextRef.current = null;
               }
             } catch(e){ console.warn('[ringin] anon call-end dispatch failed:', e); }
+            /* Referral lifecycle: a completed call is the "qualifying" action
+             * for a referral, and also the trigger to claim any pending welcome
+             * bonus. Both are fire-and-forget, best-effort, and DO NOT touch
+             * billing/coin logic. The backing RPCs may not exist yet (migration
+             * 0056 not run) — swallow any error so the call-end path never
+             * breaks. Guarded so a thrown sb.rpc can't abort setActiveCall. */
+            try {
+              var pq = supabase.rpc('qualify_referral');
+              if (pq && pq.then) pq.then(function(){}).catch(function(){});
+            } catch(_){}
+            try {
+              var pw = supabase.rpc('claim_welcome_bonus');
+              if (pw && pw.then) pw.then(function(){}).catch(function(){});
+            } catch(_){}
             setActiveCall(null);
             /* NO-APP-OPEN ON END: if this call was accepted from a
              * notification / cold start (app was backgrounded/locked/closed
