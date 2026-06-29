@@ -154,26 +154,19 @@ async function bootstrapNativePush(userId, sb){
 
 export async function requestNotificationPermission(userId, sb){
   // ── NATIVE PATH (Capacitor Android / iOS) ───────────────────────────
+  // ⚠ TEMP DISABLED — android/app/google-services.json is MISSING from the
+  // project. Without it Firebase is never initialised, so the
+  // @capacitor/push-notifications register() call crashes the WHOLE app
+  // natively ("Default FirebaseApp is not initialized in this process") the
+  // instant the user taps Allow on the notification prompt. We therefore skip
+  // the entire native FCM setup (no prompt, no register, no crash) until the
+  // google-services.json file is restored to android/app/.
+  // TRADE-OFF: lock-screen / background call PUSH is off on native until then;
+  // in-app realtime call + message delivery (Supabase realtime) is unaffected.
+  // TO RE-ENABLE: drop the real google-services.json into android/app/ and
+  // delete this early `return null;`.
   if (isNative()) {
-    try {
-      var mod = await import('@capacitor/push-notifications');
-      var PN = mod && (mod.PushNotifications || mod.default || mod);
-      if (!PN) { console.warn('[ringin] PushNotifications plugin missing'); return null; }
-      // Permission ask (returns 'granted' | 'denied' | 'prompt').
-      var permRes = await PN.requestPermissions();
-      if (!permRes || permRes.receive !== 'granted') {
-        return null;
-      }
-      // Wire listeners FIRST, then register — so the 'registration' event
-      // (which fires immediately on success) doesn't race the listener wiring.
-      await bootstrapNativePush(userId, sb);
-      await PN.register();
-      // Token arrives via the 'registration' listener (above), not here.
-      return null; // we don't have the token synchronously on native
-    } catch (e) {
-      console.warn('[ringin] native push request error:', e && e.message);
-      return null;
-    }
+    return null;
   }
 
   // ── WEB PATH (Firebase JS SDK / PWA) ────────────────────────────────
