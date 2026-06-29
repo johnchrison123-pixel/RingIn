@@ -512,26 +512,74 @@ export function playGiftSound(kind){
   if(p && p.enabled===false) return;
   var vol=(p && p.volume!=null) ? p.volume : 0.6;
   var t0=ctx.currentTime;
-  function ping(freq, start, dur, type, peak){
+  // ── Magic-bell partial: a bright detuned chime with a fast attack + gentle
+  // exponential decay. We layer two slightly-detuned oscillators per note so it
+  // shimmers (a tiny "beat" between them gives that fairy-dust glassiness), plus
+  // a faint octave-up harmonic for extra crystalline sparkle.
+  function sparkleNote(freq, start, dur, peak, type){
     try{
-      var o=ctx.createOscillator(), g=ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.type=type||'sine';
-      o.frequency.setValueAtTime(freq, t0+start);
-      g.gain.setValueAtTime(0.0001, t0+start);
-      g.gain.exponentialRampToValueAtTime(vol*(peak||0.18), t0+start+0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0+start+dur);
-      o.start(t0+start); o.stop(t0+start+dur+0.03);
+      var wave=type||'sine';
+      // Two detuned voices (±~6 cents) → shimmering beat.
+      [1.0, 1.0035].forEach(function(mult, idx){
+        var o=ctx.createOscillator(), g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type=wave;
+        o.frequency.setValueAtTime(freq*mult, t0+start);
+        // tiny upward glide on the body for an "ascending magic" feel
+        o.frequency.exponentialRampToValueAtTime(freq*mult*1.012, t0+start+dur*0.6);
+        g.gain.setValueAtTime(0.0001, t0+start);
+        g.gain.exponentialRampToValueAtTime(vol*peak*(idx===0?1:0.7), t0+start+0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+start+dur);
+        o.start(t0+start); o.stop(t0+start+dur+0.03);
+      });
+      // Octave-up harmonic glint — quieter, snappier, triangle for a glassy edge.
+      var oh=ctx.createOscillator(), gh=ctx.createGain();
+      oh.connect(gh); gh.connect(ctx.destination);
+      oh.type='triangle';
+      oh.frequency.setValueAtTime(freq*2, t0+start);
+      gh.gain.setValueAtTime(0.0001, t0+start);
+      gh.gain.exponentialRampToValueAtTime(vol*peak*0.28, t0+start+0.006);
+      gh.gain.exponentialRampToValueAtTime(0.0001, t0+start+dur*0.7);
+      oh.start(t0+start); oh.stop(t0+start+dur*0.7+0.03);
     }catch(e){}
   }
+  // ── High "fairy-dust" sparkle tail: a flurry of very short, very high random
+  // glints scattered over a window — the twinkly settle after the cascade.
+  function sparkleTail(startBase, count, lo, hi, span, peak){
+    try{
+      for(var i=0;i<count;i++){
+        var st=startBase + Math.random()*span;
+        var f=lo + Math.random()*(hi-lo);
+        var o=ctx.createOscillator(), g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='sine';
+        o.frequency.setValueAtTime(f, t0+st);
+        o.frequency.exponentialRampToValueAtTime(f*1.05, t0+st+0.06);
+        g.gain.setValueAtTime(0.0001, t0+st);
+        g.gain.exponentialRampToValueAtTime(vol*peak, t0+st+0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+st+0.09);
+        o.start(t0+st); o.stop(t0+st+0.12);
+      }
+    }catch(e){}
+  }
+  // Bright major-pentatonic note pool (C major-ish) so any subset sounds magical.
   if(kind==='fanfare'){
-    [523,659,784,1047].forEach(function(f,i){ ping(f, i*0.12, 0.5, 'triangle', 0.22); });
-    ping(1568, 0.5, 0.7, 'sine', 0.16);
+    // Grand magical flourish — a full rising shimmer cascade then a sparkling
+    // bloom + a long high sparkle tail (fairy-dust raining down).
+    var grand=[523,659,784,880,1047,1319,1568,2093];
+    grand.forEach(function(f,i){ sparkleNote(f, i*0.07, 0.6, 0.16, 'sine'); });
+    // shimmering top "bloom" chord
+    [1568,2093,2637].forEach(function(f,i){ sparkleNote(f, 0.62+i*0.02, 0.9, 0.12, 'sine'); });
+    sparkleTail(0.45, 16, 2600, 5200, 0.9, 0.06);
   } else if(kind==='chime'){
-    [659,880,1175].forEach(function(f,i){ ping(f, i*0.09, 0.4, 'sine', 0.2); });
+    // Fuller shimmer cascade — a quick bright arpeggio + a modest sparkle tail.
+    [659,880,1175,1568,1976].forEach(function(f,i){ sparkleNote(f, i*0.06, 0.45, 0.17, 'sine'); });
+    sparkleTail(0.32, 8, 2400, 4200, 0.45, 0.05);
   } else {
-    ping(1320, 0, 0.18, 'sine', 0.2);
-    ping(1760, 0.05, 0.22, 'sine', 0.14);
+    // 'bell' (default) — a short 3-4 note sparkle: quick bright upward chime
+    // with a few high glints. Snappy, magical, used for normal gifts.
+    [988,1319,1760,2349].forEach(function(f,i){ sparkleNote(f, i*0.05, 0.3, 0.18, 'sine'); });
+    sparkleTail(0.18, 4, 2800, 4600, 0.22, 0.05);
   }
 }
 

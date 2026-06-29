@@ -1086,6 +1086,12 @@ export default function App() {
   // Expose to window so any nested component can call it without prop-drilling
   useEffect(function(){
     window.__ringInStartCall = function(u, opts){ startOutgoingCall(u, opts||{}); };
+    // SAFETY: blocking someone mid-call (AnonymousConnect performBlock) calls
+    // window.__ringInHangup to END the live audio call after the block. It was
+    // never defined, so a just-blocked person stayed on the call — a real
+    // safety failure. Dispatch 'ringin:back-call', which CallScreen already
+    // listens for and runs hangup() cleanly.
+    window.__ringInHangup = function(){ try { window.dispatchEvent(new CustomEvent('ringin:back-call')); } catch(_){} };
     // Debug helper — paste `__ringInDebug()` in the Eruda console to see everything
     window.__ringInDebug = function(){
       console.log('========= RINGIN DEBUG =========');
@@ -1103,7 +1109,7 @@ export default function App() {
       console.log('================================');
     };
     if(appUserId){ console.log('[ringin] my user id =', appUserId, '  (run __ringInDebug() to diagnose)'); }
-    return function(){ try{ delete window.__ringInStartCall; delete window.__ringInDebug; }catch(e){} };
+    return function(){ try{ delete window.__ringInStartCall; delete window.__ringInHangup; delete window.__ringInDebug; }catch(e){} };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appUserId, session]);
 

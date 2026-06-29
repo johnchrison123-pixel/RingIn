@@ -76,6 +76,13 @@ export default function AnonymousConnect(props) {
   var pollRef = useRef(null);
   var countdownRef = useRef(null);
   var deadlineRef = useRef(0);
+  /* true only while a peer-search window is live — guards an in-flight
+   * anonymous_enqueue_and_match / anonymous_check_match from resolving AFTER
+   * the user cancelled (or the window expired). Mirrors hostActiveRef on the
+   * host-search flow. Without this, cancelling during the enqueue network call
+   * left a leaked poll interval running forever and could auto-start a call
+   * the user already cancelled. */
+  var searchActiveRef = useRef(false);
   /* R30: availability toggle + live count of who's online. FRND-style. */
   var availableS = useState(false); var available = availableS[0]; var setAvailable = availableS[1];
   var availTogglingS = useState(false); var availToggling = availTogglingS[0]; var setAvailToggling = availTogglingS[1];
@@ -416,6 +423,10 @@ export default function AnonymousConnect(props) {
     };
     setActiveChat(seed);
     setChatMessages([]);
+    /* Reset transient chat overlays so a gift drawer / reaction picker left
+     * open in a previous chat doesn't carry into this one. */
+    setGiftDrawerOpen(false);
+    setReactionPickerFor(null);
     setActiveTab('messages');
     loadAnonChat(conn.user_id);
   }
@@ -512,6 +523,7 @@ export default function AnonymousConnect(props) {
   /* R29: stop everything — clears poll, countdown, leaves the queue server-
    * side. Safe to call multiple times. */
   function stopSearching(){
+    searchActiveRef.current = false;
     if (pollRef.current)     { clearInterval(pollRef.current); pollRef.current = null; }
     if (countdownRef.current){ clearInterval(countdownRef.current); countdownRef.current = null; }
     try { sb.rpc('anonymous_leave_queue').then(function(){}).catch(function(){}); } catch(_){}
@@ -559,6 +571,7 @@ export default function AnonymousConnect(props) {
 
   function find(excludeOverride) {
     if (!userId) { toastError('Please log in'); return; }
+    if (searchActiveRef.current) return; /* guard double-tap / re-entry while a search window is already live */
     /* R37: dismiss any leftover post-call sheet when starting a new search. */
     setPostCall(null);
     /* R30: auto-enable availability so others can see + match with us.
@@ -579,6 +592,7 @@ export default function AnonymousConnect(props) {
      *     my row flips to 'matched' and the poll detects it.
      *  4. On timeout (30 sec, no match) → leave queue + show toast.
      */
+    searchActiveRef.current = true;
     setSearching(true); setErr(null); setSecsLeft(30);
     var useExclude = Array.isArray(excludeOverride) ? excludeOverride : exclude;
     deadlineRef.current = Date.now() + 30 * 1000;
@@ -598,6 +612,7 @@ export default function AnonymousConnect(props) {
         return;
       }
       sb.rpc('anonymous_check_match').then(function(r){
+        if (!searchActiveRef.current) return; /* cancelled/expired mid-flight — don't act on a stale match */
         if (!r || r.error) {
           console.warn('[anon] check_match error:', r && r.error);
           return;
@@ -621,6 +636,16 @@ export default function AnonymousConnect(props) {
       p_geo_city: null,
       p_exclude: useExclude,
     }).then(function(r){
+      /* If the user cancelled (or the window expired) while the enqueue was
+       * still in flight, stopSearching already ran — bail so we don't start a
+       * leaked poll interval or auto-start a call the user cancelled. */
+      if (!searchActiveRef.current) {
+        /* Best-effort: we enqueued server-side but no longer want to match, so
+         * leave the queue. stopSearching already fired anonymous_leave_queue,
+         * but the enqueue landed after it — fire once more to be safe. */
+        try { sb.rpc('anonymous_leave_queue').then(function(){}).catch(function(){}); } catch(_){}
+        return;
+      }
       if (!r || r.error) {
         console.warn('[anon] enqueue error:', r && r.error);
         stopSearching();
@@ -1443,7 +1468,10 @@ export default function AnonymousConnect(props) {
    * 0055 migration hasn't run yet) it falls back to find_random_host. */
   function findRandomHost(){
     if (!userId) { toastError('Please log in'); return; }
-    if (hostSearching) return; /* guard double-tap (hostSearching is the live-search flag) */
+    /* Guard double-tap. hostSearching is async React state, so a very fast
+     * second tap (before re-render) could slip past it and set up duplicate
+     * intervals; hostActiveRef is set synchronously so it closes that gap. */
+    if (hostSearching || hostActiveRef.current) return;
     hostActiveRef.current = true;
     setHostAllBusy(false);
     setHostSearching(true);
@@ -2028,7 +2056,7 @@ export default function AnonymousConnect(props) {
         /* Chat header */
         React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}},
           React.createElement('button', {
-            onClick: function(){ setActiveChat(null); setChatMessages([]); loadAnonConvos(); },
+            onClick: function(){ setActiveChat(null); setChatMessages([]); setGiftDrawerOpen(false); setReactionPickerFor(null); loadAnonConvos(); },
             style:{background:'none',border:'none',color:'var(--text)',cursor:'pointer',padding:'4px',display:'flex',alignItems:'center'}
           },
             React.createElement('svg', {viewBox:'0 0 24 24',width:'22',height:'22',fill:'none',stroke:'currentColor',strokeWidth:'2.3',strokeLinecap:'round',strokeLinejoin:'round'},

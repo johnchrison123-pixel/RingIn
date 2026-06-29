@@ -196,6 +196,7 @@ export default function CallScreen(props){
   function sendCallGift(g){
     if (!g || !expert || !expert.id || giftSending) return;
     setGiftSending(g.gift_key);
+    setGiftDrawerOpen(false);   // close the gift tab IMMEDIATELY on press so the gift animation is always visible (was only closing for big gifts, after the RPC)
     sb.rpc('send_gift', {
       p_gift_key: g.gift_key,
       p_to_user: expert.id,
@@ -280,8 +281,22 @@ export default function CallScreen(props){
         var row = p && p.new;
         if (!row || !row.id) return;
         if (row.player_x !== myUserId && row.player_o !== myUserId) return;
-        setTtGame({ gameId: row.id, myMark: (row.player_x === myUserId) ? 'X' : 'O', gameType: row.game_type || 'tic_tac_toe' });
-        setGameMin(false);   // pop the game open on both sides when one side starts it
+        var gid = row.id;
+        var myMk = (row.player_x === myUserId) ? 'X' : 'O';
+        /* CRITICAL FIX (host always saw Tic-Tac-Toe): the realtime INSERT
+         * payload's game_type is unreliable — the OTHER side was falling back
+         * to 'tic_tac_toe', so every non-TTT game (Ludo / Connect 4 / RPS)
+         * opened as Tic-Tac-Toe on the host. Fetch the authoritative row via
+         * get_game so BOTH screens open the SAME game the initiator picked. */
+        sb.rpc('get_game', { p_game: gid }).then(function(rr){
+          var d = rr && rr.data; if (Array.isArray(d)) d = d[0];
+          var realType = (d && d.game_type) || row.game_type || 'tic_tac_toe';
+          setTtGame({ gameId: gid, myMark: myMk, gameType: realType });
+          setGameMin(false);
+        }).catch(function(){
+          setTtGame({ gameId: gid, myMark: myMk, gameType: row.game_type || 'tic_tac_toe' });
+          setGameMin(false);
+        });
       })
       .subscribe();
     return function(){ try { sb.removeChannel(ch); } catch(_){} };
@@ -618,7 +633,12 @@ export default function CallScreen(props){
               // gives the hook fetch one more chance to arrive with a
               // real balance before we tear down the call.
               if (next === 60) return 0;
-              hangup('no_coins');
+              // FIX (impure updater): defer the auto-hangup OUTSIDE the state
+              // updater (mirrors FIX #7's broadcast deferral). hangup() fires
+              // many setState + DB writes + clearTimeouts — running it
+              // synchronously inside a React updater is impure (double-runs in
+              // StrictMode, can re-enter setState). endedRef guards double-end.
+              Promise.resolve().then(function(){ try { hangup('no_coins'); } catch(_){} });
               return 0;
             }
             return nc;
@@ -1236,7 +1256,7 @@ export default function CallScreen(props){
         ttGame.gameType === 'ludo' ? LudoGame :
         ttGame.gameType === 'rps' ? RockPaperScissorsGame :
         TicTacToeGame,
-        { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
+        { key: ttGame.gameId, gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
           onClose: function(){ setTtGame(null); setGameMin(false); },
           onMinimize: function(){ setGameMin(true); },
           onPlayAgain: function(){ if (ttGame) startGame(ttGame.gameType); },

@@ -148,6 +148,7 @@ export default function LudoGame(props){
   var hopIvRef = useRef(null);
   var pendingRollRef = useRef(false);   // a server roll is mid-flight
   var prevTokensRef = useRef(null);     // last-known authoritative tokens (capture diff)
+  var diceSpinRef = useRef(0);          // accumulating full-turn count so each roll tumbles further
 
   function clearHopIv(){ if (hopIvRef.current) { clearInterval(hopIvRef.current); hopIvRef.current = null; } }
 
@@ -332,6 +333,8 @@ export default function LudoGame(props){
     setShaking(true);
     setSettle(false);
     pendingRollRef.current = true;
+    // add a few extra full turns each roll so the cube keeps tumbling forward
+    diceSpinRef.current = (diceSpinRef.current || 0) + 3;
     // cosmetic spinning face during the shake
     spinTimerRef.current = setInterval(function(){
       if (!mountedRef.current) return;
@@ -804,21 +807,110 @@ export default function LudoGame(props){
     style: { position: 'relative', width: BOARD, margin: '0 auto' }
   }, boardWrap, toastEl);
 
-  // ── Dice + roll button ──
-  var dieShown = shaking ? fakeFace : (roll != null ? roll : lastRoll);
-  var dieFace = (dieShown != null && DIE_FACES[dieShown]) ? DIE_FACES[dieShown] : '🎲';
-  var dieCls = shaking ? 'ringin-dice-shake' : (settle ? 'ringin-dice-settle' : '');
-  var dieEl = React.createElement('div', {
-    className: dieCls,
-    style: {
-      width: 52, height: 52, borderRadius: 12,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 38, lineHeight: '52px',
-      background: 'linear-gradient(145deg,#f5f7fb,#cdd6e4)',
-      color: (roll != null || shaking || lastRoll != null) ? '#1a2233' : '#6b7585',
-      boxShadow: '0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.8)'
+  // ── Dice: realistic 3D CSS cube ──
+  // Authoritative face = server roll (roll, else lastRoll). The tumble is purely
+  // cosmetic; the SETTLED orientation always shows the real server value.
+  var DIE_PX = 72;                       // cube edge size
+  var DIE_HALF = DIE_PX / 2;             // translateZ depth for each face
+  // Standard western die: opposite faces sum to 7.
+  //   front=1  back=6  right=3  left=4  top=5  bottom=2
+  // Each face's place transform (rotate into position, then push out by half).
+  var FACE_PLACE = {
+    front:  'rotateY(0deg) translateZ(' + DIE_HALF + 'px)',
+    back:   'rotateY(180deg) translateZ(' + DIE_HALF + 'px)',
+    right:  'rotateY(90deg) translateZ(' + DIE_HALF + 'px)',
+    left:   'rotateY(-90deg) translateZ(' + DIE_HALF + 'px)',
+    top:    'rotateX(90deg) translateZ(' + DIE_HALF + 'px)',
+    bottom: 'rotateX(-90deg) translateZ(' + DIE_HALF + 'px)'
+  };
+  var FACE_VALUE = { front: 1, back: 6, right: 3, left: 4, top: 5, bottom: 2 };
+  // Cube rotation that brings the given value's face to the front (the viewer).
+  var SHOW_FACE = {
+    1: { x: 0,   y: 0 },     // front
+    6: { x: 0,   y: 180 },   // back
+    3: { x: 0,   y: -90 },   // right → swing left to front
+    4: { x: 0,   y: 90 },    // left  → swing right to front
+    5: { x: -90, y: 0 },     // top   → tip down to front
+    2: { x: 90,  y: 0 }      // bottom→ tip up to front
+  };
+  // Pip grid positions (3x3 cells, 1-indexed 1..9) per value.
+  var PIP_CELLS = {
+    1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9],
+    5: [1, 3, 5, 7, 9], 6: [1, 3, 7, 9, 4, 6]
+  };
+  function faceEl(faceKey){
+    var val = FACE_VALUE[faceKey];
+    var cells = PIP_CELLS[val] || [];
+    var pips = [];
+    for (var c = 1; c <= 9; c++){
+      var on = cells.indexOf(c) !== -1;
+      pips.push(React.createElement('span', {
+        key: 'p' + c,
+        style: {
+          width: '70%', height: '70%', borderRadius: '50%', margin: 'auto',
+          alignSelf: 'center', justifySelf: 'center',
+          visibility: on ? 'visible' : 'hidden',
+          background: 'radial-gradient(circle at 35% 30%, #4a5260, #181d27 70%)',
+          boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.35), 0 1px 1px rgba(0,0,0,0.5)'
+        }
+      }));
     }
-  }, dieFace);
+    return React.createElement('div', {
+      key: faceKey,
+      style: {
+        position: 'absolute', width: DIE_PX, height: DIE_PX,
+        boxSizing: 'border-box',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3,1fr)', gridTemplateRows: 'repeat(3,1fr)',
+        padding: DIE_PX * 0.13, gap: DIE_PX * 0.02,
+        borderRadius: 14,
+        background: 'linear-gradient(145deg,#ffffff 0%,#eef1f6 55%,#d4dae6 100%)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.7), inset 0 -6px 10px rgba(140,150,170,0.35), inset 0 4px 8px rgba(255,255,255,0.85)',
+        backfaceVisibility: 'hidden',
+        transform: FACE_PLACE[faceKey]
+      }
+    }, pips);
+  }
+  // Resolve target orientation. While shaking we tumble on multiple axes plus the
+  // accumulated full spins; once landed we ease to the authoritative face.
+  var authVal = (roll != null ? roll : lastRoll);
+  var spins = (diceSpinRef.current || 0) * 360;
+  var cubeTransform, cubeTransition;
+  if (shaking) {
+    // mid-air tumble — large multi-axis rotation; the 70ms fakeFace flicker keeps
+    // it lively while this transform animates toward a spun-up orientation.
+    cubeTransform = 'rotateX(' + (spins + 720 + fakeFace * 47) + 'deg) rotateY(' + (spins + 540 + fakeFace * 61) + 'deg) rotateZ(' + (fakeFace * 23) + 'deg)';
+    cubeTransition = 'transform 0.55s cubic-bezier(.25,.7,.35,1)';
+  } else if (authVal != null && SHOW_FACE[authVal]) {
+    var f = SHOW_FACE[authVal];
+    // settle: keep the accumulated spins so it lands forward, then expose face N.
+    cubeTransform = 'rotateX(' + (spins + f.x) + 'deg) rotateY(' + (spins + f.y) + 'deg) rotateZ(0deg)';
+    cubeTransition = 'transform 0.9s cubic-bezier(.2,.8,.3,1)';
+  } else {
+    cubeTransform = 'rotateX(-22deg) rotateY(28deg) rotateZ(0deg)';
+    cubeTransition = 'transform 0.6s cubic-bezier(.2,.8,.3,1)';
+  }
+  var cube = React.createElement('div', {
+    style: {
+      position: 'absolute', top: 0, left: 0, width: DIE_PX, height: DIE_PX,
+      transformStyle: 'preserve-3d',
+      transform: cubeTransform,
+      transition: cubeTransition
+    }
+  }, faceEl('front'), faceEl('back'), faceEl('right'), faceEl('left'), faceEl('top'), faceEl('bottom'));
+  var dieEl = React.createElement('div', {
+    style: {
+      width: DIE_PX, height: DIE_PX,
+      perspective: 620, perspectiveOrigin: '50% 45%',
+      flex: '0 0 auto'
+    }
+  }, React.createElement('div', {
+    // soft contact shadow under the die for grounding
+    style: {
+      position: 'relative', width: DIE_PX, height: DIE_PX,
+      filter: 'drop-shadow(0 6px 7px rgba(0,0,0,0.55))'
+    }
+  }, cube));
 
   var rollBtn = null;
   if (myTurn && roll == null && !err) {
