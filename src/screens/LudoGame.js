@@ -366,6 +366,7 @@ export default function LudoGame(props){
           if (row && row.id) applyServer(row);
         }
       } catch (_) {} finally {
+        pendingRollRef.current = false;
         if (mountedRef.current) { setBusy(false); serverDone = true; maybeStop(); }
       }
     })();
@@ -440,6 +441,7 @@ export default function LudoGame(props){
     }
 
     (async function(){
+      var got = false;
       try {
         var r = await sb.rpc('ludo_move', { p_game: gameId, p_token: i });
         if (!mountedRef.current) return;
@@ -447,7 +449,7 @@ export default function LudoGame(props){
           var row = r.data; if (Array.isArray(row)) row = row[0];
           if (row && row.id) {
             // Wait for the local hop to finish before letting server supersede.
-            finishThenApply(row);
+            got = true; finishThenApply(row);
           }
         } else {
           clearHopIv(); setOpt(null);   // rejected → revert
@@ -456,6 +458,7 @@ export default function LudoGame(props){
         if (mountedRef.current) { clearHopIv(); setOpt(null); }
       } finally {
         if (mountedRef.current) setBusy(false);
+        if (mountedRef.current && !got && !hopIvRef.current) { clearHopIv(); setOpt(null); reseed(); }
       }
     })();
   }

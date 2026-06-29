@@ -185,6 +185,8 @@ export default function CallScreen(props){
    * overlay reads this and runs a 3-second animation, then clears. */
   var incomingAnimS = useState(null); var incomingAnim = incomingAnimS[0]; var setIncomingAnim = incomingAnimS[1];
   var animTimerRef = useRef(null);
+  var errTimerRef = useRef(null);
+  var closedGamesRef = useRef({});
   function fireGiftAnim(g, fromName, isOutgoing){
     setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', category: g.category || null, gift_key: g.gift_key || null, color: g.color || null, fromName: fromName || '', sent: !!isOutgoing, ts: Date.now() });
     try { playGiftSound(g.sound === 'fanfare' ? 'fanfare' : (g.sound === 'chime_big' || (g.coins||0) >= 399 ? 'chime' : 'bell')); } catch(_){}
@@ -192,9 +194,12 @@ export default function CallScreen(props){
     animTimerRef.current = setTimeout(function(){ setIncomingAnim(null); animTimerRef.current = null; }, g.fullscreen ? 5200 : 3000);
   }
 
+  function flashError(msg){ setError(msg); if (errTimerRef.current) clearTimeout(errTimerRef.current); errTimerRef.current = setTimeout(function(){ setError(null); errTimerRef.current = null; }, 3500); }
+
   /* R48: send a gift during the active call. Atomic on server. */
   function sendCallGift(g){
     if (!g || !expert || !expert.id || giftSending) return;
+    setError(null);
     setGiftSending(g.gift_key);
     setGiftDrawerOpen(false);   // close the gift tab IMMEDIATELY on press so the gift animation is always visible (was only closing for big gifts, after the RPC)
     sb.rpc('send_gift', {
@@ -205,7 +210,7 @@ export default function CallScreen(props){
       setGiftSending(null);
       var d = r && r.data;
       if ((r && r.error) || !d || d.status !== 'ok') {
-        setError(d && d.status === 'insufficient' ? 'Not enough coins' : ((r && r.error && r.error.message) || 'Gift failed'));
+        flashError(d && d.status === 'insufficient' ? 'Not enough coins' : ((r && r.error && r.error.message) || 'Gift failed'));
         return;
       }
       // server-authoritative balance after the debit → sync the call counter + wallet
@@ -216,16 +221,16 @@ export default function CallScreen(props){
       // animate what was actually delivered (a lucky box may roll a different gift).
       // Prefer the delivered gift's own catalog row for its color; fall back to the
       // sent gift's category so the neon burst still matches its tier.
-      var dg = (d.gift_key && giftByKey(d.gift_key)) || null;
+      var dg = (d.delivered_gift_key && giftByKey(d.delivered_gift_key)) || null;
       fireGiftAnim({
         icon:d.icon, coins:d.coins, fullscreen:d.fullscreen, sound:d.sound, name:d.name,
         category: (dg && dg.category) || g.category || null,
-        gift_key: d.gift_key || g.gift_key || null,
+        gift_key: d.delivered_gift_key || g.gift_key || null,
         color: d.color || (dg && dg.color) || g.color || null,
       }, 'You', true);
       // keep the drawer open for cheap combo-able gifts; close for the big ones
       if (d.fullscreen || (d.coins||0) > 99) setGiftDrawerOpen(false);
-    }).catch(function(){ setGiftSending(null); setError('Network error'); });
+    }).catch(function(){ setGiftSending(null); flashError('Network error'); });
   }
 
   /* R48: listen for incoming gifts during this call. Subscribe to
@@ -242,8 +247,8 @@ export default function CallScreen(props){
         var row = p && p.new;
         if (!row) return;
         var key = row.rolled_gift_key || row.gift_key;
-        var g = giftByKey(key) || { icon:'🎁', coins: row.coins_spent, fullscreen:false, sound:'bell', name:'Gift', gift_key:key };
-        fireGiftAnim({ icon:g.icon, coins:g.coins || row.coins_spent, fullscreen:g.fullscreen, sound:g.sound, name:g.name, category:g.category || null, gift_key:g.gift_key || key, color:g.color || null }, (expert && expert.name) || 'Them');
+        function showGift(){ var g = giftByKey(key) || { icon:'🎁', coins: row.coins_spent, fullscreen:false, sound:'bell', name:'Gift', gift_key:key }; fireGiftAnim({ icon:g.icon, coins:g.coins || row.coins_spent, fullscreen:g.fullscreen, sound:g.sound, name:g.name, category:g.category || null, gift_key:g.gift_key || key, color:g.color || null }, (expert && expert.name) || 'Them'); }
+        if (giftByKey(key)) { showGift(); } else { loadGiftCatalog(sb).then(showGift).catch(showGift); }
       })
       .subscribe();
     return function(){ try { sb.removeChannel(ch); } catch(_){} if (animTimerRef.current) { clearTimeout(animTimerRef.current); animTimerRef.current = null; } };
@@ -289,6 +294,7 @@ export default function CallScreen(props){
           .then(function(rr){
             var d = rr && rr.data && rr.data[0];
             if (!d || !d.id) return;
+            if (closedGamesRef.current[d.id]) return;
             if (d.player_x !== myUserId && d.player_o !== myUserId) return;
             var myMk = (d.player_x === myUserId) ? 'X' : 'O';
             setTtGame(function(prev){
@@ -313,10 +319,11 @@ export default function CallScreen(props){
         sb.rpc('get_game', { p_game: gid }).then(function(rr){
           var d = rr && rr.data; if (Array.isArray(d)) d = d[0];
           var realType = (d && d.game_type) || row.game_type || 'tic_tac_toe';
-          setTtGame({ gameId: gid, myMark: myMk, gameType: realType });
+          setTtGame(function(prev){ if (prev && prev.gameId && prev.gameId !== gid && String(prev.gameId) < String(gid)) return prev; return { gameId: gid, myMark: myMk, gameType: realType }; });
           setGameMin(false);
         }).catch(function(){
-          setTtGame({ gameId: gid, myMark: myMk, gameType: row.game_type || 'tic_tac_toe' });
+          var realType = row.game_type || 'tic_tac_toe';
+          setTtGame(function(prev){ if (prev && prev.gameId && prev.gameId !== gid && String(prev.gameId) < String(gid)) return prev; return { gameId: gid, myMark: myMk, gameType: realType }; });
           setGameMin(false);
         });
       })
@@ -846,6 +853,7 @@ export default function CallScreen(props){
     return function(){
       try { if(startFailedTimerRef.current){ clearTimeout(startFailedTimerRef.current); startFailedTimerRef.current = null; } } catch(e){}
       try { if(endTimerRef.current){ clearTimeout(endTimerRef.current); endTimerRef.current = null; } } catch(e){}
+      try { if(errTimerRef.current){ clearTimeout(errTimerRef.current); errTimerRef.current = null; } } catch(e){}
       // Restore audio session to 'auto' so iOS picks the right category
       // based on the next thing the app does. Do NOT set to 'playback' —
       // that would lock the session to media-only and the NEXT call's
@@ -1282,10 +1290,10 @@ export default function CallScreen(props){
         ttGame.gameType === 'rps' ? RockPaperScissorsGame :
         TicTacToeGame,
         { key: ttGame.gameId, gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
-          onClose: function(){ setTtGame(null); setGameMin(false); },
+          onClose: function(){ if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); },
           onMinimize: function(){ setGameMin(true); },
           onPlayAgain: function(){ if (ttGame) startGame(ttGame.gameType); },
-          onPickAnother: function(){ setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
+          onPickAnother: function(){ if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
       )
     ) : null,
 

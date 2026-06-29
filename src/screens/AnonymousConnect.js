@@ -2083,7 +2083,7 @@ export default function AnonymousConnect(props) {
           ),
           /* Call shortcut — only when partner is online */
           activeChat.is_online ? React.createElement('button', {
-            onClick: function(){ callConnection({ user_id: activeChat.partner_id, nickname: activeChat.nickname, avatar: activeChat.avatar, gender: activeChat.gender, is_online: true }); },
+            onClick: function(){ callConnection({ user_id: activeChat.partner_id, nickname: activeChat.nickname, avatar: activeChat.avatar, gender: activeChat.gender, is_online: !!activeChat.is_online }); },
             style:{padding:'7px 10px',borderRadius:'8px',background:'linear-gradient(135deg,#27C96A,#1D9E75)',border:'none',color:'#fff',fontSize:'13px',cursor:'pointer'}
           }, '📞') : null
         ),

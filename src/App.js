@@ -870,6 +870,13 @@ export default function App() {
         partner_gender: null, /* not on the invite row; null is fine for log */
         wasCaller: false,
       };
+      /* HIGH FIX: the 'ringin:anoncallend' + 'ringin:viewanonpartner' listeners
+       * live inside AnonymousConnect, which is only mounted on the 'connect' tab.
+       * If an anon-match CALLEE accepts a ring while on another tab, switch to
+       * 'connect' now so AnonymousConnect is mounted before the call ends — else
+       * the call-end event has no listener and their log / Neon earnings aren't
+       * saved. Anon-accept path only; caller + non-anon behaviour unchanged. */
+      try { setPrevTab(activeTab); setActiveTab('connect'); } catch(_){}
     } else {
       anonCallContextRef.current = null;
     }
