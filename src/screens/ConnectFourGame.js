@@ -43,6 +43,11 @@ var COLS = 7;
 var ROWS = 6;
 var X_C = '#5ad1ff';
 var O_C = '#ff7eb6';
+// L5: dedicated disc fills with stronger contrast against the dark board.
+// The X (blue) disc gets a brighter cyan core + darker navy rim so it no
+// longer blends into the indigo board base.
+var X_DISC = '#3ec8ff';
+var O_DISC = '#ff7eb6';
 
 // Helper for initiators: create a Connect Four game, return its id (or null).
 export async function startConnectFour(sbClient, opponentId, contextId, contextKind){
@@ -93,10 +98,38 @@ export default function ConnectFourGame(props){
   // the freshly-landed disc, not the whole board on every re-render.
   var lastDropRef = useRef(-1);
   var prevBoardRef = useRef(EMPTY_BOARD);
+  // Set of cell indices that became filled on the most recent board change —
+  // every disc in here plays the drop animation (handles batched drops).
+  var animSetRef = useRef({});
+  // H5 LOCKOUT watchdog: if an optimistic disc is never superseded by the
+  // server (lost realtime UPDATE + an RPC that returned no usable row), the
+  // board can lock with a ghost disc and a turn that never flips. This timer
+  // clears the stale opt and re-seeds authoritative state via get_game.
+  var optWatchRef = useRef(null);
+
+  function clearOptWatch(){
+    if (optWatchRef.current) { try { clearTimeout(optWatchRef.current); } catch (_) {} optWatchRef.current = null; }
+  }
+
+  // Re-seed authoritative state from the server (used by the watchdog + the
+  // realtime reconnect path).
+  function reseed(){
+    (async function(){
+      try {
+        var r = await sb.rpc('get_game', { p_game: gameId });
+        if (!mountedRef.current) return;
+        if (r && r.error) return;
+        var row = r ? r.data : null;
+        if (Array.isArray(row)) row = row[0];
+        if (row && row.id) applyServer(row);
+      } catch (_) {}
+    })();
+  }
 
   // Server truth arrived → clear any optimistic disc it now covers.
   function applyServer(row){
     if (!row || !row.id) return;
+    if (optWatchRef.current) { try { clearTimeout(optWatchRef.current); } catch (_) {} optWatchRef.current = null; }
     setGame(row);
     setOpt(null);
   }
@@ -140,7 +173,13 @@ export default function ConnectFourGame(props){
           var n = p && p['new'];
           if (n && n.id) applyServer(n);
         })
-        .subscribe();
+        .subscribe(function(s){
+          // H7 RECONNECT: a dropped/errored channel can leave us stuck on a
+          // stale board (esp. with a pending optimistic disc). Re-seed truth.
+          if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+            if (mountedRef.current) reseed();
+          }
+        });
     } catch (_) {
       ch = null;
     }
@@ -151,7 +190,7 @@ export default function ConnectFourGame(props){
   }, [gameId]);
 
   useEffect(function(){
-    return function(){ mountedRef.current = false; };
+    return function(){ mountedRef.current = false; clearOptWatch(); };
   }, []);
 
   // ── Derived values (safe regardless of game being null) ──
@@ -173,19 +212,24 @@ export default function ConnectFourGame(props){
   var isOver = status === 'won' || status === 'draw' || status === 'abandoned';
   var myTurn = !!(game && status === 'active' && turn === myMark) && !opt;
 
-  // Drop-animation tracking: figure out which idx just became filled so only
-  // that disc animates. Compare current rendered board to the previous one.
-  var dropIdx = -1;
+  // M8 Drop-animation tracking: figure out EVERY idx that just became filled
+  // vs the previous rendered board, so a batch of opponent drops (two server
+  // UPDATEs coalesced into one render) ALL animate, not just the last one.
+  // Each disc also gets a stable key (cell idx + mark) so React keeps the same
+  // element and the drop animation actually plays on the freshly-landed discs.
+  var animSet = animSetRef.current;
   if (board !== prevBoardRef.current) {
+    var fresh = {};
     for (var k = 0; k < board.length; k++){
       if (board.charAt(k) !== prevBoardRef.current.charAt(k) && board.charAt(k) !== '_'){
-        dropIdx = k; break;
+        fresh[k] = true;
+        lastDropRef.current = k;
       }
     }
-    if (dropIdx >= 0) lastDropRef.current = dropIdx;
+    animSet = fresh;
+    animSetRef.current = fresh;
     prevBoardRef.current = board;
   }
-  var animIdx = lastDropRef.current;
 
   // Clear a stale optimistic disc once the server board covers it.
   useEffect(function(){
@@ -217,25 +261,44 @@ export default function ConnectFourGame(props){
     setOpt({ idx: idx, mark: myMark });
     lastDropRef.current = idx;
 
+    // H5 LOCKOUT watchdog: if no authoritative state supersedes this disc in
+    // ~3s (lost realtime UPDATE + RPC that didn't return a usable row), clear
+    // the ghost disc and re-seed truth via get_game so the board never locks.
+    clearOptWatch();
+    optWatchRef.current = setTimeout(function(){
+      optWatchRef.current = null;
+      if (!mountedRef.current) return;
+      setOpt(null);
+      reseed();
+    }, 3000);
+
     // 2) Fire the RPC; server state supersedes the optimistic disc.
     setBusy(true);
     (async function(){
+      var got = false;
       try {
         var r = await sb.rpc('c4_drop', { p_game: gameId, p_col: c });
         if (!mountedRef.current) return;
         if (r && !r.error) {
           var row = r.data;
           if (Array.isArray(row)) row = row[0];
-          if (row && row.id) applyServer(row);   // realtime also confirms
+          if (row && row.id) { got = true; applyServer(row); }   // realtime also confirms
         } else {
           // Rejected (not_your_turn / col_full / race) → drop the optimistic
           // disc; authoritative state stays correct.
+          clearOptWatch();
           setOpt(null);
         }
       } catch (_) {
-        if (mountedRef.current) setOpt(null);
+        if (mountedRef.current) { clearOptWatch(); setOpt(null); }
       } finally {
-        if (mountedRef.current) setBusy(false);
+        if (mountedRef.current) {
+          setBusy(false);
+          // No usable row came back (error already handled above; this also
+          // covers an RPC that resolved with neither error nor a row) → don't
+          // lock on the optimistic disc: clear it + re-seed authoritative state.
+          if (!got) { clearOptWatch(); setOpt(null); reseed(); }
+        }
       }
     })();
   }
@@ -351,18 +414,23 @@ export default function ConnectFourGame(props){
         var mark = board.charAt(idx);
         var filled = (mark === 'X' || mark === 'O');
         var clickable = colDroppable(col);
-        var dc = mark === 'X' ? X_C : O_C;
+        var isX = mark === 'X';
+        var dc = isX ? X_DISC : O_DISC;
+        // L5: darker rim per side so the disc edge separates from the board.
+        var rim = isX ? 'rgba(2,30,55,.95)' : 'rgba(60,8,28,.85)';
 
         var disc = filled
           ? React.createElement('div', {
               key: 'disc-' + idx + '-' + mark,
-              className: (idx === animIdx) ? 'ringin-disc-drop' : undefined,
+              className: (animSet && animSet[idx]) ? 'ringin-disc-drop' : undefined,
               style: {
                 width: '100%', height: '100%', borderRadius: '50%',
                 background: 'radial-gradient(circle at 32% 28%, '
-                  + 'rgba(255,255,255,.85) 0%, ' + dc + ' 38%, ' + dc + ' 70%, '
-                  + 'rgba(0,0,0,.35) 100%)',
-                boxShadow: '0 2px 5px rgba(0,0,0,.45), inset 0 -3px 6px rgba(0,0,0,.35)'
+                  + 'rgba(255,255,255,.92) 0%, ' + dc + ' 40%, ' + dc + ' 68%, '
+                  + rim + ' 100%)',
+                boxShadow: isX
+                  ? '0 2px 6px rgba(0,0,0,.5), 0 0 8px rgba(62,200,255,.45), inset 0 -3px 6px rgba(0,0,0,.4)'
+                  : '0 2px 5px rgba(0,0,0,.45), inset 0 -3px 6px rgba(0,0,0,.35)'
               }
             })
           : null;
@@ -399,9 +467,12 @@ export default function ConnectFourGame(props){
       gridTemplateColumns: 'repeat(' + COLS + ', ' + DISC + 'px)',
       gridTemplateRows: 'repeat(' + ROWS + ', ' + DISC + 'px)',
       gap: GAP, padding: 10, borderRadius: 18,
-      background: 'linear-gradient(160deg,#2b3aa0 0%,#1f2a78 45%,#16205c 100%)',
-      border: '1px solid rgba(124,139,255,.35)',
-      boxShadow: '0 10px 28px rgba(20,30,90,.55), inset 0 1px 0 rgba(255,255,255,.15)',
+      // L5: darken the board to match the dark brand (#0d1117) — the top is
+      // darkest so high discs read clearly; a faint indigo lift at the base
+      // keeps the Connect-Four identity without washing out the X discs.
+      background: 'linear-gradient(160deg,#0d1117 0%,#101a3a 55%,#16205c 100%)',
+      border: '1px solid rgba(124,139,255,.30)',
+      boxShadow: '0 10px 28px rgba(8,12,30,.6), inset 0 1px 0 rgba(255,255,255,.08)',
       justifyContent: 'center',
       opacity: err ? 0.6 : 1
     }

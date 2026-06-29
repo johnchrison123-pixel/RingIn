@@ -1187,30 +1187,39 @@ export default function CallScreen(props){
     /* Game picker (1:1 calls only) — choose which game to start. Opening it
      * sends NO request; startGame(type) creates the session on tap. */
     gamePickOpen ? React.createElement('div', {
-      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'},
+      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'flex-end',justifyContent:'center'},
       onClick: function(){ setGamePickOpen(false); }
     },
       React.createElement('div', {
         onClick: function(e){ if (e && e.stopPropagation) e.stopPropagation(); },
-        style:{width:'100%',maxWidth:'300px',background:'linear-gradient(180deg,#0d1117,#0a0d12)',border:'1px solid #1c2230',borderRadius:'20px',padding:'18px',boxShadow:'0 12px 40px rgba(0,0,0,.5)'}
+        className: 'ringin-result-in',
+        style:{width:'100%',maxWidth:'480px',background:'linear-gradient(180deg,#0d1117,#0a0d12)',borderTop:'1px solid #1c2230',borderLeft:'1px solid #1c2230',borderRight:'1px solid #1c2230',borderTopLeftRadius:'22px',borderTopRightRadius:'22px',padding:'10px 16px calc(20px + env(safe-area-inset-bottom)) 16px',boxShadow:'0 -12px 40px rgba(0,0,0,.55)'}
       },
-        React.createElement('div',{style:{fontSize:'17px',fontWeight:800,color:'#e8edf4',textAlign:'center',marginBottom:'14px'}},'🎮 Play a game'),
-        [
-          {t:'tic_tac_toe', label:'⭕ Tic-Tac-Toe'},
-          {t:'connect_four', label:'🔴 Connect Four'},
-          {t:'ludo', label:'🎲 Ludo'},
-          {t:'rps', label:'✊ Rock-Paper-Scissors'}
-        ].map(function(opt){
-          return React.createElement('button', {
-            key: opt.t,
-            onClick: function(){ startGame(opt.t); },
-            disabled: ttBusy,
-            style:{width:'100%',padding:'13px',marginBottom:'8px',borderRadius:'12px',background:'#11151c',border:'1px solid #232a36',color:'#e8edf4',fontSize:'15px',fontWeight:700,cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',textAlign:'left',opacity: ttBusy?0.6:1}
-          }, opt.label);
-        }),
+        React.createElement('div',{style:{width:'40px',height:'4px',borderRadius:'3px',background:'#2a3242',margin:'4px auto 14px auto'}}),
+        React.createElement('div',{style:{fontSize:'17px',fontWeight:800,color:'#e8edf4',textAlign:'center',marginBottom:'16px'}},'🎮 Play a game'),
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'12px'}},
+          [
+            {t:'tic_tac_toe', name:'Tic-Tac-Toe', glyph:'⭕', bg:'linear-gradient(145deg,#0d9488,#14b8a6)'},
+            {t:'connect_four', name:'Connect Four', glyph:'🔴', bg:'linear-gradient(145deg,#4338ca,#6366f1)'},
+            {t:'ludo', name:'Ludo', glyph:'🎲', bg:'linear-gradient(145deg,#ef4444,#f59e0b,#facc15)'},
+            {t:'rps', name:'Rock-Paper-Scissors', glyph:'✊', bg:'linear-gradient(145deg,#7c3aed,#a855f7)'}
+          ].map(function(game){
+            return React.createElement('button', {
+              key: game.t,
+              onClick: function(){ startGame(game.t); },
+              disabled: ttBusy,
+              className: 'ringin-tap',
+              style:{position:'relative',minHeight:'128px',padding:'14px',borderRadius:'18px',background:game.bg,border:'none',color:'#fff',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'flex-start',justifyContent:'space-between',textAlign:'left',boxShadow:'0 8px 22px rgba(0,0,0,.35)',opacity: ttBusy?0.55:1}
+            },
+              React.createElement('div',{style:{position:'absolute',top:'10px',right:'10px',padding:'2px 9px',borderRadius:'11px',background:'rgba(0,0,0,.28)',fontSize:'11px',fontWeight:800,letterSpacing:'.3px'}},'2P'),
+              React.createElement('div',{style:{fontSize:'40px',lineHeight:1,filter:'drop-shadow(0 2px 4px rgba(0,0,0,.3))'}},game.glyph),
+              React.createElement('div',{style:{fontSize:'15px',fontWeight:800,textShadow:'0 1px 3px rgba(0,0,0,.35)'}},game.name)
+            );
+          })
+        ),
         React.createElement('button', {
           onClick: function(){ setGamePickOpen(false); },
-          style:{width:'100%',padding:'11px',marginTop:'4px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+          style:{width:'100%',padding:'12px',marginTop:'14px',background:'transparent',border:'1px solid var(--border)',borderRadius:'14px',color:'var(--t2)',fontSize:'14px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
         }, 'Cancel')
       )
     ) : null,

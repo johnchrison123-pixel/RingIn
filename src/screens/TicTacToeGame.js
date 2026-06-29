@@ -85,6 +85,10 @@ export default function TicTacToeGame(props){
   var mountedRef = useRef(true);
   var seenRoundRef = useRef(null);       // last round we've shown a transition for
   var bannerTimerRef = useRef(null);
+  // M7: the round number of the last-result we've already shown a banner for.
+  // Driving the banner off state.last.round (rather than the live round, which
+  // never advances on the deciding round) lets the DECIDING round's result show.
+  var seenLastRoundRef = useRef(null);
 
   // Seed via get_game.
   useEffect(function(){
@@ -100,6 +104,9 @@ export default function TicTacToeGame(props){
         if (!row) { setErr('Game unavailable'); setLoading(false); return; }
         var st = row.state || {};
         seenRoundRef.current = (st && st.round) ? st.round : 1;
+        // M7: don't replay a banner for a round that already finished before we
+        // mounted — seed the seen-last marker from the current last-result.
+        seenLastRoundRef.current = (st && st.last && st.last.round != null) ? st.last.round : null;
         setGame(row);
         setLoading(false);
       } catch (_) {
@@ -127,7 +134,14 @@ export default function TicTacToeGame(props){
           var n = p && p['new'];
           if (n && n.id) setGame(n);
         })
-        .subscribe();
+        .subscribe(function(s){
+          // H7 RECONNECT: a dropped/errored realtime channel can strand us on a
+          // stale board (opponent moved but the UPDATE never arrived). Re-seed
+          // authoritative state via get_game.
+          if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+            if (mountedRef.current) reseed();
+          }
+        });
     } catch (_) {
       ch = null;
     }
@@ -156,14 +170,20 @@ export default function TicTacToeGame(props){
     var last = st && st.last ? st.last : null;
     var over = game.status === 'won' || game.status === 'draw' || game.status === 'abandoned';
 
-    // A round transition happened: round advanced past what we last saw, the
-    // match is NOT over, and we have a last-result to show. Fire the ~1.8s banner.
-    if (!over && last && seenRoundRef.current != null && round > seenRoundRef.current) {
+    // M7: fire the round-result banner whenever a NEW last-result appears
+    // (keyed on last.round, not the live round which doesn't advance on the
+    // deciding round). This way the DECIDING round's outcome shows too — and on
+    // abandon (forfeit) there's no new last, so no spurious banner. When the
+    // match is over we show it briefly BEFORE the match overlay (which is gated
+    // on !banner), giving a smooth "Round N → match result" hand-off.
+    if (last && last.round != null && last.round !== seenLastRoundRef.current
+        && game.status !== 'abandoned') {
+      seenLastRoundRef.current = last.round;
       setBanner({ round: last.round, winner: last.winner, board: last.board });
       if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
       bannerTimerRef.current = setTimeout(function(){
         if (mountedRef.current) setBanner(null);
-      }, 1800);
+      }, over ? 1400 : 1800);
     }
     seenRoundRef.current = round;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,6 +239,22 @@ export default function TicTacToeGame(props){
       } finally {
         if (mountedRef.current) setBusy(false);
       }
+    })();
+  }
+
+  // Re-seed authoritative state from the server (realtime reconnect path).
+  // Routes through setGame so the [game] effect re-runs; seenLastRoundRef keeps
+  // a re-seed of the same round from re-firing the banner.
+  function reseed(){
+    (async function(){
+      try {
+        var r = await sb.rpc('get_game', { p_game: gameId });
+        if (!mountedRef.current) return;
+        if (r && r.error) return;
+        var row = r ? r.data : null;
+        if (Array.isArray(row)) row = row[0];
+        if (row && row.id) setGame(row);
+      } catch (_) {}
     })();
   }
 
@@ -358,9 +394,9 @@ export default function TicTacToeGame(props){
   var scoreboard = React.createElement('div', {
     style: { display: 'flex', gap: 8, alignItems: 'stretch', margin: '12px 0 4px', width: '100%' }
   },
-    scorePill('You (' + myMark + ')', myScore, myMark === 'X' ? X_C : O_C, myTurn && !isOver),
+    scorePill('You (' + myMark + ')', myScore, myMark === 'X' ? X_C : O_C, myTurn && !isOver && !banner),
     React.createElement('div', { style: { display: 'flex', alignItems: 'center', color: '#3c4555', fontWeight: 900, fontSize: 16 } }, '—'),
-    scorePill('Opp (' + otherMark + ')', oppScore, otherMark === 'X' ? X_C : O_C, !myTurn && status === 'active')
+    scorePill('Opp (' + otherMark + ')', oppScore, otherMark === 'X' ? X_C : O_C, !myTurn && status === 'active' && !banner)
   );
 
   var statusBadge = React.createElement('div', {
@@ -375,8 +411,11 @@ export default function TicTacToeGame(props){
   var liveBoard = buildGrid(board, { interactive: true, popCell: optCell });
 
   // ── Round-result banner overlay (inside card) ──
+  // M7: show for any active round transition AND for the deciding round (where
+  // isOver is already true) — the match overlay below is gated on !banner so it
+  // waits until this banner clears.
   var bannerOverlay = null;
-  if (banner && !isOver) {
+  if (banner) {
     var bWin = banner.winner; // 'X' | 'O' | 'draw'
     var bText = bWin === 'draw'
       ? 'Round ' + banner.round + ': Draw'
@@ -396,13 +435,15 @@ export default function TicTacToeGame(props){
         style: { fontSize: 19, fontWeight: 900, color: bColor, textShadow: '0 0 18px ' + bColor + '66' }
       }, bText),
       buildGrid(banner.board || EMPTY_BOARD, { interactive: false, size: 54, gap: 6, fontSize: 26 }),
-      React.createElement('div', { style: { fontSize: 12.5, fontWeight: 700, color: '#7e8a9c' } }, 'Next round starting…')
+      React.createElement('div', { style: { fontSize: 12.5, fontWeight: 700, color: '#7e8a9c' } },
+        isOver ? 'Final round' : 'Next round starting…')
     );
   }
 
   // ── Match-end celebration overlay (inside card) ──
+  // M7: hold it back while the deciding-round banner is still showing.
   var resultOverlay = null;
-  if (isOver) {
+  if (isOver && !banner) {
     var won = !!(game && game.winner && myUserId && game.winner === myUserId);
     var draw = status === 'draw';
     var bigText = draw ? 'Draw' : (won ? 'You win! 🎉' : 'You lost');

@@ -90,6 +90,15 @@ export default function RockPaperScissorsGame(props){
   var revealing = revealingS[0]; var setRevealing = revealingS[1];
   var revealTimerRef = useRef(null);
 
+  // H6 DECIDING-ROUND REVEAL: when the MATCH ends we still want to flash both
+  // hands of the deciding round (last.X / last.O) with .ringin-hand-reveal for
+  // ~1.2s BEFORE the win/lose overlay slides in — otherwise the final round's
+  // hands never show (the normal `revealing` window is skipped once isOver).
+  var decRevealS = useState(false);
+  var decReveal = decRevealS[0]; var setDecReveal = decRevealS[1];
+  var decTimerRef = useRef(null);
+  var decDoneSigRef = useRef(null);
+
   // Seed from get_game on mount.
   useEffect(function(){
     mountedRef.current = true;
@@ -129,7 +138,14 @@ export default function RockPaperScissorsGame(props){
           var n = p && p['new'];
           if (n && n.id) setGame(n);
         })
-        .subscribe();
+        .subscribe(function(s){
+          // H7 RECONNECT: a dropped/errored realtime channel can leave the
+          // round stuck (e.g. opponent threw but we never got the UPDATE).
+          // Re-seed authoritative state via get_game.
+          if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+            if (mountedRef.current) reseed();
+          }
+        });
     } catch (_) {
       ch = null;
     }
@@ -143,6 +159,7 @@ export default function RockPaperScissorsGame(props){
     return function(){
       mountedRef.current = false;
       if (revealTimerRef.current) { try { clearTimeout(revealTimerRef.current); } catch (_) {} }
+      if (decTimerRef.current) { try { clearTimeout(decTimerRef.current); } catch (_) {} }
     };
   }, []);
 
@@ -207,7 +224,40 @@ export default function RockPaperScissorsGame(props){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [last, round, isOver]);
 
+  // H6: when the match ENDS and we have the deciding round's hands, flash a
+  // brief reveal window (~1.2s) before the overlay. We key it on the last
+  // signature so it fires exactly once for the deciding round.
+  useEffect(function(){
+    if (!isOver) return;
+    var hasHands = !!(last && (last.X || last.O));
+    if (!hasHands) return;
+    var sig = (last.winner || '') + ':' + (last.X || '') + ':' + (last.O || '');
+    if (decDoneSigRef.current === sig) return;
+    decDoneSigRef.current = sig;
+    if (!mountedRef.current) return;
+    setDecReveal(true);
+    if (decTimerRef.current) { try { clearTimeout(decTimerRef.current); } catch (_) {} }
+    decTimerRef.current = setTimeout(function(){
+      if (mountedRef.current) setDecReveal(false);
+    }, 1200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOver, last]);
+
   // ── Actions ──
+  // Re-seed authoritative state from the server (realtime reconnect path).
+  function reseed(){
+    (async function(){
+      try {
+        var r = await sb.rpc('get_game', { p_game: gameId });
+        if (!mountedRef.current) return;
+        if (r && r.error) return;
+        var row = r ? r.data : null;
+        if (Array.isArray(row)) row = row[0];
+        if (row && row.id) setGame(row);
+      } catch (_) {}
+    })();
+  }
+
   function doThrow(choice){
     if (busy || !game || err || isOver || iThrew) return;
     setOpt({ round: round, choice: choice });   // OPTIMISTIC: lock in instantly
@@ -345,7 +395,12 @@ export default function RockPaperScissorsGame(props){
   // ── Centre arena: either the choice buttons, or the shoot/reveal stage ──
   var arena;
 
-  if ((iThrew && status === 'active') || (revealing && last)) {
+  // The reveal arena shows during the active shoot/waiting phase, the brief
+  // post-round reveal window, AND (H6) the deciding-round reveal once the match
+  // is over but we still have the final hands to flash.
+  var showArena = (iThrew && status === 'active') || (revealing && last) || (decReveal && last);
+
+  if (showArena) {
     // SHOOT / WAITING / REVEAL stage.
     // My hand: shaking until opponent in (no reveal yet), then settle to last.
     var hasReveal = !!(last && (last.X || last.O));
@@ -357,24 +412,39 @@ export default function RockPaperScissorsGame(props){
     }
 
     var shaking = !hasReveal;
+    // H6: the deciding-round flash uses the springy reveal pop on both hands.
+    var decidingFlash = decReveal && hasReveal;
 
-    function handCell(emoji, color, who){
+    // handCell(emoji, color, who, opts)
+    //   opts.shake  → shake ONLY this hand (L6: my hand while waiting)
+    //   opts.dim    → render the opponent placeholder dimmed until reveal (L6)
+    //   opts.reveal → use the springy .ringin-hand-reveal on reveal (H6)
+    function handCell(emoji, color, who, opts){
+      opts = opts || {};
+      var anim = opts.shake ? 'ringin-hand-shake'
+        : (hasReveal ? (opts.reveal ? 'ringin-hand-reveal' : 'ringin-result-in') : undefined);
       return React.createElement('div', {
         style: {
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+          opacity: opts.dim ? 0.45 : 1, transition: 'opacity .2s ease'
         }
       },
         React.createElement('div', {
-          key: who + '-' + revealKey + (shaking ? '-shake' : '-rev'),
-          className: shaking ? 'ringin-hand-shake' : 'ringin-result-in',
+          key: who + '-' + revealKey + (shaking ? '-shake' : '-rev') + (decidingFlash ? '-dec' : ''),
+          className: anim,
           style: {
             width: 84, height: 84, borderRadius: 22, display: 'flex',
             alignItems: 'center', justifyContent: 'center', fontSize: 46,
+            // L7: nudge the glyph baseline so ✌️ (which sits high) lines up
+            // vertically with ✊ / ✋. Lift line-height + tiny translate.
+            lineHeight: 1,
             background: 'radial-gradient(circle at 32% 28%,rgba(255,255,255,.10),rgba(255,255,255,0) 60%), #11151c',
             border: '1px solid ' + color + '55',
             boxShadow: '0 0 18px ' + color + '33, inset 0 1px 0 rgba(255,255,255,.06)'
           }
-        }, emoji),
+        }, React.createElement('span', {
+          style: { display: 'inline-block', transform: (emoji === '✌️') ? 'translateY(3px)' : 'none' }
+        }, emoji)),
         React.createElement('div', { style: { fontSize: 11, fontWeight: 700, color: color } }, who)
       );
     }
@@ -403,9 +473,11 @@ export default function RockPaperScissorsGame(props){
       }
     },
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' } },
-        handCell(myHand, X_ACC, 'You'),
+        // L6: shake ONLY my hand while waiting for the opponent.
+        handCell(myHand, X_ACC, 'You', { shake: shaking, reveal: decidingFlash }),
         React.createElement('div', { style: { fontSize: 16, fontWeight: 800, color: '#3a4150' } }, 'VS'),
-        handCell(oppHand, O_ACC, 'Opp')
+        // L6: opp side stays dimmed (✊/?) until the reveal lands.
+        handCell(hasReveal ? oppHand : '?', O_ACC, 'Opp', { dim: !hasReveal, reveal: decidingFlash })
       ),
       resultBanner,
       (!hasReveal)
@@ -492,8 +564,10 @@ export default function RockPaperScissorsGame(props){
   }, 'You are ' + (myMark || '?'));
 
   // ── Win/Lose/Draw celebration overlay (inside the card) ──
+  // H6: hold the overlay back while the deciding-round hands flash (decReveal),
+  // so the final round's reveal is visible before the win/lose takes over.
   var overlay = null;
-  if (isOver) {
+  if (isOver && !decReveal) {
     var iWon = (status === 'won' || status === 'abandoned') && game && myUserId && game.winner === myUserId;
     var isDraw = status === 'draw';
     var bigText = isDraw ? 'Draw' : (iWon ? 'You win! 🎉' : 'You lost');
