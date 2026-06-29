@@ -11,6 +11,9 @@ import {hexA} from '../utils/cosmetics';
 /* R18: shared image fallback so expired Supabase avatar URLs don't show broken-image */
 import ImgWithFallback from '../components/ImgWithFallback';
 import TicTacToeGame from './TicTacToeGame';
+import ConnectFourGame from './ConnectFourGame';
+import LudoGame from './LudoGame';
+import RockPaperScissorsGame from './RockPaperScissorsGame';
 
 // ── Module-level SVG nodes ─────────────────────────────────────────────────
 // React.createElement creates a fresh object on every render. Hoisting the
@@ -173,8 +176,9 @@ export default function CallScreen(props){
   var giftSendingS = useState(null); var giftSending = giftSendingS[0]; var setGiftSending = giftSendingS[1];
   /* In-call Tic-Tac-Toe: {gameId, myMark}. Opens for BOTH players when either
    * starts one (the other side learns via the game_sessions realtime sub). */
-  var ttGameS = useState(null); var ttGame = ttGameS[0]; var setTtGame = ttGameS[1];
+  var ttGameS = useState(null); var ttGame = ttGameS[0]; var setTtGame = ttGameS[1];   // {gameId, myMark, gameType}
   var ttBusyS = useState(false); var ttBusy = ttBusyS[0]; var setTtBusy = ttBusyS[1];
+  var gamePickS = useState(false); var gamePickOpen = gamePickS[0]; var setGamePickOpen = gamePickS[1];
   /* incomingAnim: { emoji, tier, coins, key, fromName, ts } — set when a
    * realtime row arrives in anon_call_gifts where receiver_id = me. The
    * overlay reads this and runs a 3-second animation, then clears. */
@@ -248,16 +252,20 @@ export default function CallScreen(props){
    * creates it (I'm player_x); the OTHER party's screen opens via the realtime
    * sub below. Best-effort + graceful: if migration 0060 isn't run it no-ops.
    * Touches NO billing/coin logic — only create_game + a game_sessions sub. */
-  function startTtGame(){
+  function startGame(type){
     if (ttBusy || !expert || !expert.id || !myUserId) return;
+    var gt = type || 'tic_tac_toe';
     setTtBusy(true);
+    setGamePickOpen(false);
     try {
-      sb.rpc('create_game', { p_opponent: expert.id, p_context_id: inviteId, p_context_kind: 'call' }).then(function(r){
+      sb.rpc('create_game', { p_opponent: expert.id, p_context_id: inviteId, p_context_kind: 'call', p_type: gt }).then(function(r){
         setTtBusy(false);
         var d = r && r.data;
-        if ((r && r.error) || !d) return; /* 0060 not run / error → silently ignore */
+        if ((r && r.error) || !d) return; /* 0060/0061 not run / error → silently ignore */
+        if (Array.isArray(d)) d = d[0];
         var gid = d.id || d.game_id || (d.game && d.game.id) || null;
-        if (gid) setTtGame({ gameId: gid, myMark: 'X' });
+        var rt = d.game_type || gt;
+        if (gid) setTtGame({ gameId: gid, myMark: 'X', gameType: rt });
       }).catch(function(){ setTtBusy(false); });
     } catch(_){ setTtBusy(false); }
   }
@@ -270,7 +278,7 @@ export default function CallScreen(props){
         var row = p && p.new;
         if (!row || !row.id) return;
         if (row.player_x !== myUserId && row.player_o !== myUserId) return;
-        setTtGame({ gameId: row.id, myMark: (row.player_x === myUserId) ? 'X' : 'O' });
+        setTtGame({ gameId: row.id, myMark: (row.player_x === myUserId) ? 'X' : 'O', gameType: row.game_type || 'tic_tac_toe' });
       })
       .subscribe();
     return function(){ try { sb.removeChannel(ch); } catch(_){} };
@@ -932,11 +940,11 @@ export default function CallScreen(props){
           title: 'Send a gift',
           style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700}
         }, '🎁'),
-        /* 🎮 in-call Tic-Tac-Toe with the person you're calling. */
+        /* 🎮 opens the game picker (Tic-Tac-Toe / Connect 4 / Ludo / RPS). */
         React.createElement('button', {
-          onClick: startTtGame,
+          onClick: function(){ setGamePickOpen(true); },
           disabled: ttBusy,
-          title: 'Play Tic-Tac-Toe',
+          title: 'Play a game',
           style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700,opacity: ttBusy?0.6:1}
         }, '🎮'),
         /* R46: ⋯ opens the Block/Report sheet via AnonymousConnect window event. */
@@ -1026,7 +1034,26 @@ export default function CallScreen(props){
             onClick: callAddAnonConnection,
             disabled: reqSending,
             style:{padding:'7px 14px',borderRadius:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'11px',fontWeight:700,cursor:reqSending?'wait':'pointer',opacity:reqSending?0.6:1,fontFamily:'inherit'}
-          }, reqSending ? '...' : '➕ Add Connection')
+          }, reqSending ? '...' : '➕ Add Connection'),
+      /* 🎁 gift + 🎮 games + ⋯ more — now available DURING the connected call
+         too (previously only on the ringing screen, so games vanished the
+         moment the call connected — which is exactly when you'd play). */
+      React.createElement('button', {
+        onClick: function(){ setGiftDrawerOpen(true); },
+        title: 'Send a gift',
+        style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700}
+      }, '🎁'),
+      React.createElement('button', {
+        onClick: function(){ setGamePickOpen(true); },
+        disabled: ttBusy,
+        title: 'Play a game',
+        style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700,opacity: ttBusy?0.6:1}
+      }, '🎮'),
+      React.createElement('button', {
+        onClick: callOpenSafety,
+        title: 'More',
+        style:{padding:'7px 12px',borderRadius:'14px',background:'transparent',border:'1px solid var(--border)',color:'var(--t2)',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1}
+      }, '⋯')
     ) : null,
     reqErr ? React.createElement('div', {style:{fontSize:'10px',color:'#ef4444',marginBottom:'8px',textAlign:'center'}}, reqErr) : null,
     React.createElement('div',{style:{fontSize:'12px',color: phase==='connected' ? 'var(--green)' : (phase==='connecting' ? 'var(--amber)' : 'var(--t3)'),marginBottom:'20px',display:'flex',alignItems:'center',gap:'5px'}},
@@ -1154,12 +1181,49 @@ export default function CallScreen(props){
       )
     ) : null,
 
-    /* In-call Tic-Tac-Toe overlay (1:1 calls only). The game component owns its
-     * own realtime + close; this is just the dimmed container. */
+    /* Game picker (1:1 calls only) — choose which game to start. Opening it
+     * sends NO request; startGame(type) creates the session on tap. */
+    gamePickOpen ? React.createElement('div', {
+      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'},
+      onClick: function(){ setGamePickOpen(false); }
+    },
+      React.createElement('div', {
+        onClick: function(e){ if (e && e.stopPropagation) e.stopPropagation(); },
+        style:{width:'100%',maxWidth:'300px',background:'linear-gradient(180deg,#0d1117,#0a0d12)',border:'1px solid #1c2230',borderRadius:'20px',padding:'18px',boxShadow:'0 12px 40px rgba(0,0,0,.5)'}
+      },
+        React.createElement('div',{style:{fontSize:'17px',fontWeight:800,color:'#e8edf4',textAlign:'center',marginBottom:'14px'}},'🎮 Play a game'),
+        [
+          {t:'tic_tac_toe', label:'⭕ Tic-Tac-Toe'},
+          {t:'connect_four', label:'🔴 Connect Four'},
+          {t:'ludo', label:'🎲 Ludo'},
+          {t:'rps', label:'✊ Rock-Paper-Scissors'}
+        ].map(function(opt){
+          return React.createElement('button', {
+            key: opt.t,
+            onClick: function(){ startGame(opt.t); },
+            disabled: ttBusy,
+            style:{width:'100%',padding:'13px',marginBottom:'8px',borderRadius:'12px',background:'#11151c',border:'1px solid #232a36',color:'#e8edf4',fontSize:'15px',fontWeight:700,cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',textAlign:'left',opacity: ttBusy?0.6:1}
+          }, opt.label);
+        }),
+        React.createElement('button', {
+          onClick: function(){ setGamePickOpen(false); },
+          style:{width:'100%',padding:'11px',marginTop:'4px',background:'transparent',border:'1px solid var(--border)',borderRadius:'12px',color:'var(--t2)',fontSize:'13px',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Cancel')
+      )
+    ) : null,
+
+    /* In-call game overlay (1:1 calls only) — renders the chosen game. Each game
+     * component owns its own realtime + close; this is just the dimmed container. */
     ttGame ? React.createElement('div', {
       style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
     },
-      React.createElement(TicTacToeGame, { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId, onClose: function(){ setTtGame(null); } })
+      React.createElement(
+        ttGame.gameType === 'connect_four' ? ConnectFourGame :
+        ttGame.gameType === 'ludo' ? LudoGame :
+        ttGame.gameType === 'rps' ? RockPaperScissorsGame :
+        TicTacToeGame,
+        { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId, onClose: function(){ setTtGame(null); } }
+      )
     ) : null,
 
     /* ════════ R48 + Feature 2: FRND/Tango gift pop ════════
