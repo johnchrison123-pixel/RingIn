@@ -1095,7 +1095,10 @@ export default function AnonymousConnect(props) {
           invite_id: d.invite_id || null,
         });
         /* Land them on the Connections tab if they're elsewhere so they
-         * see the sheet (post-call sheet only renders in Connections). */
+         * see the sheet (post-call sheet only renders in Connections). Also
+         * close the Browse Hosts overlay so the sheet (+ host rating) isn't
+         * hidden underneath its fixed full-screen panel. */
+        setBrowsingHosts(false);
         setActiveTab('connections');
       }
     }
@@ -1558,6 +1561,7 @@ export default function AnonymousConnect(props) {
       _partnerGender: host.gender || null,
     };
     setHostCallConfirm(null);
+    setBrowsingHosts(false);   // close the Browse Hosts overlay so the post-call sheet (+ 5-star host rating) isn't hidden underneath it when the call ends
     try {
       if (typeof window !== 'undefined' && typeof window.__ringInStartCall === 'function') {
         /* R57: paidHostCall = anon nickname + paid rate. Caller is charged

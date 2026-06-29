@@ -569,7 +569,7 @@ export default function HotSeatScreen(props) {
     game ? C('div', { style: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' } },
         (function(){
           try {
-            return C(TicTacToeGame, { gameId: game.gameId, myMark: game.myMark, onClose: function(){ setGame(null); } });
+            return C(TicTacToeGame, { gameId: game.gameId, myMark: game.myMark, myUserId: myUserId, onClose: function(){ setGame(null); } });
           } catch(_){
             return C('div', { style: { background: '#1a1a22', borderRadius: '14px', padding: '24px', textAlign: 'center' } },
               C('div', { style: { color: '#fff', marginBottom: '14px' } }, 'Game unavailable'),

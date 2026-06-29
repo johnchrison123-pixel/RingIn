@@ -276,6 +276,28 @@ export default function CallScreen(props){
    * both screens. Filtered on context_id = this call's invite id. */
   useEffect(function(){
     if (!inviteId || !myUserId) return;
+    /* BULLETPROOF host-game-type: a direct SELECT (game_type is reliable here,
+     * unlike the realtime INSERT payload) for the most-recent ACTIVE game on
+     * this call. Opens it ONLY if no game is currently shown — so a missed or
+     * pre-subscribe INSERT can never leave the host on the wrong (default TTT)
+     * game. The realtime INSERT path below still handles switching games. */
+    function checkActiveGame(){
+      try {
+        sb.from('game_sessions').select('id,game_type,player_x,player_o,status')
+          .eq('context_id', inviteId).eq('status', 'active')
+          .order('created_at', { ascending: false }).limit(1)
+          .then(function(rr){
+            var d = rr && rr.data && rr.data[0];
+            if (!d || !d.id) return;
+            if (d.player_x !== myUserId && d.player_o !== myUserId) return;
+            var myMk = (d.player_x === myUserId) ? 'X' : 'O';
+            setTtGame(function(prev){
+              if (prev) return prev;   // a game is already open → INSERT path handles switching
+              return { gameId: d.id, myMark: myMk, gameType: d.game_type || 'tic_tac_toe' };
+            });
+          });
+      } catch(_){}
+    }
     var ch = sb.channel('call-game-' + inviteId)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_sessions', filter: 'context_id=eq.' + inviteId }, function(p){
         var row = p && p.new;
@@ -298,7 +320,12 @@ export default function CallScreen(props){
           setGameMin(false);
         });
       })
-      .subscribe();
+      .subscribe(function(s){
+        /* On initial subscribe (catch a game started before we were listening)
+         * and on any channel error/reconnect, re-check for an active game so the
+         * host never gets stuck without — or on the wrong — game. */
+        if (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') checkActiveGame();
+      });
     return function(){ try { sb.removeChannel(ch); } catch(_){} };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteId, myUserId]);
@@ -465,7 +492,7 @@ export default function CallScreen(props){
             setPhase(function(prev){ return prev === 'connected' ? prev : 'connected'; });
             try{ setAudioOutputMode('earpiece'); }catch(e){}
             var s2 = sessionRef.current;
-            if (s2) { try { s2.setRemoteVolume(50); } catch(_){} }
+            if (s2) { try { s2.setRemoteVolume(100); } catch(_){} }   // unity on connect — was 50 (half), making every web/PWA call start quiet
             if(inviteId){
               sb.from('call_invites').update({status:'accepted',started_at:new Date().toISOString()}).eq('id',inviteId).then(function(){});
             }
@@ -656,9 +683,15 @@ export default function CallScreen(props){
   // mounted), update localCoins so the call has a real balance to deduct
   // against. Only fires when localCoins is still 0 — won't constantly
   // overwrite the deducted value with the prop.
+  var coinsSeededRef = useRef(false);
   useEffect(function(){
-    if (typeof coins === 'number' && coins > 0 && localCoins === 0) {
-      setLocalCoins(coins);
+    // Fire ONCE (the initial post-mount fetch race). After the first real
+    // balance is applied, a later STALE positive `coins` re-emit (useCoinBalance
+    // realtime lags a debit) must NOT bump a spent-to-zero counter back up.
+    if (coinsSeededRef.current) return;
+    if (typeof coins === 'number' && coins > 0) {
+      coinsSeededRef.current = true;
+      if (localCoins === 0) setLocalCoins(coins);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coins]);
@@ -905,9 +938,10 @@ export default function CallScreen(props){
       }catch(e){ setAudioDbg('throw: ' + (e && e.message)); }
       var s = sessionRef.current;
       if(s){
-        // Volume contrast for PWA fallback: 50 (private feel) ↔ 100 (full).
-        // Browsers can't amplify above 100 for WebRTC remote tracks.
-        try{ s.setRemoteVolume(next ? 100 : 50); }catch(e){}
+        // Speaker OFF = unity (100). Speaker ON = loudspeaker BOOST (250).
+        // agora.js setRemoteVolume clamps 0..400, so 250 is the documented boost
+        // (was 100/50 — which never boosted AND started calls at half volume).
+        try{ s.setRemoteVolume(next ? 250 : 100); }catch(e){}
       }
       return next;
     });
@@ -957,19 +991,10 @@ export default function CallScreen(props){
               disabled: reqSending,
               style:{padding:'7px 14px',borderRadius:'14px',background:'linear-gradient(135deg,#7B6EFF,#E84D9A)',border:'none',color:'#fff',fontSize:'11px',fontWeight:700,cursor:reqSending?'wait':'pointer',opacity:reqSending?0.6:1,fontFamily:'inherit'}
             }, reqSending ? '...' : '➕ Add Connection'),
-        /* R48: 🎁 opens the in-call gift drawer (Tango/Bigo-style). */
-        React.createElement('button', {
-          onClick: function(){ setGiftDrawerOpen(true); },
-          title: 'Send a gift',
-          style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700}
-        }, '🎁'),
-        /* 🎮 opens the game picker (Tic-Tac-Toe / Connect 4 / Ludo / RPS). */
-        React.createElement('button', {
-          onClick: function(){ if (ttGame) { setGameMin(false); } else { setGamePickOpen(true); } },
-          disabled: ttBusy,
-          title: 'Play a game',
-          style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700,opacity: ttBusy?0.6:1}
-        }, '🎮'),
+        /* 🎁 gift + 🎮 games are NOT shown while RINGING — their overlays (gift
+           drawer, game picker, game board, gift pop) only render in the
+           connected return, so these were DEAD taps before the callee answered.
+           They live on the connected-call action row instead. */
         /* R46: ⋯ opens the Block/Report sheet via AnonymousConnect window event. */
         React.createElement('button', {
           onClick: callOpenSafety,

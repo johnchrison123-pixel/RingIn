@@ -146,6 +146,7 @@ export default function LudoGame(props){
   var toastTimerRef = useRef(null);
   var capTimerRef = useRef(null);
   var hopIvRef = useRef(null);
+  var pollRef = useRef(null);           // finishThenApply hop-completion poll (tracked so unmount can clear it)
   var pendingRollRef = useRef(false);   // a server roll is mid-flight
   var prevTokensRef = useRef(null);     // last-known authoritative tokens (capture diff)
   var diceSpinRef = useRef(0);          // accumulating full-turn count so each roll tumbles further
@@ -225,6 +226,7 @@ export default function LudoGame(props){
       if (animTimerRef.current) clearTimeout(animTimerRef.current);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (capTimerRef.current) clearTimeout(capTimerRef.current);
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       clearHopIv();
     };
   }, []);
@@ -469,10 +471,10 @@ export default function LudoGame(props){
     if (hopIvRef.current) {
       // poll until the interval cleared itself (step reached end)
       var waited = 0;
-      var poll = setInterval(function(){
+      pollRef.current = setInterval(function(){
         waited += 60;
         if (!mountedRef.current || !hopIvRef.current || waited > 2000) {
-          clearInterval(poll);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           commit();
         }
       }, 60);
