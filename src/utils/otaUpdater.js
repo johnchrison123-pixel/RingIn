@@ -25,6 +25,17 @@
 var MANIFEST_URL = 'https://raw.githubusercontent.com/johnchrison123-pixel/RingIn/main/public/bundles/latest.json';
 var CURRENT_VERSION_KEY = 'ringin_ota_current_version';
 
+// ── KILL-SWITCH (2026-06-29) ────────────────────────────────────────────────
+// The OTA manifest lives on the `main` branch, but every current fix ships on
+// the `polish-final` branch / the sideloaded APK — and `main` is BEHIND it. So
+// applying an OTA "update" actually DOWNGRADES the app to older code and
+// re-introduces already-fixed bugs (e.g. the host-sees-Tic-Tac-Toe game-type
+// bug kept coming back because tapping the green Update popup pulled main's old
+// bundle over the APK's fixed code). Until `main` is caught up (a real deploy),
+// OTA is DISABLED so the device ALWAYS runs the APK's bundled code. The APK is
+// the source of truth during this phase. To re-enable: set OTA_DISABLED = false.
+var OTA_DISABLED = true;
+
 function isNative(){
   try {
     if (typeof window === 'undefined') return false;
@@ -73,6 +84,7 @@ function isNewer(a, b){
 // metadata (title, notes, url) so the popup can show release notes
 // alongside the Update button. User must tap Update to download.
 export async function checkOnly() {
+  if (OTA_DISABLED) return { available: false, reason: 'disabled' };
   if (!isNative()) return { available: false, reason: 'web' };
   var Capgo = getCapgo();
   if (!Capgo) return { available: false, reason: 'plugin-missing' };
@@ -202,6 +214,7 @@ export function setAutoUpdate(on){
  * URL on every check tick. Single-init guard prevents this. */
 var _otaStarted = false;
 export function startOtaUpdater(onAvailable){
+  if (OTA_DISABLED) return;   // never offer/apply an OTA bundle — see KILL-SWITCH note above
   if (!isNative()) return;
   if (_otaStarted) return;
   _otaStarted = true;
