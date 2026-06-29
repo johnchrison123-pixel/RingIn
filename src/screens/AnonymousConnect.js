@@ -578,8 +578,14 @@ export default function AnonymousConnect(props) {
      * R37: Bug #7 fix — only bump count if we were OFF before (no double-counting). */
     if (!available) {
       setAvailable(true);
-      try { sb.rpc('set_anon_available', { p_available: true }).then(function(){}).catch(function(){}); } catch(_){}
       setOnlineCount(function(c){ return c + 1; });
+      /* Roll back the optimistic available/count if the RPC fails, so we never
+       * show "available" while the server has us unavailable (peers can't match). */
+      try {
+        sb.rpc('set_anon_available', { p_available: true }).then(function(r){
+          if (r && r.error) { setAvailable(false); setOnlineCount(function(c){ return Math.max(0, c - 1); }); }
+        }).catch(function(){ setAvailable(false); setOnlineCount(function(c){ return Math.max(0, c - 1); }); });
+      } catch(_){}
     }
     /* R29 — real matchmaking queue with 30-sec poll.
      *
@@ -2372,7 +2378,7 @@ export default function AnonymousConnect(props) {
         ),
         React.createElement('input', {
           value:langInput, onChange:onLangInputChange,
-          onKeyDown:function(e){ if (e.key === 'Enter' && langInput.trim()) addLanguage(langInput); },
+          onKeyDown:function(e){ if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && langInput.trim()) { e.preventDefault(); addLanguage(langInput); } },
           placeholder:'Type a language + space (English Hindi Tamil)',
           style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
         }),
@@ -2389,7 +2395,7 @@ export default function AnonymousConnect(props) {
         ),
         React.createElement('input', {
           value:input, onChange:onInterestInputChange,
-          onKeyDown:function(e){ if (e.key === 'Enter' && input.trim()) addInterest(input); },
+          onKeyDown:function(e){ if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && input.trim()) { e.preventDefault(); addInterest(input); } },
           placeholder:'Type an interest + space (music tech travel)',
           style:{width:'100%',padding:'10px 12px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text)',fontSize:'13px',outline:'none',boxSizing:'border-box',marginBottom:'14px',fontFamily:'inherit'}
         }),
