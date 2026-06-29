@@ -1229,7 +1229,9 @@ export default function CallScreen(props){
         TicTacToeGame,
         { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
           onClose: function(){ setTtGame(null); setGameMin(false); },
-          onMinimize: function(){ setGameMin(true); } }
+          onMinimize: function(){ setGameMin(true); },
+          onPlayAgain: function(){ if (ttGame) startGame(ttGame.gameType); },
+          onPickAnother: function(){ setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
       )
     ) : null,
 

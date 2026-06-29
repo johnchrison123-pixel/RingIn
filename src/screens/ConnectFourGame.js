@@ -536,6 +536,31 @@ export default function ConnectFourGame(props){
       );
     }
 
+    overlayKids.push(
+      React.createElement('div', {
+        key: 'ovctrl',
+        style: { position: 'relative', zIndex: 2, marginTop: 18, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
+      },
+        React.createElement('button', {
+          className: 'ringin-tap',
+          onClick: function(){ if (props.onPlayAgain) props.onPlayAgain(); },
+          style: { border: 'none', borderRadius: 12, padding: '13px', fontWeight: 800, fontSize: 14, cursor: 'pointer', background: 'linear-gradient(135deg,#5ad1ff,#5a8bff)', color: '#08121c', boxShadow: '0 6px 16px rgba(90,139,255,.4)' }
+        }, '🔄 Play again'),
+        React.createElement('div', { style: { display: 'flex', gap: 8 } },
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (props.onPickAnother) props.onPickAnother(); },
+            style: { flex: 1, border: '1px solid #2a3344', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#141a24', color: '#cfd8e3' }
+          }, '🎮 Other games'),
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (onClose) onClose(); },
+            style: { flex: 1, border: '1px solid #232b3a', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#161b24', color: '#cfd8e3' }
+          }, 'Close')
+        )
+      )
+    );
+
     overlay = React.createElement('div', {
       style: {
         position: 'absolute', inset: 0, borderRadius: 20,

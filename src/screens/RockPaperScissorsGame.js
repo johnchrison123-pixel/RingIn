@@ -548,21 +548,28 @@ export default function RockPaperScissorsGame(props){
 
     overlayKids.push(React.createElement('div', {
       key: 'ovctrl',
-      style: { position: 'relative', zIndex: 2, marginTop: 20, display: 'flex', gap: 8, width: '100%' }
+      style: { position: 'relative', zIndex: 2, marginTop: 20, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
     },
       React.createElement('button', {
         className: 'ringin-tap',
-        onClick: function(){ if (onMinimize) onMinimize(); },
+        onClick: function(){ if (props.onPlayAgain) props.onPlayAgain(); },
         style: Object.assign({}, btnBase, {
-          background: 'linear-gradient(150deg,#5ad1ff,#5a8bff)', color: '#0b0f15', flex: 1.2,
-          boxShadow: '0 6px 16px rgba(90,139,255,.35)'
+          background: 'linear-gradient(135deg,#5ad1ff,#5a8bff)', color: '#08121c',
+          boxShadow: '0 6px 16px rgba(90,139,255,.4)'
         })
-      }, '▽ Minimise'),
-      React.createElement('button', {
-        className: 'ringin-tap',
-        onClick: function(){ if (onClose) onClose(); },
-        style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
-      }, 'Close')
+      }, '🔄 Play again'),
+      React.createElement('div', { style: { display: 'flex', gap: 8 } },
+        React.createElement('button', {
+          className: 'ringin-tap',
+          onClick: function(){ if (props.onPickAnother) props.onPickAnother(); },
+          style: Object.assign({}, btnBase, { background: '#141a24', color: '#cfd8e3', border: '1px solid #2a3344' })
+        }, '🎮 Other games'),
+        React.createElement('button', {
+          className: 'ringin-tap',
+          onClick: function(){ if (onClose) onClose(); },
+          style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
+        }, 'Close')
+      )
     ));
 
     overlay = React.createElement('div', {
