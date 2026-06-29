@@ -273,7 +273,7 @@ export default function CallScreen(props){
         if (Array.isArray(d)) d = d[0];
         var gid = d.id || d.game_id || (d.game && d.game.id) || null;
         var rt = d.game_type || gt;
-        if (gid) setTtGame({ gameId: gid, myMark: 'X', gameType: rt });
+        if (gid) setTtGame({ gameId: gid, myMark: 'X', gameType: rt, createdAt: (d.created_at || '') });
       }).catch(function(){ setTtBusy(false); });
     } catch(_){ setTtBusy(false); }
   }
@@ -288,7 +288,7 @@ export default function CallScreen(props){
      * game. The realtime INSERT path below still handles switching games. */
     function checkActiveGame(){
       try {
-        sb.from('game_sessions').select('id,game_type,player_x,player_o,status')
+        sb.from('game_sessions').select('id,game_type,player_x,player_o,status,created_at')
           .eq('context_id', inviteId).eq('status', 'active')
           .order('created_at', { ascending: false }).limit(1)
           .then(function(rr){
@@ -299,10 +299,23 @@ export default function CallScreen(props){
             var myMk = (d.player_x === myUserId) ? 'X' : 'O';
             setTtGame(function(prev){
               if (prev) return prev;   // a game is already open → INSERT path handles switching
-              return { gameId: d.id, myMark: myMk, gameType: d.game_type || 'tic_tac_toe' };
+              return { gameId: d.id, myMark: myMk, gameType: d.game_type || 'tic_tac_toe', createdAt: d.created_at || '' };
             });
           });
       } catch(_){}
+    }
+    // Choose which game to show when an INSERT arrives: switch to the NEWEST
+    // (by created_at); on an exact tie keep the lexically-smaller id so both
+    // peers converge (the Play-Again double-create race). NEVER downgrade to an
+    // older game — the v4.35 lexical-only tie-break could make the host keep an
+    // OLD board after the initiator switched games.
+    function pickGame(prev, next){
+      if (prev && prev.gameId && prev.gameId !== next.gameId) {
+        var pc = prev.createdAt || '', nc = next.createdAt || '';
+        if (pc > nc) return prev;                                                  // incoming is OLDER → keep current
+        if (pc === nc && String(prev.gameId) < String(next.gameId)) return prev;   // exact tie → converge
+      }
+      return next;
     }
     var ch = sb.channel('call-game-' + inviteId)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_sessions', filter: 'context_id=eq.' + inviteId }, function(p){
@@ -316,14 +329,17 @@ export default function CallScreen(props){
          * to 'tic_tac_toe', so every non-TTT game (Ludo / Connect 4 / RPS)
          * opened as Tic-Tac-Toe on the host. Fetch the authoritative row via
          * get_game so BOTH screens open the SAME game the initiator picked. */
+        var ic = row.created_at || '';
         sb.rpc('get_game', { p_game: gid }).then(function(rr){
           var d = rr && rr.data; if (Array.isArray(d)) d = d[0];
           var realType = (d && d.game_type) || row.game_type || 'tic_tac_toe';
-          setTtGame(function(prev){ if (prev && prev.gameId && prev.gameId !== gid && String(prev.gameId) < String(gid)) return prev; return { gameId: gid, myMark: myMk, gameType: realType }; });
+          var cAt = (d && d.created_at) || ic;
+          try { console.log('[ringin game-open] host resolved type=', realType, '(realtime payload game_type=', row.game_type, ') gid=', gid); } catch(_){}
+          setTtGame(function(prev){ return pickGame(prev, { gameId: gid, myMark: myMk, gameType: realType, createdAt: cAt }); });
           setGameMin(false);
         }).catch(function(){
           var realType = row.game_type || 'tic_tac_toe';
-          setTtGame(function(prev){ if (prev && prev.gameId && prev.gameId !== gid && String(prev.gameId) < String(gid)) return prev; return { gameId: gid, myMark: myMk, gameType: realType }; });
+          setTtGame(function(prev){ return pickGame(prev, { gameId: gid, myMark: myMk, gameType: realType, createdAt: ic }); });
           setGameMin(false);
         });
       })
@@ -1284,6 +1300,13 @@ export default function CallScreen(props){
     ttGame ? React.createElement('div', {
       style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display: gameMin ? 'none' : 'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
     },
+      /* TEMP DIAGNOSTIC (v4.36): shows the game type THIS screen resolved + the
+         build version, so we can see if the host opens the wrong type (backend)
+         or is running stale code (old build). Screenshot this if a game opens
+         wrong. Remove once the host-game-type issue is confirmed fixed. */
+      React.createElement('div', {
+        style:{position:'absolute',top:'8px',left:'8px',zIndex:1002,fontSize:'10px',fontFamily:'ui-monospace,monospace',color:'rgba(255,255,255,0.6)',background:'rgba(0,0,0,0.45)',padding:'3px 7px',borderRadius:'8px',pointerEvents:'none'}
+      }, '🐞 ' + (ttGame.gameType || '?') + ' · ' + String(ttGame.gameId || '').slice(0, 6) + ' · v4.36 · ' + (ttGame.myMark === 'X' ? 'you started' : 'opp started')),
       React.createElement(
         ttGame.gameType === 'connect_four' ? ConnectFourGame :
         ttGame.gameType === 'ludo' ? LudoGame :
