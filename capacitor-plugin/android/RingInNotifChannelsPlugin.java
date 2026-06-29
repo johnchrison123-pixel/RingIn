@@ -171,6 +171,40 @@ public class RingInNotifChannelsPlugin extends Plugin {
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // CRASH GATE for native push registration.
+    //
+    // @capacitor/push-notifications register() calls FirebaseMessaging.getInstance(),
+    // which throws an UNCAUGHT "Default FirebaseApp is not initialized in this
+    // process" if the app was built WITHOUT google-services.json (so the
+    // google-services Gradle plugin never generated the Firebase config + the
+    // FirebaseInitProvider never auto-initialised the default app). A native
+    // uncaught exception kills the whole app — a JS try/catch can't stop it.
+    //
+    // So the web layer calls this FIRST and only proceeds to register() when
+    // ready:true. With google-services.json present → getApps() is non-empty →
+    // ready:true → push works. Without it → ready:false → web skips register()
+    // → push is simply off, NO crash. Uses reflection so the plugin still
+    // compiles even on a build where firebase isn't on the classpath at all.
+    // ────────────────────────────────────────────────────────────────────────
+    @PluginMethod
+    public void isFirebaseReady(PluginCall call) {
+        boolean ready = false;
+        try {
+            Class<?> faClass = Class.forName("com.google.firebase.FirebaseApp");
+            java.lang.reflect.Method getApps = faClass.getMethod("getApps", Context.class);
+            Object apps = getApps.invoke(null, getContext());
+            if (apps instanceof java.util.List) {
+                ready = !((java.util.List<?>) apps).isEmpty();
+            }
+        } catch (Throwable ignored) {
+            // Firebase not on classpath / not initialised → ready stays false.
+        }
+        JSObject ret = new JSObject();
+        ret.put("ready", ready);
+        call.resolve(ret);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // THE single, app-wide ringtone owner.
     //
     // There is exactly ONE ringtone for the whole incoming-call flow, owned by

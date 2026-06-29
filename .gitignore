@@ -29,3 +29,9 @@ yarn-error.log*
 /android
 /ios
 .capacitor/
+
+# Firebase Android app-registration file. Contains the Android FCM API key +
+# app id — NOT a hard secret (it ships inside every APK) but the GitHub repo is
+# public, so keep it local. install-native-plugins.mjs copies it from here into
+# the gitignored android/app/ on every build so it survives `npx cap add android`.
+/firebase/google-services.json

@@ -152,20 +152,53 @@ async function bootstrapNativePush(userId, sb){
   }
 }
 
+// Ask our native plugin whether the default FirebaseApp actually initialised
+// in this process. This is the crash gate for register(): @capacitor/push-
+// notifications register() throws an UNCAUGHT native exception ("Default
+// FirebaseApp is not initialized") when the APK was built without
+// google-services.json — and a native uncaught exception kills the whole app,
+// so a JS try/catch can't save us. We must therefore never CALL register()
+// unless Firebase is ready. Conservative on any error / missing method:
+// returns false so we skip register() rather than risk the crash. Backward-
+// compatible: an older native build without isFirebaseReady() → reject → false.
+async function isFirebaseReadyNative(){
+  try {
+    var Cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+    var P = Cap && Cap.Plugins && Cap.Plugins.RingInNotifChannels;
+    if (!P || !P.isFirebaseReady) return false;
+    var r = await P.isFirebaseReady();
+    return !!(r && r.ready);
+  } catch (_) { return false; }
+}
+
 export async function requestNotificationPermission(userId, sb){
   // ── NATIVE PATH (Capacitor Android / iOS) ───────────────────────────
-  // ⚠ TEMP DISABLED — android/app/google-services.json is MISSING from the
-  // project. Without it Firebase is never initialised, so the
-  // @capacitor/push-notifications register() call crashes the WHOLE app
-  // natively ("Default FirebaseApp is not initialized in this process") the
-  // instant the user taps Allow on the notification prompt. We therefore skip
-  // the entire native FCM setup (no prompt, no register, no crash) until the
-  // google-services.json file is restored to android/app/.
-  // TRADE-OFF: lock-screen / background call PUSH is off on native until then;
-  // in-app realtime call + message delivery (Supabase realtime) is unaffected.
-  // TO RE-ENABLE: drop the real google-services.json into android/app/ and
-  // delete this early `return null;`.
+  // Lock-screen / background call PUSH. Guarded so it can NEVER crash the app:
+  // we only call @capacitor/push-notifications register() AFTER our native
+  // plugin confirms the default FirebaseApp initialised (i.e. the APK was built
+  // WITH google-services.json). No google-services.json → ready:false → we skip
+  // registration cleanly (push off, no crash). With it → full FCM token flow.
+  // The token itself arrives asynchronously via the 'registration' listener
+  // wired in bootstrapNativePush(), which then persists it to profiles.fcm_token.
   if (isNative()) {
+    try {
+      var ready = await isFirebaseReadyNative();
+      if (!ready) {
+        console.warn('[ringin] native push: FirebaseApp not initialised (google-services.json not in this build) — skipping register, no crash');
+        return null;
+      }
+      await bootstrapNativePush(userId, sb);
+      var mod = await import('@capacitor/push-notifications');
+      var PN = mod && (mod.PushNotifications || mod.default || mod);
+      if (!PN || !PN.requestPermissions || !PN.register) return null;
+      var perm = await PN.requestPermissions();
+      // Only register (which fetches the FCM token) if the user granted.
+      if (perm && perm.receive === 'granted') {
+        await PN.register();
+      }
+    } catch (e) {
+      console.warn('[ringin] native push setup failed (non-fatal):', e && e.message);
+    }
     return null;
   }
 

@@ -264,6 +264,75 @@ ${regLines}
       log('• app/build.gradle already has firebase-messaging');
     }
   }
+
+  // 5. google-services.json + the google-services Gradle plugin.
+  //    This is what initialises the default FirebaseApp on Android, which
+  //    @capacitor/push-notifications register() REQUIRES — without it register()
+  //    throws an uncaught "Default FirebaseApp is not initialized" and crashes
+  //    the app the instant the user grants the notification permission.
+  //
+  //    google-services.json is an app-registration file from the Firebase
+  //    Console (project ring-in-23c07, Android app app.ringin.mobile). It is
+  //    NOT committed and `android/` is gitignored, so it was getting wiped on
+  //    every `npx cap add android`. Fix: stash it ONCE at
+  //    <repo>/firebase/google-services.json and this step copies it into
+  //    android/app/ on every build. The google-services plugin is applied ONLY
+  //    when the file is present (it hard-errors at build time if it's absent).
+  const stashGs = path.join(ROOT, 'firebase', 'google-services.json');
+  const appGs = path.join(androidRoot, 'app', 'google-services.json');
+  let haveGs = false;
+  if (exists(stashGs)) {
+    write(appGs, read(stashGs));
+    haveGs = true;
+    log('✔ Copied google-services.json → android/app/  (lock-screen call PUSH ENABLED)');
+  } else if (exists(appGs)) {
+    haveGs = true;
+    log('• google-services.json already present in android/app/');
+  } else {
+    warn('google-services.json NOT found.');
+    warn('  Stash it at firebase/google-services.json (download it from Firebase');
+    warn('  Console → project ring-in-23c07 → Project Settings → Your apps →');
+    warn('  Android app app.ringin.mobile → google-services.json).');
+    warn('  → Lock-screen call PUSH stays OFF in this build until you add it.');
+    warn('  → The app will NOT crash without it (push is gated on a native check).');
+  }
+
+  if (haveGs) {
+    // (a) project-level build.gradle: add the google-services classpath to the
+    //     buildscript dependencies (Capacitor's scaffold doesn't include it).
+    const projGradlePath = path.join(androidRoot, 'build.gradle');
+    if (exists(projGradlePath)) {
+      let pg = read(projGradlePath);
+      if (!/com\.google\.gms:google-services/.test(pg)) {
+        if (/classpath\s+['"]com\.android\.tools\.build:gradle/.test(pg)) {
+          pg = pg.replace(
+            /(classpath\s+['"]com\.android\.tools\.build:gradle[^\n]*\n)/,
+            (m) => m + "        classpath 'com.google.gms:google-services:4.4.2'\n"
+          );
+        } else if (/dependencies\s*\{/.test(pg)) {
+          // Fallback: drop it into the first dependencies{} block in buildscript.
+          pg = pg.replace(/dependencies\s*\{/, (m) => m + "\n        classpath 'com.google.gms:google-services:4.4.2'");
+        }
+        write(projGradlePath, pg);
+        log('✔ Patched android/build.gradle (google-services classpath)');
+      } else {
+        log('• android/build.gradle already has the google-services classpath');
+      }
+    }
+    // (b) app-level build.gradle: apply the plugin (legacy syntax works fine
+    //     alongside Capacitor's plugins{} DSL). Required for the generated
+    //     Firebase config to be compiled in + FirebaseInitProvider to auto-init.
+    if (exists(appGradlePath)) {
+      let ag = read(appGradlePath);
+      if (!/com\.google\.gms\.google-services/.test(ag)) {
+        ag = ag.replace(/\s*$/, '') + "\n\n// Initialises the default FirebaseApp from google-services.json (push).\napply plugin: 'com.google.gms.google-services'\n";
+        write(appGradlePath, ag);
+        log('✔ Patched app/build.gradle (apply google-services plugin)');
+      } else {
+        log('• app/build.gradle already applies the google-services plugin');
+      }
+    }
+  }
 }
 
 // ── iOS ──────────────────────────────────────────────────────────────────
