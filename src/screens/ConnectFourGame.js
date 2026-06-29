@@ -1,6 +1,6 @@
 /* eslint-disable */
 // ──────────────────────────────────────────────────────────────────────────
-// ConnectFourGame — in-call / in-room 2-player Connect Four.
+// ConnectFourGame — in-call / in-room 2-player Connect Four (POLISHED v2).
 //
 // Backed by migration 0061_more_call_games.sql (on top of 0060). State is
 // SERVER-AUTHORITATIVE: the board (a 42-char row-major string in
@@ -9,19 +9,27 @@
 // (create_game / c4_drop / get_game / forfeit_game). This component NEVER
 // computes a winner client-side — it only renders whatever the server reports.
 //
+// OPTIMISTIC MOVES: the instant the user taps a droppable column we render
+// their disc in the lowest empty cell locally (with the drop animation) so it
+// appears immediately, THEN call c4_drop. Any authoritative state that arrives
+// (RPC return OR realtime UPDATE) supersedes and clears the optimistic disc.
+// On RPC error the next server state corrects it — we never block on the
+// round-trip.
+//
 // Sync path: on mount we seed via get_game, then subscribe to game_sessions
 // UPDATE (filtered to this game id) over the existing Supabase Realtime.
-// Every payload.new replaces our local state.
+// Every payload.new replaces our local state. mountedRef guards async writes.
 //
 // 0060/0061 MAY NOT BE RUN YET. Every sb.rpc + the realtime subscribe is
 // try/catch-guarded; if the function/table is missing we degrade to a calm
 // 'Game unavailable' message and never crash the call/room screen.
 //
 // Props (from caller):
-//   gameId    - uuid of the game_sessions row
-//   myMark    - 'X' | 'O'  (which side this user is)
-//   myUserId  - this user's auth id (to resolve win/loss vs game.winner)
-//   onClose   - () => void  (parent closes the game overlay)
+//   gameId      - uuid of the game_sessions row
+//   myMark      - 'X' | 'O'  (which side this user is)
+//   myUserId    - this user's auth id (to resolve win/loss vs game.winner)
+//   onClose     - () => void  (parent closes the game overlay)
+//   onMinimize  - () => void  (parent hides overlay, game keeps running)
 //
 // Also exports a helper for callers that want to START a game:
 //   startConnectFour(sb, opponentId, contextId, contextKind) -> Promise<gameId|null>
@@ -33,10 +41,10 @@ import { sb } from '../utils/supabase';
 var EMPTY_BOARD = '__________________________________________'; // 42 underscores
 var COLS = 7;
 var ROWS = 6;
+var X_C = '#5ad1ff';
+var O_C = '#ff7eb6';
 
 // Helper for initiators: create a Connect Four game, return its id (or null).
-// contextKind must be 'call' | 'room' | null/undefined. Guarded so a missing
-// 0060/0061 migration just yields null and the caller can no-op gracefully.
 export async function startConnectFour(sbClient, opponentId, contextId, contextKind){
   var client = sbClient || sb;
   try {
@@ -48,8 +56,6 @@ export async function startConnectFour(sbClient, opponentId, contextId, contextK
     });
     if (r && r.error) return null;
     var row = r ? r.data : null;
-    // create_game returns the full game_sessions row (object). Some PostgREST
-    // setups wrap a single composite return in an array — handle both.
     if (Array.isArray(row)) row = row[0];
     return row && row.id ? row.id : null;
   } catch (_) {
@@ -58,10 +64,11 @@ export async function startConnectFour(sbClient, opponentId, contextId, contextK
 }
 
 export default function ConnectFourGame(props){
-  var gameId   = props.gameId;
-  var myMark   = props.myMark;
-  var myUserId = props.myUserId;
-  var onClose  = props.onClose;
+  var gameId     = props.gameId;
+  var myMark     = props.myMark;
+  var myUserId   = props.myUserId;
+  var onClose    = props.onClose;
+  var onMinimize = props.onMinimize;
 
   // ── State (all hooks BEFORE any conditional return) ──
   var gameS = useState(null);          // the game_sessions row (server truth)
@@ -76,7 +83,23 @@ export default function ConnectFourGame(props){
   var busyS = useState(false);         // a c4_drop/forfeit rpc is in flight
   var busy = busyS[0]; var setBusy = busyS[1];
 
+  // Optimistic disc: { idx, mark } shown immediately on my tap, cleared when
+  // the server's board catches up (or supersedes).
+  var optS = useState(null);
+  var opt = optS[0]; var setOpt = optS[1];
+
   var mountedRef = useRef(true);
+  // Marks which idx most recently changed so we only run the drop animation on
+  // the freshly-landed disc, not the whole board on every re-render.
+  var lastDropRef = useRef(-1);
+  var prevBoardRef = useRef(EMPTY_BOARD);
+
+  // Server truth arrived → clear any optimistic disc it now covers.
+  function applyServer(row){
+    if (!row || !row.id) return;
+    setGame(row);
+    setOpt(null);
+  }
 
   // Seed from get_game on mount.
   useEffect(function(){
@@ -115,13 +138,10 @@ export default function ConnectFourGame(props){
         }, function(p){
           if (!mountedRef.current) return;
           var n = p && p['new'];
-          if (n && n.id) setGame(n);
+          if (n && n.id) applyServer(n);
         })
         .subscribe();
     } catch (_) {
-      // Realtime unavailable (e.g. table not in publication / migration unrun).
-      // get_game seeding still gives a usable snapshot; we just won't get live
-      // opponent moves. Don't crash.
       ch = null;
     }
     return function(){
@@ -135,25 +155,69 @@ export default function ConnectFourGame(props){
   }, []);
 
   // ── Derived values (safe regardless of game being null) ──
-  var boardRaw = (game && game.state && typeof game.state.g === 'string')
-                   ? game.state.g : EMPTY_BOARD;
-  var board  = (boardRaw.length === ROWS * COLS) ? boardRaw : EMPTY_BOARD;
+  var serverBoardRaw = (game && game.state && typeof game.state.g === 'string')
+                         ? game.state.g : EMPTY_BOARD;
+  var serverBoard = (serverBoardRaw.length === ROWS * COLS) ? serverBoardRaw : EMPTY_BOARD;
+
+  // Merge optimistic disc on top of the server board for rendering.
+  var board = serverBoard;
+  if (opt && serverBoard.charAt(opt.idx) === '_') {
+    board = serverBoard.substr(0, opt.idx) + opt.mark + serverBoard.substr(opt.idx + 1);
+  } else if (opt) {
+    // Server already filled that cell — optimistic disc is now redundant.
+    // (Cleared via setOpt in render-safe effect below.)
+  }
+
   var status = game ? game.status : null;
   var turn   = game ? game.turn : null;
   var isOver = status === 'won' || status === 'draw' || status === 'abandoned';
-  var myTurn = !!(game && status === 'active' && turn === myMark);
+  var myTurn = !!(game && status === 'active' && turn === myMark) && !opt;
+
+  // Drop-animation tracking: figure out which idx just became filled so only
+  // that disc animates. Compare current rendered board to the previous one.
+  var dropIdx = -1;
+  if (board !== prevBoardRef.current) {
+    for (var k = 0; k < board.length; k++){
+      if (board.charAt(k) !== prevBoardRef.current.charAt(k) && board.charAt(k) !== '_'){
+        dropIdx = k; break;
+      }
+    }
+    if (dropIdx >= 0) lastDropRef.current = dropIdx;
+    prevBoardRef.current = board;
+  }
+  var animIdx = lastDropRef.current;
+
+  // Clear a stale optimistic disc once the server board covers it.
+  useEffect(function(){
+    if (opt && serverBoard.charAt(opt.idx) !== '_') setOpt(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverBoard]);
 
   // A column is droppable when it's my turn, the TOP cell of that column is
-  // empty, nothing's in flight, and the backend is reachable.
+  // empty, nothing's in flight/optimistic, and the backend is reachable.
   function colDroppable(c){
     if (!myTurn || busy || err) return false;
-    return board.charAt(0 * COLS + c) === '_';   // top row of column empty
+    return board.charAt(0 * COLS + c) === '_';
   }
 
-  // Click anywhere in a column → server-validated c4_drop.
+  function lowestEmpty(c){
+    for (var rr = ROWS - 1; rr >= 0; rr--){
+      if (board.charAt(rr * COLS + c) === '_') return rr * COLS + c;
+    }
+    return -1;
+  }
+
+  // Tap a column → optimistic disc immediately, then server-validated c4_drop.
   function dropCol(c){
-    if (busy || !game || !myTurn) return;
-    if (board.charAt(0 * COLS + c) !== '_') return;  // column full
+    if (busy || !game || !myTurn || err) return;
+    var idx = lowestEmpty(c);
+    if (idx < 0) return;  // column full
+
+    // 1) Optimistic: show MY disc right now with the drop animation.
+    setOpt({ idx: idx, mark: myMark });
+    lastDropRef.current = idx;
+
+    // 2) Fire the RPC; server state supersedes the optimistic disc.
     setBusy(true);
     (async function(){
       try {
@@ -162,12 +226,14 @@ export default function ConnectFourGame(props){
         if (r && !r.error) {
           var row = r.data;
           if (Array.isArray(row)) row = row[0];
-          if (row && row.id) setGame(row);   // realtime will also confirm
+          if (row && row.id) applyServer(row);   // realtime also confirms
+        } else {
+          // Rejected (not_your_turn / col_full / race) → drop the optimistic
+          // disc; authoritative state stays correct.
+          setOpt(null);
         }
-        // On error (not_your_turn / col_full / race) we simply do nothing —
-        // the authoritative state from realtime/get_game stays correct.
       } catch (_) {
-        // swallow — server is the source of truth
+        if (mountedRef.current) setOpt(null);
       } finally {
         if (mountedRef.current) setBusy(false);
       }
@@ -184,7 +250,7 @@ export default function ConnectFourGame(props){
         if (r && !r.error) {
           var row = r.data;
           if (Array.isArray(row)) row = row[0];
-          if (row && row.id) setGame(row);
+          if (row && row.id) applyServer(row);
         }
       } catch (_) {
         // swallow
@@ -195,30 +261,54 @@ export default function ConnectFourGame(props){
   }
 
   // ── Status / result text (driven purely by server status + winner) ──
-  function resultText(){
-    if (status === 'won' || status === 'abandoned') {
-      if (game && game.winner && myUserId && game.winner === myUserId) {
-        return status === 'abandoned' ? 'Opponent forfeited — you win' : 'You won! 🎉';
-      }
-      return status === 'abandoned' ? 'You forfeited' : 'You lost';
-    }
-    if (status === 'draw') return 'Draw';
-    return '';
-  }
+  var iWon = !!(game && game.winner && myUserId && game.winner === myUserId);
 
   function statusText(){
     if (err) return 'Game unavailable';
     if (loading || !game) return 'Loading…';
-    if (isOver) return resultText();
+    if (isOver) {
+      if (status === 'draw') return 'Draw';
+      if (status === 'abandoned') return iWon ? 'Opponent forfeited' : 'You forfeited';
+      return iWon ? 'You win!' : 'You lost';
+    }
     if (status === 'waiting') return 'Waiting for opponent…';
     return myTurn ? 'Your turn' : "Opponent's turn";
   }
 
   // ── Render ──
-  var DISC = 46;   // disc diameter
+  var DISC = 42;
   var GAP  = 6;
+  var activeColor = (turn === 'O') ? O_C : X_C;
+  var statusColor = isOver ? '#e8edf4' : (myTurn ? activeColor : '#9fb0c3');
 
-  // Header row of 7 ▼ drop buttons (one per column).
+  // Header: title + turn pill (pulses the active side).
+  var header = React.createElement('div', {
+    style: { textAlign: 'center', marginBottom: 10 }
+  },
+    React.createElement('div', {
+      style: {
+        fontSize: 20, fontWeight: 800, letterSpacing: .3,
+        background: 'linear-gradient(90deg,#5ad1ff,#7c8bff,#ff7eb6)',
+        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text'
+      }
+    }, 'Connect Four'),
+    React.createElement('div', {
+      className: (!isOver && !err && myTurn) ? 'ringin-turn-glow' : undefined,
+      style: {
+        display: 'inline-block', marginTop: 8,
+        padding: '5px 16px', borderRadius: 999,
+        fontSize: 14, fontWeight: 700,
+        color: statusColor,
+        background: 'rgba(255,255,255,.04)',
+        border: '1px solid rgba(255,255,255,.08)',
+        minWidth: 120,
+        transition: 'color .15s ease'
+      }
+    }, statusText())
+  );
+
+  // Column drop-arrow header — only lights for droppable columns.
   var dropBtns = [];
   for (var c0 = 0; c0 < COLS; c0++){
     (function(col){
@@ -226,35 +316,33 @@ export default function ConnectFourGame(props){
       dropBtns.push(
         React.createElement('button', {
           key: 'drop-' + col,
+          className: 'ringin-tap' + (ok ? ' ringin-turn-glow' : ''),
           onClick: ok ? function(){ dropCol(col); } : undefined,
           disabled: !ok,
           'aria-label': 'drop in column ' + (col + 1),
           style: {
-            width: DISC, height: 28,
-            border: 'none', borderRadius: 8,
-            background: ok ? 'rgba(90,209,255,.14)' : 'transparent',
-            color: ok ? (myMark === 'O' ? '#ff7eb6' : '#5ad1ff') : '#39414f',
-            fontSize: 16, fontWeight: 800, lineHeight: '28px',
+            width: DISC, height: 26,
+            border: 'none', borderRadius: 8, padding: 0,
+            background: ok ? 'rgba(124,139,255,.18)' : 'transparent',
+            color: ok ? activeColor : '#2c3340',
+            fontSize: 15, fontWeight: 900, lineHeight: '26px',
             cursor: ok ? 'pointer' : 'default',
-            userSelect: 'none',
-            transition: 'background .12s ease'
+            userSelect: 'none'
           }
         }, '▼')
       );
     })(c0);
   }
-
   var dropRow = React.createElement('div', {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(' + COLS + ', ' + DISC + 'px)',
-      gap: GAP,
-      marginBottom: 6,
-      justifyContent: 'center'
+      gap: GAP, marginBottom: 6, justifyContent: 'center'
     }
   }, dropBtns);
 
-  // The 6×7 grid of disc cells, rendered top → bottom, left → right.
+  // The 6×7 grid of holes. The board panel is a glossy blue/indigo gradient;
+  // each hole is a recessed dark circle, filled holes hold a glossy disc.
   var cells = [];
   for (var r = 0; r < ROWS; r++){
     for (var c = 0; c < COLS; c++){
@@ -263,25 +351,43 @@ export default function ConnectFourGame(props){
         var mark = board.charAt(idx);
         var filled = (mark === 'X' || mark === 'O');
         var clickable = colDroppable(col);
+        var dc = mark === 'X' ? X_C : O_C;
+
+        var disc = filled
+          ? React.createElement('div', {
+              key: 'disc-' + idx + '-' + mark,
+              className: (idx === animIdx) ? 'ringin-disc-drop' : undefined,
+              style: {
+                width: '100%', height: '100%', borderRadius: '50%',
+                background: 'radial-gradient(circle at 32% 28%, '
+                  + 'rgba(255,255,255,.85) 0%, ' + dc + ' 38%, ' + dc + ' 70%, '
+                  + 'rgba(0,0,0,.35) 100%)',
+                boxShadow: '0 2px 5px rgba(0,0,0,.45), inset 0 -3px 6px rgba(0,0,0,.35)'
+              }
+            })
+          : null;
+
         cells.push(
           React.createElement('div', {
             key: 'cell-' + idx,
+            className: clickable ? 'ringin-tap' : undefined,
             onClick: clickable ? function(){ dropCol(col); } : undefined,
             role: 'button',
             'aria-label': 'row ' + (row + 1) + ' col ' + (col + 1) +
               (filled ? ' ' + mark : ' empty'),
             style: {
               width: DISC, height: DISC, borderRadius: '50%',
-              background: mark === 'X' ? '#5ad1ff'
-                        : mark === 'O' ? '#ff7eb6'
-                        : '#11151c',
-              border: filled ? 'none' : '2px solid #232a36',
-              boxShadow: filled ? 'inset 0 -3px 6px rgba(0,0,0,.35)' : 'none',
+              background: filled
+                ? 'transparent'
+                : 'radial-gradient(circle at 50% 45%, #070b12 0%, #0a1018 60%, #0e1626 100%)',
+              boxShadow: filled
+                ? 'none'
+                : 'inset 0 3px 6px rgba(0,0,0,.7), inset 0 -2px 3px rgba(120,150,255,.12)',
               cursor: clickable ? 'pointer' : 'default',
               userSelect: 'none',
-              transition: 'background .12s ease'
+              overflow: 'hidden'
             }
-          })
+          }, disc)
         );
       })(r, c);
     }
@@ -292,67 +398,158 @@ export default function ConnectFourGame(props){
       display: 'grid',
       gridTemplateColumns: 'repeat(' + COLS + ', ' + DISC + 'px)',
       gridTemplateRows: 'repeat(' + ROWS + ', ' + DISC + 'px)',
-      gap: GAP,
-      padding: 8,
-      borderRadius: 14,
-      background: '#0a0d14',
-      border: '1px solid #1c2230',
+      gap: GAP, padding: 10, borderRadius: 18,
+      background: 'linear-gradient(160deg,#2b3aa0 0%,#1f2a78 45%,#16205c 100%)',
+      border: '1px solid rgba(124,139,255,.35)',
+      boxShadow: '0 10px 28px rgba(20,30,90,.55), inset 0 1px 0 rgba(255,255,255,.15)',
       justifyContent: 'center',
-      opacity: (err || isOver) ? 0.85 : 1
+      opacity: err ? 0.6 : 1
     }
   }, cells);
 
-  var header = React.createElement('div', {
-    style: {
-      fontSize: 18, fontWeight: 700, color: '#e8edf4',
-      marginBottom: 4, textAlign: 'center'
-    }
-  }, 'Connect Four');
-
-  var subStatus = React.createElement('div', {
-    style: {
-      fontSize: 15, fontWeight: 600,
-      color: isOver ? '#9fb0c3' : (myTurn ? '#5ad1ff' : '#9fb0c3'),
-      marginBottom: 14, textAlign: 'center', minHeight: 20
-    }
-  }, statusText());
-
   var youAre = React.createElement('div', {
     style: { fontSize: 12, color: '#6b7585', marginTop: 12, textAlign: 'center' }
-  }, 'You are ' + (myMark === 'X' ? 'X (blue)' : myMark === 'O' ? 'O (pink)' : '?'));
+  },
+    React.createElement('span', {
+      style: {
+        display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+        background: myMark === 'O' ? O_C : X_C, marginRight: 6,
+        verticalAlign: 'middle'
+      }
+    }),
+    'You are ' + (myMark === 'X' ? 'X (blue)' : myMark === 'O' ? 'O (pink)' : '?')
+  );
 
+  // ── Control row: Minimise (prominent) / Forfeit (active only) / Close ──
   var btnBase = {
-    border: 'none', borderRadius: 12, padding: '10px 18px',
-    fontSize: 14, fontWeight: 700, cursor: 'pointer'
+    border: 'none', borderRadius: 12, padding: '11px 14px',
+    fontSize: 14, fontWeight: 800, cursor: 'pointer'
   };
+
+  var minimiseBtn = React.createElement('button', {
+    className: 'ringin-tap',
+    onClick: function(){ if (onMinimize) onMinimize(); },
+    style: Object.assign({}, btnBase, {
+      flex: 1.4,
+      background: 'linear-gradient(135deg,#5ad1ff,#7c8bff)',
+      color: '#08111c',
+      boxShadow: '0 4px 14px rgba(90,209,255,.35)'
+    })
+  }, '▽ Minimise');
 
   var forfeitDisabled = busy || isOver || !!err || !game;
   var forfeitBtn = React.createElement('button', {
+    className: 'ringin-tap',
     onClick: doForfeit,
     disabled: forfeitDisabled,
     style: Object.assign({}, btnBase, {
-      background: forfeitDisabled ? '#2a2f3a' : '#3a2230',
-      color: forfeitDisabled ? '#5f6776' : '#ff8fb0',
-      cursor: forfeitDisabled ? 'default' : 'pointer'
+      flex: 1,
+      background: '#3a2230',
+      color: '#ff8fb0'
     })
   }, 'Forfeit');
 
   var closeBtn = React.createElement('button', {
+    className: 'ringin-tap',
     onClick: function(){ if (onClose) onClose(); },
-    style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
+    style: Object.assign({}, btnBase, { flex: 1, background: '#1c222c', color: '#cfd8e3' })
   }, 'Close');
 
-  // Forfeit only while the game is active (per contract); Close always shown.
-  var buttonsChildren = [];
-  if (!isOver && !err && game) buttonsChildren.push(forfeitBtn);
-  buttonsChildren.push(closeBtn);
+  var controlChildren = [minimiseBtn];
+  if (!isOver && !err && game) controlChildren.push(forfeitBtn);
+  controlChildren.push(closeBtn);
 
-  var buttons = React.createElement('div', {
-    style: { display: 'flex', gap: 10, marginTop: 16, justifyContent: 'center' }
-  }, buttonsChildren);
+  var controls = React.createElement('div', {
+    style: { display: 'flex', gap: 8, marginTop: 16, width: '100%' }
+  }, controlChildren);
 
-  return React.createElement('div', {
+  // ── Win / lose / draw celebration overlay (inside the card) ──
+  var overlay = null;
+  if (isOver && !err) {
+    var won = status === 'won' && iWon;
+    var abandonWin = status === 'abandoned' && iWon;
+    var winLike = won || abandonWin;
+    var draw = status === 'draw';
+
+    var bigText = draw ? 'Draw'
+      : winLike ? 'You win! 🎉'
+      : 'You lost';
+    var bigColor = draw ? '#cfd8e3' : winLike ? '#ffe27a' : '#ff9bb6';
+
+    var overlayKids = [];
+
+    // Radiating rays + confetti only on a win.
+    if (winLike) {
+      overlayKids.push(
+        React.createElement('div', {
+          key: 'ray',
+          className: 'ringin-win-ray',
+          style: {
+            position: 'absolute', width: 200, height: 200, borderRadius: '50%',
+            background: 'conic-gradient(from 0deg,'
+              + 'rgba(255,226,122,.55),rgba(90,209,255,0) 25%,'
+              + 'rgba(124,139,255,.55) 50%,rgba(255,126,182,0) 75%,'
+              + 'rgba(255,226,122,.55))',
+            pointerEvents: 'none'
+          }
+        })
+      );
+      var confColors = ['#5ad1ff','#ff7eb6','#ffe27a','#7c8bff','#7CFFB2'];
+      for (var ci = 0; ci < 14; ci++){
+        (function(i){
+          overlayKids.push(
+            React.createElement('div', {
+              key: 'conf-' + i,
+              className: 'ringin-confetti',
+              style: {
+                position: 'absolute', top: 0,
+                left: (6 + (i * 6.4)) + '%',
+                width: 8, height: 12, borderRadius: 2,
+                background: confColors[i % confColors.length],
+                animationDelay: (i * 0.09) + 's',
+                pointerEvents: 'none'
+              }
+            })
+          );
+        })(ci);
+      }
+    }
+
+    overlayKids.push(
+      React.createElement('div', {
+        key: 'big',
+        className: winLike ? 'ringin-game-win' : 'ringin-game-lose',
+        style: {
+          position: 'relative', zIndex: 2,
+          fontSize: 30, fontWeight: 900, color: bigColor,
+          textShadow: '0 3px 14px rgba(0,0,0,.6)', textAlign: 'center'
+        }
+      }, bigText)
+    );
+
+    if (status === 'abandoned') {
+      overlayKids.push(
+        React.createElement('div', {
+          key: 'sub', className: 'ringin-result-in',
+          style: { position: 'relative', zIndex: 2, marginTop: 8, fontSize: 14, color: '#9fb0c3' }
+        }, abandonWin ? 'Opponent forfeited' : 'You forfeited')
+      );
+    }
+
+    overlay = React.createElement('div', {
+      style: {
+        position: 'absolute', inset: 0, borderRadius: 20,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'radial-gradient(circle at 50% 40%, rgba(10,14,20,.86), rgba(8,11,18,.97))',
+        overflow: 'hidden', zIndex: 5
+      }
+    }, overlayKids);
+  }
+
+  var card = React.createElement('div', {
     style: {
+      position: 'relative',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       padding: 20, borderRadius: 20,
       background: 'linear-gradient(180deg,#0d1117,#0a0d12)',
@@ -361,5 +558,7 @@ export default function ConnectFourGame(props){
       maxWidth: 360, margin: '0 auto',
       overflowY: 'auto', maxHeight: '90vh'
     }
-  }, header, subStatus, dropRow, boardGrid, youAre, buttons);
+  }, header, dropRow, boardGrid, youAre, controls, overlay);
+
+  return card;
 }

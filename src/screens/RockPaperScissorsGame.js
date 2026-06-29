@@ -1,37 +1,44 @@
 /* eslint-disable */
 // ──────────────────────────────────────────────────────────────────────────
 // RockPaperScissorsGame — in-call 2-player Rock-Paper-Scissors (best of 5,
-// simultaneous, hidden picks).
+// simultaneous, hidden picks). FAST · COLORFUL · ANIMATED rebuild.
 //
 // Backed by migration 0061_more_call_games.sql (game_type 'rps'). State is
 // SERVER-AUTHORITATIVE: scores, round resolution and the match winner are ALL
 // decided by the SECURITY DEFINER RPC rps_throw. This component NEVER computes
 // a winner/round outcome client-side — it only renders what game_sessions.state
 // reports. The opponent's current-round pick is hidden server-side (private
-// rps_picks table) until BOTH players throw, so we never try to read it.
+// rps_picks table) until BOTH players throw, so we never read it.
 //
-// Sync path mirrors TicTacToeGame.js: on mount seed via get_game, subscribe to
-// game_sessions UPDATE (filtered to this id), replace local state on every
-// payload.new, remove the channel on unmount, guard with mountedRef.
+// State shape (0061):
+//   game.state = { best_of:5, round:N, score:{X,O},
+//                  thrown:{X:bool,O:bool},
+//                  last:{X:choice,O:choice,winner:'X'|'O'|'tie'}|null }
+// RPC: sb.rpc('rps_throw',{p_game,p_choice:'rock'|'paper'|'scissors'})
+//      sb.rpc('forfeit_game',{p_game})
+//      sb.rpc('get_game',{p_game})  (seed)
 //
-// 0061 MAY NOT BE RUN YET. Every sb.rpc + the realtime subscribe is
-// try/catch-guarded; if the function/table is missing we degrade to a calm
-// 'Game unavailable' message and never crash the call screen.
+// OPTIMISTIC: the instant you tap a hand we lock the local "shoot/waiting"
+// state (your pick shown, buttons disabled) BEFORE the RPC returns, so the
+// move feels instant. Authoritative server state (RPC return OR realtime)
+// always supersedes it; on RPC error the next server state corrects it.
 //
-// Props:
-//   gameId    - uuid of the game_sessions row
-//   myMark    - 'X' | 'O'  (which side this user is)
-//   myUserId  - this user's auth id (to resolve win/loss vs game.winner)
-//   onClose   - () => void  (parent closes the game overlay)
+// Sync: seed via get_game; subscribe to game_sessions UPDATE (filtered to this
+// id); setGame(payload.new); remove channel on unmount; mountedRef guard.
+// Every rpc + the subscribe is try/catch-guarded → calm 'Game unavailable'.
+//
+// Props: gameId, myMark ('X'|'O'), myUserId, onClose, onMinimize.
 // ──────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState, useRef } from 'react';
 import { sb } from '../utils/supabase';
 
+var TXT = '#e8edf4', MUTED = '#9fb0c3', X_ACC = '#5ad1ff', O_ACC = '#ff7eb6';
+
 var CHOICES = [
-  { key: 'rock',     emoji: '✊', label: 'Rock' },
-  { key: 'paper',    emoji: '✋', label: 'Paper' },
-  { key: 'scissors', emoji: '✌️', label: 'Scissors' }
+  { key: 'rock',     emoji: '✊', label: 'Rock',     g: 'linear-gradient(150deg,#ff9a6b,#ff5e7e)' },
+  { key: 'paper',    emoji: '✋', label: 'Paper',    g: 'linear-gradient(150deg,#5ad1ff,#5a8bff)' },
+  { key: 'scissors', emoji: '✌️', label: 'Scissors', g: 'linear-gradient(150deg,#b06bff,#ff6bd6)' }
 ];
 
 function choiceEmoji(c){
@@ -42,29 +49,46 @@ function choiceEmoji(c){
 }
 
 export default function RockPaperScissorsGame(props){
-  var gameId   = props.gameId;
-  var myMark   = props.myMark;
-  var myUserId = props.myUserId;
-  var onClose  = props.onClose;
+  var gameId     = props.gameId;
+  var myMark     = props.myMark;
+  var myUserId   = props.myUserId;
+  var onClose    = props.onClose;
+  var onMinimize = props.onMinimize;
 
-  // ── State (all hooks BEFORE any conditional return) ──
-  var gameS = useState(null);          // the game_sessions row (server truth)
+  // ── State (ALL hooks BEFORE any conditional return) ──
+  var gameS = useState(null);
   var game = gameS[0]; var setGame = gameS[1];
 
   var loadingS = useState(true);
   var loading = loadingS[0]; var setLoading = loadingS[1];
 
-  var errS = useState('');             // non-empty → backend unavailable / load failed
+  var errS = useState('');
   var err = errS[0]; var setErr = errS[1];
 
-  var busyS = useState(false);         // a throw/forfeit rpc is in flight
+  var busyS = useState(false);
   var busy = busyS[0]; var setBusy = busyS[1];
 
-  var myPickS = useState(null);        // local-only: choice I last tapped this round
-  var myPick = myPickS[0]; var setMyPick = myPickS[1];
+  // Optimistic local pick for the CURRENT round. {round, choice} or null.
+  // Set the instant the user taps; cleared once the server confirms we've
+  // thrown (server thrown flag flips) or the round advances.
+  var optS = useState(null);
+  var opt = optS[0]; var setOpt = optS[1];
+
+  // Toggle to retrigger the result-reveal animation when last changes.
+  var revealKeyS = useState(0);
+  var revealKey = revealKeyS[0]; var setRevealKey = revealKeyS[1];
 
   var mountedRef = useRef(true);
-  var roundRef = useRef(null);         // tracks round to clear local pick on resolve
+  var roundRef   = useRef(null);
+  var lastSigRef = useRef(null);
+
+  // Brief post-resolution window where we SHOW the round result (both hands +
+  // win/lose banner) even though the server already advanced the round and
+  // reset the thrown flags. Without this you'd snap straight back to the picker
+  // and never see who won the round.
+  var revealingS = useState(false);
+  var revealing = revealingS[0]; var setRevealing = revealingS[1];
+  var revealTimerRef = useRef(null);
 
   // Seed from get_game on mount.
   useEffect(function(){
@@ -107,8 +131,6 @@ export default function RockPaperScissorsGame(props){
         })
         .subscribe();
     } catch (_) {
-      // Realtime unavailable (table not in publication / 0061 unrun). get_game
-      // seeding still gives a usable snapshot; just no live opponent updates.
       ch = null;
     }
     return function(){
@@ -118,7 +140,10 @@ export default function RockPaperScissorsGame(props){
   }, [gameId]);
 
   useEffect(function(){
-    return function(){ mountedRef.current = false; };
+    return function(){
+      mountedRef.current = false;
+      if (revealTimerRef.current) { try { clearTimeout(revealTimerRef.current); } catch (_) {} }
+    };
   }, []);
 
   // ── Derived values (safe regardless of game being null) ──
@@ -136,22 +161,56 @@ export default function RockPaperScissorsGame(props){
   var myScore  = (score[myMark] != null) ? score[myMark] : 0;
   var oppScore = (score[otherMark] != null) ? score[otherMark] : 0;
 
-  var iThrew  = thrown[myMark] === true;
-  var myTurn  = !!(game && status === 'active' && !iThrew); // can still act this round
+  var serverIThrew = thrown[myMark] === true;
+  // Optimistic "I threw this round" merges the server flag with the local pick.
+  var optActive = !!(opt && opt.round === round);
+  var iThrew    = serverIThrew || optActive;
+  var oppThrew  = thrown[otherMark] === true;
 
-  // Clear the local pick whenever the round advances (server resolved a round).
+  // What hand am I showing this round (optimistic first, then nothing — the
+  // server never echoes my pick back into state mid-round, only via last).
+  var myShownChoice = optActive ? opt.choice : null;
+
+  // Clear optimistic pick once the server confirms (thrown flag set) OR the
+  // round advanced. Keeping it through the "waiting" phase is the whole point.
   useEffect(function(){
-    if (roundRef.current === null) { roundRef.current = round; return; }
-    if (round !== roundRef.current) {
-      roundRef.current = round;
-      if (mountedRef.current) setMyPick(null);
+    if (roundRef.current === null) { roundRef.current = round; }
+    var roundChanged = round !== roundRef.current;
+    if (roundChanged) roundRef.current = round;
+    if (!mountedRef.current) return;
+    if (opt && (opt.round !== round || serverIThrew)) {
+      // Round advanced → drop it. Server confirmed our throw → we can drop the
+      // local copy (the "waiting" UI is driven by the server thrown flag now).
+      if (opt.round !== round) setOpt(null);
     }
-  }, [round]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round, serverIThrew]);
 
-  // Throw a choice → server-validated rps_throw.
+  // When a round resolves (last changes) retrigger the reveal animation AND hold
+  // a ~1.6s window where the result (both hands + win/lose banner) stays on
+  // screen before dropping back to the picker for the next round. Skipped once
+  // the match is over (the match-end overlay takes over instead).
+  useEffect(function(){
+    var sig = last ? (round + ':' + (last.winner || '') + ':' + (last.X || '') + (last.O || '')) : null;
+    if (sig && sig !== lastSigRef.current) {
+      lastSigRef.current = sig;
+      if (!mountedRef.current) return;
+      setRevealKey(function(k){ return k + 1; });
+      if (!isOver) {
+        setRevealing(true);
+        if (revealTimerRef.current) { try { clearTimeout(revealTimerRef.current); } catch (_) {} }
+        revealTimerRef.current = setTimeout(function(){
+          if (mountedRef.current) setRevealing(false);
+        }, 1600);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [last, round, isOver]);
+
+  // ── Actions ──
   function doThrow(choice){
     if (busy || !game || err || isOver || iThrew) return;
-    setMyPick(choice); // local immediate feedback only; server is source of truth
+    setOpt({ round: round, choice: choice });   // OPTIMISTIC: lock in instantly
     setBusy(true);
     (async function(){
       try {
@@ -160,12 +219,12 @@ export default function RockPaperScissorsGame(props){
         if (r && !r.error) {
           var row = r.data;
           if (Array.isArray(row)) row = row[0];
-          if (row && row.id) setGame(row);   // realtime will also confirm
+          if (row && row.id) setGame(row);
         }
-        // On error (bad_choice / game_not_active / race) we no-op — the
-        // authoritative state from realtime/get_game stays correct.
+        // On error (bad_choice / not_active / race) we no-op — the server's
+        // authoritative state (realtime/get_game) stays correct & supersedes opt.
       } catch (_) {
-        // swallow — server is the source of truth
+        // swallow — server is source of truth
       } finally {
         if (mountedRef.current) setBusy(false);
       }
@@ -185,136 +244,228 @@ export default function RockPaperScissorsGame(props){
           if (row && row.id) setGame(row);
         }
       } catch (_) {
-        // swallow
       } finally {
         if (mountedRef.current) setBusy(false);
       }
     })();
   }
 
-  // ── Status / result text (driven purely by server status + winner) ──
+  // ── Status / result text (server-driven only) ──
   function statusText(){
     if (err) return 'Game unavailable';
     if (loading || !game) return 'Loading…';
-    if (status === 'won') {
-      return (game.winner && myUserId && game.winner === myUserId) ? 'You won! 🎉' : 'You lost';
+    if (status === 'won')   return (game.winner && myUserId && game.winner === myUserId) ? 'You win! 🎉' : 'You lost';
+    if (status === 'draw')  return 'Draw';
+    if (status === 'abandoned')
+      return (game.winner && myUserId && game.winner === myUserId) ? 'Opponent forfeited' : 'You forfeited';
+    if (revealing && last && last.winner) {
+      if (last.winner === 'tie') return 'Tie round';
+      return last.winner === myMark ? 'You won the round! 🎉' : 'You lost the round';
     }
-    if (status === 'draw') return 'Draw';
-    if (status === 'abandoned') {
-      return (game.winner && myUserId && game.winner === myUserId)
-        ? 'Opponent forfeited — you win'
-        : 'You forfeited';
-    }
-    // active
-    if (iThrew) return 'Waiting for opponent…';
+    if (iThrew && !oppThrew) return 'Rock… Paper… Scissors…';
+    if (iThrew && oppThrew)  return 'Resolving…';
     return 'Make your pick';
   }
 
-  // Last-round result text relative to me.
   function lastResultText(){
     if (!last || !last.winner) return '';
     if (last.winner === 'tie') return 'Tie';
-    return last.winner === myMark ? 'You won that round' : 'You lost that round';
+    return last.winner === myMark ? 'You won that round!' : 'You lost that round';
   }
 
-  // ── Render ──
-  var TXT = '#e8edf4', MUTED = '#9fb0c3', X_ACC = '#5ad1ff', O_ACC = '#ff7eb6';
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
 
+  // Header.
   var header = React.createElement('div', {
-    style: { fontSize: 18, fontWeight: 700, color: TXT, marginBottom: 4, textAlign: 'center' }
+    style: {
+      fontSize: 19, fontWeight: 800, letterSpacing: .3, marginBottom: 8, textAlign: 'center',
+      backgroundImage: 'linear-gradient(90deg,' + X_ACC + ',' + O_ACC + ')',
+      WebkitBackgroundClip: 'text', backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent', color: X_ACC
+    }
   }, 'Rock · Paper · Scissors');
 
+  // Status line — pulse while it's my turn to pick.
+  var statusActiveColor = (iThrew && !oppThrew) ? O_ACC : X_ACC;
   var statusLine = React.createElement('div', {
+    className: (!isOver && !iThrew && !err && !loading) ? 'ringin-turn-glow' : undefined,
     style: {
-      fontSize: 15, fontWeight: 600,
-      color: isOver ? MUTED : (myTurn ? X_ACC : MUTED),
-      marginBottom: 12, textAlign: 'center', minHeight: 20
+      fontSize: 14, fontWeight: 700,
+      color: isOver ? MUTED : statusActiveColor,
+      margin: '0 auto 12px', textAlign: 'center', minHeight: 20,
+      padding: '6px 14px', borderRadius: 999,
+      background: isOver ? 'transparent' : 'rgba(90,209,255,.06)',
+      border: isOver ? '1px solid transparent' : '1px solid rgba(90,209,255,.18)'
     }
   }, statusText());
 
-  // Scoreboard: "You N — M Opp"
+  // Scoreboard "You N — M Opp".
+  function pip(filled, color){
+    return React.createElement('span', {
+      style: {
+        width: 8, height: 8, borderRadius: '50%',
+        background: filled ? color : 'rgba(255,255,255,.12)',
+        boxShadow: filled ? ('0 0 6px ' + color) : 'none',
+        transition: 'background .2s ease'
+      }
+    });
+  }
+  var needWin = Math.ceil(bestOf / 2);
+  function pipRow(count, color){
+    var dots = [];
+    for (var i = 0; i < needWin; i++) dots.push(pip(i < count, color));
+    return React.createElement('div', { style: { display: 'flex', gap: 4, justifyContent: 'center', marginTop: 4 } }, dots);
+  }
+
   var scoreboard = React.createElement('div', {
-    style: { display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 10, marginBottom: 4 }
+    style: {
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
+      marginBottom: 4, width: '100%'
+    }
   },
-    React.createElement('span', { style: { fontSize: 13, color: MUTED } }, 'You'),
-    React.createElement('span', { style: { fontSize: 28, fontWeight: 800, color: X_ACC } }, String(myScore)),
-    React.createElement('span', { style: { fontSize: 20, color: '#3a4150' } }, '—'),
-    React.createElement('span', { style: { fontSize: 28, fontWeight: 800, color: O_ACC } }, String(oppScore)),
-    React.createElement('span', { style: { fontSize: 13, color: MUTED } }, 'Opp')
+    React.createElement('div', { style: { textAlign: 'center', flex: 1 } },
+      React.createElement('div', { style: { fontSize: 12, color: MUTED, fontWeight: 600 } }, 'You'),
+      React.createElement('div', { style: { fontSize: 34, fontWeight: 900, color: X_ACC, lineHeight: 1.05, textShadow: '0 0 16px rgba(90,209,255,.45)' } }, String(myScore)),
+      pipRow(myScore, X_ACC)
+    ),
+    React.createElement('div', { style: { fontSize: 18, color: '#3a4150', fontWeight: 800 } }, '—'),
+    React.createElement('div', { style: { textAlign: 'center', flex: 1 } },
+      React.createElement('div', { style: { fontSize: 12, color: MUTED, fontWeight: 600 } }, 'Opp'),
+      React.createElement('div', { style: { fontSize: 34, fontWeight: 900, color: O_ACC, lineHeight: 1.05, textShadow: '0 0 16px rgba(255,126,182,.45)' } }, String(oppScore)),
+      pipRow(oppScore, O_ACC)
+    )
   );
 
   var roundLine = React.createElement('div', {
-    style: { fontSize: 12, color: MUTED, marginBottom: 14, textAlign: 'center' }
+    style: { fontSize: 12, color: MUTED, fontWeight: 600, marginBottom: 14, textAlign: 'center' }
   }, 'Round ' + round + ' · best of ' + bestOf);
 
-  // Three choice buttons.
-  var disabledAll = !!err || isOver || iThrew || busy || !game;
-  var choiceBtns = CHOICES.map(function(c){
-    var picked = myPick === c.key;
-    var disabled = disabledAll;
-    return React.createElement('button', {
-      key: c.key,
-      onClick: disabled ? undefined : function(){ doThrow(c.key); },
-      disabled: disabled,
-      'aria-label': c.label,
+  // ── Centre arena: either the choice buttons, or the shoot/reveal stage ──
+  var arena;
+
+  if ((iThrew && status === 'active') || (revealing && last)) {
+    // SHOOT / WAITING / REVEAL stage.
+    // My hand: shaking until opponent in (no reveal yet), then settle to last.
+    var hasReveal = !!(last && (last.X || last.O));
+    var myHand = myShownChoice ? choiceEmoji(myShownChoice) : '✊';
+    var oppHand = '✊';
+    if (hasReveal) {
+      myHand  = choiceEmoji(last[myMark]) || myHand;
+      oppHand = choiceEmoji(last[otherMark]) || '✊';
+    }
+
+    var shaking = !hasReveal;
+
+    function handCell(emoji, color, who){
+      return React.createElement('div', {
+        style: {
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6
+        }
+      },
+        React.createElement('div', {
+          key: who + '-' + revealKey + (shaking ? '-shake' : '-rev'),
+          className: shaking ? 'ringin-hand-shake' : 'ringin-result-in',
+          style: {
+            width: 84, height: 84, borderRadius: 22, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', fontSize: 46,
+            background: 'radial-gradient(circle at 32% 28%,rgba(255,255,255,.10),rgba(255,255,255,0) 60%), #11151c',
+            border: '1px solid ' + color + '55',
+            boxShadow: '0 0 18px ' + color + '33, inset 0 1px 0 rgba(255,255,255,.06)'
+          }
+        }, emoji),
+        React.createElement('div', { style: { fontSize: 11, fontWeight: 700, color: color } }, who)
+      );
+    }
+
+    var resultBanner = null;
+    if (hasReveal) {
+      var rText = lastResultText();
+      var rColor = (last.winner === 'tie') ? MUTED : (last.winner === myMark ? X_ACC : O_ACC);
+      resultBanner = React.createElement('div', {
+        key: 'rb-' + revealKey,
+        className: 'ringin-result-in',
+        style: {
+          marginTop: 12, padding: '8px 16px', borderRadius: 999,
+          fontSize: 15, fontWeight: 800, color: rColor,
+          background: rColor + '14', border: '1px solid ' + rColor + '44',
+          textShadow: (last.winner === 'tie') ? 'none' : ('0 0 12px ' + rColor + '66')
+        }
+      }, rText);
+    }
+
+    arena = React.createElement('div', {
       style: {
-        flex: 1,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        gap: 4,
-        padding: '14px 6px',
-        borderRadius: 14,
-        background: picked ? '#15202c' : '#11151c',
-        border: picked ? ('1px solid ' + X_ACC) : '1px solid #232a36',
-        color: disabled && !picked ? '#5f6776' : TXT,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled && !picked ? 0.6 : 1,
-        userSelect: 'none',
-        transition: 'background .12s ease, border .12s ease'
+        width: '100%', marginBottom: 14, padding: '18px 8px', borderRadius: 18,
+        background: 'linear-gradient(180deg,#0b0f15,#0a0d12)',
+        border: '1px solid #1c2230', display: 'flex', flexDirection: 'column', alignItems: 'center'
       }
     },
-      React.createElement('span', { style: { fontSize: 30, lineHeight: 1 } }, c.emoji),
-      React.createElement('span', { style: { fontSize: 12, fontWeight: 600 } }, c.label)
-    );
-  });
-
-  var choiceRow = React.createElement('div', {
-    style: { display: 'flex', gap: 8, width: '100%', marginBottom: 14 }
-  }, choiceBtns);
-
-  // Last-round summary (your pick vs opponent pick + result).
-  var lastBlock = null;
-  if (last && (last.X || last.O)) {
-    var myLast  = last[myMark];
-    var oppLast = last[otherMark];
-    var resText = lastResultText();
-    var resColor = (last.winner === 'tie')
-      ? MUTED
-      : (last.winner === myMark ? X_ACC : O_ACC);
-    lastBlock = React.createElement('div', {
-      style: {
-        width: '100%', padding: '10px 12px', borderRadius: 12,
-        background: '#0b0f15', border: '1px solid #1c2230',
-        textAlign: 'center', marginBottom: 6
-      }
-    },
-      React.createElement('div', { style: { fontSize: 11, color: '#6b7585', marginBottom: 4 } }, 'Last round'),
-      React.createElement('div', { style: { fontSize: 24, marginBottom: 4 } },
-        React.createElement('span', null, choiceEmoji(myLast) || '–'),
-        React.createElement('span', { style: { fontSize: 14, color: MUTED, margin: '0 8px' } }, 'vs'),
-        React.createElement('span', null, choiceEmoji(oppLast) || '–')
+      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' } },
+        handCell(myHand, X_ACC, 'You'),
+        React.createElement('div', { style: { fontSize: 16, fontWeight: 800, color: '#3a4150' } }, 'VS'),
+        handCell(oppHand, O_ACC, 'Opp')
       ),
-      React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: resColor } }, resText)
+      resultBanner,
+      (!hasReveal)
+        ? React.createElement('div', { style: { fontSize: 12, color: MUTED, marginTop: 12, fontWeight: 600 } },
+            oppThrew ? 'Resolving…' : 'Waiting for opponent…')
+        : null
     );
+  } else {
+    // CHOICE buttons (active & not yet thrown, OR game over → disabled+dim).
+    var disabledAll = !!err || isOver || iThrew || busy || !game;
+    var choiceBtns = CHOICES.map(function(c){
+      var picked = myShownChoice === c.key;
+      var disabled = disabledAll;
+      return React.createElement('button', {
+        key: c.key,
+        className: 'ringin-tap',
+        onClick: disabled ? undefined : function(){ doThrow(c.key); },
+        disabled: disabled,
+        'aria-label': c.label,
+        style: {
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', gap: 6, padding: '18px 6px', borderRadius: 18,
+          background: disabled ? '#11151c' : c.g,
+          border: picked ? ('2px solid ' + TXT) : '1px solid rgba(255,255,255,.10)',
+          color: disabled ? '#5f6776' : '#0b0f15',
+          cursor: disabled ? 'default' : 'pointer',
+          opacity: disabled ? 0.5 : 1,
+          boxShadow: disabled ? 'none' : '0 6px 18px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.35)',
+          transition: 'transform .12s ease, opacity .15s ease'
+        }
+      },
+        React.createElement('span', { style: { fontSize: 36, lineHeight: 1, filter: disabled ? 'grayscale(1)' : 'none' } }, c.emoji),
+        React.createElement('span', { style: { fontSize: 12, fontWeight: 800 } }, c.label)
+      );
+    });
+    arena = React.createElement('div', {
+      style: { display: 'flex', gap: 10, width: '100%', marginBottom: 14 }
+    }, choiceBtns);
   }
 
+  // ── Controls: Minimise (prominent) · Forfeit (active only) · Close ──
   var btnBase = {
-    border: 'none', borderRadius: 12, padding: '10px 18px',
-    fontSize: 14, fontWeight: 700, cursor: 'pointer'
+    border: 'none', borderRadius: 12, padding: '11px 14px',
+    fontSize: 14, fontWeight: 800, cursor: 'pointer', flex: 1, whiteSpace: 'nowrap'
   };
+
+  var minimiseBtn = React.createElement('button', {
+    className: 'ringin-tap',
+    onClick: function(){ if (onMinimize) onMinimize(); },
+    style: Object.assign({}, btnBase, {
+      background: 'linear-gradient(150deg,#5ad1ff,#5a8bff)',
+      color: '#0b0f15', flex: 1.4,
+      boxShadow: '0 6px 16px rgba(90,139,255,.35), inset 0 1px 0 rgba(255,255,255,.4)'
+    })
+  }, '▽ Minimise');
 
   var forfeitDisabled = busy || isOver || !!err || !game;
   var forfeitBtn = React.createElement('button', {
-    onClick: doForfeit,
+    className: 'ringin-tap',
+    onClick: forfeitDisabled ? undefined : doForfeit,
     disabled: forfeitDisabled,
     style: Object.assign({}, btnBase, {
       background: forfeitDisabled ? '#2a2f3a' : '#3a2230',
@@ -324,28 +475,112 @@ export default function RockPaperScissorsGame(props){
   }, 'Forfeit');
 
   var closeBtn = React.createElement('button', {
+    className: 'ringin-tap',
     onClick: function(){ if (onClose) onClose(); },
     style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
   }, 'Close');
 
-  // Forfeit only shown while the game is active.
-  var buttonsChildren = [];
-  if (status === 'active') buttonsChildren.push(forfeitBtn);
-  buttonsChildren.push(closeBtn);
-  var buttons = React.createElement('div', {
-    style: { display: 'flex', gap: 10, marginTop: 12, justifyContent: 'center', width: '100%' }
-  }, buttonsChildren);
+  var controlChildren = [minimiseBtn];
+  if (status === 'active') controlChildren.push(forfeitBtn);
+  controlChildren.push(closeBtn);
+  var controls = React.createElement('div', {
+    style: { display: 'flex', gap: 8, marginTop: 6, width: '100%' }
+  }, controlChildren);
 
   var youAre = React.createElement('div', {
-    style: { fontSize: 12, color: '#6b7585', marginTop: 12, textAlign: 'center' }
+    style: { fontSize: 11, color: '#6b7585', marginTop: 10, textAlign: 'center' }
   }, 'You are ' + (myMark || '?'));
 
-  var bodyChildren = [header, statusLine, scoreboard, roundLine, choiceRow];
-  if (lastBlock) bodyChildren.push(lastBlock);
-  bodyChildren.push(buttons, youAre);
+  // ── Win/Lose/Draw celebration overlay (inside the card) ──
+  var overlay = null;
+  if (isOver) {
+    var iWon = (status === 'won' || status === 'abandoned') && game && myUserId && game.winner === myUserId;
+    var isDraw = status === 'draw';
+    var bigText = isDraw ? 'Draw' : (iWon ? 'You win! 🎉' : 'You lost');
+    var bigColor = isDraw ? MUTED : (iWon ? X_ACC : O_ACC);
+
+    var overlayKids = [];
+
+    // Radiating rays (only on a win).
+    if (iWon) {
+      for (var ri = 0; ri < 6; ri++) {
+        overlayKids.push(React.createElement('div', {
+          key: 'ray' + ri,
+          className: 'ringin-win-ray',
+          style: {
+            position: 'absolute', top: '38%', left: '50%', width: 6, height: 150,
+            marginLeft: -3, marginTop: -75, borderRadius: 3,
+            background: 'linear-gradient(' + bigColor + ',transparent)',
+            transform: 'rotate(' + (ri * 60) + 'deg)', transformOrigin: '50% 50%',
+            animationDelay: (ri * 0.05) + 's', opacity: 0
+          }
+        }));
+      }
+      // Confetti.
+      var confColors = [X_ACC, O_ACC, '#ffd166', '#06d6a0', '#ff9a6b', '#b06bff'];
+      for (var ci = 0; ci < 14; ci++) {
+        overlayKids.push(React.createElement('div', {
+          key: 'conf' + ci,
+          className: 'ringin-confetti',
+          style: {
+            position: 'absolute', top: 0, left: (6 + (ci * 6.5)) + '%',
+            width: 8, height: 12, borderRadius: 2,
+            background: confColors[ci % confColors.length],
+            animationDelay: ((ci % 7) * 0.12) + 's', opacity: 0
+          }
+        }));
+      }
+    }
+
+    overlayKids.push(React.createElement('div', {
+      key: 'big',
+      className: iWon ? 'ringin-game-win' : (isDraw ? 'ringin-result-in' : 'ringin-game-lose'),
+      style: {
+        position: 'relative', zIndex: 2, fontSize: 34, fontWeight: 900,
+        color: bigColor, textShadow: isDraw ? 'none' : ('0 0 24px ' + bigColor + '88'),
+        textAlign: 'center'
+      }
+    }, bigText));
+
+    overlayKids.push(React.createElement('div', {
+      key: 'sub', style: { position: 'relative', zIndex: 2, marginTop: 6, fontSize: 14, color: MUTED, fontWeight: 600 }
+    }, 'Final score  ' + myScore + ' — ' + oppScore));
+
+    overlayKids.push(React.createElement('div', {
+      key: 'ovctrl',
+      style: { position: 'relative', zIndex: 2, marginTop: 20, display: 'flex', gap: 8, width: '100%' }
+    },
+      React.createElement('button', {
+        className: 'ringin-tap',
+        onClick: function(){ if (onMinimize) onMinimize(); },
+        style: Object.assign({}, btnBase, {
+          background: 'linear-gradient(150deg,#5ad1ff,#5a8bff)', color: '#0b0f15', flex: 1.2,
+          boxShadow: '0 6px 16px rgba(90,139,255,.35)'
+        })
+      }, '▽ Minimise'),
+      React.createElement('button', {
+        className: 'ringin-tap',
+        onClick: function(){ if (onClose) onClose(); },
+        style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
+      }, 'Close')
+    ));
+
+    overlay = React.createElement('div', {
+      style: {
+        position: 'absolute', inset: 0, borderRadius: 20, overflow: 'hidden',
+        background: 'linear-gradient(180deg,rgba(13,17,23,.94),rgba(10,13,18,.97))',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: 24, boxSizing: 'border-box'
+      }
+    }, overlayKids);
+  }
+
+  // ── Compose card body ──
+  var bodyChildren = [header, statusLine, scoreboard, roundLine, arena, controls, youAre];
 
   return React.createElement('div', {
     style: {
+      position: 'relative',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       padding: 20, borderRadius: 20,
       background: 'linear-gradient(180deg,#0d1117,#0a0d12)',
@@ -355,5 +590,5 @@ export default function RockPaperScissorsGame(props){
       maxHeight: '90vh', overflowY: 'auto',
       boxSizing: 'border-box'
     }
-  }, bodyChildren);
+  }, bodyChildren.concat(overlay ? [overlay] : []));
 }

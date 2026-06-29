@@ -179,6 +179,7 @@ export default function CallScreen(props){
   var ttGameS = useState(null); var ttGame = ttGameS[0]; var setTtGame = ttGameS[1];   // {gameId, myMark, gameType}
   var ttBusyS = useState(false); var ttBusy = ttBusyS[0]; var setTtBusy = ttBusyS[1];
   var gamePickS = useState(false); var gamePickOpen = gamePickS[0]; var setGamePickOpen = gamePickS[1];
+  var gameMinS = useState(false); var gameMin = gameMinS[0]; var setGameMin = gameMinS[1];   // game overlay minimised (kept alive)
   /* incomingAnim: { emoji, tier, coins, key, fromName, ts } — set when a
    * realtime row arrives in anon_call_gifts where receiver_id = me. The
    * overlay reads this and runs a 3-second animation, then clears. */
@@ -257,6 +258,7 @@ export default function CallScreen(props){
     var gt = type || 'tic_tac_toe';
     setTtBusy(true);
     setGamePickOpen(false);
+    setGameMin(false);
     try {
       sb.rpc('create_game', { p_opponent: expert.id, p_context_id: inviteId, p_context_kind: 'call', p_type: gt }).then(function(r){
         setTtBusy(false);
@@ -279,6 +281,7 @@ export default function CallScreen(props){
         if (!row || !row.id) return;
         if (row.player_x !== myUserId && row.player_o !== myUserId) return;
         setTtGame({ gameId: row.id, myMark: (row.player_x === myUserId) ? 'X' : 'O', gameType: row.game_type || 'tic_tac_toe' });
+        setGameMin(false);   // pop the game open on both sides when one side starts it
       })
       .subscribe();
     return function(){ try { sb.removeChannel(ch); } catch(_){} };
@@ -942,7 +945,7 @@ export default function CallScreen(props){
         }, '🎁'),
         /* 🎮 opens the game picker (Tic-Tac-Toe / Connect 4 / Ludo / RPS). */
         React.createElement('button', {
-          onClick: function(){ setGamePickOpen(true); },
+          onClick: function(){ if (ttGame) { setGameMin(false); } else { setGamePickOpen(true); } },
           disabled: ttBusy,
           title: 'Play a game',
           style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700,opacity: ttBusy?0.6:1}
@@ -1044,7 +1047,7 @@ export default function CallScreen(props){
         style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFD700,#E84D9A)',border:'none',color:'#fff',fontSize:'14px',cursor:'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700}
       }, '🎁'),
       React.createElement('button', {
-        onClick: function(){ setGamePickOpen(true); },
+        onClick: function(){ if (ttGame) { setGameMin(false); } else { setGamePickOpen(true); } },
         disabled: ttBusy,
         title: 'Play a game',
         style:{padding:'7px 12px',borderRadius:'14px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',cursor: ttBusy?'wait':'pointer',fontFamily:'inherit',lineHeight:1,fontWeight:700,opacity: ttBusy?0.6:1}
@@ -1212,19 +1215,31 @@ export default function CallScreen(props){
       )
     ) : null,
 
-    /* In-call game overlay (1:1 calls only) — renders the chosen game. Each game
-     * component owns its own realtime + close; this is just the dimmed container. */
+    /* In-call game overlay (1:1 calls only). Kept MOUNTED but hidden when
+     * minimised (display:none) so its realtime stays live and the board is
+     * current on resume. Minimise → play call controls (mute/speaker/gift) then
+     * come back; Close → leave the game. */
     ttGame ? React.createElement('div', {
-      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
+      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display: gameMin ? 'none' : 'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
     },
       React.createElement(
         ttGame.gameType === 'connect_four' ? ConnectFourGame :
         ttGame.gameType === 'ludo' ? LudoGame :
         ttGame.gameType === 'rps' ? RockPaperScissorsGame :
         TicTacToeGame,
-        { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId, onClose: function(){ setTtGame(null); } }
+        { gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
+          onClose: function(){ setTtGame(null); setGameMin(false); },
+          onMinimize: function(){ setGameMin(true); } }
       )
     ) : null,
+
+    /* Floating "resume game" pill — shown while a game is minimised so the user
+     * can jump back in after muting / putting on speaker / gifting on the call. */
+    (ttGame && gameMin) ? React.createElement('button', {
+      onClick: function(){ setGameMin(false); },
+      className: 'ringin-tap',
+      style:{position:'fixed',left:'50%',bottom:'120px',transform:'translateX(-50%)',zIndex:999,padding:'10px 18px',borderRadius:'22px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(0,0,0,0.4)'}
+    }, '🎮 Resume game') : null,
 
     /* ════════ R48 + Feature 2: FRND/Tango gift pop ════════
      * Enlarged sticker scale-in + a color-matched radiating neon burst.

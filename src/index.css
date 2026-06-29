@@ -116,3 +116,86 @@ code {
   from { opacity: 0; transform: translateY(2px); }
   to   { opacity: 1; transform: translateY(0);    }
 }
+
+/* ── In-call games (Tic-Tac-Toe / Connect 4 / Ludo / Rock-Paper-Scissors) ──
+   transform/opacity (and a couple of small box-shadow pulses) ONLY — Samsung-
+   safe. Components reference these by className; never inline @keyframes in a
+   React style object. Combine with .ringin-tap on tappable cells to kill the
+   300ms tap delay so moves register instantly. */
+@keyframes ringinMarkPop {           /* TTT X/O dropping in */
+  0%   { transform: scale(0) rotate(-25deg); opacity: 0; }
+  60%  { transform: scale(1.18) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.ringin-mark-pop { animation: ringinMarkPop .26s cubic-bezier(.34,1.56,.64,1) both; }
+
+@keyframes ringinDiscDrop {          /* Connect-4 disc falling + bounce */
+  0%   { transform: translateY(-340px); }
+  72%  { transform: translateY(0); }
+  84%  { transform: translateY(-14px); }
+  100% { transform: translateY(0); }
+}
+.ringin-disc-drop { animation: ringinDiscDrop .40s cubic-bezier(.45,.05,.3,1) both; }
+
+@keyframes ringinDiceShake {         /* Ludo dice tumble before settling */
+  0%,100% { transform: rotate(0) scale(1); }
+  20% { transform: rotate(-18deg) scale(1.1); }
+  40% { transform: rotate(16deg) scale(1.1); }
+  60% { transform: rotate(-12deg) scale(1.05); }
+  80% { transform: rotate(8deg) scale(1.03); }
+}
+.ringin-dice-shake { animation: ringinDiceShake .5s ease-in-out; }
+
+@keyframes ringinTokenHop {          /* Ludo token moving */
+  0%   { transform: translateY(0) scale(1); }
+  40%  { transform: translateY(-9px) scale(1.14); }
+  100% { transform: translateY(0) scale(1); }
+}
+.ringin-token-hop { animation: ringinTokenHop .3s ease-out; }
+
+@keyframes ringinGameWin {           /* big "You win!" entrance */
+  0%   { transform: scale(0.3); opacity: 0; }
+  55%  { transform: scale(1.15); opacity: 1; }
+  72%  { transform: scale(0.96); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.ringin-game-win { animation: ringinGameWin .6s cubic-bezier(.34,1.56,.64,1) both; }
+
+@keyframes ringinGameLose {          /* softer "You lost" entrance */
+  0%   { transform: scale(1.3); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.ringin-game-lose { animation: ringinGameLose .5s ease-out both; }
+
+@keyframes ringinWinRay {            /* radiating rays behind a win badge */
+  0%   { transform: scale(0.3) rotate(0); opacity: 0; }
+  40%  { opacity: 0.8; }
+  100% { transform: scale(1.6) rotate(35deg); opacity: 0; }
+}
+.ringin-win-ray { animation: ringinWinRay 1.1s ease-out forwards; }
+
+@keyframes ringinConfettiFall {      /* confetti pieces (animation-delay staggers them) */
+  0%   { transform: translateY(-30px) rotate(0); opacity: 1; }
+  100% { transform: translateY(230px) rotate(360deg); opacity: 0; }
+}
+.ringin-confetti { animation: ringinConfettiFall 1.5s ease-in forwards; }
+
+@keyframes ringinTurnGlow {          /* pulsing "your turn" / movable highlight */
+  0%,100% { box-shadow: 0 0 0 1px rgba(90,209,255,.5), 0 0 10px rgba(90,209,255,.25); }
+  50%     { box-shadow: 0 0 0 1px rgba(90,209,255,.95), 0 0 18px rgba(90,209,255,.6); }
+}
+.ringin-turn-glow { animation: ringinTurnGlow 1.4s ease-in-out infinite; }
+
+@keyframes ringinHandShake {         /* RPS hand shaking before reveal */
+  0%,100% { transform: rotate(0); }
+  25% { transform: rotate(-16deg); }
+  50% { transform: rotate(0); }
+  75% { transform: rotate(16deg); }
+}
+.ringin-hand-shake { animation: ringinHandShake .4s ease-in-out infinite; }
+
+@keyframes ringinResultIn {          /* round-result banner slide-in */
+  0%   { transform: translateY(14px) scale(.96); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.ringin-result-in { animation: ringinResultIn .32s ease-out both; }
