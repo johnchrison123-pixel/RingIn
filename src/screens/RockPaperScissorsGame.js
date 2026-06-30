@@ -269,6 +269,9 @@ export default function RockPaperScissorsGame(props){
         if (r && r.error) return;
         var row = r ? r.data : null;
         if (Array.isArray(row)) row = row[0];
+        // N1: honor a close that happened while we were disconnected (the
+        // realtime UPDATE can be missed) so the host's window closes on reconnect.
+        if (row && row.closed_at) { if (onClose) onClose(); return; }
         if (row && row.id) setGame(row);
       } catch (_) {}
     })();
@@ -638,9 +641,9 @@ export default function RockPaperScissorsGame(props){
     }, 'Final score  ' + myScore + ' — ' + oppScore));
 
     // Lifecycle controls (Play again / Other games / Close) drive the game
-    // session, so ONLY the initiator (canClose) gets them. The host sees just
-    // the result text + final score; their window is closed via a broadcast
-    // from the initiator.
+    // session, so ONLY the initiator (canClose) gets them. The host (canClose
+    // false) gets a Back-to-call (Minimise) button — this overlay covers the
+    // footer Minimise and they have no Close, so otherwise they'd be trapped.
     if (canClose) {
       overlayKids.push(React.createElement('div', {
         key: 'ovctrl',
@@ -666,6 +669,18 @@ export default function RockPaperScissorsGame(props){
             style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
           }, 'Close')
         )
+      ));
+    } else {
+      overlayKids.push(React.createElement('div', {
+        key: 'ovctrl',
+        style: { position: 'relative', zIndex: 2, marginTop: 20, display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 280, alignItems: 'center' }
+      },
+        React.createElement('button', {
+          className: 'ringin-tap',
+          onClick: function(){ if (onMinimize) onMinimize(); },
+          style: { border: 'none', borderRadius: 12, padding: '13px', fontWeight: 800, fontSize: 14, cursor: 'pointer', width: '100%', background: 'linear-gradient(180deg,#1e2a3a,#16202c)', color: '#cfe6ff' }
+        }, '⬇ Back to call'),
+        React.createElement('div', { style: { fontSize: 11.5, fontWeight: 600, color: '#7e8a9c' } }, 'The other player can start a new game')
       ));
     }
 

@@ -260,6 +260,10 @@ export default function TicTacToeGame(props){
         if (r && r.error) return;
         var row = r ? r.data : null;
         if (Array.isArray(row)) row = row[0];
+        // N1: the initiator may have closed the game while we were disconnected;
+        // the realtime broadcast/UPDATE can be missed, so honor closed_at on the
+        // reconnect (reseed) path too — else the host's window stays open.
+        if (row && row.closed_at) { if (onClose) onClose(); return; }
         if (row && row.id) setGame(row);
       } catch (_) {}
     })();
@@ -536,7 +540,19 @@ export default function TicTacToeGame(props){
             style: { flex: 1, border: '1px solid #232b3a', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#161b24', color: '#cfd8e3' }
           }, 'Close')
         )
-      ) : null
+      ) : React.createElement('div', {
+        /* HOST (canClose===false): the result overlay covers the footer Minimise,
+         * and the host has no Play-again/Close — without this they'd be trapped on
+         * the result with the whole call UI covered. Give them Back-to-call. */
+        style: { position: 'relative', zIndex: 2, marginTop: 18, display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 280, alignItems: 'center' }
+      },
+        React.createElement('button', {
+          className: 'ringin-tap',
+          onClick: function(){ if (onMinimize) onMinimize(); },
+          style: { border: 'none', borderRadius: 12, padding: '13px', fontWeight: 800, fontSize: 14, cursor: 'pointer', width: '100%', background: 'linear-gradient(180deg,#1e2a3a,#16202c)', color: '#cfe6ff' }
+        }, '⬇ Back to call'),
+        React.createElement('div', { style: { fontSize: 11.5, fontWeight: 600, color: '#7e8a9c' } }, 'The other player can start a new game')
+      )
     );
   }
 

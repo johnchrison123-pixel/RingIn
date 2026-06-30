@@ -620,8 +620,9 @@ export default function ConnectFourGame(props){
 
     // SHARED CONTRACT: only the initiator (canClose !== false) may drive the
     // game lifecycle, so Play again / Other games / Close render for them only.
-    // The host sees the result text + Minimise (footer) only; their window is
-    // closed via a broadcast from the initiator.
+    // The host (canClose===false) gets a Back-to-call (Minimise) button instead —
+    // this overlay covers the footer Minimise and they have no Close, so without
+    // it they'd be trapped on the result with the whole call UI covered.
     if (props.canClose !== false) {
       overlayKids.push(
         React.createElement('div', {
@@ -645,6 +646,20 @@ export default function ConnectFourGame(props){
               style: { flex: 1, border: '1px solid #232b3a', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#161b24', color: '#cfd8e3' }
             }, 'Close')
           )
+        )
+      );
+    } else {
+      overlayKids.push(
+        React.createElement('div', {
+          key: 'ovctrl',
+          style: { position: 'relative', zIndex: 2, marginTop: 18, display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 280, alignItems: 'center' }
+        },
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (onMinimize) onMinimize(); },
+            style: { border: 'none', borderRadius: 12, padding: '13px', fontWeight: 800, fontSize: 14, cursor: 'pointer', width: '100%', background: 'linear-gradient(180deg,#1e2a3a,#16202c)', color: '#cfe6ff' }
+          }, '⬇ Back to call'),
+          React.createElement('div', { style: { fontSize: 11.5, fontWeight: 600, color: '#7e8a9c' } }, 'The other player can start a new game')
         )
       );
     }
