@@ -1214,7 +1214,7 @@ export default function LudoGame(props){
       background: 'linear-gradient(180deg,#0d1117,#0a0d12)',
       border: '1px solid #1c2230',
       boxShadow: '0 12px 40px rgba(0,0,0,.5)',
-      maxWidth: 360, margin: '0 auto',
+      maxWidth: 360, width: '100%', margin: '0 auto',
       maxHeight: '90vh', overflowY: 'auto',
       color: '#e8edf4'
     }
