@@ -316,6 +316,13 @@ export default function LudoGame(props){
         if (capTimerRef.current) clearTimeout(capTimerRef.current);
         capTimerRef.current = setTimeout(function(){ if (mountedRef.current) setCap(null); }, 440);
       }
+      // POLISH: a token of MINE just reached HOME (57) → celebrate the progress
+      // (the core scoring moment in Ludo) with a light cue + haptic.
+      var homed = false;
+      for (var hh = 0; hh < 4; hh++) {
+        if (prev[myMark] && next[myMark] && prev[myMark][hh] < 57 && next[myMark][hh] === 57) { homed = true; break; }
+      }
+      if (homed) { try { hapticPulse([0,18,30,18]); playSound('like'); } catch(_){} }
     }
     prevTokensRef.current = next;
     // Settle the dice if a fresh roll arrived.
@@ -862,8 +869,11 @@ export default function LudoGame(props){
       position: 'relative', width: BOARD, height: BOARD,
       borderRadius: 14, overflow: 'hidden',
       background: '#0e1320',
-      border: '2px solid #1c2230',
-      boxShadow: 'inset 0 0 24px rgba(0,0,0,0.5)',
+      // POLISH: tint the board ring to the ACTIVE player's color so turn
+      // ownership is glanceable across a video call; a soft outer glow when it's
+      // your move (the 0.85 dim below still marks "waiting on opponent").
+      border: '2px solid ' + ((!isOver && status === 'active') ? ((myTurn ? myColor : oppColor) + '88') : '#1c2230'),
+      boxShadow: 'inset 0 0 24px rgba(0,0,0,0.5)' + ((!isOver && status === 'active' && myTurn) ? (', 0 0 0 2px ' + myColor + '55, 0 0 18px ' + myColor + '44') : ''),
       margin: '0 auto',
       opacity: (!isOver && status === 'active' && !myTurn) ? 0.85 : 1,
       transition: 'opacity .25s ease'
@@ -996,7 +1006,9 @@ export default function LudoGame(props){
   var rollBtn = null;
   if (myTurn && roll == null && !err) {
     rollBtn = React.createElement('button', {
-      className: 'ringin-tap',
+      // POLISH: pulse the Roll button while it's actionable so the eye is drawn
+      // to it on your turn (ringin-turn-glow is defined in src/index.css).
+      className: 'ringin-tap' + ((busy || shaking) ? '' : ' ringin-turn-glow'),
       onClick: doRoll,
       disabled: busy || shaking,
       style: {
