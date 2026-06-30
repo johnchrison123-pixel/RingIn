@@ -12,8 +12,8 @@
 //        Win = all four === 57.
 //
 // BOARD: classic 15×15 grid. RED(top-left)=X, YELLOW(bottom-right)=O (matches
-// entry X=0 / O=26). GREEN(top-right)+BLUE(bottom-left) render fully colored at
-// opacity 0.5 (decorative). BOARD is classic; TOKEN DISCS keep brand colors
+// entry X=0 / O=26). GREEN(top-right)+BLUE(bottom-left) render full solid color
+// (decorative — no live tokens). BOARD is classic; TOKEN DISCS keep brand colors
 // (X #5ad1ff, O #ff7eb6) so "me vs them" is obvious. 52-cell track derived as a
 // contiguous clockwise loop (4 canonical corner L-turns, no orphan cell).
 //

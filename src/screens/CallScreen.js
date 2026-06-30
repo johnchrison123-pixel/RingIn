@@ -323,9 +323,10 @@ export default function CallScreen(props){
     ch
       .on('broadcast', { event: 'game_closed' }, function(p){
         var g = p && p.payload && p.payload.gameId;
+        if (!g) return;   // require an explicit gameId — never close the receiver's current game on a bare broadcast
         setTtGame(function(prev){
-          if (prev && (!g || prev.gameId === g)) {
-            if (prev.gameId) closedGamesRef.current[prev.gameId] = 1;
+          if (prev && prev.gameId === g) {
+            closedGamesRef.current[prev.gameId] = 1;
             return null;
           }
           return prev;
@@ -1315,13 +1316,6 @@ export default function CallScreen(props){
     ttGame ? React.createElement('div', {
       style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display: gameMin ? 'none' : 'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
     },
-      /* TEMP DIAGNOSTIC (v4.36): shows the game type THIS screen resolved + the
-         build version, so we can see if the host opens the wrong type (backend)
-         or is running stale code (old build). Screenshot this if a game opens
-         wrong. Remove once the host-game-type issue is confirmed fixed. */
-      React.createElement('div', {
-        style:{position:'absolute',top:'8px',left:'8px',zIndex:1002,fontSize:'10px',fontFamily:'ui-monospace,monospace',color:'rgba(255,255,255,0.6)',background:'rgba(0,0,0,0.45)',padding:'3px 7px',borderRadius:'8px',pointerEvents:'none'}
-      }, '🐞 ' + (ttGame.gameType || '?') + ' · ' + String(ttGame.gameId || '').slice(0, 6) + ' · v4.36 · ' + (ttGame.myMark === 'X' ? 'you started' : 'opp started')),
       React.createElement(
         ttGame.gameType === 'connect_four' ? ConnectFourGame :
         ttGame.gameType === 'ludo' ? LudoGame :
@@ -1331,7 +1325,7 @@ export default function CallScreen(props){
           canClose: (ttGame.myMark === 'X'),
           onClose: function(){ try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); },
           onMinimize: function(){ setGameMin(true); },
-          onPlayAgain: function(){ if (ttGame) startGame(ttGame.gameType); },
+          onPlayAgain: function(){ if (ttGame) { try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} startGame(ttGame.gameType); } },
           onPickAnother: function(){ try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
       )
     ) : null,
