@@ -103,6 +103,7 @@ export default function TicTacToeGame(props){
         var row = r ? r.data : null;
         if (Array.isArray(row)) row = row[0];
         if (!row) { setErr('Game unavailable'); setLoading(false); return; }
+        if (row.closed_at) { if (onClose) onClose(); return; }   // N1: don't seed a game the initiator already closed
         var st = row.state || {};
         seenRoundRef.current = (st && st.round) ? st.round : 1;
         // M7: don't replay a banner for a round that already finished before we

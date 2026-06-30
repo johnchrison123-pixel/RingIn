@@ -116,6 +116,7 @@ export default function RockPaperScissorsGame(props){
         var row = r ? r.data : null;
         if (Array.isArray(row)) row = row[0];
         if (!row) { setErr('Game unavailable'); setLoading(false); return; }
+        if (row.closed_at) { if (onClose) onClose(); return; }   // N1: don't seed a game the initiator already closed
         setGame(row);
         setLoading(false);
       } catch (_) {

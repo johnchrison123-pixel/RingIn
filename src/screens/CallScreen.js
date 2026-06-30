@@ -262,6 +262,9 @@ export default function CallScreen(props){
    * Touches NO billing/coin logic — only create_game + a game_sessions sub. */
   function startGame(type){
     if (ttBusy || !expert || !expert.id || !myUserId) return;
+    // No game during 'connecting' or the post-hangup 'ended' teardown window —
+    // else a tap could mint an orphan/one-sided game_sessions row on a dying call.
+    if (endedRef.current || phaseRef.current !== 'connected') return;
     var gt = type || 'tic_tac_toe';
     setTtBusy(true);
     setGamePickOpen(false);
@@ -281,9 +284,10 @@ export default function CallScreen(props){
   /* Close a game for BOTH sides, durably (N1). Fast path: the realtime broadcast
    * the host already listens for. Durable backstop: close_game stamps a closed_at
    * marker on the row, so the host's window still closes if the broadcast was lost
-   * (flaky network) — the host detects closed_at on its EXISTING game_sessions
-   * UPDATE sub. Both are best-effort: if migration 0063 isn't run the RPC just
-   * errors and we fall back to exactly today's broadcast-only behaviour. */
+   * (flaky network) — the per-game component honors closed_at on its game_sessions
+   * UPDATE sub AND on mount/reseed, and checkActiveGame won't re-open a closed game.
+   * Both are best-effort: if migration 0063 isn't run the RPC just errors and we
+   * fall back to exactly today's broadcast-only behaviour. */
   function closeGameNow(gid){
     if (!gid) return;
     try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: gid } }); } catch(_){}
@@ -299,20 +303,35 @@ export default function CallScreen(props){
      * pre-subscribe INSERT can never leave the host on the wrong (default TTT)
      * game. The realtime INSERT path below still handles switching games. */
     function checkActiveGame(){
+      // N1: a durably-closed game keeps status='active' (close_game only stamps
+      // closed_at), so exclude closed rows here too — else a reconnect could
+      // re-open a game the initiator already dismissed. Graceful: if 0063 isn't
+      // run yet (no closed_at column), the query errors and we fall back below.
+      function openFrom(d){
+        if (!d || !d.id) return;
+        if (d.closed_at) return;                         // never re-open a closed game
+        if (closedGamesRef.current[d.id]) return;
+        if (d.player_x !== myUserId && d.player_o !== myUserId) return;
+        var myMk = (d.player_x === myUserId) ? 'X' : 'O';
+        setTtGame(function(prev){
+          if (prev) return prev;   // a game is already open → INSERT path handles switching
+          return { gameId: d.id, myMark: myMk, gameType: d.game_type || 'tic_tac_toe', createdAt: d.created_at || '' };
+        });
+      }
       try {
-        sb.from('game_sessions').select('id,game_type,player_x,player_o,status,created_at')
-          .eq('context_id', inviteId).eq('status', 'active')
+        sb.from('game_sessions').select('id,game_type,player_x,player_o,status,created_at,closed_at')
+          .eq('context_id', inviteId).eq('status', 'active').is('closed_at', null)
           .order('created_at', { ascending: false }).limit(1)
           .then(function(rr){
-            var d = rr && rr.data && rr.data[0];
-            if (!d || !d.id) return;
-            if (closedGamesRef.current[d.id]) return;
-            if (d.player_x !== myUserId && d.player_o !== myUserId) return;
-            var myMk = (d.player_x === myUserId) ? 'X' : 'O';
-            setTtGame(function(prev){
-              if (prev) return prev;   // a game is already open → INSERT path handles switching
-              return { gameId: d.id, myMark: myMk, gameType: d.game_type || 'tic_tac_toe', createdAt: d.created_at || '' };
-            });
+            if (rr && rr.error) {
+              // pre-migration (0063 not run): closed_at column absent → original query
+              sb.from('game_sessions').select('id,game_type,player_x,player_o,status,created_at')
+                .eq('context_id', inviteId).eq('status', 'active')
+                .order('created_at', { ascending: false }).limit(1)
+                .then(function(rr2){ openFrom(rr2 && rr2.data && rr2.data[0]); });
+              return;
+            }
+            openFrom(rr && rr.data && rr.data[0]);
           });
       } catch(_){}
     }
@@ -1347,7 +1366,7 @@ export default function CallScreen(props){
 
     /* Floating "resume game" pill — shown while a game is minimised so the user
      * can jump back in after muting / putting on speaker / gifting on the call. */
-    (ttGame && gameMin) ? React.createElement('button', {
+    (ttGame && gameMin && !giftDrawerOpen) ? React.createElement('button', {
       onClick: function(){ setGameMin(false); },
       className: 'ringin-tap',
       style:{position:'fixed',left:'50%',bottom:'120px',transform:'translateX(-50%)',zIndex:999,padding:'10px 18px',borderRadius:'22px',background:'linear-gradient(135deg,#FFC83D,#FF8A3D)',border:'none',color:'#fff',fontSize:'14px',fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(0,0,0,0.4)'}
@@ -1415,7 +1434,9 @@ export default function CallScreen(props){
         React.createElement('div', {style:{fontSize:'12px',fontWeight:700,color:'#FFD93D',marginTop:'4px',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}, (incomingAnim.coins||0) + ' 🪙')
       ));
       return React.createElement('div', {
-        style:{position:'fixed',inset:0,zIndex:980,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}
+        /* zIndex above the game overlay (1000) so a gift the user is SENT is visible
+         * over an open game board (pointerEvents:none → the board stays playable). */
+        style:{position:'fixed',inset:0,zIndex:1002,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}
       }, children);
     })() : null
   );
