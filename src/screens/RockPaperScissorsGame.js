@@ -32,6 +32,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { sb } from '../utils/supabase';
+import { playGiftSound, hapticPulse } from '../utils/soundEngine';
 
 var TXT = '#e8edf4', MUTED = '#9fb0c3', X_ACC = '#5ad1ff', O_ACC = '#ff7eb6';
 
@@ -174,6 +175,22 @@ export default function RockPaperScissorsGame(props){
     };
   }, []);
 
+  // ── POLISH: win/lose payoff cue (additive; gated on prefs, no-op if
+  // unsupported). RPS rounds are simultaneous, so there's no per-turn cue. ──
+  var prevOverRef = useRef(false);
+  useEffect(function(){
+    if (!game) return;
+    var over = game.status === 'won' || game.status === 'draw' || game.status === 'abandoned';
+    if (over && !prevOverRef.current) {
+      try {
+        if (game.winner && game.winner === myUserId) { hapticPulse([0,30,40,30,40,60]); playGiftSound('chime'); }
+        else { hapticPulse(20); }
+      } catch(_){}
+    }
+    prevOverRef.current = over;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game]);
+
   // ── Derived values (safe regardless of game being null) ──
   var state   = (game && game.state && typeof game.state === 'object') ? game.state : null;
   var status  = game ? game.status : null;
@@ -280,6 +297,7 @@ export default function RockPaperScissorsGame(props){
 
   function doThrow(choice){
     if (busy || !game || err || isOver || iThrew) return;
+    try { hapticPulse(8); } catch(_){}   // tactile throw feedback
     setOpt({ round: round, choice: choice });   // OPTIMISTIC: lock in instantly
     setBusy(true);
     (async function(){

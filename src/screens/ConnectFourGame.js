@@ -37,6 +37,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { sb } from '../utils/supabase';
+import { playSound, playGiftSound, hapticPulse } from '../utils/soundEngine';
 
 var EMPTY_BOARD = '__________________________________________'; // 42 underscores
 var COLS = 7;
@@ -202,6 +203,28 @@ export default function ConnectFourGame(props){
     return function(){ mountedRef.current = false; clearOptWatch(); };
   }, []);
 
+  // ── POLISH: tactile + audio cues (additive; gated on the user's sound/haptics
+  // prefs, no-op on unsupported devices) — your-turn nudge + win/lose payoff. ──
+  var prevTurnRef = useRef(null);
+  var prevOverRef = useRef(false);
+  useEffect(function(){
+    if (!game) return;
+    var t = game.turn;
+    var over = game.status === 'won' || game.status === 'draw' || game.status === 'abandoned';
+    if (!over && t === myMark && prevTurnRef.current && prevTurnRef.current !== t) {
+      try { playSound('notification'); hapticPulse(10); } catch(_){}
+    }
+    prevTurnRef.current = t;
+    if (over && !prevOverRef.current) {
+      try {
+        if (game.winner && game.winner === myUserId) { hapticPulse([0,30,40,30,40,60]); playGiftSound('chime'); }
+        else { hapticPulse(20); }
+      } catch(_){}
+    }
+    prevOverRef.current = over;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game]);
+
   // ── Derived values (safe regardless of game being null) ──
   var serverBoardRaw = (game && game.state && typeof game.state.g === 'string')
                          ? game.state.g : EMPTY_BOARD;
@@ -265,6 +288,7 @@ export default function ConnectFourGame(props){
     if (busy || !game || !myTurn || err) return;
     var idx = lowestEmpty(c);
     if (idx < 0) return;  // column full
+    try { hapticPulse(8); } catch(_){}   // tactile drop feedback
 
     // 1) Optimistic: show MY disc right now with the drop animation.
     setOpt({ idx: idx, mark: myMark });

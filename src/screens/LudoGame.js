@@ -25,7 +25,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { sb } from '../utils/supabase';
-import { playUnlikeSound } from '../utils/soundEngine';
+import { playUnlikeSound, playSound, playGiftSound, hapticPulse } from '../utils/soundEngine';
 
 // Token disc brand colors (me vs them) — board is classic, discs are brand.
 var X_COLOR = '#5ad1ff';
@@ -247,6 +247,28 @@ export default function LudoGame(props){
     };
   }, []);
 
+  // ── POLISH: tactile + audio cues (additive; gated on the user's sound/haptics
+  // prefs, no-op on unsupported devices) — your-turn nudge + win/lose payoff. ──
+  var prevTurnRef = useRef(null);
+  var prevOverRef = useRef(false);
+  useEffect(function(){
+    if (!game) return;
+    var t = game.turn;
+    var over = game.status === 'won' || game.status === 'draw' || game.status === 'abandoned';
+    if (!over && t === myMark && prevTurnRef.current && prevTurnRef.current !== t) {
+      try { playSound('notification'); hapticPulse(10); } catch(_){}
+    }
+    prevTurnRef.current = t;
+    if (over && !prevOverRef.current) {
+      try {
+        if (game.winner && game.winner === myUserId) { hapticPulse([0,30,40,30,40,60]); playGiftSound('chime'); }
+        else { hapticPulse(20); }
+      } catch(_){}
+    }
+    prevOverRef.current = over;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game]);
+
   // ── Helpers to read tokens off a row ──
   function readTokens(row){
     var st = row && row.state && typeof row.state === 'object' ? row.state : null;
@@ -290,7 +312,7 @@ export default function LudoGame(props){
       }
       if (found) {
         setCap(flying);
-        try { playUnlikeSound(); } catch (_) {}
+        try { playUnlikeSound(); hapticPulse([0,40,40,40]); } catch (_) {}   // capture thump
         if (capTimerRef.current) clearTimeout(capTimerRef.current);
         capTimerRef.current = setTimeout(function(){ if (mountedRef.current) setCap(null); }, 440);
       }
@@ -351,6 +373,7 @@ export default function LudoGame(props){
   // ── Actions ──
   function doRoll(){
     if (busy || shaking || !game || !myTurn || roll != null || err) return;
+    try { hapticPulse(12); } catch(_){}   // dice-roll press
     setBusy(true);
     setShaking(true);
     setSettle(false);
@@ -417,6 +440,7 @@ export default function LudoGame(props){
     var start = myToksRaw[i];
     var dest = predictPos(i);
     var leavingBase = (start === -1);
+    try { hapticPulse(8); } catch(_){}   // tactile token-move feedback
     setBusy(true);
 
     // Build the path of intermediate positions and advance one cell per ~180ms.

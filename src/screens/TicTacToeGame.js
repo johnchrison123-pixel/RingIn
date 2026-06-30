@@ -30,6 +30,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { sb } from '../utils/supabase';
+import { playSound, playGiftSound, hapticPulse } from '../utils/soundEngine';
 
 var EMPTY_BOARD = '_________';
 var X_C = '#5ad1ff';
@@ -197,6 +198,28 @@ export default function TicTacToeGame(props){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game]);
 
+  // ── POLISH: tactile + audio cues (additive; gated on the user's sound/haptics
+  // prefs, no-op on unsupported devices) — your-turn nudge + win/lose payoff. ──
+  var prevTurnRef = useRef(null);
+  var prevOverRef = useRef(false);
+  useEffect(function(){
+    if (!game) return;
+    var t = game.turn;
+    var over = game.status === 'won' || game.status === 'draw' || game.status === 'abandoned';
+    if (!over && t === myMark && prevTurnRef.current && prevTurnRef.current !== t) {
+      try { playSound('notification'); hapticPulse(10); } catch(_){}   // your move just began
+    }
+    prevTurnRef.current = t;
+    if (over && !prevOverRef.current) {
+      try {
+        if (game.winner && game.winner === myUserId) { hapticPulse([0,30,40,30,40,60]); playGiftSound('chime'); }
+        else { hapticPulse(20); }
+      } catch(_){}
+    }
+    prevOverRef.current = over;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game]);
+
   // ── Derived (safe even when game is null) ──
   var serverBoard = (game && typeof game.board === 'string' && game.board.length === 9)
                       ? game.board : EMPTY_BOARD;
@@ -227,6 +250,7 @@ export default function TicTacToeGame(props){
   function tapCell(i){
     if (busy || !game || !myTurn) return;
     if (board.charAt(i) !== '_') return;
+    try { hapticPulse(8); } catch(_){}   // tactile move feedback
     // OPTIMISTIC: paint my mark immediately so it appears with the pop animation.
     var optimisticBoard = serverBoard.substr(0, i) + myMark + serverBoard.substr(i + 1);
     setOpt({ cell: i, mark: myMark, board: optimisticBoard });
