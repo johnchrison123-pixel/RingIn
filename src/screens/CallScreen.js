@@ -1325,8 +1325,12 @@ export default function CallScreen(props){
      * current on resume. Minimise → play call controls (mute/speaker/gift) then
      * come back; Close → leave the game. */
     ttGame ? React.createElement('div', {
-      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display: gameMin ? 'none' : 'flex',alignItems:'center',justifyContent:'center',padding:'16px'}
+      style:{position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,0.72)',display: gameMin ? 'none' : 'flex',overflowY:'auto',padding:'16px'}
     },
+      /* margin:auto centers the card BOTH axes when it fits, but lets the overlay
+       * SCROLL (not clip) when a tall card exceeds a short/landscape viewport — so
+       * the Close/Forfeit controls are always reachable (browser Finding 1). */
+      React.createElement('div', { style:{ margin:'auto' } },
       React.createElement(
         ttGame.gameType === 'connect_four' ? ConnectFourGame :
         ttGame.gameType === 'ludo' ? LudoGame :
@@ -1338,7 +1342,7 @@ export default function CallScreen(props){
           onMinimize: function(){ setGameMin(true); },
           onPlayAgain: function(){ if (ttGame) { closeGameNow(ttGame.gameId); startGame(ttGame.gameType); } },
           onPickAnother: function(){ if (ttGame && ttGame.gameId) { closeGameNow(ttGame.gameId); closedGamesRef.current[ttGame.gameId] = 1; } setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
-      )
+      ))
     ) : null,
 
     /* Floating "resume game" pill — shown while a game is minimised so the user

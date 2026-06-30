@@ -483,6 +483,7 @@ export function playSound(type){
 
 // Unlike sound — soft descending tone, respects like volume pref
 export function playUnlikeSound(){
+  try{ if(_sCtx && _sCtx.state==='suspended') _sCtx.resume(); }catch(e){}
   var ctx=getSCtx();if(!ctx)return;
   var prefs=getSoundPrefs();
   var p=prefs['like'];
