@@ -60,6 +60,7 @@ export default function TicTacToeGame(props){
   var onClose   = props.onClose;
   var onMinimize = props.onMinimize;
   var otherMark = myMark === 'X' ? 'O' : 'X';
+  var canClose = props.canClose !== false;   // default TRUE; host (canClose===false) sees no Close
 
   // ── State (ALL hooks before any conditional return) ──
   var gameS = useState(null);            // server-authoritative game_sessions row
@@ -509,7 +510,7 @@ export default function TicTacToeGame(props){
       React.createElement('div', {
         style: { fontSize: 12.5, fontWeight: 600, color: '#7e8a9c', position: 'relative', zIndex: 2 }
       }, status === 'abandoned' ? 'Match ended' : 'Best of ' + bo),
-      React.createElement('div', {
+      canClose ? React.createElement('div', {
         style: { position: 'relative', zIndex: 2, marginTop: 18, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
       },
         React.createElement('button', {
@@ -529,7 +530,7 @@ export default function TicTacToeGame(props){
             style: { flex: 1, border: '1px solid #232b3a', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#161b24', color: '#cfd8e3' }
           }, 'Close')
         )
-      )
+      ) : null
     );
   }
 
@@ -574,7 +575,7 @@ export default function TicTacToeGame(props){
 
   var footer = React.createElement('div', {
     style: { display: 'flex', gap: 9, marginTop: 16, width: '100%' }
-  }, minimiseBtn, (isOver || err) ? null : forfeitBtn, closeBtn);
+  }, minimiseBtn, (isOver || err) ? null : forfeitBtn, canClose ? closeBtn : null);
 
   // ── Card ──
   var boardWrap = React.createElement('div', {

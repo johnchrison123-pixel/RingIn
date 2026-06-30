@@ -74,6 +74,15 @@ var HOME_LANE_O = [[7,13],[7,12],[7,11],[7,10],[7,9]];
 var TIP_O = [7,8];
 var CENTER = [7, 7];
 
+// Decorative GREEN (top, col7) + BLUE (bottom, col7) home lanes — no live
+// tokens (only X/O play) but painted full color so the board reads as an
+// authentic 4-color classic Ludo board. GREEN: col7 rows 1..5 → tip (6,7).
+// BLUE: col7 rows 13..9 → tip (8,7).
+var HOME_LANE_GREEN = [[1,7],[2,7],[3,7],[4,7],[5,7]];
+var TIP_GREEN = [6,7];
+var HOME_LANE_BLUE = [[13,7],[12,7],[11,7],[10,7],[9,7]];
+var TIP_BLUE = [8,7];
+
 // SAFE stars at these abs cells. Colored entries vs neutral handled at paint.
 var SAFE = { 0:1, 8:1, 13:1, 21:1, 26:1, 34:1, 39:1, 47:1 };
 var COLORED_ENTRY = { 0:1, 13:1, 26:1, 39:1 }; // get a colored star
@@ -93,6 +102,10 @@ export default function LudoGame(props){
   var myUserId = props.myUserId;
   var onClose  = props.onClose;
   var onMinimize = props.onMinimize;
+  // SHARED CONTRACT: only the INITIATOR (canClose !== false) may drive game
+  // lifecycle (Close / Other games / Play again). The host (canClose === false)
+  // gets only Minimise + Forfeit; their window is closed via initiator broadcast.
+  var canClose = props.canClose !== false;
 
   // ── State (all hooks BEFORE any conditional return) ──
   var gameS = useState(null);
@@ -560,6 +573,10 @@ export default function LudoGame(props){
   xLaneSet[cellKey(TIP_X[0], TIP_X[1])] = 1;
   var oLaneSet = {}; for (var lj = 0; lj < HOME_LANE_O.length; lj++) oLaneSet[cellKey(HOME_LANE_O[lj][0], HOME_LANE_O[lj][1])] = 1;
   oLaneSet[cellKey(TIP_O[0], TIP_O[1])] = 1;
+  // Decorative green/blue lane cells (tips fall in the center region, drawn by the
+  // triangles SVG, so only the 5 lane cells each are painted here).
+  var gLaneSet = {}; for (var lg = 0; lg < HOME_LANE_GREEN.length; lg++) gLaneSet[cellKey(HOME_LANE_GREEN[lg][0], HOME_LANE_GREEN[lg][1])] = 1;
+  var bLaneSet = {}; for (var lb = 0; lb < HOME_LANE_BLUE.length; lb++) bLaneSet[cellKey(HOME_LANE_BLUE[lb][0], HOME_LANE_BLUE[lb][1])] = 1;
 
   function inBox(r, c, r0, c0){ return r >= r0 && r < r0 + 6 && c >= c0 && c < c0 + 6; }
 
@@ -584,17 +601,18 @@ export default function LudoGame(props){
         // center finish — rendered by the SVG triangles overlay; keep cell plain
         style.background = '#0e1320';
       } else if (TL || TR || BL || BR) {
+        // ALL FOUR corner bases render SOLID/vivid (classic 4-color board).
         var col = TL ? RED : TR ? GREEN : BL ? BLUE : YELLOW;
-        var dec = TR || BL; // decorative quadrants at 0.5
         style.background = col;
-        if (dec) style.opacity = 0.5;
         style.border = '1px solid ' + GRID_LINE;
-        // inner white pocket panel only on the base's top-left anchor (one per base)
+        // Full base styling drawn once per base, anchored at its top-left cell:
+        // colored 6×6 square (this background) + inner white panel + 4 token pockets.
         var anchorR = TL ? 0 : TR ? 0 : BL ? 9 : 9;
         var anchorC = TL ? 0 : TR ? 9 : BL ? 0 : 9;
         if (rr === anchorR && cc === anchorC) {
-          // draw a white rounded panel inset 1 cell, plus the 4 white pockets
-          content = React.createElement('div', {
+          // white rounded panel inset 1 cell (4×4)
+          var panel = React.createElement('div', {
+            key: 'panel',
             style: {
               position: 'absolute', left: CELL, top: CELL,
               width: CELL * 4, height: CELL * 4,
@@ -603,12 +621,39 @@ export default function LudoGame(props){
               boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.18)'
             }
           });
+          // 4 colored token pockets centered inside the white panel (2×2 layout)
+          var pocketSize = Math.round(CELL * 0.9);
+          var pockOff = [[1.55, 1.55], [3.45, 1.55], [1.55, 3.45], [3.45, 3.45]];
+          var pockets = [];
+          for (var pk = 0; pk < 4; pk++) {
+            pockets.push(React.createElement('div', {
+              key: 'pock-' + pk,
+              style: {
+                position: 'absolute',
+                left: Math.round(pockOff[pk][0] * CELL - pocketSize / 2),
+                top: Math.round(pockOff[pk][1] * CELL - pocketSize / 2),
+                width: pocketSize, height: pocketSize, borderRadius: '50%',
+                background: col,
+                border: '2px solid rgba(255,255,255,0.95)',
+                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)'
+              }
+            }));
+          }
+          content = React.createElement('div', {
+            style: { position: 'absolute', left: 0, top: 0, width: CELL * 6, height: CELL * 6, pointerEvents: 'none' }
+          }, [panel].concat(pockets));
         }
       } else if (xLaneSet[k]) {
         style.background = RED;
         style.border = '1px solid ' + GRID_LINE;
       } else if (oLaneSet[k]) {
         style.background = YELLOW;
+        style.border = '1px solid ' + GRID_LINE;
+      } else if (gLaneSet[k]) {
+        style.background = GREEN;
+        style.border = '1px solid ' + GRID_LINE;
+      } else if (bLaneSet[k]) {
+        style.background = BLUE;
         style.border = '1px solid ' + GRID_LINE;
       } else if (trackSet.hasOwnProperty(k)) {
         var absIdx = trackSet[k];
@@ -644,12 +689,12 @@ export default function LudoGame(props){
   },
     // LEFT = RED (X)
     React.createElement('polygon', { points: '0,0 0,100 50,50', fill: RED }),
-    // TOP = GREEN (decorative 0.5)
-    React.createElement('polygon', { points: '0,0 100,0 50,50', fill: GREEN, opacity: 0.5 }),
+    // TOP = GREEN (full color)
+    React.createElement('polygon', { points: '0,0 100,0 50,50', fill: GREEN }),
     // RIGHT = YELLOW (O)
     React.createElement('polygon', { points: '100,0 100,100 50,50', fill: YELLOW }),
-    // BOTTOM = BLUE (decorative 0.5)
-    React.createElement('polygon', { points: '0,100 100,100 50,50', fill: BLUE, opacity: 0.5 }),
+    // BOTTOM = BLUE (full color)
+    React.createElement('polygon', { points: '0,100 100,100 50,50', fill: BLUE }),
     // small white home glyph
     React.createElement('circle', { cx: 50, cy: 50, r: 9, fill: 'rgba(255,255,255,0.92)' }),
     React.createElement('text', { x: 50, y: 54, fontSize: 11, textAnchor: 'middle', fill: '#1a2233' }, '⌂')
@@ -1006,18 +1051,20 @@ export default function LudoGame(props){
     }
   }, 'Forfeit');
 
-  var closeBtn = React.createElement('button', {
+  var closeBtn = canClose ? React.createElement('button', {
     className: 'ringin-tap',
     onClick: function(){ if (onClose) onClose(); },
     style: {
       border: 'none', borderRadius: 12, padding: '11px 14px', fontWeight: 700, fontSize: 14,
       background: '#1c222c', color: '#cfd8e3', cursor: 'pointer'
     }
-  }, 'Close');
+  }, 'Close') : null;
 
+  var controlsKids = [minBtn, forfeitBtn];
+  if (closeBtn) controlsKids.push(closeBtn);
   var controls = React.createElement('div', {
     style: { display: 'flex', gap: 9, marginTop: 14, width: '100%' }
-  }, minBtn, forfeitBtn, closeBtn);
+  }, controlsKids);
 
   // ── Win/Lose/Draw overlay ──
   var overlay = null;
@@ -1085,28 +1132,32 @@ export default function LudoGame(props){
       }, iWon ? 'Opponent forfeited' : 'You forfeited'));
     }
 
-    overlayKids.push(React.createElement('div', {
-      key: 'ovctrl',
-      style: { position: 'relative', zIndex: 2, marginTop: 22, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
-    },
-      React.createElement('button', {
-        className: 'ringin-tap',
-        onClick: function(){ if (props.onPlayAgain) props.onPlayAgain(); },
-        style: { border: 'none', borderRadius: 12, padding: '13px', fontWeight: 800, fontSize: 14, cursor: 'pointer', background: 'linear-gradient(135deg,#5ad1ff,#5a8bff)', color: '#08121c', boxShadow: '0 6px 16px rgba(90,139,255,.4)' }
-      }, '🔄 Play again'),
-      React.createElement('div', { style: { display: 'flex', gap: 8 } },
+    // SHARED CONTRACT: only the initiator (canClose) drives lifecycle. The host
+    // gets no Close / Other games / Play again in the result overlay.
+    if (canClose) {
+      overlayKids.push(React.createElement('div', {
+        key: 'ovctrl',
+        style: { position: 'relative', zIndex: 2, marginTop: 22, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
+      },
         React.createElement('button', {
           className: 'ringin-tap',
-          onClick: function(){ if (props.onPickAnother) props.onPickAnother(); },
-          style: { flex: 1, border: '1px solid #2a3344', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#141a24', color: '#cfd8e3' }
-        }, '🎮 Other games'),
-        React.createElement('button', {
-          className: 'ringin-tap',
-          onClick: function(){ if (onClose) onClose(); },
-          style: { flex: 1, border: '1px solid #232b3a', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#161b24', color: '#cfd8e3' }
-        }, 'Close')
-      )
-    ));
+          onClick: function(){ if (props.onPlayAgain) props.onPlayAgain(); },
+          style: { border: 'none', borderRadius: 12, padding: '13px', fontWeight: 800, fontSize: 14, cursor: 'pointer', background: 'linear-gradient(135deg,#5ad1ff,#5a8bff)', color: '#08121c', boxShadow: '0 6px 16px rgba(90,139,255,.4)' }
+        }, '🔄 Play again'),
+        React.createElement('div', { style: { display: 'flex', gap: 8 } },
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (props.onPickAnother) props.onPickAnother(); },
+            style: { flex: 1, border: '1px solid #2a3344', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#141a24', color: '#cfd8e3' }
+          }, '🎮 Other games'),
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (onClose) onClose(); },
+            style: { flex: 1, border: '1px solid #232b3a', borderRadius: 12, padding: '12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', background: '#161b24', color: '#cfd8e3' }
+          }, 'Close')
+        )
+      ));
+    }
 
     overlay = React.createElement('div', {
       style: {

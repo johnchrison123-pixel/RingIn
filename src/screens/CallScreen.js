@@ -187,6 +187,7 @@ export default function CallScreen(props){
   var animTimerRef = useRef(null);
   var errTimerRef = useRef(null);
   var closedGamesRef = useRef({});
+  var gameChannelRef = useRef(null);
   function fireGiftAnim(g, fromName, isOutgoing){
     setIncomingAnim({ icon: g.icon || g.emoji || '🎁', coins: g.coins, fullscreen: !!g.fullscreen, name: g.name || '', category: g.category || null, gift_key: g.gift_key || null, color: g.color || null, fromName: fromName || '', sent: !!isOutgoing, ts: Date.now() });
     try { playGiftSound(g.sound === 'fanfare' ? 'fanfare' : (g.sound === 'chime_big' || (g.coins||0) >= 399 ? 'chime' : 'bell')); } catch(_){}
@@ -317,12 +318,26 @@ export default function CallScreen(props){
       }
       return next;
     }
-    var ch = sb.channel('call-game-' + inviteId)
+    var ch = sb.channel('call-game-' + inviteId, { config: { broadcast: { self: false } } });
+    gameChannelRef.current = ch;
+    ch
+      .on('broadcast', { event: 'game_closed' }, function(p){
+        var g = p && p.payload && p.payload.gameId;
+        setTtGame(function(prev){
+          if (prev && (!g || prev.gameId === g)) {
+            if (prev.gameId) closedGamesRef.current[prev.gameId] = 1;
+            return null;
+          }
+          return prev;
+        });
+        setGameMin(false);
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_sessions', filter: 'context_id=eq.' + inviteId }, function(p){
         var row = p && p.new;
         if (!row || !row.id) return;
         if (row.player_x !== myUserId && row.player_o !== myUserId) return;
         var gid = row.id;
+        if (closedGamesRef.current[gid]) return;   // user dismissed this game → a late/duplicate INSERT must not re-open it
         var myMk = (row.player_x === myUserId) ? 'X' : 'O';
         /* CRITICAL FIX (host always saw Tic-Tac-Toe): the realtime INSERT
          * payload's game_type is unreliable — the OTHER side was falling back
@@ -349,7 +364,7 @@ export default function CallScreen(props){
          * host never gets stuck without — or on the wrong — game. */
         if (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') checkActiveGame();
       });
-    return function(){ try { sb.removeChannel(ch); } catch(_){} };
+    return function(){ try { sb.removeChannel(ch); } catch(_){} gameChannelRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteId, myUserId]);
 
@@ -1313,10 +1328,11 @@ export default function CallScreen(props){
         ttGame.gameType === 'rps' ? RockPaperScissorsGame :
         TicTacToeGame,
         { key: ttGame.gameId, gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
-          onClose: function(){ if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); },
+          canClose: (ttGame.myMark === 'X'),
+          onClose: function(){ try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); },
           onMinimize: function(){ setGameMin(true); },
           onPlayAgain: function(){ if (ttGame) startGame(ttGame.gameType); },
-          onPickAnother: function(){ if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
+          onPickAnother: function(){ try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
       )
     ) : null,
 

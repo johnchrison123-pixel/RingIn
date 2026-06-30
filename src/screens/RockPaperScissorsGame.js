@@ -54,6 +54,11 @@ export default function RockPaperScissorsGame(props){
   var myUserId   = props.myUserId;
   var onClose    = props.onClose;
   var onMinimize = props.onMinimize;
+  // Close-button gating (SHARED CONTRACT): the INITIATOR (player_x → myMark 'X')
+  // drives the game lifecycle and may Close; the host (myMark 'O') cannot — their
+  // window is closed for them via a broadcast from the initiator. Default TRUE
+  // when undefined so this stays backward-compatible.
+  var canClose = props.canClose !== false;
 
   // ── State (ALL hooks BEFORE any conditional return) ──
   var gameS = useState(null);
@@ -188,17 +193,23 @@ export default function RockPaperScissorsGame(props){
   // server never echoes my pick back into state mid-round, only via last).
   var myShownChoice = optActive ? opt.choice : null;
 
-  // Clear optimistic pick once the server confirms (thrown flag set) OR the
-  // round advanced. Keeping it through the "waiting" phase is the whole point.
+  // Clear the optimistic pick the MOMENT the server advances to a new round, so
+  // the next round starts clean (buttons re-enabled, NO leftover "you picked X"
+  // highlight bleeding through from the prior round). This is the round-2-lag
+  // fix: previously the stale opt could survive into the new round because the
+  // only guaranteed trigger was serverIThrew flipping. Now we drive purely off
+  // state.round — if opt belongs to any round other than the current server
+  // round, it is dead and must be dropped immediately.
   useEffect(function(){
     if (roundRef.current === null) { roundRef.current = round; }
     var roundChanged = round !== roundRef.current;
     if (roundChanged) roundRef.current = round;
     if (!mountedRef.current) return;
-    if (opt && (opt.round !== round || serverIThrew)) {
-      // Round advanced → drop it. Server confirmed our throw → we can drop the
-      // local copy (the "waiting" UI is driven by the server thrown flag now).
-      if (opt.round !== round) setOpt(null);
+    // Stale optimistic pick from a previous round → drop it now. (Covers both
+    // the round-advanced case AND any case where opt.round drifted from the
+    // authoritative server round.)
+    if (opt && opt.round !== round) {
+      setOpt(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round, serverIThrew]);
@@ -554,7 +565,8 @@ export default function RockPaperScissorsGame(props){
 
   var controlChildren = [minimiseBtn];
   if (status === 'active') controlChildren.push(forfeitBtn);
-  controlChildren.push(closeBtn);
+  // Only the initiator gets Close; the host keeps just Minimise (+ Forfeit while active).
+  if (canClose) controlChildren.push(closeBtn);
   var controls = React.createElement('div', {
     style: { display: 'flex', gap: 8, marginTop: 6, width: '100%' }
   }, controlChildren);
@@ -620,31 +632,37 @@ export default function RockPaperScissorsGame(props){
       key: 'sub', style: { position: 'relative', zIndex: 2, marginTop: 6, fontSize: 14, color: MUTED, fontWeight: 600 }
     }, 'Final score  ' + myScore + ' — ' + oppScore));
 
-    overlayKids.push(React.createElement('div', {
-      key: 'ovctrl',
-      style: { position: 'relative', zIndex: 2, marginTop: 20, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
-    },
-      React.createElement('button', {
-        className: 'ringin-tap',
-        onClick: function(){ if (props.onPlayAgain) props.onPlayAgain(); },
-        style: Object.assign({}, btnBase, {
-          background: 'linear-gradient(135deg,#5ad1ff,#5a8bff)', color: '#08121c',
-          boxShadow: '0 6px 16px rgba(90,139,255,.4)'
-        })
-      }, '🔄 Play again'),
-      React.createElement('div', { style: { display: 'flex', gap: 8 } },
+    // Lifecycle controls (Play again / Other games / Close) drive the game
+    // session, so ONLY the initiator (canClose) gets them. The host sees just
+    // the result text + final score; their window is closed via a broadcast
+    // from the initiator.
+    if (canClose) {
+      overlayKids.push(React.createElement('div', {
+        key: 'ovctrl',
+        style: { position: 'relative', zIndex: 2, marginTop: 20, display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }
+      },
         React.createElement('button', {
           className: 'ringin-tap',
-          onClick: function(){ if (props.onPickAnother) props.onPickAnother(); },
-          style: Object.assign({}, btnBase, { background: '#141a24', color: '#cfd8e3', border: '1px solid #2a3344' })
-        }, '🎮 Other games'),
-        React.createElement('button', {
-          className: 'ringin-tap',
-          onClick: function(){ if (onClose) onClose(); },
-          style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
-        }, 'Close')
-      )
-    ));
+          onClick: function(){ if (props.onPlayAgain) props.onPlayAgain(); },
+          style: Object.assign({}, btnBase, {
+            background: 'linear-gradient(135deg,#5ad1ff,#5a8bff)', color: '#08121c',
+            boxShadow: '0 6px 16px rgba(90,139,255,.4)'
+          })
+        }, '🔄 Play again'),
+        React.createElement('div', { style: { display: 'flex', gap: 8 } },
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (props.onPickAnother) props.onPickAnother(); },
+            style: Object.assign({}, btnBase, { background: '#141a24', color: '#cfd8e3', border: '1px solid #2a3344' })
+          }, '🎮 Other games'),
+          React.createElement('button', {
+            className: 'ringin-tap',
+            onClick: function(){ if (onClose) onClose(); },
+            style: Object.assign({}, btnBase, { background: '#1c222c', color: '#cfd8e3' })
+          }, 'Close')
+        )
+      ));
+    }
 
     overlay = React.createElement('div', {
       style: {
