@@ -133,7 +133,13 @@ export default function TicTacToeGame(props){
         }, function(p){
           if (!mountedRef.current) return;
           var n = p && p['new'];
-          if (n && n.id) setGame(n);
+          if (!n || !n.id) return;
+          // N1: initiator closed the game (durable closed_at marker) → mirror the
+          // dismissal here even if the realtime broadcast was lost. closed_at is
+          // never set during play, and a win/draw/forfeit never sets it, so this
+          // can't swallow a result overlay. undefined pre-migration → no-op.
+          if (n.closed_at) { if (onClose) onClose(); return; }
+          setGame(n);
         })
         .subscribe(function(s){
           // H7 RECONNECT: a dropped/errored realtime channel can strand us on a

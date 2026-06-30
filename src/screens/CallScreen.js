@@ -278,6 +278,17 @@ export default function CallScreen(props){
       }).catch(function(){ setTtBusy(false); });
     } catch(_){ setTtBusy(false); }
   }
+  /* Close a game for BOTH sides, durably (N1). Fast path: the realtime broadcast
+   * the host already listens for. Durable backstop: close_game stamps a closed_at
+   * marker on the row, so the host's window still closes if the broadcast was lost
+   * (flaky network) — the host detects closed_at on its EXISTING game_sessions
+   * UPDATE sub. Both are best-effort: if migration 0063 isn't run the RPC just
+   * errors and we fall back to exactly today's broadcast-only behaviour. */
+  function closeGameNow(gid){
+    if (!gid) return;
+    try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: gid } }); } catch(_){}
+    try { sb.rpc('close_game', { p_game: gid }).then(function(){}, function(){}); } catch(_){}
+  }
   /* When a game is started on THIS call (by either side), open the board on
    * both screens. Filtered on context_id = this call's invite id. */
   useEffect(function(){
@@ -1323,10 +1334,10 @@ export default function CallScreen(props){
         TicTacToeGame,
         { key: ttGame.gameId, gameId: ttGame.gameId, myMark: ttGame.myMark, myUserId: myUserId,
           canClose: (ttGame.myMark === 'X'),
-          onClose: function(){ try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); },
+          onClose: function(){ if (ttGame && ttGame.gameId) { closeGameNow(ttGame.gameId); closedGamesRef.current[ttGame.gameId] = 1; } setTtGame(null); setGameMin(false); },
           onMinimize: function(){ setGameMin(true); },
-          onPlayAgain: function(){ if (ttGame) { try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} startGame(ttGame.gameType); } },
-          onPickAnother: function(){ try { if (gameChannelRef.current) gameChannelRef.current.send({ type:'broadcast', event:'game_closed', payload:{ gameId: ttGame.gameId } }); } catch(_){} if (ttGame && ttGame.gameId) closedGamesRef.current[ttGame.gameId] = 1; setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
+          onPlayAgain: function(){ if (ttGame) { closeGameNow(ttGame.gameId); startGame(ttGame.gameType); } },
+          onPickAnother: function(){ if (ttGame && ttGame.gameId) { closeGameNow(ttGame.gameId); closedGamesRef.current[ttGame.gameId] = 1; } setTtGame(null); setGameMin(false); setGamePickOpen(true); } }
       )
     ) : null,
 

@@ -129,6 +129,14 @@ export default function ConnectFourGame(props){
   // Server truth arrived → clear any optimistic disc it now covers.
   function applyServer(row){
     if (!row || !row.id) return;
+    // N1: initiator closed the game (durable closed_at marker) → mirror the
+    // dismissal even if the broadcast was lost. Clear the optimistic-watch timer
+    // first (B7). Never set during play / on a result. undefined pre-migration → no-op.
+    if (row.closed_at) {
+      if (optWatchRef.current) { try { clearTimeout(optWatchRef.current); } catch (_) {} optWatchRef.current = null; }
+      if (onClose) onClose();
+      return;
+    }
     if (optWatchRef.current) { try { clearTimeout(optWatchRef.current); } catch (_) {} optWatchRef.current = null; }
     setGame(row);
     setOpt(null);

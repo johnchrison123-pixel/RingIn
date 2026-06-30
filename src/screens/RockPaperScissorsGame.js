@@ -141,7 +141,12 @@ export default function RockPaperScissorsGame(props){
         }, function(p){
           if (!mountedRef.current) return;
           var n = p && p['new'];
-          if (n && n.id) setGame(n);
+          if (!n || !n.id) return;
+          // N1: initiator closed the game (durable closed_at marker) → mirror the
+          // dismissal even if the broadcast was lost. Never set during play / on a
+          // result, so it can't swallow an outcome. undefined pre-migration → no-op.
+          if (n.closed_at) { if (onClose) onClose(); return; }
+          setGame(n);
         })
         .subscribe(function(s){
           // H7 RECONNECT: a dropped/errored realtime channel can leave the

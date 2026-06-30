@@ -257,6 +257,10 @@ export default function LudoGame(props){
 
   // ── Apply an authoritative server row: diff for captures, then commit ──
   function applyServer(row){
+    // N1: initiator closed the game (durable closed_at marker) → mirror the
+    // dismissal even if the broadcast was lost. Stop any hop animation first (B7).
+    // Never set during play / on a result. undefined pre-migration → no-op.
+    if (row && row.closed_at) { clearHopIv(); if (onClose) onClose(); return; }
     var next = readTokens(row);
     var prev = prevTokensRef.current;
     var oppMarkLocal = myMark === 'X' ? 'O' : 'X';
